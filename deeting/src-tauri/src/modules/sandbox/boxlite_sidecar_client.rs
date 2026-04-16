@@ -4,8 +4,9 @@ use std::sync::Arc;
 
 use boxlite_sidecar_protocol::{
     BoxliteSidecarConnection, BoxliteSidecarCreateBoxOptions, BoxliteSidecarEnvelope,
-    BoxliteSidecarErrorKind, BoxliteSidecarExecutionOutput, BoxliteSidecarIdentity,
-    BoxliteSidecarRequest, BoxliteSidecarResponseEnvelope, BoxliteSidecarResponsePayload,
+    BoxliteSidecarErrorKind, BoxliteSidecarExecutionOutput, BoxliteSidecarExecutionRequest,
+    BoxliteSidecarIdentity, BoxliteSidecarRequest, BoxliteSidecarResponseEnvelope,
+    BoxliteSidecarResponsePayload,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
@@ -112,36 +113,27 @@ impl BoxLiteSidecarClient {
         }
     }
 
-    pub async fn run_python(
+    pub async fn execute(
         &self,
         connection: &BoxliteSidecarConnection,
         box_id_or_name: &str,
-        python_bin: &str,
-        code: &str,
-        timeout_seconds: u64,
-        working_dir: Option<&str>,
+        request: BoxliteSidecarExecutionRequest,
     ) -> Result<SandboxExecutionOutput, SandboxError> {
         let response = self
-            .send(BoxliteSidecarRequest::RunPython {
+            .send(BoxliteSidecarRequest::Execute {
                 connection: connection.clone(),
                 box_id_or_name: box_id_or_name.trim().to_string(),
-                python_bin: python_bin.trim().to_string(),
-                code: code.to_string(),
-                timeout_seconds,
-                working_dir: working_dir
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .map(ToOwned::to_owned),
+                request,
             })
             .await?;
         match response.payload {
-            BoxliteSidecarResponsePayload::RunPython { data } => Ok(output_from_sidecar(data)),
+            BoxliteSidecarResponsePayload::Execute { data } => Ok(output_from_sidecar(data)),
             BoxliteSidecarResponsePayload::Error {
                 error_kind,
                 message,
             } => Err(map_sidecar_error(error_kind, message)),
             _ => Err(SandboxError::Internal(
-                "boxlite sidecar returned unexpected run_python response".to_string(),
+                "boxlite sidecar returned unexpected execute response".to_string(),
             )),
         }
     }

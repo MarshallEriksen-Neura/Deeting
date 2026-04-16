@@ -226,6 +226,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::sandbox::commands::rebuild_local_sandbox_runtime,
         crate::modules::sandbox::commands::install_local_sandbox_boxlite,
         crate::modules::sandbox::commands::get_local_sandbox_install_guide,
+        crate::modules::sandbox::commands::run_local_sandbox_code_snippet,
         // Local Monitor Commands
         crate::modules::monitor::commands::list_local_monitor_tasks,
         crate::modules::monitor::commands::get_local_monitor_task,

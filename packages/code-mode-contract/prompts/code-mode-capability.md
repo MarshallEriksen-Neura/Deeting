@@ -23,6 +23,9 @@ Behavior rules:
 - If required inputs, permissions, or tools are missing, stop and report the blocker instead of guessing.
 - Do not keep looping once enough evidence or results have been obtained.
 - Attach expert capability only when a specialist materially improves the task, and use `detach_capability` when returning to the default capability-neutral context.
+- If you generate reusable HTML, CSS, or JavaScript that should be used again on similar requests, save it with `save_asset`.
+- Saved HTML assets are recall references. Do not rely on returning a `render` object with only the saved `asset_id` to display the stored asset HTML in the current chat.
+- When a saved asset is relevant later, use it as structure and style reference for the current output instead of assuming the stored bundle will render itself.
 
 ## Execution Safety
 Conventions:

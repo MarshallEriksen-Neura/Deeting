@@ -38,6 +38,26 @@ pub struct BoxliteSidecarExecutionOutput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BoxliteSidecarFilePayload {
+    pub path: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BoxliteSidecarExecutionRequest {
+    pub command: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<BoxliteSidecarFilePayload>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stdin: Option<String>,
+    pub timeout_seconds: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub working_dir: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "method", rename_all = "snake_case")]
 pub enum BoxliteSidecarRequest {
     Probe {
@@ -52,14 +72,10 @@ pub enum BoxliteSidecarRequest {
         connection: BoxliteSidecarConnection,
         box_id_or_name: String,
     },
-    RunPython {
+    Execute {
         connection: BoxliteSidecarConnection,
         box_id_or_name: String,
-        python_bin: String,
-        code: String,
-        timeout_seconds: u64,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        working_dir: Option<String>,
+        request: BoxliteSidecarExecutionRequest,
     },
 }
 
@@ -94,7 +110,7 @@ pub enum BoxliteSidecarResponsePayload {
     StopBox {
         ok: bool,
     },
-    RunPython {
+    Execute {
         data: BoxliteSidecarExecutionOutput,
     },
     Error {
@@ -108,4 +124,38 @@ pub struct BoxliteSidecarResponseEnvelope {
     pub id: String,
     #[serde(flatten)]
     pub payload: BoxliteSidecarResponsePayload,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn execute_request_serializes_with_generic_payload() {
+        let value = serde_json::to_value(BoxliteSidecarRequest::Execute {
+            connection: BoxliteSidecarConnection {
+                base_url: "http://127.0.0.1:9090".to_string(),
+                client_id: None,
+                client_secret: None,
+                prefix: None,
+            },
+            box_id_or_name: "box-1".to_string(),
+            request: BoxliteSidecarExecutionRequest {
+                command: "python".to_string(),
+                args: vec!["main.py".to_string()],
+                files: vec![BoxliteSidecarFilePayload {
+                    path: "main.py".to_string(),
+                    content: "print('hi')".to_string(),
+                }],
+                stdin: None,
+                timeout_seconds: 30,
+                working_dir: Some("/workspace".to_string()),
+            },
+        })
+        .unwrap();
+
+        assert_eq!(value["method"], serde_json::json!("execute"));
+        assert_eq!(value["request"]["command"], serde_json::json!("python"));
+        assert_eq!(value["request"]["files"][0]["path"], serde_json::json!("main.py"));
+    }
 }

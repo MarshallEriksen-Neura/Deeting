@@ -30,6 +30,13 @@ export const SandboxExecutionProbeStatusSchema = z.enum([
   "skipped",
 ])
 
+export const SandboxSnippetLanguageSchema = z.enum([
+  "python",
+  "go",
+  "rust",
+  "java",
+])
+
 export const SandboxWslStatusSchema = z.object({
   installed: z.boolean(),
   ready: z.boolean(),
@@ -73,11 +80,29 @@ export const SandboxInstallGuideSchema = z.object({
   primary_command: z.string().nullable().optional(),
 })
 
+export const SandboxSnippetRunResponseSchema = z.object({
+  success: z.boolean(),
+  status: z.string(),
+  language: SandboxSnippetLanguageSchema,
+  image: z.string(),
+  sandbox_id: z.string().nullable().optional(),
+  runtime_mode: SandboxRuntimeModeSchema,
+  stdout: z.array(z.string()).default([]),
+  stderr: z.array(z.string()).default([]),
+  result: z.array(z.string()).default([]),
+  exit_code: z.number().nullable().optional(),
+  error: z.string().nullable().optional(),
+  error_code: z.string().nullable().optional(),
+  readiness: SandboxReadinessReportSchema.nullish(),
+})
+
 export type SandboxRuntimeMode = z.infer<typeof SandboxRuntimeModeSchema>
 export type SandboxReadinessStatus = z.infer<typeof SandboxReadinessStatusSchema>
 export type SandboxExecutionProbeStatus = z.infer<typeof SandboxExecutionProbeStatusSchema>
+export type SandboxSnippetLanguage = z.infer<typeof SandboxSnippetLanguageSchema>
 export type SandboxReadinessReport = z.infer<typeof SandboxReadinessReportSchema>
 export type SandboxInstallGuide = z.infer<typeof SandboxInstallGuideSchema>
+export type SandboxSnippetRunResponse = z.infer<typeof SandboxSnippetRunResponseSchema>
 
 export async function getLocalSandboxStatus(): Promise<SandboxReadinessReport> {
   if (!isTauriRuntime()) {
@@ -133,4 +158,21 @@ export async function installLocalSandboxBoxlite(): Promise<SandboxReadinessRepo
 export async function getLocalSandboxInstallGuide(): Promise<SandboxInstallGuide> {
   const data = await invokeTauri<unknown>("get_local_sandbox_install_guide")
   return SandboxInstallGuideSchema.parse(data)
+}
+
+export async function runLocalSandboxCodeSnippet(payload: {
+  sessionId: string
+  language: SandboxSnippetLanguage
+  code: string
+  executionTimeoutSecs?: number
+}): Promise<SandboxSnippetRunResponse> {
+  const data = await invokeTauri<unknown>("run_local_sandbox_code_snippet", {
+    payload: {
+      session_id: payload.sessionId,
+      language: payload.language,
+      code: payload.code,
+      execution_timeout_secs: payload.executionTimeoutSecs,
+    },
+  })
+  return SandboxSnippetRunResponseSchema.parse(data)
 }

@@ -28,6 +28,7 @@ describe("tool-ux helpers", () => {
 
   it("humanizes unknown tool ids", () => {
     expect(humanizeToolName("firecrawl_search")).toBe("Firecrawl Search");
+    expect(humanizeToolName("run_local_code_snippet")).toBe("Local Code Run");
     expect(
       humanizeToolName("skill.official.skills.crawler.fetch_web_content"),
     ).toBe("Crawler Fetch Web Content");
@@ -52,6 +53,19 @@ describe("tool-ux helpers", () => {
         },
       }),
     ).toBe("Found 2 results");
+  });
+
+  it("builds local snippet previews from structured snippet results", () => {
+    expect(
+      resolveToolResultPreview({
+        name: "run_local_code_snippet",
+        result: {
+          success: true,
+          status: "success",
+          language: "python",
+        },
+      }),
+    ).toBe("Ran local PYTHON snippet");
   });
 
   it("localizes action previews when a translator is provided", () => {

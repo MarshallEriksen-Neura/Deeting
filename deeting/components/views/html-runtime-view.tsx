@@ -168,7 +168,7 @@ const HtmlRuntimeView = memo<NativeViewProps>(function HtmlRuntimeView({ data, m
       {assetLabel ? (
         <div className="pointer-events-none absolute right-3 top-3 z-10">
           <div className="rounded-full border border-white/45 bg-white/35 px-2.5 py-1 text-[10px] font-medium tracking-[0.16em] text-slate-600 shadow-[0_12px_24px_-18px_rgba(15,23,42,0.45)] backdrop-blur-xl">
-            {`ASSET: ${assetLabel}`}
+            {`REFERENCE: ${assetLabel}`}
           </div>
         </div>
       ) : null}

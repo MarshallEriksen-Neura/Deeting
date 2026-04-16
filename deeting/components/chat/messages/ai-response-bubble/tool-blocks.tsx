@@ -105,6 +105,19 @@ type ShellExecutionInsight = {
   warnings: string[];
 };
 
+type LocalCodeSnippetInsight = {
+  language: string | null;
+  image: string | null;
+  runtimeMode: string | null;
+  status: string | null;
+  exitCode: number | null;
+  stdout: string | null;
+  stderr: string | null;
+  error: string | null;
+  errorCode: string | null;
+  nextActions: string[];
+};
+
 type ToolVisualState = "running" | "success" | "error" | "pending";
 
 function toRecord(value: unknown): Record<string, unknown> | null {
@@ -310,6 +323,33 @@ function toInlinePreview(value: string, maxLength = 96): string | null {
   if (!normalized) return null;
   if (normalized.length <= maxLength) return normalized;
   return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+}
+
+function extractLocalCodeSnippetInsight(
+  toolName?: string,
+  result?: unknown,
+): LocalCodeSnippetInsight | null {
+  if (toolName !== "run_local_code_snippet") return null;
+  const payload = toRecord(result);
+  if (!payload) return null;
+
+  const readiness = toRecord(payload.readiness);
+  return {
+    language: asTrimmedString(payload.language),
+    image: asTrimmedString(payload.image),
+    runtimeMode: asTrimmedString(payload.runtime_mode),
+    status: asTrimmedString(payload.status),
+    exitCode: toNumber(payload.exit_code),
+    stdout: Array.isArray(payload.stdout)
+      ? payload.stdout.filter((item): item is string => typeof item === "string").join("\n")
+      : null,
+    stderr: Array.isArray(payload.stderr)
+      ? payload.stderr.filter((item): item is string => typeof item === "string").join("\n")
+      : null,
+    error: asTrimmedString(payload.error),
+    errorCode: asTrimmedString(payload.error_code),
+    nextActions: toStringArray(readiness?.next_actions),
+  };
 }
 
 function summarizeUnknownValue(value: unknown): string | null {
@@ -596,6 +636,86 @@ const ShellExecutionResultCard = memo<{ insight: ShellExecutionInsight }>(
   },
 );
 
+const LocalCodeSnippetResultCard = memo<{ insight: LocalCodeSnippetInsight }>(
+  function LocalCodeSnippetResultCard({ insight }) {
+    const languageLabel = insight.language?.toUpperCase() ?? "CODE";
+
+    return (
+      <div className="rounded-lg border border-slate-300 bg-slate-50/80 p-3 dark:border-zinc-800 dark:bg-zinc-950/40">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <Badge variant="outline" className="h-5 text-[10px] font-normal">
+            lang:{languageLabel}
+          </Badge>
+          {insight.image ? (
+            <Badge variant="outline" className="h-5 text-[10px] font-normal">
+              image:{insight.image}
+            </Badge>
+          ) : null}
+          {insight.exitCode !== null ? (
+            <Badge variant="outline" className="h-5 text-[10px] font-normal">
+              exit:{insight.exitCode}
+            </Badge>
+          ) : null}
+          {insight.runtimeMode ? (
+            <Badge variant="outline" className="h-5 text-[10px] font-normal">
+              runtime:{insight.runtimeMode}
+            </Badge>
+          ) : null}
+        </div>
+
+        {insight.error ? (
+          <div className="mb-3 rounded-md border border-red-300/80 bg-red-50/70 p-2 text-[11px] text-red-900 dark:border-red-900 dark:bg-red-950/20 dark:text-red-100">
+            {insight.error}
+            {insight.errorCode ? (
+              <div className="mt-1 font-mono text-[10px] opacity-80">
+                {insight.errorCode}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {insight.nextActions.length > 0 ? (
+          <div className="mb-3 rounded-md border border-amber-300/80 bg-amber-50/70 p-2 dark:border-amber-900 dark:bg-amber-950/20">
+            <div className="mb-1 text-[11px] font-semibold text-amber-800 dark:text-amber-200">
+              Next actions
+            </div>
+            <div className="space-y-1 text-[11px] text-amber-900/90 dark:text-amber-200/90">
+              {insight.nextActions.map((step, index) => (
+                <div key={`next-action-${index}`}>{step}</div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {insight.stdout ? (
+          <details className="group" open>
+            <summary className="cursor-pointer select-none text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+              stdout
+            </summary>
+            <pre className="mt-2 overflow-x-auto rounded-md border border-emerald-200 bg-emerald-50/70 p-2 text-[11px] whitespace-pre-wrap break-all text-emerald-950 dark:border-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-100">
+              {insight.stdout}
+            </pre>
+          </details>
+        ) : null}
+
+        {insight.stderr ? (
+          <details
+            className="mt-3 group"
+            open={Boolean(insight.error) || insight.exitCode !== 0}
+          >
+            <summary className="cursor-pointer select-none text-[11px] font-semibold text-red-700 dark:text-red-300">
+              stderr
+            </summary>
+            <pre className="mt-2 overflow-x-auto rounded-md border border-red-200 bg-red-50/70 p-2 text-[11px] whitespace-pre-wrap break-all text-red-950 dark:border-red-900 dark:bg-red-950/20 dark:text-red-100">
+              {insight.stderr}
+            </pre>
+          </details>
+        ) : null}
+      </div>
+    );
+  },
+);
+
 function ToolDebugPanel({ debug }: { debug?: Record<string, unknown> }) {
   const [isOpen, setIsOpen] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
@@ -848,6 +968,14 @@ export const ToolCallBlock = memo<{
       ),
     [resultBlock?.toolName, name, resultBlock?.result],
   );
+  const localCodeSnippetInsight = useMemo(
+    () =>
+      extractLocalCodeSnippetInsight(
+        resultBlock?.toolName || name,
+        resultBlock?.result,
+      ),
+    [resultBlock?.toolName, name, resultBlock?.result],
+  );
   const visualState = useMemo(
     () => resolveToolVisualState(status, resultBlock),
     [resultBlock, status],
@@ -1088,6 +1216,20 @@ export const ToolCallBlock = memo<{
             <TaskLiveBlock taskId={taskLiveId} />
           ) : skillInstallInsight ? (
             <SkillInstallStatusCard insight={skillInstallInsight} />
+          ) : localCodeSnippetInsight ? (
+            <div
+              className={cn(
+                "rounded-2xl border p-3 text-sm overflow-hidden",
+                isResultError
+                  ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20"
+                  : isResultPendingApproval
+                    ? "border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-900/20"
+                    : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-900/20",
+              )}
+            >
+              <LocalCodeSnippetResultCard insight={localCodeSnippetInsight} />
+              <ToolDebugPanel debug={resultBlock?.debug} />
+            </div>
           ) : shellExecutionInsight ? (
             <div
               className={cn(
@@ -1369,6 +1511,10 @@ export const ToolResultBlock = memo<{
     () => extractShellExecutionInsight(name, result),
     [name, result],
   );
+  const localCodeSnippetInsight = useMemo(
+    () => extractLocalCodeSnippetInsight(name, result),
+    [name, result],
+  );
   const content = useMemo(() => formatObjectAsMarkdown(result), [result]);
   const preview = useMemo(() => {
     const shellPreview = shellExecutionInsight
@@ -1489,6 +1635,8 @@ export const ToolResultBlock = memo<{
           >
             {skillInstallInsight ? (
               <SkillInstallStatusCard insight={skillInstallInsight} />
+            ) : localCodeSnippetInsight ? (
+              <LocalCodeSnippetResultCard insight={localCodeSnippetInsight} />
             ) : shellExecutionInsight ? (
               <ShellExecutionResultCard insight={shellExecutionInsight} />
             ) : content ? (

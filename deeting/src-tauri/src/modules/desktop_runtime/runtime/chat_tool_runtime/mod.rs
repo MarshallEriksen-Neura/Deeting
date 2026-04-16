@@ -1197,6 +1197,95 @@ async fn process_chat_tool_calls(
                     results.push(format!("Codemode Tool Failed: {}", err));
                 }
             }
+        } else if tool_name == "run_local_code_snippet" {
+            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
+            let code = call
+                .arguments
+                .get("code")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if code.trim().is_empty() {
+                synthesized = true;
+                push_local_tool_call_error_meta(
+                    &mut tool_call_meta,
+                    &mut results,
+                    realtime_emitter,
+                    Some(call_id.as_str()),
+                    &tool_name,
+                    "LOCAL_CODE_SNIPPET_EMPTY_CODE",
+                    "run_local_code_snippet requires a non-empty 'code' argument",
+                );
+                continue;
+            }
+
+            let language = call
+                .arguments
+                .get("language")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let snippet_language = match language.trim().to_ascii_lowercase().as_str() {
+                "python" => crate::modules::sandbox::types::SandboxSnippetLanguage::Python,
+                "go" => crate::modules::sandbox::types::SandboxSnippetLanguage::Go,
+                "rust" => crate::modules::sandbox::types::SandboxSnippetLanguage::Rust,
+                "java" => crate::modules::sandbox::types::SandboxSnippetLanguage::Java,
+                _ => {
+                    synthesized = true;
+                    push_local_tool_call_error_meta(
+                        &mut tool_call_meta,
+                        &mut results,
+                        realtime_emitter,
+                        Some(call_id.as_str()),
+                        &tool_name,
+                        "LOCAL_CODE_SNIPPET_UNSUPPORTED_LANGUAGE",
+                        format!(
+                            "run_local_code_snippet only supports python, go, rust, and java; received '{}'",
+                            language
+                        ),
+                    );
+                    continue;
+                }
+            };
+
+            let snippet_result = app_state
+                .sandbox
+                .manager
+                .run_local_code_snippet(
+                    session_id,
+                    snippet_language,
+                    code,
+                    call.arguments
+                        .get("execution_timeout")
+                        .and_then(|v| v.as_u64()),
+                )
+                .await;
+            synthesized = true;
+            let meta_status = if snippet_result.success {
+                "success"
+            } else {
+                "error"
+            };
+            let meta = serde_json::json!({
+                "id":call_id.as_str(),
+                "name":tool_name,
+                "status":meta_status,
+                "error_code":snippet_result.error_code,
+                "error":snippet_result.error,
+                "result":snippet_result,
+            });
+            let mut streamed_blocks = Vec::new();
+            append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+            realtime_emitter.emit_blocks(streamed_blocks);
+            tool_call_meta.push(meta);
+            if tool_call_meta
+                .last()
+                .and_then(|item| item.get("status"))
+                .and_then(serde_json::Value::as_str)
+                == Some("success")
+            {
+                results.push("Local code snippet executed successfully.".to_string());
+            } else {
+                results.push("Local code snippet execution failed.".to_string());
+            }
         } else if tool_name == "search_sdk" {
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
             let query = call

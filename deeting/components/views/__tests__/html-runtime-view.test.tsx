@@ -100,6 +100,6 @@ describe("HtmlRuntimeView", () => {
     )
 
     expect(screen.getByTitle("html-runtime-view")).toHaveStyle({ height: "520px" })
-    expect(screen.getByText("ASSET: WEATHER_V1")).toBeInTheDocument()
+    expect(screen.getByText("REFERENCE: WEATHER_V1")).toBeInTheDocument()
   })
 })

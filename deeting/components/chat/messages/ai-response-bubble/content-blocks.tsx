@@ -16,13 +16,22 @@ import { cn } from "@/lib/utils";
 export const TypingTextBlock = memo<{
   content: string;
   typingEnabled: boolean;
-}>(function TypingTextBlock({ content, typingEnabled }) {
+  messageId?: string;
+  enableRunnableFences?: boolean;
+}>(function TypingTextBlock({
+  content,
+  typingEnabled,
+  messageId,
+  enableRunnableFences = false,
+}) {
   const { displayed } = useTypewriter(content ?? "", typingEnabled);
 
   return (
     <MarkdownViewer
       content={displayed}
       className="chat-markdown chat-markdown-assistant"
+      messageId={messageId}
+      enableRunnableFences={enableRunnableFences}
     />
   );
 });

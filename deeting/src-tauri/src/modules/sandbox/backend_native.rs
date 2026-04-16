@@ -6,7 +6,7 @@ use boxlite::{BoxliteError as BoxrunSdkError, BoxliteResult as BoxrunSdkResult, 
 use futures_util::StreamExt;
 
 use crate::modules::sandbox::error::SandboxError;
-use crate::modules::sandbox::types::{SandboxExecutionOutput, SandboxIdentity};
+use crate::modules::sandbox::types::{SandboxBoxSpec, SandboxExecutionOutput, SandboxIdentity};
 
 #[derive(Debug, Clone)]
 pub struct NativeBackendOptions {
@@ -34,15 +34,22 @@ impl NativeBoxrunBackend {
         Ok(Self { runtime, options })
     }
 
-    pub async fn get_or_create_box(&self, box_name: &str) -> Result<SandboxIdentity, SandboxError> {
+    pub async fn get_or_create_box(
+        &self,
+        box_name: &str,
+        spec: &SandboxBoxSpec,
+    ) -> Result<SandboxIdentity, SandboxError> {
         let mut options = BoxOptions::default();
-        options.rootfs = RootfsSpec::Image(self.options.image.clone());
+        options.rootfs = RootfsSpec::Image(spec.image.clone());
         options.network = NetworkSpec::Isolated;
         options.auto_remove = false;
         options.detach = false;
-        options.cpus = self.options.cpus;
-        options.memory_mib = self.options.memory_mib;
-        options.working_dir = self.options.working_dir.clone();
+        options.cpus = spec.cpus.or(self.options.cpus);
+        options.memory_mib = spec.memory_mib.or(self.options.memory_mib);
+        options.working_dir = spec
+            .working_dir
+            .clone()
+            .or_else(|| self.options.working_dir.clone());
 
         let (boxrun_box, _) = self
             .runtime

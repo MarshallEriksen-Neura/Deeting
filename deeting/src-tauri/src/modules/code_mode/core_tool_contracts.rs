@@ -270,6 +270,55 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
             }),
         },
         CoreToolContract {
+            name: "run_local_code_snippet",
+            description: "Run one assistant-generated code snippet inside the desktop-local BoxLite sandbox. Use this only for direct single-snippet execution in supported runtime images, not for broader orchestration. Supported languages in this slice are python, go, rust, and java. This tool requires the managed desktop sandbox to be ready and never falls back to raw host execution.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "code": { "type": "string", "description": "Required runnable code snippet source." },
+                    "language": {
+                        "type": "string",
+                        "description": "Snippet language.",
+                        "enum": ["python", "go", "rust", "java"]
+                    },
+                    "execution_timeout": {
+                        "type": "integer",
+                        "description": "Execution timeout hint in seconds.",
+                        "default": 30
+                    }
+                },
+                "required": ["code", "language"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "status": {"type": "string"},
+                    "language": {"type": "string"},
+                    "image": {"type": "string"},
+                    "sandbox_id": {"type": ["string", "null"]},
+                    "runtime_mode": {"type": "string"},
+                    "stdout": {"type": "array"},
+                    "stderr": {"type": "array"},
+                    "result": {"type": "array"},
+                    "exit_code": {"type": ["integer", "null"]},
+                    "error": {"type": ["string", "null"]},
+                    "error_code": {"type": ["string", "null"]},
+                    "readiness": {"type": ["object", "null"]}
+                },
+                "required": ["success", "status", "language", "image", "runtime_mode", "stdout", "stderr", "result"]
+            }),
+            permission_scope: &["sandbox_execution", "local_runtime"],
+            read_only: false,
+            mutating: true,
+            risk_level: "MEDIUM",
+            example_arguments: json!({
+                "language": "python",
+                "code": "print('hello from BoxLite')",
+                "execution_timeout": 30
+            }),
+        },
+        CoreToolContract {
             name: "sys_submit_onboarding_request",
             description: "Create or install local desktop capabilities. Use `asset_type='skill'` with payload such as `{repo_url, skill_name}` to install a skill, `asset_type='assistant'` to create a local assistant, or `asset_type='custom_task_agent'` to create a reusable custom task agent with fields such as `{name, description, task_prompt, invocation_kind, callable_mcp_tool_ids, guidance_skill_ids, callable_skill_action_refs, tags, discoverable, is_enabled}`.",
             input_schema: json!({
@@ -303,7 +352,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
         },
         CoreToolContract {
             name: "save_asset",
-            description: "Save a reusable local HTML asset for later retrieval and rendering. Persists HTML plus lightweight asset metadata such as match hints, props hints, and output example schema.",
+            description: "Save a reusable local HTML asset for later retrieval and reference-guided regeneration. Persists source HTML plus lightweight asset metadata such as match hints, props hints, and output example schema.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -792,6 +841,7 @@ fn build_shell_execute_core_tool_contract() -> CoreToolContract {
 fn core_tool_execution_surface(tool_name: &str) -> &'static str {
     match tool_name {
         "execute_code_plan" => "sandbox",
+        "run_local_code_snippet" => "sandbox",
         "browser_open_tab" => "host",
         "browser_wait_for_element" => "host",
         "browser_wait_for_navigation" => "host",
@@ -941,6 +991,18 @@ mod tests {
         assert!(!tool.read_only);
         assert!(tool.mutating);
         assert_eq!(tool.risk_level, "HIGH");
+    }
+
+    #[test]
+    fn core_tool_registry_includes_local_code_snippet_runner() {
+        let tool = desktop_runtime_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == "run_local_code_snippet")
+            .expect("run_local_code_snippet core tool should exist");
+
+        assert!(!tool.read_only);
+        assert!(tool.mutating);
+        assert_eq!(tool.risk_level, "MEDIUM");
     }
 
     #[test]

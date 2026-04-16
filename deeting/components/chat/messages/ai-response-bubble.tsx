@@ -36,6 +36,16 @@ function getRenderableBlockContent(block: MessageBlock): string | null {
   return null;
 }
 
+function isToolActivityBlock(block: MessageBlock): boolean {
+  return (
+    block.type === "tool_call" ||
+    block.type === "tool_result" ||
+    block.type === "ui" ||
+    block.type === "console_log" ||
+    block.type === "execution_section"
+  );
+}
+
 function serializeComparableBlock(block: MessageBlock) {
   switch (block.type) {
     case "text":
@@ -206,6 +216,10 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
         pairedResultIndices.size > 0 ||
         hasCallLinkedUi,
       [hasCallLinkedUi, pairedResultIndices.size, toolCallEntries.length],
+    );
+    const enableRunnableFences = useMemo(
+      () => !parts.some((part) => isToolActivityBlock(part)),
+      [parts],
     );
 
     const consoleTitle = useMemo(() => {
@@ -406,6 +420,8 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                     <TypingTextBlock
                       content={partContent}
                       typingEnabled={typingEnabled}
+                      messageId={messageId}
+                      enableRunnableFences={enableRunnableFences}
                     />
                   </AnimatedBlock>
                 );

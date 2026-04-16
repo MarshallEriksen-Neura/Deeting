@@ -11,10 +11,12 @@ export function CodeBlock({
   children,
   className,
   language,
+  headerActions,
 }: {
   children: React.ReactNode
   className?: string
   language?: string
+  headerActions?: React.ReactNode
 }) {
   const t = useI18n("chat")
   const [collapsed, setCollapsed] = useState(false)
@@ -28,6 +30,7 @@ export function CodeBlock({
       <div className="flex items-center justify-between border-b border-border/60 px-3 py-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
         <span className="font-medium">{label}</span>
         <div className="flex items-center gap-1">
+          {headerActions}
           <HoverCopyButton
             value={rawText}
             className="h-6 w-6 border-transparent bg-transparent shadow-none"

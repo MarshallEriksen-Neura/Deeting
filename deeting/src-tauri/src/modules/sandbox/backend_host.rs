@@ -7,7 +7,7 @@ use tokio::process::Command;
 
 use crate::modules::sandbox::error::SandboxError;
 use crate::modules::sandbox::provider::SandboxProvider;
-use crate::modules::sandbox::types::{SandboxExecutionOutput, SandboxIdentity};
+use crate::modules::sandbox::types::{SandboxBoxSpec, SandboxExecutionOutput, SandboxIdentity};
 use crate::utils::{configure_background_std_command, configure_background_tokio_command};
 
 #[derive(Debug, Clone)]
@@ -41,7 +41,11 @@ impl SandboxProvider for HostPythonBackend {
         "host-python"
     }
 
-    async fn get_or_create_box(&self, box_name: &str) -> Result<SandboxIdentity, SandboxError> {
+    async fn get_or_create_box(
+        &self,
+        box_name: &str,
+        _spec: &SandboxBoxSpec,
+    ) -> Result<SandboxIdentity, SandboxError> {
         Ok(SandboxIdentity {
             sandbox_id: box_name.to_string(),
             sandbox_name: box_name.to_string(),

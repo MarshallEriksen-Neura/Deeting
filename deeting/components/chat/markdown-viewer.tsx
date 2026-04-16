@@ -11,6 +11,7 @@ import {
   SandpackFencePreview,
   supportsSandpackFence,
 } from "@/components/chat/sandpack-fence-preview"
+import { RunnableCodeFence, supportsRunnableFence } from "@/components/chat/runnable-code-fence"
 import { ImageLightbox } from "@/components/ui/image-lightbox"
 import styles from "./markdown-viewer.module.css"
 
@@ -46,15 +47,20 @@ function normalizeMarkdownContent(raw: string) {
 export function MarkdownViewer({
   content,
   className,
+  messageId,
+  enableRunnableFences = false,
 }: {
   content: string
   className?: string
+  messageId?: string
+  enableRunnableFences?: boolean
 }) {
   const normalizedContent = normalizeMarkdownContent(content)
   const isUser = className?.includes("chat-markdown-user") ?? false
   const isAssistant = className?.includes("chat-markdown-assistant") ?? false
   const normalizedClassName =
     className?.replace(MARKDOWN_MARKER_CLASS_REGEX, " ").trim() || undefined
+  let runnableFenceIndex = 0
 
   return (
     <div
@@ -114,6 +120,24 @@ export function MarkdownViewer({
                     className={codeClassName}
                     language={language}
                     source={rawCode}
+                  />
+                )
+              }
+
+              if (
+                enableRunnableFences &&
+                isAssistant &&
+                messageId &&
+                supportsRunnableFence(language, rawCode)
+              ) {
+                const fenceId = `runnable-fence-${runnableFenceIndex++}`
+                return (
+                  <RunnableCodeFence
+                    className={codeClassName}
+                    language={language}
+                    source={rawCode}
+                    messageId={messageId}
+                    fenceId={fenceId}
                   />
                 )
               }

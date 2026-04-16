@@ -2,23 +2,26 @@ use std::path::Path;
 use std::process::Command;
 
 use async_trait::async_trait;
-use boxlite_sidecar_protocol::{BoxliteSidecarConnection, BoxliteSidecarCreateBoxOptions};
+use boxlite_sidecar_protocol::{
+    BoxliteSidecarConnection, BoxliteSidecarCreateBoxOptions, BoxliteSidecarExecutionRequest,
+    BoxliteSidecarFilePayload,
+};
 
 use crate::modules::sandbox::boxlite_sidecar_client::BoxLiteSidecarClient;
 use crate::modules::sandbox::error::SandboxError;
 use crate::modules::sandbox::provider::SandboxProvider;
-use crate::modules::sandbox::types::{SandboxExecutionOutput, SandboxIdentity, SandboxWslStatus};
+use crate::modules::sandbox::types::{
+    SandboxBoxSpec, SandboxExecutionOutput, SandboxExecutionRequest, SandboxIdentity,
+    SandboxWslStatus,
+};
 use crate::utils::configure_background_std_command;
 
 #[derive(Debug, Clone)]
 pub struct WslBackendOptions {
     pub base_url: String,
     pub api_key: Option<String>,
-    pub image: String,
-    pub cpus: Option<u8>,
-    pub memory_mib: Option<u32>,
-    pub working_dir: Option<String>,
     pub python_bin: String,
+    pub working_dir: Option<String>,
 }
 
 #[derive(Clone)]
@@ -69,16 +72,20 @@ impl SandboxProvider for WslBoxrunBackend {
         self.client.probe(&self.connection()).await
     }
 
-    async fn get_or_create_box(&self, box_name: &str) -> Result<SandboxIdentity, SandboxError> {
+    async fn get_or_create_box(
+        &self,
+        box_name: &str,
+        spec: &SandboxBoxSpec,
+    ) -> Result<SandboxIdentity, SandboxError> {
         self.client
             .get_or_create_box(
                 &self.connection(),
                 box_name,
                 BoxliteSidecarCreateBoxOptions {
-                    image: self.options.image.clone(),
-                    cpus: self.options.cpus,
-                    memory_mib: self.options.memory_mib,
-                    working_dir: self.options.working_dir.clone(),
+                    image: spec.image.clone(),
+                    cpus: spec.cpus,
+                    memory_mib: spec.memory_mib,
+                    working_dir: spec.working_dir.clone(),
                 },
             )
             .await
@@ -96,14 +103,30 @@ impl SandboxProvider for WslBoxrunBackend {
         code: &str,
         timeout_seconds: u64,
     ) -> Result<SandboxExecutionOutput, SandboxError> {
+        self.execute(
+            box_id_or_name,
+            SandboxExecutionRequest {
+                command: self.options.python_bin.clone(),
+                args: vec!["-c".to_string(), code.to_string()],
+                files: Vec::new(),
+                stdin: None,
+                timeout_seconds,
+                working_dir: self.options.working_dir.clone(),
+            },
+        )
+        .await
+    }
+
+    async fn execute(
+        &self,
+        box_id_or_name: &str,
+        request: SandboxExecutionRequest,
+    ) -> Result<SandboxExecutionOutput, SandboxError> {
         self.client
-            .run_python(
+            .execute(
                 &self.connection(),
                 box_id_or_name,
-                self.options.python_bin.as_str(),
-                code,
-                timeout_seconds,
-                self.options.working_dir.as_deref(),
+                to_sidecar_execution_request(request),
             )
             .await
     }
@@ -226,6 +249,26 @@ pub fn windows_path_to_wsl(path: &Path) -> Result<String, SandboxError> {
 
 pub fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn to_sidecar_execution_request(
+    request: SandboxExecutionRequest,
+) -> BoxliteSidecarExecutionRequest {
+    BoxliteSidecarExecutionRequest {
+        command: request.command,
+        args: request.args,
+        files: request
+            .files
+            .into_iter()
+            .map(|file| BoxliteSidecarFilePayload {
+                path: file.path,
+                content: file.content,
+            })
+            .collect::<Vec<BoxliteSidecarFilePayload>>(),
+        stdin: request.stdin,
+        timeout_seconds: request.timeout_seconds,
+        working_dir: request.working_dir,
+    }
 }
 
 fn normalize_windows_path_for_wsl(raw: &str) -> String {

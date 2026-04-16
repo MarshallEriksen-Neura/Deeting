@@ -9,6 +9,7 @@ type Translator = ReturnType<typeof useI18n>;
 const INTERNAL_TOOL_NAMES = new Set([
   "search_sdk",
   "execute_code_plan",
+  "run_local_code_snippet",
   "consult_expert_network",
   "attach_capability",
   "detach_capability",
@@ -19,6 +20,7 @@ const INTERNAL_TOOL_NAMES = new Set([
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
   search_sdk: "SDK Search",
   execute_code_plan: "Code Execution",
+  run_local_code_snippet: "Local Code Run",
   consult_expert_network: "Expert Consult",
   attach_capability: "Activate Skill",
   detach_capability: "Deactivate Skill",
@@ -472,6 +474,15 @@ export function resolveToolActionPreview(
   const title =
     humanizeToolName(name) ?? translate?.("toolGroup.preview.fallbackName") ?? "Tool";
   const normalizedStatus = (status ?? "").trim().toLowerCase();
+  const normalizedName = name?.toLowerCase() ?? "";
+  const parsedArgs = parseToolArgs(args);
+  if (normalizedName === "run_local_code_snippet") {
+    const language =
+      pickFirstString(parsedArgs ?? {}, ["language"])?.toUpperCase() ?? title;
+    return translate
+      ? translate("toolGroup.preview.runningLocalSnippet", { language })
+      : `Running local ${language} snippet`;
+  }
   if (normalizedStatus === "requires_approval") {
     return translate
       ? translate("toolGroup.preview.pendingApproval", { name: title })
@@ -509,7 +520,6 @@ export function resolveToolActionPreview(
       : `Working with ${subject.value}`;
   }
 
-  const normalizedName = name?.toLowerCase() ?? "";
   if (normalizedName.includes("search")) {
     return translate
       ? translate("toolGroup.preview.searchingWith", { name: title })
@@ -551,10 +561,32 @@ export function resolveToolResultPreview({
 >): string | null {
   const title =
     humanizeToolName(name) ?? translate?.("toolGroup.preview.fallbackName") ?? "Tool";
+  const normalizedName = name?.toLowerCase() ?? "";
   if (isPendingApproval) {
     return translate
       ? translate("toolGroup.preview.pendingApproval", { name: title })
       : `Waiting for approval to continue with ${title}`;
+  }
+
+  const localSnippet = normalizedName === "run_local_code_snippet" ? toRecord(result) : null;
+  if (localSnippet) {
+    const language =
+      pickFirstString(localSnippet, ["language"])?.toUpperCase() ?? "code";
+    const success = localSnippet.success === true;
+    const blocked = localSnippet.status === "blocked";
+    if (success) {
+      return translate
+        ? translate("toolGroup.preview.completedLocalSnippet", { language })
+        : `Ran local ${language} snippet`;
+    }
+    if (blocked) {
+      return translate
+        ? translate("toolGroup.preview.blockedLocalSnippet", { language })
+        : `Local ${language} sandbox is unavailable`;
+    }
+    return translate
+      ? translate("toolGroup.preview.failedLocalSnippet", { language })
+      : `Local ${language} snippet failed`;
   }
 
   if (uiBlocks.length > 0) {

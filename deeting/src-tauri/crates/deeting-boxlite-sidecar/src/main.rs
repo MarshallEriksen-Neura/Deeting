@@ -1,11 +1,13 @@
 use std::io::Write;
+use std::path::Path;
 use std::time::Duration;
 
 use boxlite::{BoxCommand, BoxOptions, BoxliteError, BoxliteRestOptions, BoxliteRuntime, RootfsSpec};
 use boxlite_sidecar_protocol::{
     BoxliteSidecarConnection, BoxliteSidecarCreateBoxOptions, BoxliteSidecarEnvelope,
-    BoxliteSidecarErrorKind, BoxliteSidecarExecutionOutput, BoxliteSidecarIdentity,
-    BoxliteSidecarRequest, BoxliteSidecarResponseEnvelope, BoxliteSidecarResponsePayload,
+    BoxliteSidecarErrorKind, BoxliteSidecarExecutionOutput, BoxliteSidecarExecutionRequest,
+    BoxliteSidecarFilePayload, BoxliteSidecarIdentity, BoxliteSidecarRequest,
+    BoxliteSidecarResponseEnvelope, BoxliteSidecarResponsePayload,
 };
 use futures_util::StreamExt;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -105,13 +107,10 @@ async fn dispatch_request(
             }
             Ok(BoxliteSidecarResponsePayload::StopBox { ok: true })
         }
-        BoxliteSidecarRequest::RunPython {
+        BoxliteSidecarRequest::Execute {
             connection,
             box_id_or_name,
-            python_bin,
-            code,
-            timeout_seconds,
-            working_dir,
+            request,
         } => {
             let runtime = build_runtime(&connection)?;
             let litebox = runtime
@@ -125,13 +124,9 @@ async fn dispatch_request(
                     )
                 })?;
 
+            let execution_request = validate_execution_request(&request)?;
             let mut execution = litebox
-                .exec(build_python_command(
-                    python_bin.as_str(),
-                    code.as_str(),
-                    timeout_seconds,
-                    working_dir.as_deref(),
-                ))
+                .exec(build_execution_command(&execution_request)?)
                 .await
                 .map_err(map_boxlite_error)?;
 
@@ -150,7 +145,7 @@ async fn dispatch_request(
             }
 
             let result = execution.wait().await.map_err(map_boxlite_error)?;
-            Ok(BoxliteSidecarResponsePayload::RunPython {
+            Ok(BoxliteSidecarResponsePayload::Execute {
                 data: BoxliteSidecarExecutionOutput {
                     stdout,
                     stderr,
@@ -208,23 +203,160 @@ fn build_box_options(options: &BoxliteSidecarCreateBoxOptions) -> BoxOptions {
     }
 }
 
-fn build_python_command(
-    python_bin: &str,
-    code: &str,
-    timeout_seconds: u64,
-    working_dir: Option<&str>,
-) -> BoxCommand {
-    let mut command = BoxCommand::new(python_bin.trim())
-        .arg("-c")
-        .arg(code.to_string())
-        .timeout(Duration::from_secs(timeout_seconds.max(1)));
-    if let Some(working_dir) = working_dir {
-        let trimmed = working_dir.trim();
-        if !trimmed.is_empty() {
-            command = command.working_dir(trimmed.to_string());
-        }
+fn validate_execution_request(
+    request: &BoxliteSidecarExecutionRequest,
+) -> Result<BoxliteSidecarExecutionRequest, (BoxliteSidecarErrorKind, String)> {
+    let command = request.command.trim();
+    if command.is_empty() {
+        return Err((
+            BoxliteSidecarErrorKind::Validation,
+            "command is required".to_string(),
+        ));
     }
-    command
+
+    let mut total_bytes = 0usize;
+    if request.stdin.is_some() {
+        return Err((
+            BoxliteSidecarErrorKind::Unavailable,
+            "stdin streaming is not supported by the current BoxLite sidecar build".to_string(),
+        ));
+    }
+    for file in &request.files {
+        total_bytes = total_bytes.saturating_add(file.content.len());
+        if total_bytes > 256 * 1024 {
+            return Err((
+                BoxliteSidecarErrorKind::Validation,
+                "execution payload is too large".to_string(),
+            ));
+        }
+        normalize_staged_file_path(file.path.as_str())?;
+    }
+
+    Ok(request.clone())
+}
+
+fn build_execution_command(
+    request: &BoxliteSidecarExecutionRequest,
+) -> Result<BoxCommand, (BoxliteSidecarErrorKind, String)> {
+    let timeout = Duration::from_secs(request.timeout_seconds.max(1));
+    if request.files.is_empty() {
+        let mut command = BoxCommand::new(request.command.trim())
+            .timeout(timeout);
+        for arg in &request.args {
+            command = command.arg(arg.clone());
+        }
+        if let Some(working_dir) = request
+            .working_dir
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            command = command.working_dir(working_dir.to_string());
+        }
+        return Ok(command);
+    }
+
+    let script = build_staged_execution_script(request)?;
+    Ok(BoxCommand::new("sh")
+        .arg("-lc")
+        .arg(script)
+        .timeout(timeout))
+}
+
+fn build_staged_execution_script(
+    request: &BoxliteSidecarExecutionRequest,
+) -> Result<String, (BoxliteSidecarErrorKind, String)> {
+    let mut lines = vec!["set -eu".to_string()];
+    if let Some(working_dir) = request
+        .working_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        lines.push(format!("mkdir -p {}", shell_quote(working_dir)));
+        lines.push(format!("cd {}", shell_quote(working_dir)));
+    }
+
+    for (index, file) in request.files.iter().enumerate() {
+        let normalized_path = normalize_staged_file_path(file.path.as_str())?;
+        if let Some(parent) = parent_dir_from_relative_path(normalized_path.as_str()) {
+            lines.push(format!("mkdir -p {}", shell_quote(parent.as_str())));
+        }
+        let marker = unique_heredoc_marker(file, index);
+        lines.push(format!("cat <<'{marker}' > {}", shell_quote(normalized_path.as_str())));
+        lines.push(file.content.clone());
+        lines.push(marker);
+    }
+
+    let mut command_line = shell_quote(request.command.trim());
+    for arg in &request.args {
+        command_line.push(' ');
+        command_line.push_str(shell_quote(arg).as_str());
+    }
+    lines.push(format!("exec {command_line}"));
+    Ok(lines.join("\n"))
+}
+
+fn normalize_staged_file_path(
+    raw_path: &str,
+) -> Result<String, (BoxliteSidecarErrorKind, String)> {
+    let normalized = raw_path.trim().replace('\\', "/");
+    if normalized.is_empty() {
+        return Err((
+            BoxliteSidecarErrorKind::Validation,
+            "file path is required".to_string(),
+        ));
+    }
+    if normalized.starts_with('/') {
+        return Err((
+            BoxliteSidecarErrorKind::Validation,
+            format!("absolute file paths are not allowed: {normalized}"),
+        ));
+    }
+
+    let mut parts = Vec::new();
+    for segment in normalized.split('/') {
+        let trimmed = segment.trim();
+        if trimmed.is_empty() || trimmed == "." {
+            continue;
+        }
+        if trimmed == ".." {
+            return Err((
+                BoxliteSidecarErrorKind::Validation,
+                format!("parent traversal is not allowed in file paths: {normalized}"),
+            ));
+        }
+        parts.push(trimmed);
+    }
+
+    if parts.is_empty() {
+        return Err((
+            BoxliteSidecarErrorKind::Validation,
+            format!("invalid file path: {raw_path}"),
+        ));
+    }
+
+    Ok(parts.join("/"))
+}
+
+fn parent_dir_from_relative_path(path: &str) -> Option<String> {
+    Path::new(path)
+        .parent()
+        .map(|parent| parent.to_string_lossy().replace('\\', "/"))
+        .map(|parent| parent.trim().trim_matches('/').to_string())
+        .filter(|parent| !parent.is_empty())
+}
+
+fn unique_heredoc_marker(file: &BoxliteSidecarFilePayload, index: usize) -> String {
+    let mut marker = format!("__DEETING_FILE_{index}__");
+    while file.content.contains(marker.as_str()) {
+        marker.push_str("_X");
+    }
+    marker
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
 fn collect_output_lines(target: &mut Vec<String>, chunk: &str) {
@@ -268,4 +400,36 @@ fn map_boxlite_error(err: BoxliteError) -> (BoxliteSidecarErrorKind, String) {
     };
 
     (kind, message)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_staged_execution_script_writes_files_before_exec() {
+        let script = build_staged_execution_script(&BoxliteSidecarExecutionRequest {
+            command: "python".to_string(),
+            args: vec!["main.py".to_string()],
+            files: vec![BoxliteSidecarFilePayload {
+                path: "src/main.py".to_string(),
+                content: "print('hello')".to_string(),
+            }],
+            stdin: None,
+            timeout_seconds: 5,
+            working_dir: Some("/workspace".to_string()),
+        })
+        .expect("script");
+
+        assert!(script.contains("cd '/workspace'"));
+        assert!(script.contains("mkdir -p 'src'"));
+        assert!(script.contains("cat <<'__DEETING_FILE_0__' > 'src/main.py'"));
+        assert!(script.contains("exec 'python' 'main.py'"));
+    }
+
+    #[test]
+    fn normalize_staged_file_path_rejects_parent_traversal() {
+        let error = normalize_staged_file_path("../secret.txt").expect_err("expected rejection");
+        assert_eq!(error.0, BoxliteSidecarErrorKind::Validation);
+    }
 }

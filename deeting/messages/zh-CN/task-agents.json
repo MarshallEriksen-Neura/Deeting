@@ -145,7 +145,7 @@
         "isEnabled": "已启用",
         "boundTools": "已绑定工具",
         "boundSkills": "已绑定技能",
-        "boundAsset": "绑定资产"
+        "boundAsset": "参考资产"
       },
       "placeholders": {
         "name": "例如：发布说明撰写器",
@@ -249,10 +249,10 @@
       "toolsDescription": "选择该智能体可调用的本地 MCP 工具。",
       "skillsTitle": "已安装技能",
       "skillsDescription": "这里只能绑定已在本地安装的技能。",
-      "assetTitle": "绑定资产",
-      "assetDescription": "选择一个已保存的本地 HTML 资产，该 agent 执行时自动展示。",
+      "assetTitle": "参考资产",
+      "assetDescription": "选择一个已保存的本地 HTML 资产，在该 agent 执行时作为参考上下文提供。",
       "clearAsset": "清空",
-      "assetBound": "已绑定",
+      "assetBound": "已引用",
       "searchToolsPlaceholder": "按名称、服务名或状态搜索工具...",
       "searchSkillsPlaceholder": "按技能 ID、版本或运行时搜索...",
       "selectedOnly": "只看已选",

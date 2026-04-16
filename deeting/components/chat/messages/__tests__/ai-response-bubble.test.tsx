@@ -29,7 +29,20 @@ jest.mock("@/hooks/use-i18n", () => ({
 }));
 
 jest.mock("@/components/chat/markdown-viewer", () => ({
-  MarkdownViewer: ({ content }: { content: string }) => <div>{content}</div>,
+  MarkdownViewer: ({
+    content,
+    enableRunnableFences,
+  }: {
+    content: string
+    enableRunnableFences?: boolean
+  }) => (
+    <div
+      data-testid="markdown-viewer"
+      data-enable-runnable-fences={enableRunnableFences ? "true" : "false"}
+    >
+      {content}
+    </div>
+  ),
 }));
 
 jest.mock("next/dynamic", () => ({
@@ -389,6 +402,47 @@ describe("AIResponseBubble debug panel", () => {
     );
     expect(rendered.indexOf("Shell Execute")).toBeLessThan(
       rendered.indexOf("Final answer"),
+    );
+  });
+
+  it("keeps runnable fences enabled for pure assistant text messages", () => {
+    const parts: MessageBlock[] = [
+      { id: "text-only-1", type: "text", content: "```python\nprint('hi')\n```" },
+    ];
+
+    render(<AIResponseBubble messageId="assistant-text-only-1" parts={parts} />);
+
+    expect(screen.getByTestId("markdown-viewer")).toHaveAttribute(
+      "data-enable-runnable-fences",
+      "true",
+    );
+  });
+
+  it("disables runnable fences when the assistant message already contains tool activity", () => {
+    const parts: MessageBlock[] = [
+      { id: "text-mixed-1", type: "text", content: "```python\nprint('hi')\n```" },
+      {
+        id: "tool-mixed-1",
+        type: "tool_call",
+        callId: "call-mixed-1",
+        toolName: "execute_code_plan",
+        status: "success",
+      },
+      {
+        id: "result-mixed-1",
+        type: "tool_result",
+        callId: "call-mixed-1",
+        toolName: "execute_code_plan",
+        status: "success",
+        result: { ok: true },
+      },
+    ];
+
+    render(<AIResponseBubble messageId="assistant-mixed-1" parts={parts} />);
+
+    expect(screen.getByTestId("markdown-viewer")).toHaveAttribute(
+      "data-enable-runnable-fences",
+      "false",
     );
   });
 

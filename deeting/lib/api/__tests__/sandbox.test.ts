@@ -5,6 +5,7 @@ import {
   prepareLocalSandbox,
   rebuildLocalSandboxRuntime,
   repairLocalSandbox,
+  runLocalSandboxCodeSnippet,
 } from "@/lib/api/sandbox"
 import { invoke } from "@tauri-apps/api/core"
 
@@ -216,5 +217,43 @@ describe("sandbox api", () => {
     expect(mockInvoke).toHaveBeenNthCalledWith(4, "repair_local_sandbox", undefined)
     expect(mockInvoke).toHaveBeenNthCalledWith(5, "rebuild_local_sandbox_runtime", undefined)
     expect(mockInvoke).toHaveBeenNthCalledWith(6, "get_local_sandbox_install_guide", undefined)
+  })
+
+  it("runs local code snippets through the sandbox command", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValueOnce({
+      success: true,
+      status: "success",
+      language: "python",
+      image: "python:slim",
+      sandbox_id: "box-1",
+      runtime_mode: "sandbox",
+      stdout: ["hello"],
+      stderr: [],
+      result: ["hello"],
+      exit_code: 0,
+      error: null,
+      error_code: null,
+      readiness: null,
+    } as unknown)
+
+    const result = await runLocalSandboxCodeSnippet({
+      sessionId: "session-1",
+      language: "python",
+      code: "print('hello')",
+      executionTimeoutSecs: 45,
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.image).toBe("python:slim")
+    expect(mockInvoke).toHaveBeenCalledWith("run_local_sandbox_code_snippet", {
+      payload: {
+        session_id: "session-1",
+        language: "python",
+        code: "print('hello')",
+        execution_timeout_secs: 45,
+      },
+    })
   })
 })

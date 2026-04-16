@@ -47,6 +47,7 @@ pub(crate) struct WorkerTaskPacketInput {
     pub(crate) parent_allowed_tool_names: Vec<String>,
     pub(crate) prefer_workflow_runtime: bool,
     pub(crate) explicit_task_agent_id: Option<String>,
+    pub(crate) bound_asset_reference: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -277,7 +278,11 @@ pub(crate) fn build_worker_task_packet(
     );
     let required_capabilities = bound_capability_refs(&selection.profile);
     let candidate_capabilities = input.parent_allowed_tool_names.clone();
-    let allowed_actions = build_allowed_actions(&selection.profile, &required_capabilities);
+    let allowed_actions = build_allowed_actions(
+        &selection.profile,
+        &required_capabilities,
+        input.bound_asset_reference.as_ref(),
+    );
     let output_contract = build_output_contract(
         selection.profile.invocation_kind.as_str(),
         task_kind.as_str(),
@@ -301,6 +306,7 @@ pub(crate) fn build_worker_task_packet(
             "parent_allowed_tool_names": input.parent_allowed_tool_names,
             "prefer_workflow_runtime": input.prefer_workflow_runtime,
             "explicit_task_agent_id": input.explicit_task_agent_id,
+            "bound_asset_reference": input.bound_asset_reference,
         }),
         required_capabilities: if required_capabilities.is_empty() {
             vec!["final_response_only".to_string()]
@@ -590,12 +596,32 @@ fn build_context_summary(
     } else {
         "disabled"
     };
-    format!(
+    let base = format!(
         "The desktop runtime already selected route '{}' and chose worker '{}' from {} candidate(s). Workflow handoff preference is {}. Treat this as a bounded delegated subtask, not a fresh routing problem.",
         input.route,
         selection.profile.name,
         selection.candidate_count,
         workflow_mode
+    );
+    let Some(reference) = input.bound_asset_reference.as_ref() else {
+        return base;
+    };
+    let asset_label = reference
+        .get("title")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            reference
+                .get("asset_id")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+        })
+        .unwrap_or("saved local HTML asset");
+    format!(
+        "{base} A bound saved local HTML asset is attached as reference context: '{}'. Use it as structure/style guidance when relevant, not as a runtime widget to auto-display.",
+        asset_label
     )
 }
 
@@ -613,6 +639,7 @@ fn bound_capability_refs(profile: &CustomTaskAgentProfile) -> Vec<String> {
 fn build_allowed_actions(
     profile: &CustomTaskAgentProfile,
     required_capabilities: &[String],
+    bound_asset_reference: Option<&Value>,
 ) -> Vec<String> {
     let mut actions = vec![
         "Read the runtime-authored task packet and follow it literally.".to_string(),
@@ -627,6 +654,12 @@ fn build_allowed_actions(
     if profile.source_kind.as_deref() == Some("llm_wiki_maintainer") {
         actions.push(
             "Use the maintainer corpus lane for fresh local evidence when that callable is bound."
+                .to_string(),
+        );
+    }
+    if bound_asset_reference.is_some() {
+        actions.push(
+            "Use `bound_asset_reference` as reference context only. Do not assume the saved asset will auto-render in chat."
                 .to_string(),
         );
     }
@@ -713,6 +746,7 @@ mod tests {
     use crate::modules::custom_task_agents::types::{
         CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
     };
+    use serde_json::json;
     use std::collections::HashMap;
 
     fn build_profile(
@@ -909,6 +943,7 @@ mod tests {
                 parent_allowed_tool_names: vec!["search_sdk".to_string()],
                 prefer_workflow_runtime: true,
                 explicit_task_agent_id: None,
+                bound_asset_reference: None,
             },
         );
 
@@ -920,5 +955,54 @@ mod tests {
         );
         assert_eq!(packet.task_kind, "analysis");
         assert_eq!(packet.deliverable_kind, "structured_findings");
+    }
+
+    #[test]
+    fn worker_task_packet_includes_bound_asset_reference_context() {
+        let selection = select_custom_task_agent_candidate(
+            "summarize with the release-notes worker",
+            &[build_profile(
+                "release.worker",
+                "Release Worker",
+                "Summarizes updates",
+                CustomTaskAgentInvocationKind::Chat,
+                &["release", "notes"],
+                false,
+                &["tool.search"],
+            )],
+            &HashMap::new(),
+        )
+        .expect("selection");
+
+        let packet = build_worker_task_packet(
+            &selection,
+            WorkerTaskPacketInput {
+                task_id: "exec-2".to_string(),
+                route: "worker".to_string(),
+                goal: "Summarize release updates".to_string(),
+                user_query: "Summarize release updates".to_string(),
+                raw_user_text: Some("Summarize release updates".to_string()),
+                image_urls: Vec::new(),
+                parent_allowed_tool_names: vec!["search_sdk".to_string()],
+                prefer_workflow_runtime: false,
+                explicit_task_agent_id: None,
+                bound_asset_reference: Some(json!({
+                    "asset_id": "release-notes-card",
+                    "title": "Release Notes Card",
+                    "render_hint": "release-card"
+                })),
+            },
+        );
+
+        assert!(packet.context_summary.contains("reference context"));
+        assert!(packet.context_summary.contains("Release Notes Card"));
+        assert_eq!(
+            packet.relevant_inputs["bound_asset_reference"]["asset_id"],
+            json!("release-notes-card")
+        );
+        assert!(packet
+            .allowed_actions
+            .iter()
+            .any(|item| item.contains("bound_asset_reference")));
     }
 }

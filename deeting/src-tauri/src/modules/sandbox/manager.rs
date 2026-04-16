@@ -13,9 +13,10 @@ use tokio::task::JoinHandle;
 use crate::modules::sandbox::error::SandboxError;
 use crate::modules::sandbox::provider::SandboxProvider;
 use crate::modules::sandbox::types::{
-    SandboxBoxLiteStatus, SandboxExecutionProbe, SandboxExecutionProbeStatus, SandboxInstallGuide,
-    SandboxLeaseInfo, SandboxReadinessReport, SandboxReadinessStatus, SandboxRunResult,
-    SandboxRuntimeMode, SandboxWslStatus,
+    SandboxBoxLiteStatus, SandboxBoxSpec, SandboxExecutionProbe, SandboxExecutionProbeStatus,
+    SandboxExecutionRequest, SandboxInstallGuide, SandboxLeaseInfo, SandboxReadinessReport,
+    SandboxReadinessStatus, SandboxRunResult, SandboxRuntimeMode, SandboxSnippetLanguage,
+    SandboxSnippetRunResponse, SandboxWslStatus,
 };
 
 #[cfg(target_os = "windows")]
@@ -120,6 +121,7 @@ impl SandboxProvider for DisabledProvider {
     async fn get_or_create_box(
         &self,
         _box_name: &str,
+        _spec: &SandboxBoxSpec,
     ) -> Result<crate::modules::sandbox::types::SandboxIdentity, SandboxError> {
         Err(SandboxError::Unavailable(self.reason.clone()))
     }
@@ -160,6 +162,15 @@ impl SandboxRuntimeManager {
             active_ids: Arc::new(RwLock::new(HashSet::new())),
             run_locks: Arc::new(RwLock::new(HashMap::new())),
             cleanup_task: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    fn default_box_spec(&self) -> SandboxBoxSpec {
+        SandboxBoxSpec {
+            image: self.options.image.clone(),
+            cpus: self.options.cpus,
+            memory_mib: self.options.memory_mib,
+            working_dir: self.options.working_dir.clone(),
         }
     }
 
@@ -377,23 +388,33 @@ impl SandboxRuntimeManager {
         session_id: &str,
     ) -> Result<SandboxLeaseInfo, SandboxError> {
         let normalized_session = normalize_session_id(session_id)?;
+        let box_spec = self.default_box_spec();
+        self.get_or_create_sandbox_with_spec(&normalized_session, &box_spec)
+            .await
+    }
+
+    async fn get_or_create_sandbox_with_spec(
+        &self,
+        lease_key: &str,
+        box_spec: &SandboxBoxSpec,
+    ) -> Result<SandboxLeaseInfo, SandboxError> {
         let now_ms = now_unix_ms();
 
-        if let Some(existing) = self.get_valid_lease(&normalized_session, now_ms).await {
+        if let Some(existing) = self.get_valid_lease(lease_key, now_ms).await {
             return Ok(existing);
         }
 
         self.ensure_capacity().await?;
 
-        let sandbox_name = session_to_box_name(&normalized_session);
+        let sandbox_name = session_to_box_name(lease_key);
         let backend = self.current_backend().await;
-        let identity = backend.get_or_create_box(&sandbox_name).await?;
+        let identity = backend.get_or_create_box(&sandbox_name, box_spec).await?;
         let expires_at = now_ms + self.options.default_timeout.as_millis() as i64;
 
         {
             let mut leases = self.session_leases.write().await;
             leases.insert(
-                normalized_session.clone(),
+                lease_key.to_string(),
                 SessionLease {
                     sandbox_id: identity.sandbox_id.clone(),
                     sandbox_name: identity.sandbox_name.clone(),
@@ -407,7 +428,7 @@ impl SandboxRuntimeManager {
         }
 
         Ok(SandboxLeaseInfo {
-            session_id: normalized_session,
+            session_id: lease_key.to_string(),
             sandbox_id: identity.sandbox_id,
             sandbox_name: identity.sandbox_name,
             expires_at_unix_ms: expires_at,
@@ -482,6 +503,87 @@ impl SandboxRuntimeManager {
 
         self.execute_session_code(&normalized_session, code, timeout_secs)
             .await
+    }
+
+    pub async fn run_local_code_snippet(
+        &self,
+        session_id: &str,
+        language: SandboxSnippetLanguage,
+        code: &str,
+        execution_timeout_secs: Option<u64>,
+    ) -> SandboxSnippetRunResponse {
+        let current_runtime_mode = self.runtime_mode().await;
+        let trimmed_code = code.trim();
+        if trimmed_code.is_empty() {
+            return snippet_validation_response(
+                &language,
+                current_runtime_mode,
+                "code is required",
+            );
+        }
+
+        let normalized_session = match normalize_session_id(session_id) {
+            Ok(value) => value,
+            Err(err) => {
+                return snippet_error_response(
+                    &language,
+                    current_runtime_mode,
+                    err.user_message(),
+                    Some(err.code().to_string()),
+                    None,
+                );
+            }
+        };
+
+        let report = match self
+            .ensure_launch_policy(SandboxLaunchPolicy::StrictSandbox)
+            .await
+        {
+            Ok(report) => report,
+            Err(_) => self.status_report().await,
+        };
+        if report.runtime_mode != SandboxRuntimeMode::Sandbox {
+            return snippet_blocked_response(&language, &report);
+        }
+
+        let timeout_secs = execution_timeout_secs
+            .unwrap_or(30)
+            .max(MIN_EXEC_TIMEOUT_SECS);
+        let lease_key = format!("{normalized_session}::snippet::{}", language.as_str());
+        let box_spec = language.box_spec();
+        let request = language.build_execution_request(trimmed_code, timeout_secs);
+        let lock = self.session_run_lock(&lease_key).await;
+        let lock_wait_secs = timeout_secs.saturating_add(5).max(1);
+        let _guard =
+            match tokio::time::timeout(Duration::from_secs(lock_wait_secs), lock.lock()).await {
+                Ok(guard) => guard,
+                Err(_) => {
+                    return snippet_error_response(
+                        &language,
+                        report.runtime_mode,
+                        format!(
+                            "session {} is busy (lock wait {}s exceeded)",
+                            normalized_session, lock_wait_secs
+                        ),
+                        Some("SANDBOX_SESSION_BUSY".to_string()),
+                        Some(self.status_report().await),
+                    );
+                }
+            };
+
+        match self
+            .execute_session_request(&lease_key, &box_spec, request)
+            .await
+        {
+            Ok(run) => snippet_success_response(&language, report.runtime_mode, run),
+            Err(err) => snippet_error_response(
+                &language,
+                report.runtime_mode,
+                err.user_message(),
+                Some(err.code().to_string()),
+                Some(self.status_report().await),
+            ),
+        }
     }
 
     async fn execute_session_code(
@@ -616,6 +718,67 @@ impl SandboxRuntimeManager {
             "session {} is busy",
             normalized_session
         )))
+    }
+
+    async fn execute_session_request(
+        &self,
+        lease_key: &str,
+        box_spec: &SandboxBoxSpec,
+        request: SandboxExecutionRequest,
+    ) -> Result<SandboxRunResult, SandboxError> {
+        for attempt in 0..SESSION_BUSY_RETRY_ATTEMPTS {
+            let lease = self
+                .get_or_create_sandbox_with_spec(lease_key, box_spec)
+                .await?;
+            let backend = self.current_backend().await;
+            match backend.execute(&lease.sandbox_id, request.clone()).await {
+                Ok(output) => {
+                    self.touch_lease(lease_key).await;
+                    let result = if output.exit_code == 0 {
+                        output.stdout.clone()
+                    } else {
+                        Vec::new()
+                    };
+                    return Ok(SandboxRunResult {
+                        sandbox_id: lease.sandbox_id,
+                        stdout: output.stdout,
+                        stderr: output.stderr,
+                        result,
+                        exit_code: output.exit_code,
+                    });
+                }
+                Err(err)
+                    if is_session_busy_error(&err) && attempt + 1 < SESSION_BUSY_RETRY_ATTEMPTS =>
+                {
+                    log::warn!(
+                        "sandbox session busy for key {} (attempt {}/{}), recreating sandbox",
+                        lease_key,
+                        attempt + 1,
+                        SESSION_BUSY_RETRY_ATTEMPTS
+                    );
+                    let _ = self.stop_sandbox(&lease.sandbox_id, Some(lease_key)).await;
+                    continue;
+                }
+                Err(err)
+                    if is_missing_sandbox_error(&err)
+                        && attempt + 1 < SESSION_BUSY_RETRY_ATTEMPTS =>
+                {
+                    log::warn!(
+                        "sandbox missing for key {} (attempt {}/{}), rebuilding runtime",
+                        lease_key,
+                        attempt + 1,
+                        SESSION_BUSY_RETRY_ATTEMPTS
+                    );
+                    self.cleanup_missing_sandbox_state(lease_key, &lease, &backend)
+                        .await;
+                    let _ = self.prepare().await;
+                    continue;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+
+        Err(SandboxError::Busy(format!("session {} is busy", lease_key)))
     }
 
     async fn cleanup_missing_sandbox_state(
@@ -1009,11 +1172,8 @@ impl SandboxRuntimeManager {
         let backend = WslBoxrunBackend::new(WslBackendOptions {
             base_url: bridge_url.to_string(),
             api_key: options.bridge_api_key.clone(),
-            image: options.image.clone(),
-            cpus: options.cpus,
-            memory_mib: options.memory_mib,
-            working_dir: options.working_dir.clone(),
             python_bin: options.python_bin.clone(),
+            working_dir: options.working_dir.clone(),
         })?;
 
         let provider: Arc<dyn SandboxProvider> = Arc::new(backend);
@@ -1047,6 +1207,114 @@ fn current_platform() -> &'static str {
         "macos"
     } else {
         "linux"
+    }
+}
+
+fn snippet_validation_response(
+    language: &SandboxSnippetLanguage,
+    runtime_mode: SandboxRuntimeMode,
+    message: impl Into<String>,
+) -> SandboxSnippetRunResponse {
+    snippet_error_response(
+        language,
+        runtime_mode,
+        message,
+        Some("SANDBOX_VALIDATION_ERROR".to_string()),
+        None,
+    )
+}
+
+fn snippet_blocked_response(
+    language: &SandboxSnippetLanguage,
+    report: &SandboxReadinessReport,
+) -> SandboxSnippetRunResponse {
+    SandboxSnippetRunResponse {
+        success: false,
+        status: "blocked".to_string(),
+        language: language.as_str().to_string(),
+        image: language.image().to_string(),
+        sandbox_id: None,
+        runtime_mode: report.runtime_mode,
+        stdout: Vec::new(),
+        stderr: Vec::new(),
+        result: Vec::new(),
+        exit_code: None,
+        error: Some(
+            report
+                .blocking_reason
+                .clone()
+                .unwrap_or_else(|| "sandbox is not ready for local code execution".to_string()),
+        ),
+        error_code: Some(sandbox_status_error_code(report.status).to_string()),
+        readiness: Some(report.clone()),
+    }
+}
+
+fn snippet_success_response(
+    language: &SandboxSnippetLanguage,
+    runtime_mode: SandboxRuntimeMode,
+    run: SandboxRunResult,
+) -> SandboxSnippetRunResponse {
+    SandboxSnippetRunResponse {
+        success: run.exit_code == 0,
+        status: if run.exit_code == 0 {
+            "success".to_string()
+        } else {
+            "failed".to_string()
+        },
+        language: language.as_str().to_string(),
+        image: language.image().to_string(),
+        sandbox_id: Some(run.sandbox_id),
+        runtime_mode,
+        stdout: run.stdout,
+        stderr: run.stderr,
+        result: run.result,
+        exit_code: Some(run.exit_code),
+        error: if run.exit_code == 0 {
+            None
+        } else {
+            Some("local code execution failed".to_string())
+        },
+        error_code: if run.exit_code == 0 {
+            None
+        } else {
+            Some("SANDBOX_EXECUTION_FAILED".to_string())
+        },
+        readiness: None,
+    }
+}
+
+fn snippet_error_response(
+    language: &SandboxSnippetLanguage,
+    runtime_mode: SandboxRuntimeMode,
+    message: impl Into<String>,
+    error_code: Option<String>,
+    readiness: Option<SandboxReadinessReport>,
+) -> SandboxSnippetRunResponse {
+    SandboxSnippetRunResponse {
+        success: false,
+        status: "failed".to_string(),
+        language: language.as_str().to_string(),
+        image: language.image().to_string(),
+        sandbox_id: None,
+        runtime_mode,
+        stdout: Vec::new(),
+        stderr: Vec::new(),
+        result: Vec::new(),
+        exit_code: None,
+        error: Some(message.into()),
+        error_code,
+        readiness,
+    }
+}
+
+fn sandbox_status_error_code(status: SandboxReadinessStatus) -> &'static str {
+    match status {
+        SandboxReadinessStatus::NeedsWsl => "SANDBOX_NEEDS_WSL",
+        SandboxReadinessStatus::NeedsBoxLite => "SANDBOX_NEEDS_BOXLITE",
+        SandboxReadinessStatus::RepairNeeded => "SANDBOX_REPAIR_REQUIRED",
+        SandboxReadinessStatus::Unsupported => "SANDBOX_UNSUPPORTED_PLATFORM",
+        SandboxReadinessStatus::Ready => "SANDBOX_REQUIRED",
     }
 }
 
@@ -1587,7 +1855,11 @@ mod tests {
             "mock-sandbox"
         }
 
-        async fn get_or_create_box(&self, box_name: &str) -> Result<SandboxIdentity, SandboxError> {
+        async fn get_or_create_box(
+            &self,
+            box_name: &str,
+            _spec: &SandboxBoxSpec,
+        ) -> Result<SandboxIdentity, SandboxError> {
             Ok(SandboxIdentity {
                 sandbox_id: format!("{box_name}-id"),
                 sandbox_name: box_name.to_string(),
@@ -1624,7 +1896,11 @@ mod tests {
             "mock-sandbox"
         }
 
-        async fn get_or_create_box(&self, box_name: &str) -> Result<SandboxIdentity, SandboxError> {
+        async fn get_or_create_box(
+            &self,
+            box_name: &str,
+            _spec: &SandboxBoxSpec,
+        ) -> Result<SandboxIdentity, SandboxError> {
             Ok(SandboxIdentity {
                 sandbox_id: format!("{box_name}-id"),
                 sandbox_name: box_name.to_string(),
@@ -1666,7 +1942,11 @@ mod tests {
             "mock-sandbox"
         }
 
-        async fn get_or_create_box(&self, box_name: &str) -> Result<SandboxIdentity, SandboxError> {
+        async fn get_or_create_box(
+            &self,
+            box_name: &str,
+            _spec: &SandboxBoxSpec,
+        ) -> Result<SandboxIdentity, SandboxError> {
             let state = self.state.lock().await;
             let sandbox_id = if state.broken_name_removed {
                 "fresh-box"

@@ -23,6 +23,24 @@ jest.mock("@/components/chat/sandpack-fence-preview", () => ({
   },
 }))
 
+jest.mock("@/components/chat/runnable-code-fence", () => ({
+  RunnableCodeFence: ({
+    language,
+    source,
+  }: {
+    language?: string
+    source: string
+  }) => <div data-testid="runnable-code-fence">{`${language}:${source}`}</div>,
+  supportsRunnableFence: (language?: string, source?: string) => {
+    const normalizedLanguage = language?.trim().toLowerCase()
+    const trimmedSource = source?.trim() ?? ""
+    return (
+      ["python", "go", "rust", "java"].includes(normalizedLanguage ?? "") &&
+      trimmedSource.length > 0
+    )
+  },
+}))
+
 jest.mock("remark-gfm", () => ({
   __esModule: true,
   default: () => undefined,
@@ -120,5 +138,20 @@ describe("MarkdownViewer", () => {
 
     expect(screen.queryByTestId("sandpack-preview")).not.toBeInTheDocument()
     expect(screen.getByText("python")).toBeInTheDocument()
+  })
+
+  it("renders a runnable fence for supported assistant code blocks when enabled", () => {
+    render(
+      <MarkdownViewer
+        content={["```python", "print('hi')", "```"].join("\n")}
+        className="chat-markdown chat-markdown-assistant"
+        messageId="assistant-1"
+        enableRunnableFences
+      />
+    )
+
+    expect(screen.getByTestId("runnable-code-fence")).toHaveTextContent(
+      "python:print('hi')"
+    )
   })
 })

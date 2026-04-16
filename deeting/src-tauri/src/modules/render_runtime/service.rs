@@ -5,7 +5,6 @@ use super::store::init_render_runtime_tables;
 use super::types::{
     AssistantRenderEnvelope, RenderCacheEntry, RenderRequest, RenderTemplateManifest,
 };
-use crate::modules::asset_registry::resolve_asset_registry_root;
 use crate::modules::mcp::store::McpStore;
 use handlebars::Handlebars;
 use serde_json::{json, Value};
@@ -40,7 +39,6 @@ pub(crate) async fn resolve_response_rendering<R: tauri::Runtime>(
     let app_data_dir = app_handle.path().app_data_dir().ok();
     let manual_dir = resolve_render_runtime_manual_dir(app_data_dir.clone());
     let cache_dir = resolve_render_runtime_cache_dir(app_data_dir.clone());
-    let asset_registry_root = resolve_asset_registry_root(app_data_dir);
 
     let _ = init_render_runtime_tables(store).await;
     let asset_id = render
@@ -70,16 +68,9 @@ pub(crate) async fn resolve_response_rendering<R: tauri::Runtime>(
     }
 
     let schema = schema_fingerprint(&render.data);
-    let runtime_mode = saved_asset
-        .as_ref()
-        .and_then(|record| {
-            record
-                .html_entry
-                .as_deref()
-                .map(|_| "html_interactive")
-                .map(str::to_string)
-        })
-        .or_else(|| render.preferred_runtime.clone())
+    let runtime_mode = render
+        .preferred_runtime
+        .clone()
         .unwrap_or_else(|| "html_static".to_string());
     let normalized_runtime_mode = normalize_runtime_mode(Some(runtime_mode.as_str()));
     let cache_key_basis = asset_id
@@ -87,22 +78,16 @@ pub(crate) async fn resolve_response_rendering<R: tauri::Runtime>(
         .map(|value| format!("asset:{value}"))
         .unwrap_or_else(|| render.hint.trim().to_string());
     let cache_key = build_render_cache_key(&cache_key_basis, &schema, normalized_runtime_mode);
-    let template_resolution = if let Some(asset_resolution) =
-        resolve_asset_template(&asset_registry_root, saved_asset.as_ref(), &render)
-    {
-        asset_resolution
-    } else {
-        resolve_template_source(
-            &manual_dir,
-            &cache_dir,
-            store,
-            &render,
-            &cache_key,
-            &schema,
-            normalized_runtime_mode,
-        )
-        .await
-    };
+    let template_resolution = resolve_template_source(
+        &manual_dir,
+        &cache_dir,
+        store,
+        &render,
+        &cache_key,
+        &schema,
+        normalized_runtime_mode,
+    )
+    .await;
     let snapshot_created_at = current_time_rfc3339();
     let height = clamp_iframe_height(
         template_resolution
@@ -303,62 +288,12 @@ fn resolve_snapshot_html(
     render: &RenderRequest,
     schema_fingerprint: &str,
 ) -> String {
-    if template_resolution.source == "asset_registry" {
-        return template_resolution.template_html.clone();
-    }
-
     render_template_snapshot(
         &template_resolution.template_html,
         summary_text,
         render,
         schema_fingerprint,
     )
-}
-
-fn resolve_asset_template(
-    asset_registry_root: &std::path::Path,
-    record: Option<&crate::modules::asset_registry::types::LocalAssetRecord>,
-    render: &RenderRequest,
-) -> Option<TemplateResolution> {
-    let record = record?;
-    let html_entry = record
-        .html_entry
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())?;
-    let template_path = html_entry
-        .split('/')
-        .fold(asset_registry_root.to_path_buf(), |path, segment| {
-            path.join(segment)
-        });
-    let template_html = std::fs::read_to_string(&template_path).ok()?;
-    Some(TemplateResolution {
-        template_id: record
-            .template_id
-            .clone()
-            .unwrap_or_else(|| format!("asset://{}", record.asset_id)),
-        source: "asset_registry".to_string(),
-        manifest: RenderTemplateManifest {
-            id: record
-                .template_id
-                .clone()
-                .or_else(|| Some(format!("asset://{}", record.asset_id))),
-            title: Some(record.title.clone()),
-            render_hint: record
-                .render_hint
-                .clone()
-                .or_else(|| Some(render.hint.trim().to_string())),
-            runtime_mode: Some("html_interactive".to_string()),
-            preferred_height: render.preferred_height,
-            template_version: record
-                .template_version
-                .clone()
-                .or_else(|| Some("v1".to_string())),
-            allow_live_updates: Some(false),
-            refresh_interval_ms: None,
-        },
-        template_html,
-    })
 }
 
 fn build_render_cache_key(hint: &str, schema_fingerprint: &str, runtime_mode: &str) -> String {
@@ -720,7 +655,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_snapshot_html_keeps_asset_registry_html_raw() {
+    fn resolve_snapshot_html_no_longer_bypasses_asset_registry_templates() {
         let template_resolution = TemplateResolution {
             template_id: "asset://weather-ios18-card".to_string(),
             source: "asset_registry".to_string(),
@@ -734,8 +669,9 @@ mod tests {
                 allow_live_updates: Some(false),
                 refresh_interval_ms: None,
             },
-            template_html: "<!doctype html><html><body><script>window.x='{{not_handlebars}}'</script></body></html>"
-                .to_string(),
+            template_html:
+                "<!doctype html><html><body><div>{{render.summary}}</div><div>{{render.data.temp_c}}</div></body></html>"
+                    .to_string(),
         };
         let html = resolve_snapshot_html(
             &template_resolution,
@@ -744,7 +680,7 @@ mod tests {
                 hint: "weather-card".to_string(),
                 asset_id: Some("weather-ios18-card".to_string()),
                 data: json!({"temp_c": 22}),
-                preferred_runtime: Some("html_interactive".to_string()),
+                preferred_runtime: Some("html_static".to_string()),
                 preferred_height: None,
                 live_channel_id: None,
                 refresh_interval_ms: None,
@@ -754,7 +690,9 @@ mod tests {
             "abcd1234",
         );
 
-        assert!(html.contains("{{not_handlebars}}"));
+        assert!(html.contains("Cloudy"));
+        assert!(html.contains("22"));
+        assert!(!html.contains("{{render.summary}}"));
     }
 
     #[test]

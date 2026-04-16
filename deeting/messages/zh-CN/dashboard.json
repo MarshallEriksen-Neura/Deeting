@@ -481,14 +481,14 @@
     },
     "assetsPage": {
       "title": "资产",
-      "subtitle": "把聊天中可复用的输出沉淀为本地资产库，方便更快复用到 dashboard、回复和后续自动化。",
+      "subtitle": "把聊天中可复用的输出沉淀为本地资产库，用于预览、召回参考和后续自动化。",
       "hero": {
         "eyebrow": "本地资产注册表"
       },
       "stats": {
         "total": {
           "label": "活跃资产",
-          "hint": "当前本地可直接复用的卡片资产"
+          "hint": "当前本地可用于预览和召回参考的资产"
         },
         "pinned": {
           "label": "已置顶",
@@ -553,7 +553,7 @@
       },
       "createDialog": {
         "title": "创建 HTML 资产",
-        "description": "粘贴可复用的 HTML 和匹配元数据，保存为可在 dashboard 与聊天中复用的本地资产。",
+        "description": "粘贴可复用的 HTML 和匹配元数据，保存为可在 dashboard 预览并在后续对话中召回参考的本地资产。",
         "fields": {
           "assetId": "资产 ID",
           "title": "标题",
@@ -566,7 +566,7 @@
           "html": "HTML"
         },
         "placeholders": {
-          "summary": "用于 dashboard 和聊天复用的简短说明",
+          "summary": "用于 dashboard 预览和后续召回参考的简短说明",
           "matchHints": "天气, forecast, 温度",
           "propsHint": "location, date",
           "outputExample": "{\n  \"location\": \"Beijing\",\n  \"temp_c\": 22\n}",

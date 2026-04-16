@@ -145,7 +145,7 @@
         "isEnabled": "Enabled",
         "boundTools": "Bound Tools",
         "boundSkills": "Bound Skills",
-        "boundAsset": "Bound Asset"
+        "boundAsset": "Reference Asset"
       },
       "placeholders": {
         "name": "e.g. Release Notes Drafter",
@@ -249,10 +249,10 @@
       "toolsDescription": "Choose the local MCP tools this agent may call.",
       "skillsTitle": "Installed Skills",
       "skillsDescription": "Only locally installed skills can be bound here.",
-      "assetTitle": "Bound Asset",
-      "assetDescription": "Choose a saved local HTML asset to auto-display whenever this agent runs.",
+      "assetTitle": "Reference Asset",
+      "assetDescription": "Choose a saved local HTML asset to include as reference context whenever this agent runs.",
       "clearAsset": "Clear",
-      "assetBound": "Bound",
+      "assetBound": "Referenced",
       "searchToolsPlaceholder": "Search tools by name, server, or status...",
       "searchSkillsPlaceholder": "Search skills by id, version, or runtime...",
       "selectedOnly": "Selected only",

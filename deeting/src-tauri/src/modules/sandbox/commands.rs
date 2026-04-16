@@ -1,6 +1,9 @@
 use tauri::State;
 
-use crate::modules::sandbox::types::{SandboxInstallGuide, SandboxReadinessReport};
+use crate::modules::sandbox::types::{
+    SandboxInstallGuide, SandboxReadinessReport, SandboxSnippetRunRequest,
+    SandboxSnippetRunResponse,
+};
 use crate::state::AppState;
 
 fn to_command_error(err: crate::modules::sandbox::error::SandboxError) -> String {
@@ -67,4 +70,21 @@ pub async fn get_local_sandbox_install_guide(
     state: State<'_, AppState>,
 ) -> Result<SandboxInstallGuide, String> {
     Ok(state.sandbox.manager.install_guide().await)
+}
+
+#[tauri::command]
+pub async fn run_local_sandbox_code_snippet(
+    state: State<'_, AppState>,
+    payload: SandboxSnippetRunRequest,
+) -> Result<SandboxSnippetRunResponse, String> {
+    Ok(state
+        .sandbox
+        .manager
+        .run_local_code_snippet(
+            payload.session_id.as_str(),
+            payload.language,
+            payload.code.as_str(),
+            payload.execution_timeout_secs,
+        )
+        .await)
 }

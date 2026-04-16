@@ -481,14 +481,14 @@
     },
     "assetsPage": {
       "title": "Assets",
-      "subtitle": "Turn reusable chat outputs into a local asset library for faster dashboards, richer replies, and future automation.",
+      "subtitle": "Turn reusable chat outputs into a local asset library for preview, recall, and future automation.",
       "hero": {
         "eyebrow": "Local asset registry"
       },
       "stats": {
         "total": {
           "label": "Active assets",
-          "hint": "Reusable cards currently available locally"
+          "hint": "Saved local assets currently available for preview and recall"
         },
         "pinned": {
           "label": "Pinned",
@@ -553,7 +553,7 @@
       },
       "createDialog": {
         "title": "Create HTML Asset",
-        "description": "Paste reusable HTML and matching metadata to save a local asset that can be reused across dashboard and chat surfaces.",
+        "description": "Paste reusable HTML and matching metadata to save a local asset for dashboard preview and future recall.",
         "fields": {
           "assetId": "Asset ID",
           "title": "Title",
@@ -566,7 +566,7 @@
           "html": "HTML"
         },
         "placeholders": {
-          "summary": "Short description for dashboard and chat reuse",
+          "summary": "Short description for dashboard preview and future recall",
           "matchHints": "weather, forecast, temperature",
           "propsHint": "location, date",
           "outputExample": "{\n  \"location\": \"Beijing\",\n  \"temp_c\": 22\n}",

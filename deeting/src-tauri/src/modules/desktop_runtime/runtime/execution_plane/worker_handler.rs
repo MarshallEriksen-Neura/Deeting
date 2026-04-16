@@ -25,7 +25,6 @@ use crate::modules::desktop_runtime::runtime::{
     project_execution_graph_snapshot, select_worker_custom_task_agent,
     serialize_inflight_runtime_context, GraphProjectionInput, InFlightExecutionStage,
 };
-use crate::modules::render_runtime::resolve_response_rendering;
 use crate::modules::workflow::service as workflow_service;
 use crate::modules::workflow::types::{
     QuickWorkflowRequest, QuickWorkflowResult, WorkflowRunStatus,
@@ -116,6 +115,11 @@ where
             parent_allowed_tool_names: request.execution_policy.allowed_tool_names.clone(),
             prefer_workflow_runtime: request.execution_policy.prefer_workflow_runtime,
             explicit_task_agent_id: request.explicit_task_agent_id.clone(),
+            bound_asset_reference: build_bound_asset_reference(
+                &request.app_state,
+                &selection.profile,
+            )
+            .await,
         },
     );
     let packet_receipt = Some(DelegatedExecutionPacketReceipt {
@@ -796,7 +800,6 @@ fn build_delegated_execution_session(
                 "status": "success",
                 "result": payload.clone(),
             })]);
-            tool_trace_blocks.extend(extract_auto_display_render_blocks(&render_blocks));
             let primary_child = build_primary_child_execution_record(
                 execution_id.as_str(),
                 &profile,
@@ -1096,8 +1099,7 @@ fn build_custom_task_agent_render_blocks(
     let app_state = app_state.clone();
     let app_handle = app_handle.clone();
     Box::pin(async move {
-        let mut blocks =
-            build_bound_asset_render_blocks(&app_handle, &app_state, &profile, &result).await;
+        let mut blocks = Vec::new();
         if result.invocation_kind == CustomTaskAgentInvocationKind::ImageGeneration {
             let outputs =
                 persist_custom_task_agent_image_outputs(&app_handle, &app_state, &result).await;
@@ -1150,91 +1152,47 @@ fn build_custom_task_agent_render_blocks(
     })
 }
 
-async fn build_bound_asset_render_blocks(
-    app_handle: &AppHandle,
+async fn build_bound_asset_reference(
     app_state: &AppState,
     profile: &CustomTaskAgentProfile,
-    result: &CustomTaskAgentPreviewResponse,
-) -> Vec<Value> {
-    let Some(asset_id) = profile
+) -> Option<Value> {
+    let asset_id = profile
         .bound_asset_id
         .as_deref()
         .map(str::trim)
-        .filter(|value| !value.is_empty())
-    else {
-        return Vec::new();
-    };
-
-    let Some(record) = app_state
+        .filter(|value| !value.is_empty())?;
+    let record = app_state
         .mcp
         .store
         .get_local_asset_record(asset_id)
         .await
         .ok()
-        .flatten()
-    else {
-        return Vec::new();
-    };
-
+        .flatten()?;
     if record.is_archived
         || !record.status.eq_ignore_ascii_case("active")
         || !record.asset_kind.eq_ignore_ascii_case("html_asset")
     {
-        return Vec::new();
+        return None;
     }
-
-    let render_data = record
-        .latest_render_data_json
-        .as_deref()
-        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
-        .unwrap_or_else(|| json!({}));
-    let summary = result.content.trim().to_string();
-    let response_json = json!({
-        "summary": if summary.is_empty() {
-            record.summary.clone().unwrap_or_else(|| record.title.clone())
-        } else {
-            summary
-        },
-        "render": {
-            "asset_id": record.asset_id.clone(),
-            "hint": record.render_hint.clone().unwrap_or_else(|| record.title.clone()),
-            "data": render_data,
-        }
-    });
-    let mut blocks =
-        resolve_response_rendering(app_handle, app_state.mcp.store.as_ref(), &response_json)
-            .await
-            .blocks;
-
-    for block in &mut blocks {
-        if let Some(metadata) = block.get_mut("metadata").and_then(Value::as_object_mut) {
-            metadata.insert("auto_display".to_string(), json!(true));
-            metadata.insert("agentId".to_string(), json!(profile.id.clone()));
-            metadata.insert("agentName".to_string(), json!(profile.name.clone()));
-            metadata.insert(
-                "invocationKind".to_string(),
-                json!(result.invocation_kind.as_str()),
-            );
-            metadata.insert("bound_asset_id".to_string(), json!(record.asset_id.clone()));
-        }
-    }
-
-    blocks
+    Some(json!({
+        "asset_id": record.asset_id,
+        "title": record.title,
+        "summary": record.summary,
+        "render_hint": record.render_hint,
+        "data_mode": record.data_mode,
+        "match_hints": parse_json_string_list(record.match_hints_json.as_deref()),
+        "props_hint": parse_json_string_list(record.props_hint_json.as_deref()),
+        "output_example": parse_json_value(record.output_example_json.as_deref()),
+    }))
 }
 
-fn extract_auto_display_render_blocks(render_blocks: &[Value]) -> Vec<Value> {
-    render_blocks
-        .iter()
-        .filter(|block| {
-            block
-                .get("metadata")
-                .and_then(Value::as_object)
-                .and_then(|metadata| metadata.get("auto_display"))
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-        })
-        .cloned()
-        .collect()
+fn parse_json_string_list(raw: Option<&str>) -> Vec<String> {
+    raw.and_then(|value| serde_json::from_str::<Vec<String>>(value).ok())
+        .unwrap_or_default()
+}
+
+fn parse_json_value(raw: Option<&str>) -> Option<Value> {
+    raw.and_then(|value| serde_json::from_str::<Value>(value).ok())
 }
 
 #[cfg(test)]
