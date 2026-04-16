@@ -3,6 +3,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { ToolApprovalDialog } from "@/components/bridge/tool-approval-dialog"
 import {
+  beginBridgeApprovalExecution,
   createBridgeToolApproval,
   useBridgeApprovalStore,
 } from "@/lib/chat/bridge-approval-store"
@@ -169,6 +170,34 @@ describe("ToolApprovalDialog", () => {
       execution_token: "exec-1",
     })
     expect(useBridgeApprovalStore.getState().pending).toBeNull()
+  })
+
+  it("does not re-submit approval when the same token is already executing", async () => {
+    act(() => {
+      beginBridgeApprovalExecution("approval-inflight-1")
+      useBridgeApprovalStore.getState().setPending(
+        createBridgeToolApproval({
+          approval_token: "approval-inflight-1",
+          tool_name: "write_file",
+          arguments: { path: "demo.txt" },
+          meta: {
+            call_id: "call-inflight-1",
+          },
+        })
+      )
+    })
+
+    render(<ToolApprovalDialog />)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "actions.approveOnce" }))
+      await Promise.resolve()
+    })
+
+    expect(mockApproveTool).not.toHaveBeenCalled()
+    expect(useBridgeApprovalStore.getState().pending).toMatchObject({
+      approval_token: "approval-inflight-1",
+    })
   })
 
   it("uses the local gateway reject request for deny always", async () => {

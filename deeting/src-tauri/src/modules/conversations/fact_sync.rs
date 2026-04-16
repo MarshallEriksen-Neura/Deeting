@@ -17,6 +17,8 @@ use crate::state::AppState;
 
 const FACT_EXTRACTION_LAST_HASH_KEY_PREFIX: &str = "fact_extraction.last_hash";
 const FACT_EXTRACTION_LAST_RUN_AT_KEY_PREFIX: &str = "fact_extraction.last_run_at";
+const FACT_EXTRACTION_LAST_VERSION_KEY_PREFIX: &str = "fact_extraction.last_version";
+const FACT_EXTRACTION_ENGINE_VERSION: &str = "2026-04-16-heuristic-v1";
 const FACT_EXTRACTION_COMPARE_FINALIZE_COOLDOWN_SECONDS: i64 = 120;
 const FACT_EXTRACTION_STALE_DELETE_AFTER_ROUNDS: i64 = 2;
 
@@ -26,6 +28,10 @@ pub(crate) fn build_fact_extraction_last_hash_key(session_id: &str) -> String {
 
 pub(crate) fn build_fact_extraction_last_run_at_key(session_id: &str) -> String {
     format!("{}.{}", FACT_EXTRACTION_LAST_RUN_AT_KEY_PREFIX, session_id)
+}
+
+pub(crate) fn build_fact_extraction_last_version_key(session_id: &str) -> String {
+    format!("{}.{}", FACT_EXTRACTION_LAST_VERSION_KEY_PREFIX, session_id)
 }
 
 fn hash_fact_extraction_conversation_text(conversation_text: &str) -> String {
@@ -120,10 +126,17 @@ async fn refresh_session_auto_extracted_facts_with_source(
     };
     let conversation_hash = hash_fact_extraction_conversation_text(&conversation_text);
     let hash_key = build_fact_extraction_last_hash_key(&normalized_session_id);
+    let version_key = build_fact_extraction_last_version_key(&normalized_session_id);
     let existing_hash = app_state
         .mcp
         .store
         .get_desktop_config(&hash_key)
+        .await
+        .map_err(|err| err.to_string())?;
+    let existing_version = app_state
+        .mcp
+        .store
+        .get_desktop_config(&version_key)
         .await
         .map_err(|err| err.to_string())?;
     if existing_hash
@@ -131,12 +144,30 @@ async fn refresh_session_auto_extracted_facts_with_source(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         == Some(conversation_hash.as_str())
+        && existing_version
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            == Some(FACT_EXTRACTION_ENGINE_VERSION)
     {
         log::info!(
             "fact extraction refresh skipped unchanged session={}",
             normalized_session_id
         );
         return Ok(FactExtractionOutcome::Skipped);
+    }
+    if existing_hash
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        == Some(conversation_hash.as_str())
+    {
+        log::info!(
+            "fact extraction refresh forced by extractor version session={} stored_version={} current_version={}",
+            normalized_session_id,
+            existing_version.as_deref().unwrap_or("-"),
+            FACT_EXTRACTION_ENGINE_VERSION
+        );
     }
 
     let outcome =
@@ -190,6 +221,18 @@ async fn refresh_session_auto_extracted_facts_with_source(
                 err
             );
         }
+    }
+    if let Err(err) = app_state
+        .mcp
+        .store
+        .set_desktop_config(&version_key, FACT_EXTRACTION_ENGINE_VERSION)
+        .await
+    {
+        log::warn!(
+            "fact extraction version marker write failed session={} err={}",
+            normalized_session_id,
+            err
+        );
     }
 
     Ok(outcome)

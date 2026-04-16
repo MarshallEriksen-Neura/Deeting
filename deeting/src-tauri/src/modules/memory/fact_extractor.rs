@@ -86,28 +86,51 @@ pub(crate) async fn extract_and_store_facts(
         )
         .await
         {
-            Ok(Some(text)) => text,
+            Ok(Some(text)) => Some(text),
             Ok(None) => {
                 log::info!(
                     "fact extraction: no auxiliary text returned for session {}",
                     session_id
                 );
-                return Ok(FactExtractionOutcome::NoFacts);
+                None
             }
             Err(e) => return Err(format!("fact extraction LLM call failed: {}", e)),
         };
 
-    let facts = match parse_fact_array(&extracted) {
+    let mut heuristic_fallback_reason = None;
+    let facts = match extracted
+        .as_deref()
+        .and_then(parse_fact_array)
+        .filter(|facts| !facts.is_empty())
+    {
         Some(facts) => facts,
-        None => return Err("fact extraction: failed to parse response as JSON array".to_string()),
+        None => {
+            heuristic_fallback_reason = Some(match extracted.as_deref() {
+                Some(raw) if parse_fact_array(raw).is_none() => "parse_failure",
+                Some(_) => "empty_array",
+                None => "no_text",
+            });
+            heuristic_extract_facts_from_conversation(truncated.as_str())
+        }
     };
 
     if facts.is_empty() {
+        if heuristic_fallback_reason == Some("parse_failure") {
+            return Err("fact extraction: failed to parse response as JSON array".to_string());
+        }
         log::info!(
-            "fact extraction: model returned empty fact array for session {}",
+            "fact extraction: no durable facts extracted for session {}",
             session_id
         );
         return Ok(FactExtractionOutcome::NoFacts);
+    }
+
+    if let Some(reason) = heuristic_fallback_reason {
+        log::info!(
+            "fact extraction: using heuristic fallback for session {} reason={}",
+            session_id,
+            reason
+        );
     }
 
     let mut summary = FactExtractionWriteSummary {
@@ -130,8 +153,10 @@ pub(crate) async fn extract_and_store_facts(
                 "fact_fingerprint": fact_fingerprint(&fact_trimmed),
                 "auto_extraction": {
                     "state": "active",
-                    "stale_rounds": 0
-                }
+                    "stale_rounds": 0,
+                    "mode": if heuristic_fallback_reason.is_some() { "heuristic_fallback" } else { "model" }
+                },
+                "extraction_mode": if heuristic_fallback_reason.is_some() { "heuristic_fallback" } else { "model" }
             })),
             category: Some("fact".to_string()),
             source: Some("auto_extraction".to_string()),
@@ -262,6 +287,203 @@ fn fact_fingerprint(value: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+fn heuristic_extract_facts_from_conversation(conversation_text: &str) -> Vec<String> {
+    let mut facts = Vec::new();
+
+    for raw_line in conversation_text.lines() {
+        let Some(user_line) = raw_line
+            .strip_prefix("User:")
+            .or_else(|| raw_line.strip_prefix("User："))
+            .map(str::trim)
+        else {
+            continue;
+        };
+
+        if user_line.is_empty() {
+            continue;
+        }
+
+        push_heuristic_fact(&mut facts, heuristic_identity_fact(user_line));
+        push_heuristic_fact(&mut facts, heuristic_learning_preference_fact(user_line));
+        push_heuristic_fact(&mut facts, heuristic_privacy_boundary_fact(user_line));
+        push_heuristic_fact(&mut facts, heuristic_agent_builder_fact(user_line));
+        push_heuristic_fact(&mut facts, heuristic_ai_github_interest_fact(user_line));
+
+        if facts.len() >= 5 {
+            break;
+        }
+    }
+
+    facts
+}
+
+fn push_heuristic_fact(target: &mut Vec<String>, fact: Option<String>) {
+    let Some(fact) = fact.map(|value| normalize_whitespace(&value)) else {
+        return;
+    };
+    if fact.is_empty() {
+        return;
+    }
+
+    let dedupe_key = fact.trim().to_ascii_lowercase();
+    if target
+        .iter()
+        .any(|existing| existing.trim().to_ascii_lowercase() == dedupe_key)
+    {
+        return;
+    }
+
+    target.push(fact);
+}
+
+fn heuristic_identity_fact(user_line: &str) -> Option<String> {
+    let normalized = normalize_whitespace(user_line);
+    for prefix in ["我是一个", "我是一名", "我是个", "我是"] {
+        let rest = normalized.strip_prefix(prefix)?;
+        let role = clean_fact_segment(rest);
+        if role.chars().count() >= 2 {
+            return Some(format!("用户是{}。", role));
+        }
+    }
+
+    let lower = normalized.to_ascii_lowercase();
+    for prefix in ["i am ", "i'm "] {
+        if let Some(rest) = lower.strip_prefix(prefix) {
+            let role = clean_fact_segment(rest);
+            if role.chars().count() >= 2 {
+                return Some(format!("The user is {}.", role));
+            }
+        }
+    }
+
+    None
+}
+
+fn heuristic_learning_preference_fact(user_line: &str) -> Option<String> {
+    let normalized = normalize_whitespace(user_line);
+    let lower = normalized.to_ascii_lowercase();
+    let prefers_step_by_step = normalized.contains("一步一步")
+        || normalized.contains("一点一点")
+        || normalized.contains("循序渐进")
+        || normalized.contains("一次说一段")
+        || lower.contains("step by step")
+        || lower.contains("one step at a time");
+    if !prefers_step_by_step {
+        return None;
+    }
+
+    if let Some(topic) = extract_learning_topic(normalized.as_str()) {
+        return Some(format!("用户希望循序渐进地学习{}。", topic));
+    }
+
+    Some("用户偏好循序渐进、分步式的学习方式。".to_string())
+}
+
+fn heuristic_privacy_boundary_fact(user_line: &str) -> Option<String> {
+    let normalized = normalize_whitespace(user_line);
+    let lower = normalized.to_ascii_lowercase();
+    if normalized.contains("不要查我的文件夹")
+        || normalized.contains("不要查我的文件")
+        || lower.contains("don't search my folder")
+        || lower.contains("don't search my files")
+        || lower.contains("do not search my folder")
+        || lower.contains("do not search my files")
+    {
+        return Some("用户不希望助手搜索其文件夹。".to_string());
+    }
+    None
+}
+
+fn heuristic_agent_builder_fact(user_line: &str) -> Option<String> {
+    let normalized = normalize_whitespace(user_line);
+    let lower = normalized.to_ascii_lowercase();
+    if (normalized.contains("开发") || normalized.contains("搭建"))
+        && (normalized.contains("agent") || normalized.contains("Agent"))
+    {
+        return Some("用户正在开发自己的 agent。".to_string());
+    }
+    if lower.contains("my agent") && (lower.contains("build") || lower.contains("develop")) {
+        return Some("The user is building their own agent.".to_string());
+    }
+    None
+}
+
+fn heuristic_ai_github_interest_fact(user_line: &str) -> Option<String> {
+    let normalized = normalize_whitespace(user_line);
+    let lower = normalized.to_ascii_lowercase();
+    if lower.contains("github") && lower.contains("ai") {
+        return Some("用户对 AI 相关 GitHub 项目感兴趣。".to_string());
+    }
+    None
+}
+
+fn extract_learning_topic(user_line: &str) -> Option<String> {
+    for marker in ["学习", "学"] {
+        if let Some(index) = user_line.find(marker) {
+            let remainder = &user_line[index + marker.len()..];
+            let topic = clean_topic_segment(remainder);
+            if topic.chars().count() >= 2 {
+                return Some(topic);
+            }
+        }
+    }
+
+    let lower = user_line.to_ascii_lowercase();
+    if let Some(index) = lower.find("learn ") {
+        let remainder = &user_line[index + "learn ".len()..];
+        let topic = clean_topic_segment(remainder);
+        if topic.chars().count() >= 2 {
+            return Some(topic);
+        }
+    }
+
+    None
+}
+
+fn clean_fact_segment(value: &str) -> String {
+    let trimmed = normalize_whitespace(value);
+    let end = trimmed
+        .char_indices()
+        .find_map(|(index, ch)| {
+            matches!(ch, '。' | '！' | '？' | '，' | ',' | '；' | ';' | '\n').then_some(index)
+        })
+        .unwrap_or(trimmed.len());
+    trimmed[..end]
+        .trim()
+        .trim_matches(|ch: char| matches!(ch, ' ' | '"' | '\'' | '`' | '“' | '”'))
+        .trim_start_matches("一名")
+        .trim_start_matches("一个")
+        .trim_start_matches("个")
+        .trim()
+        .to_string()
+}
+
+fn clean_topic_segment(value: &str) -> String {
+    let mut topic = String::new();
+    for ch in value.trim().chars() {
+        if matches!(
+            ch,
+            '。' | '！' | '？' | '，' | ',' | '；' | ';' | '\n' | '我' | '你' | '他' | '她'
+        ) || topic.chars().count() >= 24
+        {
+            break;
+        }
+        if matches!(ch, '吗' | '么' | '呢' | '吧') {
+            break;
+        }
+        topic.push(ch);
+    }
+
+    topic
+        .trim()
+        .trim_matches(|ch: char| matches!(ch, ' ' | '"' | '\'' | '`' | '“' | '”'))
+        .to_string()
+}
+
+fn normalize_whitespace(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 fn take_last_chars(input: &str, max_chars: usize) -> String {
     if max_chars == 0 {
         return String::new();
@@ -320,7 +542,10 @@ fn extract_json_array_substring(raw: &str) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_fact_array, take_last_chars, FACT_EXTRACTION_CONVERSATION_MAX_CHARS};
+    use super::{
+        heuristic_extract_facts_from_conversation, parse_fact_array, take_last_chars,
+        FACT_EXTRACTION_CONVERSATION_MAX_CHARS,
+    };
     use super::{FactExtractionOutcome, FactExtractionWriteSummary};
 
     #[test]
@@ -423,5 +648,40 @@ mod tests {
         };
 
         assert_eq!(summary.successful_count(), 3);
+    }
+
+    #[test]
+    fn heuristic_extracts_ai_github_interest_fact() {
+        let result = heuristic_extract_facts_from_conversation(
+            "User: 查询一下本周github 有什么有趣的项目 和 ai 相关的",
+        );
+
+        assert_eq!(result, vec!["用户对 AI 相关 GitHub 项目感兴趣。"]);
+    }
+
+    #[test]
+    fn heuristic_extracts_step_by_step_learning_preference() {
+        let result = heuristic_extract_facts_from_conversation(
+            "User: 你能沉浸式带我一部分一部分学习线性代数么 我天赋不是很好 所以你一次说一段让我一点一点学习",
+        );
+
+        assert_eq!(result, vec!["用户希望循序渐进地学习线性代数。"]);
+    }
+
+    #[test]
+    fn heuristic_extracts_privacy_boundary() {
+        let result = heuristic_extract_facts_from_conversation(
+            "User: 我只是想查询下明天天津的天气的 你不要查我的文件夹了",
+        );
+
+        assert_eq!(result, vec!["用户不希望助手搜索其文件夹。"]);
+    }
+
+    #[test]
+    fn heuristic_extracts_agent_builder_fact() {
+        let result =
+            heuristic_extract_facts_from_conversation("User: 我想试试我开发的agent benchmark");
+
+        assert_eq!(result, vec!["用户正在开发自己的 agent。"]);
     }
 }

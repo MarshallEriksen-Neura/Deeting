@@ -5,6 +5,24 @@ jest.mock("@/hooks/use-i18n", () => ({
   useI18n: () => (key: string) => key,
 }))
 
+jest.mock("@/components/chat/sandpack-fence-preview", () => ({
+  SandpackFencePreview: ({
+    language,
+    source,
+  }: {
+    language?: string
+    source: string
+  }) => <div data-testid="sandpack-preview">{`${language}:${source}`}</div>,
+  supportsSandpackFence: (language?: string, source?: string) => {
+    const normalizedLanguage = language?.trim().toLowerCase()
+    const trimmedSource = source?.trim() ?? ""
+    return (
+      normalizedLanguage === "html" ||
+      (normalizedLanguage === "svg" && trimmedSource.includes("<svg"))
+    )
+  },
+}))
+
 jest.mock("remark-gfm", () => ({
   __esModule: true,
   default: () => undefined,
@@ -50,7 +68,20 @@ jest.mock("react-markdown", () => ({
 const { MarkdownViewer } = require("@/components/chat/markdown-viewer")
 
 describe("MarkdownViewer", () => {
-  it("renders a preview for fenced svg code blocks", () => {
+  it("renders a Sandpack preview for assistant fenced html blocks", () => {
+    render(
+      <MarkdownViewer
+        content={["```html", "<div>plain html block</div>", "```"].join("\n")}
+        className="chat-markdown chat-markdown-assistant"
+      />
+    )
+
+    expect(screen.getByTestId("sandpack-preview")).toHaveTextContent(
+      "html:<div>plain html block</div>"
+    )
+  })
+
+  it("renders a Sandpack preview for assistant fenced svg blocks", () => {
     render(
       <MarkdownViewer
         content={[
@@ -60,24 +91,34 @@ describe("MarkdownViewer", () => {
           "</svg>",
           "```",
         ].join("\n")}
+        className="chat-markdown chat-markdown-assistant"
       />
     )
 
-    const preview = screen.getByAltText("codeBlock.svgPreviewAlt")
-    expect(preview).toBeInTheDocument()
-    expect(preview).toHaveAttribute("src", expect.stringContaining("data:image/svg+xml"))
-    expect(screen.getByText("codeBlock.svgPreview")).toBeInTheDocument()
+    expect(screen.getByTestId("sandpack-preview")).toHaveTextContent("svg:")
   })
 
-  it("does not render a preview for non-svg fenced code blocks", () => {
+  it("does not render a Sandpack preview for user fenced html blocks", () => {
     render(
       <MarkdownViewer
         content={["```html", "<div>plain html block</div>", "```"].join("\n")}
+        className="chat-markdown chat-markdown-user"
       />
     )
 
-    expect(
-      screen.queryByAltText("codeBlock.svgPreviewAlt")
-    ).not.toBeInTheDocument()
+    expect(screen.queryByTestId("sandpack-preview")).not.toBeInTheDocument()
+    expect(screen.getByText("html")).toBeInTheDocument()
+  })
+
+  it("does not render a Sandpack preview for unsupported fenced code blocks", () => {
+    render(
+      <MarkdownViewer
+        content={["```python", "print('hi')", "```"].join("\n")}
+        className="chat-markdown chat-markdown-assistant"
+      />
+    )
+
+    expect(screen.queryByTestId("sandpack-preview")).not.toBeInTheDocument()
+    expect(screen.getByText("python")).toBeInTheDocument()
   })
 })

@@ -1,8 +1,13 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { AIResponseBubble } from "@/components/chat/messages/ai-response-bubble";
-import { useBridgeApprovalStore } from "@/lib/chat/bridge-approval-store";
+import {
+  beginBridgeApprovalExecution,
+  useBridgeApprovalStore,
+} from "@/lib/chat/bridge-approval-store";
+import { streamDesktopApproveTool } from "@/lib/api/mcp-desktop";
 import type { MessageBlock } from "@/lib/chat/message-protocol";
+import { useChatStore } from "@/store/chat-store";
 
 const terminalStreamMock = jest.fn();
 
@@ -89,11 +94,17 @@ jest.mock("@/lib/api/bridge", () => ({
   bridgeCallTool: jest.fn(),
 }));
 
+const mockApproveTool = streamDesktopApproveTool as jest.MockedFunction<
+  typeof streamDesktopApproveTool
+>;
+
 describe("AIResponseBubble debug panel", () => {
   beforeEach(() => {
     terminalStreamMock.mockClear();
+    mockApproveTool.mockReset();
     useBridgeApprovalStore.getState().clearAll();
     useBridgeApprovalStore.getState().clearRecentApprovedExecution();
+    useChatStore.getState().resetSession();
   });
 
   it("keeps terminal stream visible in compact mode after content appears", () => {
@@ -207,6 +218,53 @@ describe("AIResponseBubble debug panel", () => {
 
     expect(screen.getByText("approvalDialog.actions.approve")).toBeInTheDocument();
     expect(screen.getByText("approvalDialog.actions.reject")).toBeInTheDocument();
+  });
+
+  it("does not re-submit inline approval when the same token is already executing", async () => {
+    const parts: MessageBlock[] = [
+      {
+        id: "tool-approval-locked-1",
+        type: "tool_call",
+        callId: "call-approval-locked-1",
+        toolName: "search_notes",
+        status: "success",
+      },
+      {
+        id: "tool-approval-locked-result-1",
+        type: "tool_result",
+        callId: "call-approval-locked-1",
+        toolName: "search_notes",
+        status: "requires_approval",
+        result: {
+          status: "REQUIRES_APPROVAL",
+          approval_token: "approval-inline-locked-1",
+          tool_name: "search_notes",
+          execution_graph_execution_id: "graph-inline-locked-1",
+        },
+      },
+    ];
+
+    beginBridgeApprovalExecution("approval-inline-locked-1");
+    useChatStore.setState({
+      sessionId: "session-inline-locked-1",
+      messages: [
+        {
+          id: "assistant-inline-locked-1",
+          role: "assistant",
+          content: "",
+          createdAt: 1,
+          blocks: parts,
+        },
+      ],
+    });
+
+    render(<AIResponseBubble messageId="assistant-inline-locked-1" parts={parts} />);
+
+    fireEvent.click(screen.getByText("approvalDialog.actions.approve"));
+
+    await waitFor(() => {
+      expect(mockApproveTool).not.toHaveBeenCalled();
+    });
   });
 
   it("groups active multi-tool calls into one live block", () => {

@@ -29,7 +29,11 @@ import { Button } from "@/components/ui/button";
 import { MarkdownViewer } from "@/components/chat/markdown-viewer";
 import { TaskLiveBlock } from "@/components/chat/messages/task-live-block";
 import { isToolApprovalResultBlock } from "@/lib/chat/assistant-activity";
-import { useBridgeApprovalStore } from "@/lib/chat/bridge-approval-store";
+import {
+  beginBridgeApprovalExecution,
+  finishBridgeApprovalExecution,
+  useBridgeApprovalStore,
+} from "@/lib/chat/bridge-approval-store";
 import {
   humanizeToolName as sharedHumanizeToolName,
   isInternalTool as sharedIsInternalTool,
@@ -908,6 +912,7 @@ export const ToolCallBlock = memo<{
 
   const handleApprove = useCallback(async () => {
     if (!inlineApproval || !messageId) return;
+    if (!beginBridgeApprovalExecution(inlineApproval.approval_token)) return;
     setApprovalAction("allow_once");
     try {
       await runInlineApproval({
@@ -921,6 +926,7 @@ export const ToolCallBlock = memo<{
         appendMessageBlocks,
       });
     } finally {
+      finishBridgeApprovalExecution(inlineApproval.approval_token);
       setApprovalAction(null);
     }
   }, [

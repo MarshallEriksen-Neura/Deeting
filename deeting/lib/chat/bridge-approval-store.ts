@@ -36,6 +36,10 @@ export interface RecentApprovedExecution {
   approved_at: number
 }
 
+function normalizeApprovalToken(value: string | null | undefined): string {
+  return typeof value === "string" ? value.trim() : ""
+}
+
 interface BridgeApprovalState {
   queue: PendingApproval[]
   pending: PendingApproval | null
@@ -162,10 +166,14 @@ export const useBridgeApprovalStore = create<BridgeApprovalState>((set) => ({
         isApproving: false,
       }
     }),
-  clearAll: () => set({ queue: [], pending: null, isApproving: false }),
+  clearAll: () => {
+    inFlightApprovalTokens.clear()
+    set({ queue: [], pending: null, isApproving: false })
+  },
 }))
 
 let recentApprovedExecutionTimer: ReturnType<typeof setTimeout> | null = null
+const inFlightApprovalTokens = new Set<string>()
 
 export function createBridgeToolApproval(
   approval: Omit<BridgeToolPendingApproval, "kind">
@@ -206,4 +214,22 @@ export function announceBridgeApprovalExecution(approval: BridgeToolPendingAppro
       useBridgeApprovalStore.getState().clearRecentApprovedExecution()
     }
   }, 2400)
+}
+
+export function beginBridgeApprovalExecution(approvalToken: string | null | undefined): boolean {
+  const normalizedToken = normalizeApprovalToken(approvalToken)
+  if (!normalizedToken) return false
+  if (inFlightApprovalTokens.has(normalizedToken)) return false
+  inFlightApprovalTokens.add(normalizedToken)
+  useBridgeApprovalStore.getState().setApproving(true)
+  return true
+}
+
+export function finishBridgeApprovalExecution(approvalToken: string | null | undefined) {
+  const normalizedToken = normalizeApprovalToken(approvalToken)
+  if (!normalizedToken) return
+  inFlightApprovalTokens.delete(normalizedToken)
+  useBridgeApprovalStore
+    .getState()
+    .setApproving(inFlightApprovalTokens.size > 0)
 }

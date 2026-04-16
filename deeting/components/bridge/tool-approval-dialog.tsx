@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/alert-dialog"
 import {
   announceBridgeApprovalExecution,
+  beginBridgeApprovalExecution,
+  finishBridgeApprovalExecution,
   type BridgeToolPendingApproval,
   isBridgeToolApproval,
   useBridgeApprovalStore,
@@ -267,12 +269,15 @@ function ToolApprovalDialogContent({
   const handleApprove = (approvalMode: "allow_once" | "allow_always") => {
     const approval = pending
     if (!approval) return
+    if (!beginBridgeApprovalExecution(approval.approval_token)) return
 
     setLoadingAction(approvalMode)
     applyOptimisticExecutionState(approval)
     announceBridgeApprovalExecution(approval)
     clear()
-    void executeApprovedTool(approval, approvalMode)
+    void executeApprovedTool(approval, approvalMode).finally(() => {
+      finishBridgeApprovalExecution(approval.approval_token)
+    })
   }
 
   const handleRejectAlways = async () => {

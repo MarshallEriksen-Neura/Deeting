@@ -19,6 +19,7 @@
     "desktop:build:fast:debugtools": "node ./scripts/tauri-with-protoc.mjs build --no-bundle --config src-tauri/tauri.devtools.conf.json --features release-devtools"
   },
   "dependencies": {
+    "@codesandbox/sandpack-react": "^2.20.0",
     "@floating-ui/core": "^1.7.3",
     "@hookform/resolvers": "^5.2.2",
     "@iconify/react": "^6.0.2",

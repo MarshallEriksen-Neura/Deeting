@@ -1,14 +1,17 @@
 "use client"
 
-import { isValidElement, useMemo, useState } from "react"
+import { isValidElement } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import remarkBreaks from "remark-breaks"
 import { cn } from "@/lib/utils"
 import { CodeBlock } from "@/components/chat/code-block"
 import { CopyablePre, extractTextFromNode } from "@/components/chat/copyable-pre"
+import {
+  SandpackFencePreview,
+  supportsSandpackFence,
+} from "@/components/chat/sandpack-fence-preview"
 import { ImageLightbox } from "@/components/ui/image-lightbox"
-import { useI18n } from "@/hooks/use-i18n"
 import styles from "./markdown-viewer.module.css"
 
 const INLINE_FENCE_REGEX = /```([a-zA-Z0-9_-]+)?\s+([^\n`]+?)```/g
@@ -38,54 +41,6 @@ function normalizeMarkdownContent(raw: string) {
   }
 
   return normalized
-}
-
-function buildSvgDataUri(source: string) {
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(source)}`
-}
-
-function SvgCodeBlock({
-  children,
-  className,
-  language,
-}: {
-  children: React.ReactNode
-  className?: string
-  language?: string
-}) {
-  const t = useI18n("chat")
-  const rawText = useMemo(() => extractTextFromNode(children).trim(), [children])
-  const previewSrc = useMemo(() => buildSvgDataUri(rawText), [rawText])
-  const [failedPreviewSrc, setFailedPreviewSrc] = useState<string | null>(null)
-  const previewFailed = failedPreviewSrc === previewSrc
-
-  return (
-    <div className="space-y-3">
-      <div className="overflow-hidden rounded-lg border border-border bg-background/80">
-        <div className="border-b border-border/60 px-3 py-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
-          <span className="font-medium">{t("codeBlock.svgPreview")}</span>
-        </div>
-        <div className="flex items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(148,163,184,0.16),_transparent_60%),linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,250,252,0.96))] p-3 dark:bg-[radial-gradient(circle_at_top,_rgba(71,85,105,0.26),_transparent_60%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))]">
-          {previewFailed ? (
-            <div className="text-xs text-muted-foreground">
-              {t("codeBlock.svgPreviewUnavailable")}
-            </div>
-          ) : (
-            <img
-              src={previewSrc}
-              alt={t("codeBlock.svgPreviewAlt")}
-              className="max-h-80 max-w-full rounded-md border border-border/70 bg-white shadow-sm"
-              onError={() => setFailedPreviewSrc(previewSrc)}
-            />
-          )}
-        </div>
-      </div>
-
-      <CodeBlock className={className} language={language}>
-        {children}
-      </CodeBlock>
-    </div>
-  )
 }
 
 export function MarkdownViewer({
@@ -152,15 +107,14 @@ export function MarkdownViewer({
               const languageMatch = codeClassName?.match(/language-([\w-]+)/)
               const language = languageMatch?.[1]
               const rawCode = extractTextFromNode(codeProps.children)
-              const isSvgFence =
-                language?.trim().toLowerCase() === "svg" &&
-                rawCode.trim().toLowerCase().includes("<svg")
 
-              if (isSvgFence) {
+              if (isAssistant && supportsSandpackFence(language, rawCode)) {
                 return (
-                  <SvgCodeBlock className={codeClassName} language={language}>
-                    {codeProps.children}
-                  </SvgCodeBlock>
+                  <SandpackFencePreview
+                    className={codeClassName}
+                    language={language}
+                    source={rawCode}
+                  />
                 )
               }
 
