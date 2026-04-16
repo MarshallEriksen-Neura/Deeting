@@ -40,6 +40,14 @@ pub struct LocalKnowledgeChunk {
     pub index: i64,
     pub content: String,
     pub token_count: i64,
+    pub chunk_type: String,
+    pub section_path: Vec<String>,
+    pub page_hint: Option<i64>,
+    pub char_start: Option<i64>,
+    pub char_end: Option<i64>,
+    pub char_count: i64,
+    pub content_hash: Option<String>,
+    pub quality_flags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,6 +88,14 @@ pub struct LocalKnowledgeSearchHit {
     pub index: i64,
     pub content: String,
     pub token_count: i64,
+    pub chunk_type: String,
+    pub section_path: Vec<String>,
+    pub page_hint: Option<i64>,
+    pub char_start: Option<i64>,
+    pub char_end: Option<i64>,
+    pub char_count: i64,
+    pub content_hash: Option<String>,
+    pub quality_flags: Vec<String>,
     pub score: f64,
 }
 

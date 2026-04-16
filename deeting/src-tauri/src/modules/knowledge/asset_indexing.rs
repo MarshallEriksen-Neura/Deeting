@@ -159,6 +159,21 @@ async fn rebuild_local_knowledge_chunks_for_file(
             }
         };
 
+        let metadata = serde_json::json!({
+            "chunk_index": chunk.index,
+            "document_name": &file.name,
+            "document_id": &file.id,
+            "token_count": chunk.token_count,
+            "chunk_type": &chunk.chunk_type,
+            "section_path": &chunk.section_path,
+            "page_hint": chunk.page_hint,
+            "char_start": chunk.char_start,
+            "char_end": chunk.char_end,
+            "char_count": chunk.char_count,
+            "content_hash": &chunk.content_hash,
+            "quality_flags": &chunk.quality_flags,
+        });
+
         if let Err(error) = app_state
             .memory
             .service
@@ -170,7 +185,7 @@ async fn rebuild_local_knowledge_chunks_for_file(
                 chunk.index,
                 chunk.token_count,
                 vector,
-                None,
+                Some(metadata),
             )
             .await
         {

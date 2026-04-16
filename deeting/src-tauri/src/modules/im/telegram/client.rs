@@ -661,10 +661,15 @@ impl ImClient for TelegramClient {
             .map_err(|_| ImError::SendError("无效的 reply_to".to_string()))?;
 
         let sent = match request.content {
-            MessageContent::Text { text } => self.send_message_api(chat_id, &text, reply_to).await?,
-            MessageContent::Image { url } => self.send_photo_api(chat_id, &url, None, reply_to).await?,
+            MessageContent::Text { text } => {
+                self.send_message_api(chat_id, &text, reply_to).await?
+            }
+            MessageContent::Image { url } => {
+                self.send_photo_api(chat_id, &url, None, reply_to).await?
+            }
             MessageContent::File { name: _, url } => {
-                self.send_document_api(chat_id, &url, None, reply_to).await?
+                self.send_document_api(chat_id, &url, None, reply_to)
+                    .await?
             }
             MessageContent::Card { .. } | MessageContent::Mixed { .. } => {
                 return Err(ImError::NotImplemented)

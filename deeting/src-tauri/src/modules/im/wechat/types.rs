@@ -158,12 +158,93 @@ pub struct WechatOutboundMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WechatOutboundMessageItem {
     pub r#type: i64,
-    pub text_item: WechatOutboundTextItem,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_item: Option<WechatOutboundTextItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_item: Option<WechatAssetItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_item: Option<WechatAssetItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub video_item: Option<WechatAssetItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub voice_item: Option<WechatAssetItem>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WechatOutboundTextItem {
     pub text: String,
+}
+
+impl WechatOutboundMessageItem {
+    pub fn text(text: String) -> Self {
+        Self {
+            r#type: WECHAT_ITEM_TYPE_TEXT,
+            text_item: Some(WechatOutboundTextItem { text }),
+            image_item: None,
+            file_item: None,
+            video_item: None,
+            voice_item: None,
+        }
+    }
+
+    pub fn image(url: String) -> Self {
+        Self {
+            r#type: WECHAT_ITEM_TYPE_IMAGE,
+            text_item: None,
+            image_item: Some(WechatAssetItem {
+                url: Some(url),
+                ..Default::default()
+            }),
+            file_item: None,
+            video_item: None,
+            voice_item: None,
+        }
+    }
+
+    pub fn file(name: String, url: String) -> Self {
+        Self {
+            r#type: WECHAT_ITEM_TYPE_FILE,
+            text_item: None,
+            image_item: None,
+            file_item: Some(WechatAssetItem {
+                name: Some(name),
+                url: Some(url),
+                ..Default::default()
+            }),
+            video_item: None,
+            voice_item: None,
+        }
+    }
+
+    pub fn video(name: String, url: String) -> Self {
+        Self {
+            r#type: WECHAT_ITEM_TYPE_VIDEO,
+            text_item: None,
+            image_item: None,
+            file_item: None,
+            video_item: Some(WechatAssetItem {
+                name: Some(name),
+                url: Some(url),
+                ..Default::default()
+            }),
+            voice_item: None,
+        }
+    }
+
+    pub fn voice(name: String, url: String) -> Self {
+        Self {
+            r#type: WECHAT_ITEM_TYPE_VOICE,
+            text_item: None,
+            image_item: None,
+            file_item: None,
+            video_item: None,
+            voice_item: Some(WechatAssetItem {
+                name: Some(name),
+                url: Some(url),
+                ..Default::default()
+            }),
+        }
+    }
 }
 
 pub const WECHAT_MESSAGE_TYPE_USER: i64 = 1;

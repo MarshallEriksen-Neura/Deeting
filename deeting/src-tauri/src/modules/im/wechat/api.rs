@@ -189,7 +189,10 @@ pub async fn send_typing(
         .map_err(|err| err.to_string())?;
 
     if !response.status().is_success() {
-        return Err(format!("wechat_sendtyping_http_{}", response.status().as_u16()));
+        return Err(format!(
+            "wechat_sendtyping_http_{}",
+            response.status().as_u16()
+        ));
     }
 
     Ok(())

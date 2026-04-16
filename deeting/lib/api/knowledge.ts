@@ -101,6 +101,14 @@ interface LocalKnowledgeChunk {
   index: number
   content: string
   token_count: number
+  chunk_type?: string | null
+  section_path?: string[] | null
+  page_hint?: number | null
+  char_start?: number | null
+  char_end?: number | null
+  char_count?: number | null
+  content_hash?: string | null
+  quality_flags?: string[] | null
 }
 
 interface ApiFolder {
@@ -118,6 +126,14 @@ interface ApiChunk {
   index: number
   content: string
   token_count: number
+  chunk_type?: string | null
+  section_path?: string[] | null
+  page_hint?: number | null
+  char_start?: number | null
+  char_end?: number | null
+  char_count?: number | null
+  content_hash?: string | null
+  quality_flags?: string[] | null
 }
 
 interface ApiStats {
@@ -225,6 +241,14 @@ function mapChunk(c: ApiChunk): KnowledgeChunk {
     index: c.index,
     content: c.content,
     tokenCount: c.token_count,
+    chunkType: c.chunk_type ?? undefined,
+    sectionPath: c.section_path ?? undefined,
+    pageHint: c.page_hint ?? undefined,
+    charStart: c.char_start ?? undefined,
+    charEnd: c.char_end ?? undefined,
+    charCount: c.char_count ?? undefined,
+    contentHash: c.content_hash ?? undefined,
+    qualityFlags: c.quality_flags ?? undefined,
   }
 }
 
@@ -821,6 +845,14 @@ export async function fetchFileChunks(
           index: item.index,
           content: item.content,
           token_count: item.token_count,
+          chunk_type: item.chunk_type ?? undefined,
+          section_path: item.section_path ?? undefined,
+          page_hint: item.page_hint ?? undefined,
+          char_start: item.char_start ?? undefined,
+          char_end: item.char_end ?? undefined,
+          char_count: item.char_count ?? undefined,
+          content_hash: item.content_hash ?? undefined,
+          quality_flags: item.quality_flags ?? undefined,
         })
       ),
       total: data.total,

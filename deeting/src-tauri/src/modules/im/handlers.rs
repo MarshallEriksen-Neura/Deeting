@@ -201,7 +201,9 @@ pub(crate) fn extract_local_chat_reply_outcome(response: &Value) -> Option<Local
             name: name.clone(),
             url: url.clone(),
         },
-        ImReplyCapability::MixedParts { parts } => MessageContent::Mixed { parts: parts.clone() },
+        ImReplyCapability::MixedParts { parts } => MessageContent::Mixed {
+            parts: parts.clone(),
+        },
         ImReplyCapability::UnsupportedRichContent { reason } => MessageContent::Text {
             text: reason.clone(),
         },

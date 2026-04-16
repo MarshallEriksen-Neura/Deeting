@@ -12,8 +12,7 @@ use super::bridge_protocol::{
     BridgeEnvelope, BridgeRequest, BridgeResponseEnvelope, BridgeResponsePayload,
 };
 use super::types::{
-    WechatGetUpdatesResponse, WechatOutboundMessage, WechatQrCodeResponse,
-    WechatQrStatusResponse,
+    WechatGetUpdatesResponse, WechatOutboundMessage, WechatQrCodeResponse, WechatQrStatusResponse,
 };
 
 #[derive(Clone)]

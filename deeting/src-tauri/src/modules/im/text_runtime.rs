@@ -32,10 +32,10 @@ impl TextImConversationRuntime {
         peer_id: &str,
         text: &str,
         channel_label: &str,
-        mut send_text: F,
+        mut send_message: F,
     ) -> Result<(), String>
     where
-        F: FnMut(String) -> Fut,
+        F: FnMut(MessageContent) -> Fut,
         Fut: Future<Output = Result<(), String>>,
     {
         if let Some(pending) = self.pending_text_approvals.get(peer_id).cloned() {
@@ -60,31 +60,36 @@ impl TextImConversationRuntime {
                 let mut sent_any = false;
                 for follow_up in outcome.follow_up_messages {
                     if let MessageContent::Text { text } = follow_up {
-                        send_text(text).await?;
+                        send_message(MessageContent::Text { text }).await?;
                         sent_any = true;
                     }
                 }
                 if !sent_any {
-                    send_text(
-                        if approved {
+                    send_message(MessageContent::Text {
+                        text: if approved {
                             "已批准，当前流程继续执行。"
                         } else {
                             "已拒绝，本次工具调用不会继续执行。"
                         }
                         .to_string(),
-                    )
+                    })
                     .await?;
                 }
                 return Ok(());
             }
 
-            send_text("当前有待审批操作，请先回复 `1` 确认执行，或回复 `0` 拒绝执行。".to_string())
-                .await?;
+            send_message(MessageContent::Text {
+                text: "当前有待审批操作，请先回复 `1` 确认执行，或回复 `0` 拒绝执行。".to_string(),
+            })
+            .await?;
             return Ok(());
         }
 
         let session_id = format!("im:{}:chat:{}", profile.id, peer_id);
-        send_text("收到，正在处理中…".to_string()).await?;
+        send_message(MessageContent::Text {
+            text: "收到，正在处理中…".to_string(),
+        })
+        .await?;
 
         let Some(reply_outcome) =
             generate_local_chat_reply_outcome(app_state, app_handle, text, session_id.as_str())
@@ -103,7 +108,10 @@ impl TextImConversationRuntime {
                     tool_name: approval_request.tool_name,
                 },
             );
-            send_text(approval_prompt).await?;
+            send_message(MessageContent::Text {
+                text: approval_prompt,
+            })
+            .await?;
             return Ok(());
         }
 
@@ -114,16 +122,11 @@ impl TextImConversationRuntime {
                     platform_adapter_for_profile(profile),
                     channel_label,
                 ) {
-                    ImReplyDelivery::Native(MessageContent::Text { text })
-                    | ImReplyDelivery::DowngradedText(text) => {
-                        send_text(text).await?;
+                    ImReplyDelivery::Native(content) => {
+                        send_message(content).await?;
                     }
-                    _ => {
-                        send_text(format!(
-                            "当前{}通道暂不支持该回复格式，请在桌面端查看完整结果。",
-                            channel_label
-                        ))
-                        .await?;
+                    ImReplyDelivery::DowngradedText(text) => {
+                        send_message(MessageContent::Text { text }).await?;
                     }
                 }
             }
@@ -133,16 +136,11 @@ impl TextImConversationRuntime {
                     platform_adapter_for_profile(profile),
                     channel_label,
                 ) {
-                    ImReplyDelivery::Native(MessageContent::Text { text })
-                    | ImReplyDelivery::DowngradedText(text) => {
-                        send_text(text).await?;
+                    ImReplyDelivery::Native(content) => {
+                        send_message(content).await?;
                     }
-                    _ => {
-                        send_text(format!(
-                            "当前{}通道暂不支持该回复格式，请在桌面端查看完整结果。",
-                            channel_label
-                        ))
-                        .await?;
+                    ImReplyDelivery::DowngradedText(text) => {
+                        send_message(MessageContent::Text { text }).await?;
                     }
                 }
             }
@@ -152,16 +150,11 @@ impl TextImConversationRuntime {
                     platform_adapter_for_profile(profile),
                     channel_label,
                 ) {
-                    ImReplyDelivery::Native(MessageContent::Text { text })
-                    | ImReplyDelivery::DowngradedText(text) => {
-                        send_text(text).await?;
+                    ImReplyDelivery::Native(content) => {
+                        send_message(content).await?;
                     }
-                    _ => {
-                        send_text(format!(
-                            "当前{}通道暂不支持该回复格式，请在桌面端查看完整结果。",
-                            channel_label
-                        ))
-                        .await?;
+                    ImReplyDelivery::DowngradedText(text) => {
+                        send_message(MessageContent::Text { text }).await?;
                     }
                 }
             }
@@ -171,16 +164,11 @@ impl TextImConversationRuntime {
                     platform_adapter_for_profile(profile),
                     channel_label,
                 ) {
-                    ImReplyDelivery::Native(MessageContent::Text { text })
-                    | ImReplyDelivery::DowngradedText(text) => {
-                        send_text(text).await?;
+                    ImReplyDelivery::Native(content) => {
+                        send_message(content).await?;
                     }
-                    _ => {
-                        send_text(format!(
-                            "当前{}通道暂不支持该回复格式，请在桌面端查看完整结果。",
-                            channel_label
-                        ))
-                        .await?;
+                    ImReplyDelivery::DowngradedText(text) => {
+                        send_message(MessageContent::Text { text }).await?;
                     }
                 }
             }
@@ -190,16 +178,11 @@ impl TextImConversationRuntime {
                     platform_adapter_for_profile(profile),
                     channel_label,
                 ) {
-                    ImReplyDelivery::Native(MessageContent::Text { text })
-                    | ImReplyDelivery::DowngradedText(text) => {
-                        send_text(text).await?;
+                    ImReplyDelivery::Native(content) => {
+                        send_message(content).await?;
                     }
-                    _ => {
-                        send_text(format!(
-                            "当前{}通道暂不支持该回复格式，请在桌面端查看完整结果。",
-                            channel_label
-                        ))
-                        .await?;
+                    ImReplyDelivery::DowngradedText(text) => {
+                        send_message(MessageContent::Text { text }).await?;
                     }
                 }
             }

@@ -3,7 +3,7 @@ use std::time::Duration;
 use log::{info, warn};
 
 use crate::modules::im::text_runtime::TextImConversationRuntime;
-use crate::modules::im::ImConnectionProfile;
+use crate::modules::im::{ImConnectionProfile, MessageContent};
 use crate::state::AppState;
 
 use super::types::{
@@ -198,6 +198,21 @@ pub async fn run_wechat_direct_profile_worker(
                 text.clone()
             };
 
+            if let Err(err) = app_state
+                .wechat
+                .send_typing(
+                    account.base_url.as_str(),
+                    account.token.as_str(),
+                    contact_id,
+                )
+                .await
+            {
+                warn!(
+                    "wechat_runtime_send_typing_failed profile={} contact_id={} err={}",
+                    profile.id, contact_id, err
+                );
+            }
+
             if let Err(err) = text_runtime
                 .handle_incoming_text(
                     &app_state,
@@ -206,20 +221,19 @@ pub async fn run_wechat_direct_profile_worker(
                     contact_id,
                     incoming_user_text.as_str(),
                     "微信",
-                    |reply_text| {
+                    |content| {
                         let app_state = app_state.clone();
                         let base_url = account.base_url.clone();
                         let token = account.token.clone();
                         let context_token = reply_context_token.clone();
                         let contact_id = contact_id.to_string();
-                        let text = reply_text;
                         async move {
-                            send_text(
+                            send_content(
                                 &app_state,
                                 base_url.as_str(),
                                 token.as_str(),
                                 contact_id.as_str(),
-                                text.as_str(),
+                                content,
                                 context_token.as_str(),
                             )
                             .await
@@ -344,6 +358,101 @@ async fn send_text(
         .await
 }
 
+async fn send_content(
+    app_state: &AppState,
+    base_url: &str,
+    token: &str,
+    contact_id: &str,
+    content: MessageContent,
+    context_token: &str,
+) -> Result<(), String> {
+    match content {
+        MessageContent::Text { text } => {
+            send_text(
+                app_state,
+                base_url,
+                token,
+                contact_id,
+                text.as_str(),
+                context_token,
+            )
+            .await
+        }
+        MessageContent::Image { url } => {
+            let message = super::types::WechatOutboundMessage {
+                to_user_id: contact_id.to_string(),
+                from_user_id: String::new(),
+                client_id: uuid::Uuid::new_v4().to_string(),
+                message_type: super::types::WECHAT_MESSAGE_TYPE_BOT,
+                message_state: super::types::WECHAT_MESSAGE_STATE_FINISH,
+                context_token: context_token.to_string(),
+                item_list: vec![super::types::WechatOutboundMessageItem::image(url)],
+            };
+            app_state
+                .wechat
+                .send_message(base_url, token, message)
+                .await
+        }
+        MessageContent::File { name, url } => {
+            let item = classify_outbound_file_item(name, url);
+            let message = super::types::WechatOutboundMessage {
+                to_user_id: contact_id.to_string(),
+                from_user_id: String::new(),
+                client_id: uuid::Uuid::new_v4().to_string(),
+                message_type: super::types::WECHAT_MESSAGE_TYPE_BOT,
+                message_state: super::types::WECHAT_MESSAGE_STATE_FINISH,
+                context_token: context_token.to_string(),
+                item_list: vec![item],
+            };
+            app_state
+                .wechat
+                .send_message(base_url, token, message)
+                .await
+        }
+        other => {
+            send_text(
+                app_state,
+                base_url,
+                token,
+                contact_id,
+                format!("当前微信通道暂不支持该回复格式，请在桌面端查看完整结果：{other:?}")
+                    .as_str(),
+                context_token,
+            )
+            .await
+        }
+    }
+}
+
+fn classify_outbound_file_item(
+    name: String,
+    url: String,
+) -> super::types::WechatOutboundMessageItem {
+    let normalized_name = name.to_ascii_lowercase();
+    let normalized_url = url.to_ascii_lowercase();
+    if normalized_name.ends_with(".mp4")
+        || normalized_name.ends_with(".mov")
+        || normalized_name.ends_with(".mkv")
+        || normalized_url.ends_with(".mp4")
+        || normalized_url.ends_with(".mov")
+        || normalized_url.ends_with(".mkv")
+    {
+        return super::types::WechatOutboundMessageItem::video(name, url);
+    }
+    if normalized_name.ends_with(".mp3")
+        || normalized_name.ends_with(".wav")
+        || normalized_name.ends_with(".ogg")
+        || normalized_name.ends_with(".m4a")
+        || normalized_url.ends_with(".mp3")
+        || normalized_url.ends_with(".wav")
+        || normalized_url.ends_with(".ogg")
+        || normalized_url.ends_with(".m4a")
+    {
+        return super::types::WechatOutboundMessageItem::voice(name, url);
+    }
+    super::types::WechatOutboundMessageItem::file(name, url)
+}
+
 fn markdown_to_plain_text(input: &str) -> String {
     input
         .replace("```", "")
@@ -357,7 +466,7 @@ fn markdown_to_plain_text(input: &str) -> String {
 mod tests {
     use crate::modules::im::text_runtime::parse_text_approval_command;
 
-    use super::select_context_token;
+    use super::{classify_incoming_message, classify_outbound_file_item, select_context_token};
 
     #[test]
     fn parse_text_approval_command_accepts_numeric_choices() {
@@ -380,5 +489,63 @@ mod tests {
             select_context_token("   ", Some("ctx-stored")),
             "ctx-stored".to_string()
         );
+    }
+
+    #[test]
+    fn classify_incoming_message_reports_rich_types() {
+        let message = super::super::types::WechatMessage {
+            message_id: Some(1),
+            from_user_id: Some("wx-user-1".to_string()),
+            message_type: Some(super::super::types::WECHAT_MESSAGE_TYPE_USER),
+            item_list: Some(vec![
+                super::super::types::WechatMessageItem {
+                    r#type: Some(super::super::types::WECHAT_ITEM_TYPE_IMAGE),
+                    text_item: None,
+                    image_item: Some(super::super::types::WechatAssetItem {
+                        url: Some("https://example.com/image.png".to_string()),
+                        ..Default::default()
+                    }),
+                    file_item: None,
+                    video_item: None,
+                    voice_item: None,
+                },
+                super::super::types::WechatMessageItem {
+                    r#type: Some(super::super::types::WECHAT_ITEM_TYPE_TEXT),
+                    text_item: Some(super::super::types::WechatTextItem {
+                        text: Some("hello".to_string()),
+                    }),
+                    image_item: None,
+                    file_item: None,
+                    video_item: None,
+                    voice_item: None,
+                },
+            ]),
+            context_token: Some("ctx-1".to_string()),
+        };
+
+        let (text, notice) = classify_incoming_message(&message);
+        assert_eq!(text, "hello");
+        assert!(notice.unwrap_or_default().contains("image"));
+    }
+
+    #[test]
+    fn classify_outbound_file_item_maps_media_extensions() {
+        let video = classify_outbound_file_item(
+            "clip.mp4".to_string(),
+            "https://example.com/clip.mp4".to_string(),
+        );
+        assert_eq!(video.r#type, super::super::types::WECHAT_ITEM_TYPE_VIDEO);
+
+        let voice = classify_outbound_file_item(
+            "audio.mp3".to_string(),
+            "https://example.com/audio.mp3".to_string(),
+        );
+        assert_eq!(voice.r#type, super::super::types::WECHAT_ITEM_TYPE_VOICE);
+
+        let file = classify_outbound_file_item(
+            "report.pdf".to_string(),
+            "https://example.com/report.pdf".to_string(),
+        );
+        assert_eq!(file.r#type, super::super::types::WECHAT_ITEM_TYPE_FILE);
     }
 }

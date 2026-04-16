@@ -298,7 +298,10 @@ impl WechatState {
         token: &str,
         message: super::types::WechatOutboundMessage,
     ) -> Result<(), String> {
-        self.shared.bridge.send_message(base_url, token, message).await
+        self.shared
+            .bridge
+            .send_message(base_url, token, message)
+            .await
     }
 
     pub async fn send_typing(
@@ -307,7 +310,10 @@ impl WechatState {
         token: &str,
         contact_id: &str,
     ) -> Result<(), String> {
-        self.shared.bridge.send_typing(base_url, token, contact_id).await
+        self.shared
+            .bridge
+            .send_typing(base_url, token, contact_id)
+            .await
     }
 
     pub async fn update_context_token(

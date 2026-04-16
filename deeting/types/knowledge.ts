@@ -74,6 +74,20 @@ export interface KnowledgeChunk {
   content: string
   /** Number of tokens in this chunk */
   tokenCount: number
+  /** Structure-aware chunk classification */
+  chunkType?: string
+  /** Heading path inferred for this chunk */
+  sectionPath?: string[]
+  /** Optional page hint from the source document */
+  pageHint?: number | null
+  /** Optional character range within the normalized document */
+  charStart?: number | null
+  charEnd?: number | null
+  charCount?: number
+  /** Deterministic content hash for rebuild / diagnostics */
+  contentHash?: string | null
+  /** Chunk quality hints for diagnostics / future ranking */
+  qualityFlags?: string[]
 }
 
 /** Sort options for the knowledge table */

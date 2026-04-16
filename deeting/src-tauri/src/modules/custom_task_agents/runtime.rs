@@ -1034,7 +1034,11 @@ async fn load_maintainer_corpus_preview(
         return None;
     }
 
-    let workspace_path = profile.source_path.as_deref().map(str::trim).unwrap_or_default();
+    let workspace_path = profile
+        .source_path
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default();
     if workspace_path.is_empty() {
         return Some(
             "Corpus preview is unavailable right now. Use `llm_wiki_search_corpus` when you need fresh local wiki evidence.".to_string(),
@@ -1074,7 +1078,6 @@ async fn load_maintainer_corpus_preview(
             .join("\n"),
     )
 }
-
 
 fn maintainer_scope_label(scope: &str) -> &'static str {
     match scope {
@@ -1330,5 +1333,4 @@ mod tests {
         assert_eq!(messages[3].role, "user");
         assert!(messages[3].content.contains("Raw user phrasing"));
     }
-
 }

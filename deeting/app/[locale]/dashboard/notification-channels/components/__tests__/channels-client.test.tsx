@@ -239,8 +239,8 @@ describe("NotificationChannelsClient telegram config", () => {
           restart_count: 0,
           capabilities: {
             inbound: ["text", "image", "file"],
-            outbound: ["text"],
-            degradations: ["rich_media_as_text_notice"],
+            outbound: ["text", "image", "file", "video", "voice", "typing"],
+            degradations: ["upload_or_cdn_policy_still_evolving"],
           },
         },
       ],
@@ -255,6 +255,6 @@ describe("NotificationChannelsClient telegram config", () => {
       expect(screen.getByText("runtimeHint.currentDesktopIm mode:running")).toBeTruthy()
     })
     expect(screen.getByText("WeChat direct runtime is running.")).toBeTruthy()
-    expect(screen.getByText("in:text,image,file · out:text")).toBeTruthy()
+    expect(screen.getByText("in:text,image,file · out:text,image,file,video,voice,typing")).toBeTruthy()
   })
 })

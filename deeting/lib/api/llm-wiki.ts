@@ -21,20 +21,6 @@ export const LocalLlmWikiBindingSchema = z.object({
   isProbableObsidianVault: z.boolean(),
 })
 
-export const LocalLlmWikiCandidateFolderSchema = z.object({
-  relativePath: z.string(),
-  reason: z.string(),
-  score: z.number(),
-})
-
-export const LocalLlmWikiVaultScanSummarySchema = z.object({
-  detectedObsidianConfig: z.boolean(),
-  totalMarkdownFiles: z.number(),
-  totalAttachmentFiles: z.number(),
-  totalDirectories: z.number(),
-  candidateFolders: z.array(LocalLlmWikiCandidateFolderSchema).default([]),
-})
-
 export const LocalLlmWikiWorkspaceStatusSchema = z.object({
   resolvedWorkspacePath: z.string(),
   workspaceExists: z.boolean(),
@@ -218,12 +204,6 @@ export const LocalLlmWikiLintReportSchema = z.object({
 })
 
 export type LocalLlmWikiBinding = z.infer<typeof LocalLlmWikiBindingSchema>
-export type LocalLlmWikiCandidateFolder = z.infer<
-  typeof LocalLlmWikiCandidateFolderSchema
->
-export type LocalLlmWikiVaultScanSummary = z.infer<
-  typeof LocalLlmWikiVaultScanSummarySchema
->
 export type LocalLlmWikiWorkspaceStatus = z.infer<
   typeof LocalLlmWikiWorkspaceStatusSchema
 >

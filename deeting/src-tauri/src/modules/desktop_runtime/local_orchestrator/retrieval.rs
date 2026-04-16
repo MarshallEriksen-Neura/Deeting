@@ -565,7 +565,14 @@ async fn prefetch_selected_knowledge(
         .iter()
         .map(|hit| {
             let snippet = compact_knowledge_snippet(&hit.content, 260);
-            format!("- [{} #{}] {}", hit.file_name, hit.index + 1, snippet)
+            let section_suffix = format_selected_hit_section_path(&hit.section_path);
+            format!(
+                "- [{}{} #{}] {}",
+                hit.file_name,
+                section_suffix,
+                hit.index + 1,
+                snippet
+            )
         })
         .collect::<Vec<_>>();
 
@@ -680,6 +687,14 @@ pub(super) fn build_selected_knowledge_fallback_hits(
                 index: chunk.index,
                 content: chunk.content.clone(),
                 token_count: chunk.token_count,
+                chunk_type: chunk.chunk_type.clone(),
+                section_path: chunk.section_path.clone(),
+                page_hint: chunk.page_hint,
+                char_start: chunk.char_start,
+                char_end: chunk.char_end,
+                char_count: chunk.char_count,
+                content_hash: chunk.content_hash.clone(),
+                quality_flags: chunk.quality_flags.clone(),
                 score: 0.0,
             });
             if hits.len() >= limit {
@@ -782,6 +797,75 @@ fn local_knowledge_search_hit_from_semantic_result(
         .and_then(Value::as_i64)
         .unwrap_or(0)
         .max(0);
+    let chunk_type = result
+        .metadata
+        .as_ref()
+        .and_then(|value| value.get("chunk_type"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| "paragraph".to_string());
+    let section_path = result
+        .metadata
+        .as_ref()
+        .and_then(|value| value.get("section_path"))
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let page_hint = result
+        .metadata
+        .as_ref()
+        .and_then(|value| value.get("page_hint"))
+        .and_then(Value::as_i64);
+    let char_start = result
+        .metadata
+        .as_ref()
+        .and_then(|value| value.get("char_start"))
+        .and_then(Value::as_i64);
+    let char_end = result
+        .metadata
+        .as_ref()
+        .and_then(|value| value.get("char_end"))
+        .and_then(Value::as_i64);
+    let char_count = result
+        .metadata
+        .as_ref()
+        .and_then(|value| value.get("char_count"))
+        .and_then(Value::as_i64)
+        .unwrap_or(content.chars().count() as i64)
+        .max(0);
+    let content_hash = result
+        .metadata
+        .as_ref()
+        .and_then(|value| value.get("content_hash"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+    let quality_flags = result
+        .metadata
+        .as_ref()
+        .and_then(|value| value.get("quality_flags"))
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
 
     Some(LocalKnowledgeSearchHit {
         chunk_id,
@@ -790,11 +874,32 @@ fn local_knowledge_search_hit_from_semantic_result(
         index: result.chunk_index.unwrap_or(0).max(0),
         content,
         token_count,
+        chunk_type,
+        section_path,
+        page_hint,
+        char_start,
+        char_end,
+        char_count,
+        content_hash,
+        quality_flags,
         score: (result.score as f64).max(0.0),
     })
 }
 
 pub(super) fn build_selected_document_overview(chunks: &[LocalKnowledgeChunk]) -> Option<String> {
+    let section_hint = chunks.iter().find_map(|chunk| {
+        let path = chunk
+            .section_path
+            .iter()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .collect::<Vec<_>>();
+        if path.is_empty() {
+            None
+        } else {
+            Some(path.join(" > "))
+        }
+    });
     let preview = chunks
         .iter()
         .take(2)
@@ -805,8 +910,23 @@ pub(super) fn build_selected_document_overview(chunks: &[LocalKnowledgeChunk]) -
     let normalized = compact_knowledge_snippet(&preview, 220);
     if normalized.is_empty() {
         None
+    } else if let Some(section_hint) = section_hint {
+        Some(format!("{section_hint}: {normalized}"))
     } else {
         Some(normalized)
+    }
+}
+
+fn format_selected_hit_section_path(section_path: &[String]) -> String {
+    let normalized = section_path
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    if normalized.is_empty() {
+        String::new()
+    } else {
+        format!(" :: {}", normalized.join(" > "))
     }
 }
 

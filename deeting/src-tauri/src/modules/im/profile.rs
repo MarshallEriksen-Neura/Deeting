@@ -300,7 +300,11 @@ pub fn platform_capabilities(
         (ImPlatform::Feishu, ImTransportKind::Direct) => ImRuntimeCapabilities {
             inbound: feature_list(&["text", "image", "file", "card_action"]),
             outbound: feature_list(&["text", "interactive_card", "image", "file"]),
-            degradations: feature_list(&["mixed_parts_to_text", "non_native_media_to_text_link"]),
+            degradations: feature_list(&[
+                "mixed_parts_to_text",
+                "non_native_media_to_text_link",
+                "raw_url_media_requires_feishu_asset_key",
+            ]),
         },
         (ImPlatform::Feishu, ImTransportKind::Relay) => ImRuntimeCapabilities {
             inbound: feature_list(&["text"]),
@@ -317,11 +321,9 @@ pub fn platform_capabilities(
         },
         (ImPlatform::Wechat, _) => ImRuntimeCapabilities {
             inbound: feature_list(&["text", "image", "file", "video", "voice"]),
-            outbound: feature_list(&["text"]),
+            outbound: feature_list(&["text", "image", "file", "video", "voice", "typing"]),
             degradations: feature_list(&[
-                "rich_media_as_text_notice",
-                "typing_reserved_for_future_phase",
-                "native_media_send_reserved",
+                "upload_or_cdn_policy_still_evolving",
             ]),
         },
         _ => ImRuntimeCapabilities {

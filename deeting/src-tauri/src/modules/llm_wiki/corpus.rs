@@ -4,8 +4,9 @@ use crate::state::AppState;
 
 use super::store::{
     bootstrap_corpus as bootstrap_corpus_store, clear_legacy_projection_assets,
-    load_corpus_status as load_corpus_status_store, reconcile_corpus as reconcile_corpus_store,
-    rebuild_projection_assets, search_corpus as search_corpus_store, workspace_id_from_path,
+    load_corpus_status as load_corpus_status_store, rebuild_projection_assets,
+    reconcile_corpus as reconcile_corpus_store, search_corpus as search_corpus_store,
+    workspace_id_from_path,
 };
 use super::types::{LocalLlmWikiCorpusSearchHit, LocalLlmWikiCorpusStatus};
 

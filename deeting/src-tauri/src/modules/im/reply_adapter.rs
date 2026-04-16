@@ -43,6 +43,11 @@ fn non_empty_trimmed_text(value: &str) -> Option<String> {
     }
 }
 
+fn is_remote_media_url(value: &str) -> bool {
+    let normalized = value.trim().to_ascii_lowercase();
+    normalized.starts_with("https://") || normalized.starts_with("http://")
+}
+
 fn block_text_from_payload(payload: &Value) -> Option<String> {
     payload
         .get("text")
@@ -70,7 +75,9 @@ fn capability_from_ui_block(block: &Value) -> Option<ImReplyCapability> {
     if view_type.eq_ignore_ascii_case("html.v1") || view_type.eq_ignore_ascii_case("table.simple") {
         let summary = block_text_from_payload(&payload)
             .or_else(|| block_text_from_payload(&metadata))
-            .unwrap_or_else(|| format!("Structured UI block `{view_type}` is only available in desktop."));
+            .unwrap_or_else(|| {
+                format!("Structured UI block `{view_type}` is only available in desktop.")
+            });
         return Some(ImReplyCapability::UnsupportedRichContent { reason: summary });
     }
 
@@ -101,7 +108,10 @@ fn capability_from_ui_block(block: &Value) -> Option<ImReplyCapability> {
             .or_else(|| payload.get("download_url").and_then(Value::as_str))
             .and_then(non_empty_trimmed_text);
         return Some(match file_url {
-            Some(url) => ImReplyCapability::FileRef { name: file_name, url },
+            Some(url) => ImReplyCapability::FileRef {
+                name: file_name,
+                url,
+            },
             None => ImReplyCapability::UnsupportedRichContent {
                 reason: format!("File result `{view_type}` is only available in desktop."),
             },
@@ -118,7 +128,11 @@ fn first_rich_block_capability(response: &Value) -> Option<ImReplyCapability> {
         .and_then(Value::as_array)?;
 
     for block in blocks.iter().rev() {
-        match block.get("type").and_then(Value::as_str).unwrap_or_default() {
+        match block
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+        {
             "ui" => {
                 if let Some(capability) = capability_from_ui_block(block) {
                     return Some(capability);
@@ -190,14 +204,19 @@ pub(crate) fn adapt_reply_for_platform(
             ImReplyDelivery::Native(MessageContent::Text { text: text.clone() })
         }
         ImReplyCapability::InteractiveCard { card } => match platform {
-            ImPlatformAdapter::Feishu => ImReplyDelivery::Native(MessageContent::Card { card: card.clone() }),
+            ImPlatformAdapter::Feishu => {
+                ImReplyDelivery::Native(MessageContent::Card { card: card.clone() })
+            }
             _ => ImReplyDelivery::DowngradedText(format!(
                 "当前{}通道暂不支持交互卡片，请在桌面端查看完整结果。",
                 channel_label
             )),
         },
         ImReplyCapability::ImageRef { url } => match platform {
-            ImPlatformAdapter::Feishu | ImPlatformAdapter::Telegram => {
+            ImPlatformAdapter::Feishu if url.starts_with("feishu://image/") => {
+                ImReplyDelivery::Native(MessageContent::Image { url: url.clone() })
+            }
+            ImPlatformAdapter::Telegram | ImPlatformAdapter::Wechat if is_remote_media_url(url) => {
                 ImReplyDelivery::Native(MessageContent::Image { url: url.clone() })
             }
             _ => ImReplyDelivery::DowngradedText(format!(
@@ -206,7 +225,13 @@ pub(crate) fn adapt_reply_for_platform(
             )),
         },
         ImReplyCapability::FileRef { name, url } => match platform {
-            ImPlatformAdapter::Feishu | ImPlatformAdapter::Telegram => {
+            ImPlatformAdapter::Feishu if url.starts_with("feishu://file/") => {
+                ImReplyDelivery::Native(MessageContent::File {
+                    name: name.clone(),
+                    url: url.clone(),
+                })
+            }
+            ImPlatformAdapter::Telegram | ImPlatformAdapter::Wechat if is_remote_media_url(url) => {
                 ImReplyDelivery::Native(MessageContent::File {
                     name: name.clone(),
                     url: url.clone(),
@@ -218,7 +243,9 @@ pub(crate) fn adapt_reply_for_platform(
             )),
         },
         ImReplyCapability::MixedParts { parts } => match platform {
-            ImPlatformAdapter::Feishu => ImReplyDelivery::Native(MessageContent::Mixed { parts: parts.clone() }),
+            ImPlatformAdapter::Feishu => ImReplyDelivery::Native(MessageContent::Mixed {
+                parts: parts.clone(),
+            }),
             _ => ImReplyDelivery::DowngradedText(format!(
                 "当前{}通道暂不支持混合内容回复，请在桌面端查看完整结果。",
                 channel_label
@@ -269,7 +296,7 @@ mod tests {
     }
 
     #[test]
-    fn adapt_image_to_telegram_downgrades_to_text_notice() {
+    fn adapt_image_to_telegram_keeps_native_image_delivery() {
         let result = adapt_reply_for_platform(
             &ImReplyCapability::ImageRef {
                 url: "https://example.com/image.png".to_string(),
@@ -279,11 +306,10 @@ mod tests {
         );
 
         match result {
-            ImReplyDelivery::DowngradedText(text) => {
-                assert!(text.contains("Telegram"));
-                assert!(text.contains("image.png"));
+            ImReplyDelivery::Native(MessageContent::Image { url }) => {
+                assert_eq!(url, "https://example.com/image.png")
             }
-            _ => panic!("telegram image replies should downgrade to text"),
+            _ => panic!("telegram image replies should stay native"),
         }
     }
 
@@ -300,6 +326,25 @@ mod tests {
         match result {
             ImReplyDelivery::Native(MessageContent::Card { .. }) => {}
             _ => panic!("feishu card replies should stay native"),
+        }
+    }
+
+    #[test]
+    fn adapt_http_image_to_feishu_downgrades() {
+        let result = adapt_reply_for_platform(
+            &ImReplyCapability::ImageRef {
+                url: "https://example.com/image.png".to_string(),
+            },
+            ImPlatformAdapter::Feishu,
+            "飞书",
+        );
+
+        match result {
+            ImReplyDelivery::DowngradedText(text) => {
+                assert!(text.contains("飞书"));
+                assert!(text.contains("image.png"));
+            }
+            _ => panic!("http image should downgrade for feishu"),
         }
     }
 
@@ -322,5 +367,42 @@ mod tests {
             _ => panic!("telegram file replies should stay native"),
         }
     }
-}
 
+    #[test]
+    fn adapt_image_to_wechat_keeps_native_image_delivery() {
+        let result = adapt_reply_for_platform(
+            &ImReplyCapability::ImageRef {
+                url: "https://example.com/image.png".to_string(),
+            },
+            ImPlatformAdapter::Wechat,
+            "微信",
+        );
+
+        match result {
+            ImReplyDelivery::Native(MessageContent::Image { url }) => {
+                assert_eq!(url, "https://example.com/image.png");
+            }
+            _ => panic!("wechat image replies should stay native"),
+        }
+    }
+
+    #[test]
+    fn adapt_local_file_to_wechat_downgrades() {
+        let result = adapt_reply_for_platform(
+            &ImReplyCapability::FileRef {
+                name: "report.pdf".to_string(),
+                url: "file:///tmp/report.pdf".to_string(),
+            },
+            ImPlatformAdapter::Wechat,
+            "微信",
+        );
+
+        match result {
+            ImReplyDelivery::DowngradedText(text) => {
+                assert!(text.contains("report.pdf"));
+                assert!(text.contains("微信"));
+            }
+            _ => panic!("local files should downgrade for wechat"),
+        }
+    }
+}

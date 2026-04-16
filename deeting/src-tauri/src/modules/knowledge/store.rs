@@ -1,5 +1,7 @@
 use std::cmp::Ordering;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
+use std::hash::{Hash, Hasher};
 
 use sqlx::sqlite::{SqlitePool, SqliteRow};
 use sqlx::Row;
@@ -18,6 +20,31 @@ use crate::utils::now_rfc3339;
 const LOCAL_DESKTOP_USER_ID: &str = "00000000-0000-0000-0000-000000000000";
 const LOCAL_KNOWLEDGE_CHUNK_MAX_CHARS: usize = 1200;
 const LOCAL_KNOWLEDGE_CHUNK_OVERLAP_CHARS: usize = 120;
+const LOCAL_KNOWLEDGE_CHUNK_MIN_CHARS: usize = 120;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LocalKnowledgeBlock {
+    block_type: &'static str,
+    text: String,
+    level: Option<usize>,
+    section_path: Vec<String>,
+    char_start: usize,
+    char_end: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LocalKnowledgeChunkDraft {
+    content: String,
+    chunk_type: String,
+    section_path: Vec<String>,
+    page_hint: Option<i64>,
+    char_start: i64,
+    char_end: i64,
+    char_count: i64,
+    token_count: i64,
+    content_hash: String,
+    quality_flags: Vec<String>,
+}
 
 pub struct KnowledgeStore {
     pool: SqlitePool,
@@ -41,6 +68,25 @@ impl KnowledgeStore {
             .begin()
             .await
             .map_err(|err| KnowledgeError::Storage(err.to_string()))
+    }
+
+    async fn add_column_if_missing(
+        &self,
+        table: &str,
+        column_definition: &str,
+    ) -> Result<(), KnowledgeError> {
+        let sql = format!("ALTER TABLE {table} ADD COLUMN {column_definition};");
+        match sqlx::query(&sql).execute(&self.write_pool).await {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                let message = err.to_string().to_ascii_lowercase();
+                if message.contains("duplicate column name") {
+                    Ok(())
+                } else {
+                    Err(KnowledgeError::Storage(err.to_string()))
+                }
+            }
+        }
     }
 
     pub async fn init(&self) -> Result<(), KnowledgeError> {
@@ -174,6 +220,14 @@ impl KnowledgeStore {
               chunk_index INTEGER NOT NULL,
               text_content TEXT NOT NULL,
               token_count INTEGER NOT NULL DEFAULT 0,
+              chunk_type TEXT NOT NULL DEFAULT 'paragraph',
+              section_path TEXT NOT NULL DEFAULT '[]',
+              page_hint INTEGER,
+              char_start INTEGER,
+              char_end INTEGER,
+              char_count INTEGER NOT NULL DEFAULT 0,
+              content_hash TEXT,
+              quality_flags TEXT NOT NULL DEFAULT '[]',
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL,
               FOREIGN KEY (document_id) REFERENCES user_document(id) ON DELETE CASCADE
@@ -213,6 +267,29 @@ impl KnowledgeStore {
         .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
+
+        self.add_column_if_missing(
+            "knowledge_chunk",
+            "chunk_type TEXT NOT NULL DEFAULT 'paragraph'",
+        )
+        .await?;
+        self.add_column_if_missing("knowledge_chunk", "section_path TEXT NOT NULL DEFAULT '[]'")
+            .await?;
+        self.add_column_if_missing("knowledge_chunk", "page_hint INTEGER")
+            .await?;
+        self.add_column_if_missing("knowledge_chunk", "char_start INTEGER")
+            .await?;
+        self.add_column_if_missing("knowledge_chunk", "char_end INTEGER")
+            .await?;
+        self.add_column_if_missing("knowledge_chunk", "char_count INTEGER NOT NULL DEFAULT 0")
+            .await?;
+        self.add_column_if_missing("knowledge_chunk", "content_hash TEXT")
+            .await?;
+        self.add_column_if_missing(
+            "knowledge_chunk",
+            "quality_flags TEXT NOT NULL DEFAULT '[]'",
+        )
+        .await?;
 
         Ok(())
     }
@@ -1167,7 +1244,20 @@ impl KnowledgeStore {
 
         let rows = sqlx::query(
             r#"
-            SELECT id, document_id, chunk_index, text_content, token_count
+            SELECT
+              id,
+              document_id,
+              chunk_index,
+              text_content,
+              token_count,
+              chunk_type,
+              section_path,
+              page_hint,
+              char_start,
+              char_end,
+              char_count,
+              content_hash,
+              quality_flags
             FROM knowledge_chunk
             WHERE user_id = ? AND document_id = ?
             ORDER BY chunk_index ASC, id ASC
@@ -1188,12 +1278,34 @@ impl KnowledgeStore {
             let token_count = row
                 .try_get::<i64, _>("token_count")
                 .unwrap_or_else(|_| estimate_local_tokens(&content));
+            let section_path = row
+                .try_get::<String, _>("section_path")
+                .ok()
+                .and_then(|value| serde_json::from_str::<Vec<String>>(&value).ok())
+                .unwrap_or_default();
+            let quality_flags = row
+                .try_get::<String, _>("quality_flags")
+                .ok()
+                .and_then(|value| serde_json::from_str::<Vec<String>>(&value).ok())
+                .unwrap_or_default();
             items.push(LocalKnowledgeChunk {
                 id: row.try_get("id")?,
                 file_id: row.try_get("document_id")?,
                 index: row.try_get::<i64, _>("chunk_index").unwrap_or(0).max(0),
                 content,
                 token_count: token_count.max(0),
+                chunk_type: row
+                    .try_get::<String, _>("chunk_type")
+                    .unwrap_or_else(|_| "paragraph".to_string()),
+                section_path,
+                page_hint: row.try_get::<Option<i64>, _>("page_hint").unwrap_or(None),
+                char_start: row.try_get::<Option<i64>, _>("char_start").unwrap_or(None),
+                char_end: row.try_get::<Option<i64>, _>("char_end").unwrap_or(None),
+                char_count: row.try_get::<i64, _>("char_count").unwrap_or(0).max(0),
+                content_hash: row
+                    .try_get::<Option<String>, _>("content_hash")
+                    .unwrap_or(None),
+                quality_flags,
             });
         }
 
@@ -1278,6 +1390,14 @@ impl KnowledgeStore {
               kc.chunk_index AS chunk_index,
               kc.text_content AS text_content,
               kc.token_count AS token_count,
+              kc.chunk_type AS chunk_type,
+              kc.section_path AS section_path,
+              kc.page_hint AS page_hint,
+              kc.char_start AS char_start,
+              kc.char_end AS char_end,
+              kc.char_count AS char_count,
+              kc.content_hash AS content_hash,
+              kc.quality_flags AS quality_flags,
               ud.filename AS file_name
             FROM knowledge_chunk kc
             INNER JOIN user_document ud
@@ -1309,9 +1429,28 @@ impl KnowledgeStore {
         let mut scored_hits = Vec::new();
         for row in rows {
             let content: String = row.try_get("text_content")?;
+            let section_path = row
+                .try_get::<String, _>("section_path")
+                .ok()
+                .and_then(|value| serde_json::from_str::<Vec<String>>(&value).ok())
+                .unwrap_or_default();
+            let quality_flags = row
+                .try_get::<String, _>("quality_flags")
+                .ok()
+                .and_then(|value| serde_json::from_str::<Vec<String>>(&value).ok())
+                .unwrap_or_default();
+            let chunk_type = row
+                .try_get::<String, _>("chunk_type")
+                .unwrap_or_else(|_| "paragraph".to_string());
             let content_lower = content.to_ascii_lowercase();
-            let score =
-                compute_local_knowledge_match_score(&query_lower, &lowered_tokens, &content_lower);
+            let score = compute_local_knowledge_match_score(
+                &query_lower,
+                &lowered_tokens,
+                &content_lower,
+                &section_path,
+                &chunk_type,
+                &quality_flags,
+            );
             if score <= 0.0 {
                 continue;
             }
@@ -1322,6 +1461,16 @@ impl KnowledgeStore {
                 index: row.try_get::<i64, _>("chunk_index").unwrap_or(0).max(0),
                 content,
                 token_count: row.try_get::<i64, _>("token_count").unwrap_or(0).max(0),
+                chunk_type,
+                section_path,
+                page_hint: row.try_get::<Option<i64>, _>("page_hint").unwrap_or(None),
+                char_start: row.try_get::<Option<i64>, _>("char_start").unwrap_or(None),
+                char_end: row.try_get::<Option<i64>, _>("char_end").unwrap_or(None),
+                char_count: row.try_get::<i64, _>("char_count").unwrap_or(0).max(0),
+                content_hash: row
+                    .try_get::<Option<String>, _>("content_hash")
+                    .unwrap_or(None),
+                quality_flags,
                 score,
             });
         }
@@ -1348,7 +1497,7 @@ impl KnowledgeStore {
         let Some(raw_text) = extract_local_document_text(meta_info) else {
             return Ok(());
         };
-        let chunks = split_local_document_text_into_chunks(&raw_text);
+        let chunks = split_local_document_text_into_chunks_structure_first(&raw_text);
         if chunks.is_empty() {
             self.mark_local_user_document_failed(file_id, "document content is empty")
                 .await?;
@@ -1374,20 +1523,32 @@ impl KnowledgeStore {
 
         for (index, chunk) in chunks.iter().enumerate() {
             let chunk_id = Uuid::new_v4().to_string();
+            let section_path_text = serde_json::to_string(&chunk.section_path)?;
+            let quality_flags_text = serde_json::to_string(&chunk.quality_flags)?;
             sqlx::query(
                 r#"
                 INSERT INTO knowledge_chunk (
-                  id, document_id, user_id, chunk_index, text_content, token_count, created_at, updated_at
+                  id, document_id, user_id, chunk_index, text_content, token_count,
+                  chunk_type, section_path, page_hint, char_start, char_end, char_count,
+                  content_hash, quality_flags, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 "#,
             )
             .bind(&chunk_id)
             .bind(file_id)
             .bind(LOCAL_DESKTOP_USER_ID)
             .bind(index as i64)
-            .bind(chunk)
-            .bind(estimate_local_tokens(chunk).max(0))
+            .bind(&chunk.content)
+            .bind(chunk.token_count.max(0))
+            .bind(&chunk.chunk_type)
+            .bind(section_path_text)
+            .bind(chunk.page_hint)
+            .bind(chunk.char_start)
+            .bind(chunk.char_end)
+            .bind(chunk.char_count.max(0))
+            .bind(&chunk.content_hash)
+            .bind(quality_flags_text)
             .bind(&now)
             .bind(&now)
             .execute(&mut *tx)
@@ -1706,6 +1867,469 @@ fn split_local_document_text_into_chunks(text: &str) -> Vec<String> {
     chunks
 }
 
+fn split_local_document_text_into_chunks_structure_first(
+    text: &str,
+) -> Vec<LocalKnowledgeChunkDraft> {
+    let normalized = text
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .trim()
+        .to_string();
+    if normalized.is_empty() {
+        return Vec::new();
+    }
+
+    let blocks = build_local_knowledge_blocks(&normalized);
+    let mut chunks = build_local_knowledge_chunks_from_blocks(&normalized, &blocks);
+    if chunks.is_empty() {
+        chunks.push(build_chunk_draft(
+            normalized.clone(),
+            "paragraph".to_string(),
+            Vec::new(),
+            0,
+            normalized.chars().count(),
+            None,
+        ));
+    }
+    chunks
+}
+
+fn build_local_knowledge_blocks(text: &str) -> Vec<LocalKnowledgeBlock> {
+    let mut blocks = Vec::new();
+    let mut current_lines = Vec::new();
+    let mut current_start = None;
+    let mut current_offset = 0usize;
+    let mut section_path = Vec::<String>::new();
+    let mut is_first_block = true;
+
+    for raw_line in text.split_inclusive('\n') {
+        let line = raw_line.trim_end_matches('\n').trim_end_matches('\r');
+        let line_chars = raw_line.chars().count();
+        if line.trim().is_empty() {
+            flush_local_knowledge_block(
+                &mut blocks,
+                &mut current_lines,
+                &mut current_start,
+                current_offset,
+                &mut section_path,
+                &mut is_first_block,
+            );
+            current_offset += line_chars;
+            continue;
+        }
+
+        if current_start.is_none() {
+            current_start = Some(current_offset);
+        }
+        current_lines.push(line.to_string());
+        current_offset += line_chars;
+    }
+
+    flush_local_knowledge_block(
+        &mut blocks,
+        &mut current_lines,
+        &mut current_start,
+        current_offset,
+        &mut section_path,
+        &mut is_first_block,
+    );
+    blocks
+}
+
+fn flush_local_knowledge_block(
+    blocks: &mut Vec<LocalKnowledgeBlock>,
+    current_lines: &mut Vec<String>,
+    current_start: &mut Option<usize>,
+    current_end: usize,
+    section_path: &mut Vec<String>,
+    is_first_block: &mut bool,
+) {
+    if current_lines.is_empty() {
+        *current_start = None;
+        return;
+    }
+
+    let text = current_lines.join("\n").trim().to_string();
+    let start = current_start.unwrap_or(0);
+    current_lines.clear();
+    *current_start = None;
+    if text.is_empty() {
+        return;
+    }
+
+    let (block_type, level, normalized_text) =
+        classify_local_knowledge_block(&text, *is_first_block, section_path.len());
+    *is_first_block = false;
+    let block_section_path = if matches!(block_type, "title" | "heading") {
+        apply_section_heading(section_path, &normalized_text, level.unwrap_or(1))
+    } else {
+        section_path.clone()
+    };
+
+    blocks.push(LocalKnowledgeBlock {
+        block_type,
+        text: normalized_text,
+        level,
+        section_path: block_section_path,
+        char_start: start,
+        char_end: current_end,
+    });
+}
+
+fn classify_local_knowledge_block(
+    text: &str,
+    is_first_block: bool,
+    current_depth: usize,
+) -> (&'static str, Option<usize>, String) {
+    if let Some((heading_text, level)) = parse_markdown_heading(text) {
+        return ("heading", Some(level), heading_text);
+    }
+
+    let trimmed = text.trim();
+    let lines = trimmed.lines().map(str::trim).collect::<Vec<_>>();
+    let single_line = lines.len() == 1;
+    let char_count = trimmed.chars().count();
+
+    if single_line && is_first_block && char_count <= 120 {
+        return ("title", Some(1), trimmed.to_string());
+    }
+    if single_line && looks_like_heading_line(trimmed) {
+        let level = (current_depth + 1).clamp(1, 6);
+        return ("heading", Some(level), trimmed.to_string());
+    }
+    if trimmed.contains("```") {
+        return ("code", None, trimmed.to_string());
+    }
+    if !lines.is_empty() && lines.iter().all(|line| is_list_line(line)) {
+        return ("list", None, trimmed.to_string());
+    }
+    if !lines.is_empty() && lines.iter().all(|line| line.starts_with('>')) {
+        return ("quote", None, trimmed.to_string());
+    }
+    if lines.len() >= 2 && lines.iter().all(|line| line.contains('|')) {
+        return ("table", None, trimmed.to_string());
+    }
+
+    ("paragraph", None, trimmed.to_string())
+}
+
+fn parse_markdown_heading(text: &str) -> Option<(String, usize)> {
+    let trimmed = text.trim();
+    let hashes = trimmed.chars().take_while(|ch| *ch == '#').count();
+    if hashes == 0 || hashes > 6 {
+        return None;
+    }
+    let rest = trimmed.get(hashes..)?.trim();
+    if rest.is_empty() {
+        return None;
+    }
+    Some((rest.to_string(), hashes))
+}
+
+fn looks_like_heading_line(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() || trimmed.contains('\n') {
+        return false;
+    }
+    if trimmed.chars().count() > 100 {
+        return false;
+    }
+    if matches!(
+        trimmed.chars().last(),
+        Some('.')
+            | Some('!')
+            | Some('?')
+            | Some('\u{3002}')
+            | Some('\u{FF01}')
+            | Some('\u{FF1F}')
+            | Some(';')
+            | Some('\u{FF1B}')
+    ) {
+        return false;
+    }
+    trimmed.chars().any(|ch| ch.is_alphanumeric())
+}
+
+fn is_list_line(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with("- ")
+        || trimmed.starts_with("* ")
+        || trimmed.starts_with("+ ")
+        || trimmed.starts_with("\u{2022} ")
+    {
+        return true;
+    }
+
+    let digit_prefix_len = trimmed.chars().take_while(|ch| ch.is_ascii_digit()).count();
+    if digit_prefix_len == 0 {
+        return false;
+    }
+    matches!(
+        trimmed.chars().nth(digit_prefix_len),
+        Some('.') | Some(')') | Some('\u{3001}')
+    ) && matches!(trimmed.chars().nth(digit_prefix_len + 1), Some(' '))
+}
+
+fn apply_section_heading(
+    section_path: &mut Vec<String>,
+    heading: &str,
+    level: usize,
+) -> Vec<String> {
+    let normalized_heading = heading.trim().to_string();
+    if normalized_heading.is_empty() {
+        return section_path.clone();
+    }
+    let target_depth = level.saturating_sub(1);
+    if section_path.len() > target_depth {
+        section_path.truncate(target_depth);
+    }
+    section_path.push(normalized_heading);
+    section_path.clone()
+}
+
+fn build_local_knowledge_chunks_from_blocks(
+    normalized_text: &str,
+    blocks: &[LocalKnowledgeBlock],
+) -> Vec<LocalKnowledgeChunkDraft> {
+    let mut chunks = Vec::new();
+    let mut pending = Vec::<LocalKnowledgeBlock>::new();
+
+    for block in blocks {
+        if matches!(block.block_type, "title" | "heading") {
+            continue;
+        }
+
+        let block_chars = block.text.chars().count();
+        if block_chars > LOCAL_KNOWLEDGE_CHUNK_MAX_CHARS {
+            flush_pending_local_knowledge_chunks(&mut pending, &mut chunks);
+            chunks.extend(split_large_block_into_chunk_drafts(block, block.block_type));
+            continue;
+        }
+
+        let current_len = pending
+            .iter()
+            .map(|item| item.text.chars().count())
+            .sum::<usize>()
+            + pending.len().saturating_sub(1) * 2;
+        let next_len = if pending.is_empty() {
+            block_chars
+        } else {
+            current_len + 2 + block_chars
+        };
+        let same_section = pending
+            .last()
+            .map(|item| item.section_path == block.section_path)
+            .unwrap_or(true);
+        if !pending.is_empty() && (!same_section || next_len > LOCAL_KNOWLEDGE_CHUNK_MAX_CHARS) {
+            flush_pending_local_knowledge_chunks(&mut pending, &mut chunks);
+        }
+
+        pending.push(block.clone());
+    }
+
+    flush_pending_local_knowledge_chunks(&mut pending, &mut chunks);
+    if chunks.is_empty() && !normalized_text.trim().is_empty() {
+        chunks.push(build_chunk_draft(
+            normalized_text.trim().to_string(),
+            "paragraph".to_string(),
+            Vec::new(),
+            0,
+            normalized_text.chars().count(),
+            None,
+        ));
+    }
+    chunks
+}
+
+fn flush_pending_local_knowledge_chunks(
+    pending: &mut Vec<LocalKnowledgeBlock>,
+    chunks: &mut Vec<LocalKnowledgeChunkDraft>,
+) {
+    if pending.is_empty() {
+        return;
+    }
+
+    let content = pending
+        .iter()
+        .map(|block| block.text.trim())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    if content.is_empty() {
+        pending.clear();
+        return;
+    }
+
+    let chunk_type = if pending.len() == 1 {
+        pending[0].block_type.to_string()
+    } else {
+        "mixed".to_string()
+    };
+    let section_path = pending
+        .last()
+        .map(|block| block.section_path.clone())
+        .unwrap_or_default();
+    let char_start = pending.first().map(|block| block.char_start).unwrap_or(0);
+    let char_end = pending
+        .last()
+        .map(|block| block.char_end)
+        .unwrap_or(char_start);
+    chunks.push(build_chunk_draft(
+        content,
+        chunk_type,
+        section_path,
+        char_start,
+        char_end,
+        None,
+    ));
+    pending.clear();
+}
+
+fn split_large_block_into_chunk_drafts(
+    block: &LocalKnowledgeBlock,
+    chunk_type: &str,
+) -> Vec<LocalKnowledgeChunkDraft> {
+    let chars = block.text.chars().collect::<Vec<_>>();
+    if chars.is_empty() {
+        return Vec::new();
+    }
+
+    let mut chunks = Vec::new();
+    let mut start = 0usize;
+    while start < chars.len() {
+        let mut end = (start + LOCAL_KNOWLEDGE_CHUNK_MAX_CHARS).min(chars.len());
+        if end < chars.len() {
+            let scan_floor = start + (LOCAL_KNOWLEDGE_CHUNK_MAX_CHARS / 2);
+            let mut cursor = end;
+            while cursor > scan_floor {
+                let current = chars[cursor - 1];
+                if current.is_whitespace()
+                    || matches!(
+                        current,
+                        '\u{3002}'
+                            | '\u{FF01}'
+                            | '\u{FF1F}'
+                            | '\u{FF1B}'
+                            | '.'
+                            | '!'
+                            | '?'
+                            | ';'
+                            | '\n'
+                    )
+                {
+                    end = cursor;
+                    break;
+                }
+                cursor -= 1;
+            }
+        }
+
+        let raw_piece = chars[start..end].iter().collect::<String>();
+        let leading_trim = raw_piece
+            .chars()
+            .take_while(|ch| ch.is_whitespace())
+            .count();
+        let trailing_trim = raw_piece
+            .chars()
+            .rev()
+            .take_while(|ch| ch.is_whitespace())
+            .count();
+        let trimmed_piece = raw_piece.trim().to_string();
+        if !trimmed_piece.is_empty() {
+            let actual_start = block.char_start + start + leading_trim;
+            let actual_end = block.char_start + end.saturating_sub(trailing_trim);
+            chunks.push(build_chunk_draft(
+                trimmed_piece,
+                chunk_type.to_string(),
+                block.section_path.clone(),
+                actual_start,
+                actual_end,
+                None,
+            ));
+        }
+
+        if end >= chars.len() {
+            break;
+        }
+        let next_start = end.saturating_sub(LOCAL_KNOWLEDGE_CHUNK_OVERLAP_CHARS);
+        start = if next_start == start { end } else { next_start };
+    }
+
+    chunks
+}
+
+fn build_chunk_draft(
+    content: String,
+    chunk_type: String,
+    section_path: Vec<String>,
+    char_start: usize,
+    char_end: usize,
+    page_hint: Option<i64>,
+) -> LocalKnowledgeChunkDraft {
+    let char_count = content.chars().count() as i64;
+    LocalKnowledgeChunkDraft {
+        token_count: estimate_local_tokens(&content).max(0),
+        content_hash: hash_local_chunk_content(&content),
+        quality_flags: build_local_chunk_quality_flags(&content, &chunk_type),
+        content,
+        chunk_type,
+        section_path,
+        page_hint,
+        char_start: char_start as i64,
+        char_end: char_end as i64,
+        char_count,
+    }
+}
+
+fn hash_local_chunk_content(content: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    content.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+fn build_local_chunk_quality_flags(content: &str, chunk_type: &str) -> Vec<String> {
+    let mut flags = Vec::new();
+    let char_count = content.chars().count();
+    if char_count < LOCAL_KNOWLEDGE_CHUNK_MIN_CHARS {
+        flags.push("short_chunk".to_string());
+    }
+    if char_count >= (LOCAL_KNOWLEDGE_CHUNK_MAX_CHARS * 9 / 10) {
+        flags.push("near_limit".to_string());
+    }
+    if matches!(chunk_type, "list" | "table" | "code" | "quote" | "mixed") {
+        flags.push(format!("type:{chunk_type}"));
+    }
+    if looks_like_docx_field_artifact(content) {
+        flags.push("noisy_chunk".to_string());
+    }
+    flags
+}
+
+fn looks_like_docx_field_artifact(content: &str) -> bool {
+    let normalized = content.replace('\r', "").replace('\n', " ");
+    let compact = normalized.split_whitespace().collect::<Vec<_>>().join(" ");
+    let trimmed = compact.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    if trimmed.eq_ignore_ascii_case("\\h") {
+        return true;
+    }
+    if trimmed.starts_with("\\h ") {
+        return true;
+    }
+    if trimmed.starts_with("HYPERLINK \\l ") {
+        return true;
+    }
+    if trimmed.contains("PAGEREF _Toc") {
+        return true;
+    }
+    if trimmed.starts_with("TOC \\") {
+        return true;
+    }
+    false
+}
+
 fn tokenize_local_search_query(query: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut seen = HashSet::new();
@@ -1730,13 +2354,28 @@ fn compute_local_knowledge_match_score(
     query_lower: &str,
     tokens_lower: &[String],
     content_lower: &str,
+    section_path: &[String],
+    chunk_type: &str,
+    quality_flags: &[String],
 ) -> f64 {
     if content_lower.is_empty() {
         return 0.0;
     }
     let mut score = 0.0;
+    let section_lower = section_path
+        .iter()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
     if !query_lower.is_empty() && content_lower.contains(query_lower) {
         score += 8.0;
+    }
+    if !query_lower.is_empty()
+        && section_lower
+            .iter()
+            .any(|value| value.contains(query_lower))
+    {
+        score += 3.0;
     }
     for token in tokens_lower {
         let mut start = 0usize;
@@ -1750,6 +2389,27 @@ fn compute_local_knowledge_match_score(
         }
         if token_hits > 0 {
             score += (token_hits as f64) * (1.0 + (token.len() as f64 / 10.0));
+        }
+        let heading_hits = section_lower
+            .iter()
+            .filter(|value| value.contains(token))
+            .count();
+        if heading_hits > 0 {
+            score += (heading_hits as f64) * 1.5;
+        }
+    }
+    match chunk_type {
+        "title" | "heading" => score += 2.0,
+        "list" => score += 0.75,
+        "table" | "code" => score += 0.25,
+        _ => {}
+    }
+    for flag in quality_flags {
+        match flag.as_str() {
+            "short_chunk" => score -= 0.35,
+            "near_limit" => score -= 0.1,
+            "noisy_chunk" => score -= 2.5,
+            _ => {}
         }
     }
     score
@@ -1849,5 +2509,68 @@ mod tests {
                 .and_then(serde_json::Value::as_str),
             Some("knowledge/demo.pdf")
         );
+    }
+
+    #[test]
+    fn structure_first_chunking_tracks_section_path_and_chunk_type() {
+        let text = r#"
+# Desktop Knowledge
+
+## Retrieval
+
+Selected knowledge should use scoped hybrid recall.
+
+- lexical search
+- semantic search
+"#;
+
+        let chunks = split_local_document_text_into_chunks_structure_first(text);
+
+        assert!(!chunks.is_empty());
+        assert_eq!(
+            chunks[0].section_path,
+            vec!["Desktop Knowledge".to_string(), "Retrieval".to_string()]
+        );
+        assert_eq!(chunks[0].chunk_type, "mixed");
+        assert!(chunks[0].content.contains("Selected knowledge"));
+        assert!(chunks[0].content.contains("lexical search"));
+    }
+
+    #[test]
+    fn structure_first_chunking_splits_large_block_and_keeps_metadata() {
+        let large_paragraph = "alpha ".repeat(400);
+        let text = format!("# Knowledge\n\n## Chunking\n\n{}", large_paragraph);
+
+        let chunks = split_local_document_text_into_chunks_structure_first(&text);
+
+        assert!(chunks.len() >= 2);
+        assert!(chunks.iter().all(
+            |chunk| chunk.section_path == vec!["Knowledge".to_string(), "Chunking".to_string()]
+        ));
+        assert!(chunks.iter().all(|chunk| chunk.char_count > 0));
+        assert!(chunks.iter().all(|chunk| !chunk.content_hash.is_empty()));
+    }
+
+    #[test]
+    fn lexical_score_prefers_heading_matches_and_penalizes_noisy_chunks() {
+        let boosted = compute_local_knowledge_match_score(
+            "chunking",
+            &["chunking".to_string()],
+            "generic paragraph about alpha beta",
+            &["Knowledge".to_string(), "Chunking".to_string()],
+            "paragraph",
+            &[],
+        );
+        let penalized = compute_local_knowledge_match_score(
+            "chunking",
+            &["chunking".to_string()],
+            "generic paragraph about alpha beta chunking",
+            &[],
+            "paragraph",
+            &["noisy_chunk".to_string()],
+        );
+
+        assert!(boosted > 0.0);
+        assert!(boosted > penalized);
     }
 }

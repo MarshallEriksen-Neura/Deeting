@@ -5,6 +5,7 @@ use log::{info, warn};
 use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
+use tokio::time::sleep;
 
 use crate::state::AppState;
 
@@ -212,15 +213,26 @@ async fn run_feishu_direct_profile_worker(
             } => {
                 let incoming_text = match content {
                     MessageContent::Text { text } => text,
-                    MessageContent::Image { .. } => {
-                        "[feishu-rich:image] 当前桌面飞书 IM 已识别图片输入，后续会按 capability phase 逐步接入原生处理。".to_string()
+                    MessageContent::Image { url } => {
+                        format!("[feishu-rich:image] 用户发送了一张飞书图片引用：{}", url)
                     }
-                    MessageContent::File { .. } => {
-                        "[feishu-rich:file] 当前桌面飞书 IM 已识别文件输入，后续会按 capability phase 逐步接入原生处理。".to_string()
-                    }
-                    MessageContent::Mixed { .. } => {
-                        "[feishu-rich:mixed] 当前桌面飞书 IM 已识别富文本输入，已进入兼容降级路径。".to_string()
-                    }
+                    MessageContent::File { name, url } => format!(
+                        "[feishu-rich:file] 用户发送了一个飞书文件：{} ({})",
+                        name, url
+                    ),
+                    MessageContent::Mixed { parts } => format!(
+                        "[feishu-rich:mixed] 用户发送了富文本内容：{}",
+                        parts
+                            .iter()
+                            .filter_map(|part| match part {
+                                crate::modules::im::MessagePart::Text { text } =>
+                                    Some(text.as_str()),
+                                crate::modules::im::MessagePart::Image { url } =>
+                                    Some(url.as_str()),
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    ),
                     MessageContent::Card { .. } => continue,
                 };
                 let session_id = format!("im:{}:chat:{}", profile.id, chat_id);
@@ -395,6 +407,116 @@ pub async fn get_local_im_settings(
     Ok(build_settings_snapshot(profiles, runtime_profiles))
 }
 
+async fn run_profile_worker_once(
+    app_state: AppState,
+    app_handle: tauri::AppHandle,
+    profile: ImConnectionProfile,
+    effective_transport: ImTransportKind,
+) -> Result<(), String> {
+    match (profile.platform, effective_transport) {
+        (ImPlatform::Feishu, ImTransportKind::Direct) => {
+            run_feishu_direct_profile_worker(app_state, app_handle, profile).await
+        }
+        (ImPlatform::Feishu, ImTransportKind::Relay) => {
+            crate::modules::relay::start_relay_profile_worker(app_state, app_handle, profile).await
+        }
+        (ImPlatform::Wechat, ImTransportKind::Direct) => {
+            crate::modules::im::wechat::runtime::run_wechat_direct_profile_worker(
+                app_state, app_handle, profile,
+            )
+            .await
+        }
+        (ImPlatform::Telegram, ImTransportKind::Direct) => {
+            crate::modules::im::telegram::runtime::run_telegram_direct_profile_worker(
+                app_state, app_handle, profile,
+            )
+            .await
+        }
+        _ => Err("unsupported im runtime worker".to_string()),
+    }
+}
+
+async fn supervise_profile_worker(
+    app_state: AppState,
+    app_handle: tauri::AppHandle,
+    profile: ImConnectionProfile,
+    effective_transport: ImTransportKind,
+) {
+    const MAX_RESTARTS: u32 = 3;
+    const BASE_RETRY_SECS: u64 = 5;
+
+    let running_message = match (profile.platform, effective_transport) {
+        (ImPlatform::Feishu, ImTransportKind::Direct) => "Feishu direct runtime is running.",
+        (ImPlatform::Feishu, ImTransportKind::Relay) => "Feishu relay runtime is running.",
+        (ImPlatform::Wechat, ImTransportKind::Direct) => "WeChat direct runtime is running.",
+        (ImPlatform::Telegram, ImTransportKind::Direct) => "Telegram direct runtime is running.",
+        _ => "IM runtime is running.",
+    };
+
+    let mut restart_count = 0_u32;
+    loop {
+        mark_profile_running(&profile, running_message).await;
+        let result = run_profile_worker_once(
+            app_state.clone(),
+            app_handle.clone(),
+            profile.clone(),
+            effective_transport,
+        )
+        .await;
+
+        match result {
+            Ok(()) => {
+                if restart_count >= MAX_RESTARTS {
+                    mark_profile_unavailable(
+                        &profile,
+                        format!(
+                            "{} worker exited after exhausting restart budget.",
+                            profile.platform
+                        ),
+                    )
+                    .await;
+                    break;
+                }
+                restart_count = restart_count.saturating_add(1);
+                let retry_secs = BASE_RETRY_SECS.saturating_mul(restart_count as u64);
+                mark_profile_degraded(
+                    &profile,
+                    format!(
+                        "{} worker exited unexpectedly; restarting.",
+                        profile.platform
+                    ),
+                    Some(Duration::from_secs(retry_secs)),
+                )
+                .await;
+                sleep(Duration::from_secs(retry_secs)).await;
+            }
+            Err(err) => {
+                restart_count = restart_count.saturating_add(1);
+                if restart_count > MAX_RESTARTS {
+                    mark_profile_unavailable(
+                        &profile,
+                        format!("{} worker failed repeatedly: {err}", profile.platform),
+                    )
+                    .await;
+                    warn!(
+                        "im_profile_worker_exhausted profile={} err={}",
+                        profile.id, err
+                    );
+                    break;
+                }
+                let retry_secs = BASE_RETRY_SECS.saturating_mul(restart_count as u64);
+                mark_profile_degraded(&profile, err.clone(), Some(Duration::from_secs(retry_secs)))
+                    .await;
+                warn!(
+                    "im_profile_worker_failed profile={} restart={} err={}",
+                    profile.id, restart_count, err
+                );
+                sleep(Duration::from_secs(retry_secs)).await;
+            }
+        }
+    }
+}
+
 pub async fn start_im_runtime_worker(app_state: AppState, app_handle: tauri::AppHandle) {
     let profiles = match load_im_connection_profiles(&app_state).await {
         Ok(profiles) => profiles,
@@ -409,90 +531,16 @@ pub async fn start_im_runtime_worker(app_state: AppState, app_handle: tauri::App
     let mut tasks = JoinSet::new();
     for profile in profiles.into_iter().filter(|profile| profile.enabled) {
         let resolution = resolve_transport(&profile);
-        match (profile.platform, resolution.effective) {
-            (ImPlatform::Feishu, ImTransportKind::Direct) => {
+        match resolution.effective {
+            ImTransportKind::Direct | ImTransportKind::Relay => {
                 let state = app_state.clone();
                 let handle = app_handle.clone();
-                let profile_for_status = profile.clone();
+                let effective_transport = resolution.effective;
                 tasks.spawn(async move {
-                    mark_profile_running(&profile_for_status, "Feishu direct runtime is running.").await;
-                    if let Err(err) = run_feishu_direct_profile_worker(state, handle, profile.clone()).await
-                    {
-                        mark_profile_degraded(
-                            &profile,
-                            format!("Feishu direct worker failed: {err}"),
-                            Some(Duration::from_secs(5)),
-                        )
-                        .await;
-                        warn!("im_direct_profile_worker_failed: {}", err);
-                    }
+                    supervise_profile_worker(state, handle, profile, effective_transport).await;
                 });
             }
-            (ImPlatform::Feishu, ImTransportKind::Relay) => {
-                let state = app_state.clone();
-                let handle = app_handle.clone();
-                let profile_for_status = profile.clone();
-                tasks.spawn(async move {
-                    mark_profile_running(&profile_for_status, "Feishu relay runtime is running.").await;
-                    if let Err(err) =
-                        crate::modules::relay::start_relay_profile_worker(state, handle, profile.clone())
-                            .await
-                    {
-                        mark_profile_degraded(
-                            &profile,
-                            format!("Feishu relay worker failed: {err}"),
-                            Some(Duration::from_secs(5)),
-                        )
-                        .await;
-                        warn!("im_relay_profile_worker_failed: {}", err);
-                    }
-                });
-            }
-            (ImPlatform::Wechat, ImTransportKind::Direct) => {
-                let state = app_state.clone();
-                let handle = app_handle.clone();
-                let profile_for_status = profile.clone();
-                tasks.spawn(async move {
-                    mark_profile_running(&profile_for_status, "WeChat direct runtime is running.").await;
-                    if let Err(err) =
-                        crate::modules::im::wechat::runtime::run_wechat_direct_profile_worker(
-                            state, handle, profile.clone(),
-                        )
-                        .await
-                    {
-                        mark_profile_degraded(
-                            &profile,
-                            format!("WeChat worker failed: {err}"),
-                            Some(Duration::from_secs(5)),
-                        )
-                        .await;
-                        warn!("im_wechat_profile_worker_failed: {}", err);
-                    }
-                });
-            }
-            (ImPlatform::Telegram, ImTransportKind::Direct) => {
-                let state = app_state.clone();
-                let handle = app_handle.clone();
-                let profile_for_status = profile.clone();
-                tasks.spawn(async move {
-                    mark_profile_running(&profile_for_status, "Telegram direct runtime is running.").await;
-                    if let Err(err) =
-                        crate::modules::im::telegram::runtime::run_telegram_direct_profile_worker(
-                            state, handle, profile.clone(),
-                        )
-                        .await
-                    {
-                        mark_profile_degraded(
-                            &profile,
-                            format!("Telegram worker failed: {err}"),
-                            Some(Duration::from_secs(5)),
-                        )
-                        .await;
-                        warn!("im_telegram_profile_worker_failed: {}", err);
-                    }
-                });
-            }
-            (_, ImTransportKind::Unavailable) => {
+            ImTransportKind::Unavailable => {
                 mark_profile_unavailable(
                     &profile,
                     format!(
@@ -504,20 +552,6 @@ pub async fn start_im_runtime_worker(app_state: AppState, app_handle: tauri::App
                 warn!(
                     "im_profile_unavailable profile={} platform={} reason={:?}",
                     profile.id, profile.platform, resolution.reason_code
-                );
-            }
-            _ => {
-                mark_profile_unavailable(
-                    &profile,
-                    format!(
-                        "{} transport is not supported: {:?}",
-                        profile.platform, resolution.effective
-                    ),
-                )
-                .await;
-                warn!(
-                    "im_profile_transport_not_supported profile={} platform={} effective={:?}",
-                    profile.id, profile.platform, resolution.effective
                 );
             }
         }
@@ -535,7 +569,11 @@ mod tests {
     use super::*;
     use crate::modules::monitor::types::LocalNotificationChannel;
 
-    fn notification_channel(channel: &str, config: Value, is_active: bool) -> LocalNotificationChannel {
+    fn notification_channel(
+        channel: &str,
+        config: Value,
+        is_active: bool,
+    ) -> LocalNotificationChannel {
         LocalNotificationChannel {
             id: format!("{channel}-1"),
             user_id: "user-1".to_string(),
@@ -564,7 +602,8 @@ mod tests {
             true,
         );
 
-        let profile = derive_profile_from_notification_channel(&channel, None).expect("telegram profile");
+        let profile =
+            derive_profile_from_notification_channel(&channel, None).expect("telegram profile");
         assert!(profile.enabled);
         assert_eq!(profile.direct_config.telegram_bot_token, "telegram-token");
     }
@@ -584,7 +623,8 @@ mod tests {
             true,
         );
 
-        let profile = derive_profile_from_notification_channel(&channel, None).expect("telegram profile");
+        let profile =
+            derive_profile_from_notification_channel(&channel, None).expect("telegram profile");
         assert!(profile.enabled);
         assert_eq!(profile.direct_config.telegram_bot_token, "nested-token");
     }
@@ -601,8 +641,8 @@ mod tests {
             true,
         );
 
-        let profile = derive_profile_from_notification_channel(&channel, None).expect("telegram profile");
+        let profile =
+            derive_profile_from_notification_channel(&channel, None).expect("telegram profile");
         assert!(!profile.enabled);
     }
 }
-

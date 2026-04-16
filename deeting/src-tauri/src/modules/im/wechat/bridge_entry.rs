@@ -9,8 +9,8 @@ use super::bridge_protocol::{
     BridgeEnvelope, BridgeRequest, BridgeResponseEnvelope, BridgeResponsePayload,
 };
 use super::types::{
-    WechatOutboundMessage, WechatOutboundMessageItem, WechatOutboundTextItem,
-    WECHAT_ITEM_TYPE_TEXT, WECHAT_MESSAGE_STATE_FINISH, WECHAT_MESSAGE_TYPE_BOT,
+    WechatOutboundMessage, WechatOutboundMessageItem, WECHAT_MESSAGE_STATE_FINISH,
+    WECHAT_MESSAGE_TYPE_BOT,
 };
 
 pub async fn run_stdio_bridge() {
@@ -87,10 +87,7 @@ async fn handle_request(
                 message_type: WECHAT_MESSAGE_TYPE_BOT,
                 message_state: WECHAT_MESSAGE_STATE_FINISH,
                 context_token: context_token.trim().to_string(),
-                item_list: vec![WechatOutboundMessageItem {
-                    r#type: WECHAT_ITEM_TYPE_TEXT,
-                    text_item: WechatOutboundTextItem { text },
-                }],
+                item_list: vec![WechatOutboundMessageItem::text(text)],
             };
             match send_text_message(client, base_url.as_str(), token.as_str(), message).await {
                 Ok(()) => BridgeResponsePayload::SendText { ok: true },
@@ -109,10 +106,17 @@ async fn handle_request(
             base_url,
             token,
             contact_id,
-        } => match send_typing(client, base_url.as_str(), token.as_str(), contact_id.as_str()).await {
+        } => match send_typing(
+            client,
+            base_url.as_str(),
+            token.as_str(),
+            contact_id.as_str(),
+        )
+        .await
+        {
             Ok(()) => BridgeResponsePayload::SendTyping { ok: true },
             Err(message) => BridgeResponsePayload::Error { message },
-        }
+        },
     };
 
     BridgeResponseEnvelope {

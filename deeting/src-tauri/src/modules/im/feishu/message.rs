@@ -51,11 +51,8 @@ pub fn parse_message_content(message: &FeishuMessage) -> MessageContent {
                 url: format!("feishu://file/{}", file_key),
             }
         }
-        "post" => {
-            let text = extract_post_text(&content_json);
-            MessageContent::Mixed {
-                parts: vec![MessagePart::Text { text }],
-            }
+        "post" => MessageContent::Mixed {
+            parts: extract_post_parts(&content_json),
         }
         _ => MessageContent::Text {
             text: content_str.to_string(),
@@ -64,8 +61,8 @@ pub fn parse_message_content(message: &FeishuMessage) -> MessageContent {
 }
 
 /// 从富文本消息中提取文本
-fn extract_post_text(content: &Value) -> String {
-    let mut result = String::new();
+fn extract_post_parts(content: &Value) -> Vec<MessagePart> {
+    let mut parts = Vec::new();
 
     if let Some(zh_cn) = content.get("zh_cn") {
         if let Some(paragraphs) = zh_cn.get("content").and_then(|c| c.as_array()) {
@@ -73,16 +70,44 @@ fn extract_post_text(content: &Value) -> String {
                 if let Some(elements) = para.as_array() {
                     for elem in elements {
                         if let Some(text) = elem.get("text").and_then(|t| t.as_str()) {
-                            result.push_str(text);
+                            let trimmed = text.trim();
+                            if !trimmed.is_empty() {
+                                parts.push(MessagePart::Text {
+                                    text: trimmed.to_string(),
+                                });
+                            }
+                        }
+                        if let Some(tag) = elem.get("tag").and_then(|value| value.as_str()) {
+                            if tag == "img" {
+                                if let Some(image_key) = elem
+                                    .get("image_key")
+                                    .and_then(|value| value.as_str())
+                                    .map(str::trim)
+                                    .filter(|value| !value.is_empty())
+                                {
+                                    parts.push(MessagePart::Image {
+                                        url: format!("feishu://image/{}", image_key),
+                                    });
+                                }
+                            }
                         }
                     }
                 }
-                result.push('\n');
             }
         }
     }
 
-    result.trim().to_string()
+    if parts.is_empty() {
+        let text = content
+            .to_string()
+            .trim()
+            .to_string();
+        if !text.is_empty() {
+            parts.push(MessagePart::Text { text });
+        }
+    }
+
+    parts
 }
 
 /// 解析飞书提及列表
@@ -221,17 +246,8 @@ pub fn build_message_content(content: &MessageContent) -> Result<String, ImError
             serde_json::to_string(card).map_err(|e| ImError::ParseError(e.to_string()))?
         }
         MessageContent::Mixed { parts } => {
-            // 简化处理，只取文本部分
-            let text = parts
-                .iter()
-                .filter_map(|p| match p {
-                    MessagePart::Text { text } => Some(text.clone()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join(" ");
-            serde_json::to_string(&serde_json::json!({ "text": text }))
-                .map_err(|e| ImError::ParseError(e.to_string()))?
+            let content = build_post_content(parts);
+            serde_json::to_string(&content).map_err(|e| ImError::ParseError(e.to_string()))?
         }
     };
     Ok(json)
@@ -242,9 +258,35 @@ pub fn message_type_for_content(content: &MessageContent) -> &'static str {
         MessageContent::Card { .. } => "interactive",
         MessageContent::Image { .. } => "image",
         MessageContent::File { .. } => "file",
-        MessageContent::Mixed { .. } => "text",
+        MessageContent::Mixed { .. } => "post",
         MessageContent::Text { .. } => "text",
     }
+}
+
+fn build_post_content(parts: &[MessagePart]) -> Value {
+    let paragraph = parts
+        .iter()
+        .filter_map(|part| match part {
+            MessagePart::Text { text } => Some(serde_json::json!({
+                "tag": "text",
+                "text": text,
+            })),
+            MessagePart::Image { url } => {
+                let image_key = url.strip_prefix("feishu://image/")?;
+                Some(serde_json::json!({
+                    "tag": "img",
+                    "image_key": image_key,
+                }))
+            }
+        })
+        .collect::<Vec<_>>();
+
+    serde_json::json!({
+        "zh_cn": {
+            "title": "Deeting",
+            "content": [paragraph]
+        }
+    })
 }
 
 /// 构建卡片动作响应
@@ -324,6 +366,53 @@ mod tests {
                 .and_then(|value| value.get("content"))
                 .and_then(Value::as_str),
             Some("审批确认")
+        );
+    }
+
+    #[test]
+    fn message_type_for_mixed_content_is_post() {
+        let msg_type = message_type_for_content(&MessageContent::Mixed {
+            parts: vec![
+                MessagePart::Text {
+                    text: "hello".to_string(),
+                },
+                MessagePart::Image {
+                    url: "feishu://image/img-key".to_string(),
+                },
+            ],
+        });
+
+        assert_eq!(msg_type, "post");
+    }
+
+    #[test]
+    fn build_message_content_serializes_mixed_content_as_post() {
+        let content = build_message_content(&MessageContent::Mixed {
+            parts: vec![
+                MessagePart::Text {
+                    text: "hello".to_string(),
+                },
+                MessagePart::Image {
+                    url: "feishu://image/img-key".to_string(),
+                },
+            ],
+        })
+        .expect("mixed content should serialize");
+
+        let payload: Value = serde_json::from_str(&content).expect("valid post payload");
+        let first_paragraph = payload
+            .get("zh_cn")
+            .and_then(|value| value.get("content"))
+            .and_then(Value::as_array)
+            .and_then(|items| items.first())
+            .and_then(Value::as_array)
+            .expect("paragraph array");
+        assert_eq!(first_paragraph.len(), 2);
+        assert_eq!(
+            first_paragraph[1]
+                .get("image_key")
+                .and_then(Value::as_str),
+            Some("img-key")
         );
     }
 }

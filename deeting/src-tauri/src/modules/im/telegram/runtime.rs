@@ -52,15 +52,26 @@ pub async fn run_telegram_direct_profile_worker(
 
                 let incoming_text = match content {
                     MessageContent::Text { text } => text,
-                    MessageContent::Image { .. } => {
-                        "[telegram-rich:image] Telegram 图片输入已识别，当前先走兼容文本路径。".to_string()
+                    MessageContent::Image { url } => {
+                        format!("[telegram-rich:image] 用户发送了一张图片引用：{}", url)
                     }
-                    MessageContent::File { .. } => {
-                        "[telegram-rich:file] Telegram 文件输入已识别，当前先走兼容文本路径。".to_string()
-                    }
-                    MessageContent::Mixed { .. } => {
-                        "[telegram-rich:mixed] Telegram 混合输入已识别，当前先走兼容文本路径。".to_string()
-                    }
+                    MessageContent::File { name, url } => format!(
+                        "[telegram-rich:file] 用户发送了一个文件：{} ({})",
+                        name, url
+                    ),
+                    MessageContent::Mixed { parts } => format!(
+                        "[telegram-rich:mixed] 用户发送了混合内容：{}",
+                        parts
+                            .iter()
+                            .filter_map(|part| match part {
+                                crate::modules::im::MessagePart::Text { text } =>
+                                    Some(text.as_str()),
+                                crate::modules::im::MessagePart::Image { url } =>
+                                    Some(url.as_str()),
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    ),
                     MessageContent::Card { .. } => continue,
                 };
 
@@ -72,19 +83,16 @@ pub async fn run_telegram_direct_profile_worker(
                         chat_id.as_str(),
                         incoming_text.as_str(),
                         "Telegram",
-                        |reply_text| {
-                            let text = reply_text;
-                            async {
-                                client
-                                    .send_message(SendMessageRequest {
-                                        chat_id: chat_id.clone(),
-                                        content: MessageContent::Text { text },
-                                        reply_to: Some(message_id.clone()),
-                                    })
-                                    .await
-                                    .map(|_| ())
-                                    .map_err(|err| err.to_string())
-                            }
+                        |content| async {
+                            client
+                                .send_message(SendMessageRequest {
+                                    chat_id: chat_id.clone(),
+                                    content,
+                                    reply_to: Some(message_id.clone()),
+                                })
+                                .await
+                                .map(|_| ())
+                                .map_err(|err| err.to_string())
                         },
                     )
                     .await?;
@@ -126,20 +134,18 @@ pub async fn run_telegram_direct_profile_worker(
                 }
 
                 for message in outcome.follow_up_messages {
-                    if let MessageContent::Text { text } = message {
-                        if let Err(err) = client
-                            .send_message(SendMessageRequest {
-                                chat_id: chat_id.clone(),
-                                content: MessageContent::Text { text },
-                                reply_to: Some(message_id.clone()),
-                            })
-                            .await
-                        {
-                            warn!(
-                                "im_telegram_profile follow_up_send_failed profile={} chat_id={} err={}",
-                                profile.id, chat_id, err
-                            );
-                        }
+                    if let Err(err) = client
+                        .send_message(SendMessageRequest {
+                            chat_id: chat_id.clone(),
+                            content: message,
+                            reply_to: Some(message_id.clone()),
+                        })
+                        .await
+                    {
+                        warn!(
+                            "im_telegram_profile follow_up_send_failed profile={} chat_id={} err={}",
+                            profile.id, chat_id, err
+                        );
                     }
                 }
             }

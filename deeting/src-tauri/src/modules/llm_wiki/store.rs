@@ -1,6 +1,7 @@
-﻿use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use futures_util::stream::{self, StreamExt};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use sqlx::Row;
@@ -26,6 +27,7 @@ const SCOPE_LEGACY_VAULT: &str = "legacy_vault";
 const MAX_INDEXED_NOTE_BYTES: usize = 256 * 1024;
 const CHUNK_ASSET_TYPE: &str = "llm_wiki_chunk";
 const CHUNK_SOURCE_TYPE: &str = "llm_wiki_corpus";
+const MAX_CONCURRENT_CHUNK_EMBEDS: usize = 6;
 
 #[derive(Debug, Clone)]
 pub(crate) struct LlmWikiChunkRow {
@@ -365,7 +367,14 @@ pub(crate) async fn bootstrap_corpus(
     workspace_path: &Path,
     trigger_source: &str,
 ) -> Result<CorpusSyncResult, McpError> {
-    sync_internal(store, vault_root, workspace_path, trigger_source, RUN_KIND_BOOTSTRAP).await
+    sync_internal(
+        store,
+        vault_root,
+        workspace_path,
+        trigger_source,
+        RUN_KIND_BOOTSTRAP,
+    )
+    .await
 }
 
 pub(crate) async fn reconcile_corpus(
@@ -374,7 +383,14 @@ pub(crate) async fn reconcile_corpus(
     workspace_path: &Path,
     trigger_source: &str,
 ) -> Result<CorpusSyncResult, McpError> {
-    sync_internal(store, vault_root, workspace_path, trigger_source, RUN_KIND_RECONCILE).await
+    sync_internal(
+        store,
+        vault_root,
+        workspace_path,
+        trigger_source,
+        RUN_KIND_RECONCILE,
+    )
+    .await
 }
 
 pub(crate) async fn clear_legacy_projection_assets(app_state: &AppState) -> Result<(), McpError> {
@@ -438,39 +454,65 @@ pub(crate) async fn rebuild_projection_assets(
             continue;
         }
 
-        for chunk in list_chunks_for_document(app_state.mcp.store.as_ref(), &document.doc_id).await? {
-            let vector = app_state
-                .providers
-                .embedding
-                .embed_text(&chunk.text)
-                .await
-                .map_err(|err| McpError::Storage(err.to_string()))?;
-            app_state
-                .memory
-                .service
-                .upsert_asset(
-                    format!("llm_wiki_chunk::{}", chunk.chunk_id),
-                    document.title.clone(),
-                    truncate_text_chars(&chunk.text, 220),
-                    CHUNK_ASSET_TYPE.to_string(),
-                    CHUNK_SOURCE_TYPE.to_string(),
-                    Some(document.doc_id.clone()),
-                    vector,
-                    Some(serde_json::json!({
-                        "workspace_id": normalized_workspace_id,
-                        "doc_id": document.doc_id,
-                        "chunk_id": chunk.chunk_id,
-                        "chunk_index": chunk.chunk_index,
-                        "relative_path": document.relative_path,
-                        "scope": document.scope,
-                        "title": document.title,
-                        "token_count": chunk.token_count,
-                    })),
-                )
-                .await
-                .map_err(|err| McpError::Storage(err.to_string()))?;
-            projected += 1;
-        }
+        let chunks = list_chunks_for_document(app_state.mcp.store.as_ref(), &document.doc_id).await?;
+        let memory_service = app_state.memory.service.clone();
+        let embedding = app_state.providers.embedding.clone();
+        let workspace_id_owned = normalized_workspace_id.to_string();
+        let doc_id = document.doc_id.clone();
+        let relative_path = document.relative_path.clone();
+        let scope = document.scope.clone();
+        let title = document.title.clone();
+
+        let per_document_projected = stream::iter(chunks.into_iter().map(|chunk| {
+            let memory_service = memory_service.clone();
+            let embedding = embedding.clone();
+            let workspace_id_owned = workspace_id_owned.clone();
+            let doc_id = doc_id.clone();
+            let relative_path = relative_path.clone();
+            let scope = scope.clone();
+            let title = title.clone();
+
+            async move {
+                let vector = embedding
+                    .embed_text(&chunk.text)
+                    .await
+                    .map_err(|err| McpError::Storage(err.to_string()))?;
+                memory_service
+                    .upsert_asset(
+                        format!("llm_wiki_chunk::{}", chunk.chunk_id),
+                        title.clone(),
+                        truncate_text_chars(&chunk.text, 220),
+                        CHUNK_ASSET_TYPE.to_string(),
+                        CHUNK_SOURCE_TYPE.to_string(),
+                        Some(doc_id.clone()),
+                        vector,
+                        Some(serde_json::json!({
+                            "workspace_id": workspace_id_owned,
+                            "doc_id": doc_id,
+                            "chunk_id": chunk.chunk_id,
+                            "chunk_index": chunk.chunk_index,
+                            "relative_path": relative_path,
+                            "scope": scope,
+                            "title": title,
+                            "token_count": chunk.token_count,
+                        })),
+                    )
+                    .await
+                    .map_err(|err| McpError::Storage(err.to_string()))?;
+                Ok::<i64, McpError>(1)
+            }
+        }))
+        .buffer_unordered(MAX_CONCURRENT_CHUNK_EMBEDS)
+        .fold(Ok(0_i64), |acc, item| async move {
+            match (acc, item) {
+                (Ok(total), Ok(count)) => Ok(total + count),
+                (Err(err), _) => Err(err),
+                (_, Err(err)) => Err(err),
+            }
+        })
+        .await?;
+
+        projected += per_document_projected;
     }
 
     Ok(projected)
@@ -534,7 +576,10 @@ pub(crate) async fn search_corpus(
             if chunk_id.trim().is_empty() {
                 continue;
             }
-            let lexical_rank = row.try_get::<f64, _>("lexical_rank").unwrap_or(0.0).max(0.0);
+            let lexical_rank = row
+                .try_get::<f64, _>("lexical_rank")
+                .unwrap_or(0.0)
+                .max(0.0);
             let lexical_score = 1.0 / (1.0 + lexical_rank);
             candidates.insert(
                 chunk_id.clone(),
@@ -542,7 +587,9 @@ pub(crate) async fn search_corpus(
                     doc_id: row.try_get::<String, _>("doc_id").unwrap_or_default(),
                     chunk_id,
                     chunk_index: row.try_get::<i64, _>("chunk_index").unwrap_or(0).max(0),
-                    relative_path: row.try_get::<String, _>("relative_path").unwrap_or_default(),
+                    relative_path: row
+                        .try_get::<String, _>("relative_path")
+                        .unwrap_or_default(),
                     title: row.try_get::<String, _>("title").unwrap_or_default(),
                     scope: row.try_get::<String, _>("scope").unwrap_or_default(),
                     snippet: truncate_text_chars(
@@ -679,7 +726,9 @@ pub(crate) async fn list_preview_hits(
                 doc_id: row.try_get::<String, _>("doc_id").unwrap_or_default(),
                 chunk_id,
                 chunk_index: row.try_get::<i64, _>("chunk_index").unwrap_or(0).max(0),
-                relative_path: row.try_get::<String, _>("relative_path").unwrap_or_default(),
+                relative_path: row
+                    .try_get::<String, _>("relative_path")
+                    .unwrap_or_default(),
                 title: row.try_get::<String, _>("title").unwrap_or_default(),
                 scope: row.try_get::<String, _>("scope").unwrap_or_default(),
                 snippet: truncate_text_chars(
@@ -726,8 +775,8 @@ async fn sync_internal(
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
-    let discovered = collect_filesystem_documents(vault_root, workspace_path)
-        .map_err(McpError::Storage)?;
+    let discovered =
+        collect_filesystem_documents(vault_root, workspace_path).map_err(McpError::Storage)?;
     let existing = list_documents(store, &workspace_id).await?;
     let existing_by_path = existing
         .iter()
@@ -851,13 +900,18 @@ async fn list_documents(store: &McpStore, workspace_id: &str) -> Result<Vec<Cata
         .into_iter()
         .map(|row| CatalogRow {
             doc_id: row.try_get::<String, _>("doc_id").unwrap_or_default(),
-            relative_path: row.try_get::<String, _>("relative_path").unwrap_or_default(),
+            relative_path: row
+                .try_get::<String, _>("relative_path")
+                .unwrap_or_default(),
             title: row.try_get::<String, _>("title").unwrap_or_default(),
             scope: row.try_get::<String, _>("scope").unwrap_or_default(),
             mtime_unix_ms: row.try_get::<i64, _>("mtime_unix_ms").unwrap_or(0),
             size_bytes: row.try_get::<i64, _>("size_bytes").unwrap_or(0),
             index_status: row.try_get::<String, _>("index_status").unwrap_or_default(),
-            deleted_at: row.try_get::<Option<String>, _>("deleted_at").ok().flatten(),
+            deleted_at: row
+                .try_get::<Option<String>, _>("deleted_at")
+                .ok()
+                .flatten(),
         })
         .collect())
 }
@@ -922,7 +976,9 @@ async fn load_query_hit_for_chunk(
         doc_id: row.try_get::<String, _>("doc_id").unwrap_or_default(),
         chunk_id: row.try_get::<String, _>("chunk_id").unwrap_or_default(),
         chunk_index: row.try_get::<i64, _>("chunk_index").unwrap_or(0).max(0),
-        relative_path: row.try_get::<String, _>("relative_path").unwrap_or_default(),
+        relative_path: row
+            .try_get::<String, _>("relative_path")
+            .unwrap_or_default(),
         title: row.try_get::<String, _>("title").unwrap_or_default(),
         scope: row.try_get::<String, _>("scope").unwrap_or_default(),
         snippet: truncate_text_chars(
@@ -1220,7 +1276,10 @@ fn collect_filesystem_documents(
                 .map_err(|err| format!("failed to inspect {}: {}", path.display(), err))?;
 
             if file_type.is_dir() {
-                if matches!(lower_name.as_str(), ".git" | ".trash" | "node_modules" | ".next") {
+                if matches!(
+                    lower_name.as_str(),
+                    ".git" | ".trash" | "node_modules" | ".next"
+                ) {
                     continue;
                 }
                 stack.push(path);
@@ -1275,8 +1334,9 @@ fn collect_filesystem_documents(
 fn build_document_snapshot(
     stub: &FilesystemDocumentStub,
 ) -> Result<LlmWikiDocumentSnapshot, McpError> {
-    let raw = std::fs::read_to_string(&stub.absolute_path)
-        .map_err(|err| McpError::Storage(format!("failed to read {}: {}", stub.absolute_path, err)))?;
+    let raw = std::fs::read_to_string(&stub.absolute_path).map_err(|err| {
+        McpError::Storage(format!("failed to read {}: {}", stub.absolute_path, err))
+    })?;
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return Err(McpError::Storage(format!(
@@ -1358,7 +1418,8 @@ fn split_text_into_chunks(text: &str) -> Vec<String> {
             let mut cursor = end;
             while cursor > scan_floor {
                 let current = chars[cursor - 1];
-                if current.is_whitespace() || matches!(current, '.' | '!' | '?' | ',' | ';' | '\n') {
+                if current.is_whitespace() || matches!(current, '.' | '!' | '?' | ',' | ';' | '\n')
+                {
                     end = cursor;
                     break;
                 }

@@ -71,7 +71,12 @@ impl ImSupervisorState {
     fn replace_profiles(&mut self, profiles: &[ImConnectionProfile]) {
         self.statuses = profiles
             .iter()
-            .map(|profile| (profile.id.clone(), ImSupervisorStatus::from_profile(profile)))
+            .map(|profile| {
+                (
+                    profile.id.clone(),
+                    ImSupervisorStatus::from_profile(profile),
+                )
+            })
             .collect();
     }
 
@@ -84,7 +89,10 @@ impl ImSupervisorState {
         if let Some(status) = self.statuses.get_mut(profile_id) {
             status.effective_state = effective_state;
             status.status_message = status_message.into();
-            if !matches!(effective_state, ImRuntimeState::Degraded | ImRuntimeState::Unavailable) {
+            if !matches!(
+                effective_state,
+                ImRuntimeState::Degraded | ImRuntimeState::Unavailable
+            ) {
                 status.last_error = None;
                 status.next_retry_at = None;
             }
@@ -106,7 +114,8 @@ impl ImSupervisorState {
             status.restart_count = status.restart_count.saturating_add(1);
             status.next_retry_at = retry_delay.map(|delay| {
                 Utc::now()
-                    + chrono::Duration::from_std(delay).unwrap_or_else(|_| chrono::Duration::seconds(0))
+                    + chrono::Duration::from_std(delay)
+                        .unwrap_or_else(|_| chrono::Duration::seconds(0))
             });
         }
     }
@@ -133,7 +142,10 @@ pub(crate) async fn replace_supervisor_profiles(profiles: &[ImConnectionProfile]
     guard.replace_profiles(profiles);
 }
 
-pub(crate) async fn mark_profile_running(profile: &ImConnectionProfile, message: impl Into<String>) {
+pub(crate) async fn mark_profile_running(
+    profile: &ImConnectionProfile,
+    message: impl Into<String>,
+) {
     let state = state_slot();
     let mut guard = state.write().await;
     guard.update_state(profile.id.as_str(), ImRuntimeState::Running, message);
@@ -146,13 +158,26 @@ pub(crate) async fn mark_profile_degraded(
 ) {
     let state = state_slot();
     let mut guard = state.write().await;
-    guard.record_error(profile.id.as_str(), ImRuntimeState::Degraded, message, retry_delay);
+    guard.record_error(
+        profile.id.as_str(),
+        ImRuntimeState::Degraded,
+        message,
+        retry_delay,
+    );
 }
 
-pub(crate) async fn mark_profile_unavailable(profile: &ImConnectionProfile, message: impl Into<String>) {
+pub(crate) async fn mark_profile_unavailable(
+    profile: &ImConnectionProfile,
+    message: impl Into<String>,
+) {
     let state = state_slot();
     let mut guard = state.write().await;
-    guard.record_error(profile.id.as_str(), ImRuntimeState::Unavailable, message, None);
+    guard.record_error(
+        profile.id.as_str(),
+        ImRuntimeState::Unavailable,
+        message,
+        None,
+    );
 }
 
 pub(crate) async fn supervisor_snapshots() -> Vec<ImRuntimeProfileSnapshot> {
@@ -191,7 +216,10 @@ mod tests {
         mark_profile_running(&profile, "Telegram direct runtime is running.").await;
         let running = supervisor_snapshots().await;
         assert_eq!(running[0].effective_state, ImRuntimeState::Running);
-        assert_eq!(running[0].status_message, "Telegram direct runtime is running.");
+        assert_eq!(
+            running[0].status_message,
+            "Telegram direct runtime is running."
+        );
 
         mark_profile_degraded(
             &profile,
@@ -202,7 +230,11 @@ mod tests {
         let degraded = supervisor_snapshots().await;
         assert_eq!(degraded[0].effective_state, ImRuntimeState::Degraded);
         assert_eq!(degraded[0].restart_count, 1);
-        assert!(degraded[0].last_error.as_deref().unwrap_or_default().contains("transient error"));
+        assert!(degraded[0]
+            .last_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("transient error"));
         assert!(degraded[0].next_retry_at.is_some());
     }
 
@@ -217,4 +249,3 @@ mod tests {
         assert!(!snapshots[0].enabled);
     }
 }
-

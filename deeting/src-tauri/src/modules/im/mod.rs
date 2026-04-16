@@ -13,8 +13,8 @@ pub(crate) mod handlers;
 mod manager;
 mod profile;
 mod reply_adapter;
-mod supervisor;
 pub mod runtime;
+mod supervisor;
 mod text_runtime;
 mod types;
 

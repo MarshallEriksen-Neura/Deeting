@@ -6,9 +6,9 @@ use super::service::{
     bootstrap_local_llm_wiki_workspace, confirm_local_llm_wiki_adoption,
     create_or_update_local_llm_wiki_maintainer_agent, dismiss_local_llm_wiki_automation_suggestion,
     execute_local_llm_wiki_automation_suggestion, get_local_llm_wiki_state,
-    ingest_local_llm_wiki_selection, preview_local_llm_wiki_adoption, reconcile_local_llm_wiki_corpus,
-    run_local_llm_wiki_lint, save_local_llm_wiki_binding, search_local_llm_wiki_corpus,
-    update_local_llm_wiki_automation_settings,
+    ingest_local_llm_wiki_selection, preview_local_llm_wiki_adoption,
+    reconcile_local_llm_wiki_corpus, run_local_llm_wiki_lint, save_local_llm_wiki_binding,
+    search_local_llm_wiki_corpus, update_local_llm_wiki_automation_settings,
 };
 use super::types::{
     BootstrapLocalLlmWikiWorkspaceResult, ConfirmLocalLlmWikiAdoptionRequest,
