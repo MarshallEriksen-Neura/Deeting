@@ -292,6 +292,24 @@ impl WechatState {
             .await
     }
 
+    pub async fn send_message(
+        &self,
+        base_url: &str,
+        token: &str,
+        message: super::types::WechatOutboundMessage,
+    ) -> Result<(), String> {
+        self.shared.bridge.send_message(base_url, token, message).await
+    }
+
+    pub async fn send_typing(
+        &self,
+        base_url: &str,
+        token: &str,
+        contact_id: &str,
+    ) -> Result<(), String> {
+        self.shared.bridge.send_typing(base_url, token, contact_id).await
+    }
+
     pub async fn update_context_token(
         &self,
         contact_id: &str,

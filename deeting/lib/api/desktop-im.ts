@@ -61,9 +61,37 @@ export interface ResolvedDesktopImConnectionProfile {
   resolution: DesktopImTransportResolution
 }
 
+export interface DesktopImRuntimeCapabilities {
+  inbound: string[]
+  outbound: string[]
+  degradations: string[]
+}
+
+export type DesktopImRuntimeState =
+  | "configured"
+  | "enabled"
+  | "running"
+  | "degraded"
+  | "unavailable"
+
+export interface DesktopImRuntimeProfile {
+  profile_id: string
+  platform: DesktopImConnectionProfile["platform"]
+  display_name: string
+  configured: boolean
+  enabled: boolean
+  effective_state: DesktopImRuntimeState
+  status_message: string
+  last_error?: string | null
+  restart_count: number
+  next_retry_at?: string | null
+  capabilities: DesktopImRuntimeCapabilities
+}
+
 export interface DesktopImSettingsSnapshot {
   profiles: DesktopImConnectionProfile[]
   resolved_profiles: ResolvedDesktopImConnectionProfile[]
+  runtime_profiles: DesktopImRuntimeProfile[]
 }
 
 export function createDefaultFeishuProfile(): DesktopImConnectionProfile {
@@ -108,6 +136,13 @@ export function getPrimaryDesktopImResolution(
     snapshot?.resolved_profiles.find((profile) => profile.platform === platform) ??
     null
   )
+}
+
+export function getPrimaryDesktopImRuntimeProfile(
+  snapshot: DesktopImSettingsSnapshot | null | undefined,
+  platform: DesktopImConnectionProfile["platform"]
+): DesktopImRuntimeProfile | null {
+  return snapshot?.runtime_profiles.find((profile) => profile.platform === platform) ?? null
 }
 
 export async function getDesktopImSettings(): Promise<DesktopImSettingsSnapshot> {

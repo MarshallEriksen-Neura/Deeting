@@ -34,12 +34,11 @@ export function LlmWikiJourneyCard({
   onNavigateTab: (tab: JourneyTabValue) => void
 }) {
   const binding = state?.binding
-  const scan = state?.scanSummary
   const workspace = state?.workspaceStatus
   const corpus = state?.corpusStatus
   const maintainer = state?.maintainerAgent
 
-  const stage1Ready = Boolean(binding && scan)
+  const stage1Ready = Boolean(binding)
   const stage2Ready = Boolean(workspace?.workspaceExists && corpus?.lastSyncedAt)
   const stage3Ready = Boolean(maintainer && hasSearchedCorpus)
 
@@ -76,7 +75,7 @@ export function LlmWikiJourneyCard({
       evidence: stage1Ready
         ? t("journey.stages.connect.ready", {
             vaultName: binding?.vaultName ?? "Vault",
-            count: scan?.totalMarkdownFiles ?? 0,
+            count: corpus?.indexedNoteCount ?? 0,
           })
         : t("journey.stages.connect.pending"),
     },

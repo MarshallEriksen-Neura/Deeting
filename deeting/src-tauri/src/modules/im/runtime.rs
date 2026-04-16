@@ -1,4 +1,5 @@
 use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 
 use log::{info, warn};
 use serde_json::Value;
@@ -10,9 +11,10 @@ use crate::state::AppState;
 use super::feishu::{FeishuClient, FeishuConfig};
 use super::handlers::{build_direct_card_action_outcome, generate_local_chat_reply_content};
 use super::{
-    build_settings_snapshot, resolve_transport, ImClient, ImConnectionProfile, ImEvent, ImPlatform,
-    ImTransportKind, ImTransportPreference, LocalImSettingsSnapshot, MessageContent,
-    SendMessageRequest,
+    build_settings_snapshot, mark_profile_degraded, mark_profile_running, mark_profile_unavailable,
+    replace_supervisor_profiles, resolve_transport, supervisor_snapshots, ImClient,
+    ImConnectionProfile, ImEvent, ImPlatform, ImTransportKind, ImTransportPreference,
+    LocalImSettingsSnapshot, MessageContent, SendMessageRequest,
 };
 
 type ImWorkerHandle = tauri::async_runtime::JoinHandle<()>;
@@ -22,9 +24,16 @@ fn im_worker_slot() -> &'static Mutex<Option<ImWorkerHandle>> {
     IM_WORKER_HANDLE.get_or_init(|| Mutex::new(None))
 }
 
-fn config_string(value: &Value, key: &str) -> Option<String> {
+fn config_value<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
     value
-        .get(key)
+        .get("im_config")
+        .and_then(Value::as_object)
+        .and_then(|nested| nested.get(key))
+        .or_else(|| value.get(key))
+}
+
+fn config_string(value: &Value, key: &str) -> Option<String> {
+    config_value(value, key)
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -32,7 +41,7 @@ fn config_string(value: &Value, key: &str) -> Option<String> {
 }
 
 fn config_bool(value: &Value, key: &str) -> Option<bool> {
-    value.get(key).and_then(Value::as_bool)
+    config_value(value, key).and_then(Value::as_bool)
 }
 
 fn derive_profile_from_notification_channel(
@@ -42,7 +51,9 @@ fn derive_profile_from_notification_channel(
     match channel.channel.trim().to_lowercase().as_str() {
         "feishu" => {}
         "telegram" => {
-            let has_im_fields = config_string(&channel.config, "bot_token").is_some()
+            let has_im_fields = config_bool(&channel.config, "im_enabled").unwrap_or(true)
+                || config_string(&channel.config, "bot_token").is_some()
+                || config_string(&channel.config, "chat_id").is_some()
                 || config_string(&channel.config, "bot_model").is_some()
                 || config_string(&channel.config, "bot_system_prompt").is_some();
             if !has_im_fields {
@@ -55,7 +66,8 @@ fn derive_profile_from_notification_channel(
                 .display_name
                 .clone()
                 .unwrap_or_else(|| "Telegram".to_string());
-            profile.enabled = channel.is_active;
+            profile.enabled =
+                channel.is_active && config_bool(&channel.config, "im_enabled").unwrap_or(true);
             profile.transport_preference = ImTransportPreference::Direct;
             profile.direct_config.telegram_bot_token =
                 config_string(&channel.config, "bot_token").unwrap_or_default();
@@ -195,12 +207,24 @@ async fn run_feishu_direct_profile_worker(
                 chat_id,
                 message_id,
                 sender,
-                content: MessageContent::Text { text },
+                content,
                 ..
             } => {
+                let incoming_text = match content {
+                    MessageContent::Text { text } => text,
+                    MessageContent::Image { .. } => {
+                        "[feishu-rich:image] 当前桌面飞书 IM 已识别图片输入，后续会按 capability phase 逐步接入原生处理。".to_string()
+                    }
+                    MessageContent::File { .. } => {
+                        "[feishu-rich:file] 当前桌面飞书 IM 已识别文件输入，后续会按 capability phase 逐步接入原生处理。".to_string()
+                    }
+                    MessageContent::Mixed { .. } => {
+                        "[feishu-rich:mixed] 当前桌面飞书 IM 已识别富文本输入，已进入兼容降级路径。".to_string()
+                    }
+                    MessageContent::Card { .. } => continue,
+                };
                 let session_id = format!("im:{}:chat:{}", profile.id, chat_id);
                 let reply_to = Some(message_id.clone());
-                // 先发一条即时确认，挂在用户消息下（与官方 OpenClaw 类似的回复线程体验）
                 let ack = "收到，正在处理中…";
                 if let Err(e) = client
                     .send_message(SendMessageRequest {
@@ -220,7 +244,7 @@ async fn run_feishu_direct_profile_worker(
                 let reply_content = match generate_local_chat_reply_content(
                     &app_state,
                     &app_handle,
-                    text.as_str(),
+                    incoming_text.as_str(),
                     session_id.as_str(),
                 )
                 .await
@@ -235,13 +259,12 @@ async fn run_feishu_direct_profile_worker(
                         continue;
                     }
                 };
-                // 回复内容带上引用格式：回复 用户名: 原文，与官方 OpenClaw 展示一致
                 let user_ref = sender
                     .name
                     .as_deref()
                     .filter(|s| !s.trim().is_empty())
                     .unwrap_or("用户");
-                let quoted = text.trim();
+                let quoted = incoming_text.trim();
                 let quoted_preview = if quoted.len() > 60 {
                     format!(
                         "{}…",
@@ -368,7 +391,8 @@ pub async fn get_local_im_settings(
     state: tauri::State<'_, AppState>,
 ) -> Result<LocalImSettingsSnapshot, String> {
     let profiles = load_im_connection_profiles(state.inner()).await?;
-    Ok(build_settings_snapshot(profiles))
+    let runtime_profiles = supervisor_snapshots().await;
+    Ok(build_settings_snapshot(profiles, runtime_profiles))
 }
 
 pub async fn start_im_runtime_worker(app_state: AppState, app_handle: tauri::AppHandle) {
@@ -380,6 +404,8 @@ pub async fn start_im_runtime_worker(app_state: AppState, app_handle: tauri::App
         }
     };
 
+    replace_supervisor_profiles(&profiles).await;
+
     let mut tasks = JoinSet::new();
     for profile in profiles.into_iter().filter(|profile| profile.enabled) {
         let resolution = resolve_transport(&profile);
@@ -387,9 +413,17 @@ pub async fn start_im_runtime_worker(app_state: AppState, app_handle: tauri::App
             (ImPlatform::Feishu, ImTransportKind::Direct) => {
                 let state = app_state.clone();
                 let handle = app_handle.clone();
+                let profile_for_status = profile.clone();
                 tasks.spawn(async move {
-                    if let Err(err) = run_feishu_direct_profile_worker(state, handle, profile).await
+                    mark_profile_running(&profile_for_status, "Feishu direct runtime is running.").await;
+                    if let Err(err) = run_feishu_direct_profile_worker(state, handle, profile.clone()).await
                     {
+                        mark_profile_degraded(
+                            &profile,
+                            format!("Feishu direct worker failed: {err}"),
+                            Some(Duration::from_secs(5)),
+                        )
+                        .await;
                         warn!("im_direct_profile_worker_failed: {}", err);
                     }
                 });
@@ -397,11 +431,19 @@ pub async fn start_im_runtime_worker(app_state: AppState, app_handle: tauri::App
             (ImPlatform::Feishu, ImTransportKind::Relay) => {
                 let state = app_state.clone();
                 let handle = app_handle.clone();
+                let profile_for_status = profile.clone();
                 tasks.spawn(async move {
+                    mark_profile_running(&profile_for_status, "Feishu relay runtime is running.").await;
                     if let Err(err) =
-                        crate::modules::relay::start_relay_profile_worker(state, handle, profile)
+                        crate::modules::relay::start_relay_profile_worker(state, handle, profile.clone())
                             .await
                     {
+                        mark_profile_degraded(
+                            &profile,
+                            format!("Feishu relay worker failed: {err}"),
+                            Some(Duration::from_secs(5)),
+                        )
+                        .await;
                         warn!("im_relay_profile_worker_failed: {}", err);
                     }
                 });
@@ -409,13 +451,21 @@ pub async fn start_im_runtime_worker(app_state: AppState, app_handle: tauri::App
             (ImPlatform::Wechat, ImTransportKind::Direct) => {
                 let state = app_state.clone();
                 let handle = app_handle.clone();
+                let profile_for_status = profile.clone();
                 tasks.spawn(async move {
+                    mark_profile_running(&profile_for_status, "WeChat direct runtime is running.").await;
                     if let Err(err) =
                         crate::modules::im::wechat::runtime::run_wechat_direct_profile_worker(
-                            state, handle, profile,
+                            state, handle, profile.clone(),
                         )
                         .await
                     {
+                        mark_profile_degraded(
+                            &profile,
+                            format!("WeChat worker failed: {err}"),
+                            Some(Duration::from_secs(5)),
+                        )
+                        .await;
                         warn!("im_wechat_profile_worker_failed: {}", err);
                     }
                 });
@@ -423,24 +473,48 @@ pub async fn start_im_runtime_worker(app_state: AppState, app_handle: tauri::App
             (ImPlatform::Telegram, ImTransportKind::Direct) => {
                 let state = app_state.clone();
                 let handle = app_handle.clone();
+                let profile_for_status = profile.clone();
                 tasks.spawn(async move {
+                    mark_profile_running(&profile_for_status, "Telegram direct runtime is running.").await;
                     if let Err(err) =
                         crate::modules::im::telegram::runtime::run_telegram_direct_profile_worker(
-                            state, handle, profile,
+                            state, handle, profile.clone(),
                         )
                         .await
                     {
+                        mark_profile_degraded(
+                            &profile,
+                            format!("Telegram worker failed: {err}"),
+                            Some(Duration::from_secs(5)),
+                        )
+                        .await;
                         warn!("im_telegram_profile_worker_failed: {}", err);
                     }
                 });
             }
             (_, ImTransportKind::Unavailable) => {
+                mark_profile_unavailable(
+                    &profile,
+                    format!(
+                        "{} transport is unavailable: {:?}",
+                        profile.platform, resolution.reason_code
+                    ),
+                )
+                .await;
                 warn!(
                     "im_profile_unavailable profile={} platform={} reason={:?}",
                     profile.id, profile.platform, resolution.reason_code
                 );
             }
             _ => {
+                mark_profile_unavailable(
+                    &profile,
+                    format!(
+                        "{} transport is not supported: {:?}",
+                        profile.platform, resolution.effective
+                    ),
+                )
+                .await;
                 warn!(
                     "im_profile_transport_not_supported profile={} platform={} effective={:?}",
                     profile.id, profile.platform, resolution.effective
@@ -455,3 +529,80 @@ pub async fn start_im_runtime_worker(app_state: AppState, app_handle: tauri::App
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modules::monitor::types::LocalNotificationChannel;
+
+    fn notification_channel(channel: &str, config: Value, is_active: bool) -> LocalNotificationChannel {
+        LocalNotificationChannel {
+            id: format!("{channel}-1"),
+            user_id: "user-1".to_string(),
+            channel: channel.to_string(),
+            config,
+            display_name: None,
+            is_active,
+            priority: 0,
+            last_used_at: None,
+            created_at: "2026-04-16T00:00:00Z".to_string(),
+            updated_at: "2026-04-16T00:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn derive_profile_reads_nested_im_config_for_telegram() {
+        let channel = notification_channel(
+            "telegram",
+            serde_json::json!({
+                "chat_id": "12345",
+                "im_config": {
+                    "im_enabled": true,
+                    "bot_token": "telegram-token"
+                }
+            }),
+            true,
+        );
+
+        let profile = derive_profile_from_notification_channel(&channel, None).expect("telegram profile");
+        assert!(profile.enabled);
+        assert_eq!(profile.direct_config.telegram_bot_token, "telegram-token");
+    }
+
+    #[test]
+    fn derive_profile_prefers_nested_im_config_over_legacy_root_fields() {
+        let channel = notification_channel(
+            "telegram",
+            serde_json::json!({
+                "bot_token": "legacy-token",
+                "im_enabled": false,
+                "im_config": {
+                    "im_enabled": true,
+                    "bot_token": "nested-token"
+                }
+            }),
+            true,
+        );
+
+        let profile = derive_profile_from_notification_channel(&channel, None).expect("telegram profile");
+        assert!(profile.enabled);
+        assert_eq!(profile.direct_config.telegram_bot_token, "nested-token");
+    }
+
+    #[test]
+    fn derive_profile_respects_telegram_im_enabled_flag() {
+        let channel = notification_channel(
+            "telegram",
+            serde_json::json!({
+                "bot_token": "telegram-token",
+                "chat_id": "12345",
+                "im_enabled": false
+            }),
+            true,
+        );
+
+        let profile = derive_profile_from_notification_channel(&channel, None).expect("telegram profile");
+        assert!(!profile.enabled);
+    }
+}
+

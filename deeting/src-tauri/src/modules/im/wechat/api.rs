@@ -10,7 +10,7 @@ use super::types::{
 
 fn base_info() -> WechatBaseInfo {
     WechatBaseInfo {
-        channel_version: WECHAT_CHANNEL_VERSION,
+        channel_version: WECHAT_CHANNEL_VERSION.to_string(),
     }
 }
 
@@ -126,6 +126,15 @@ pub async fn send_text_message(
     token: &str,
     message: WechatOutboundMessage,
 ) -> Result<(), String> {
+    send_message(client, base_url, token, message).await
+}
+
+pub async fn send_message(
+    client: &reqwest::Client,
+    base_url: &str,
+    token: &str,
+    message: WechatOutboundMessage,
+) -> Result<(), String> {
     let url = format!("{}/ilink/bot/sendmessage", base_url.trim_end_matches('/'));
     let response = client
         .post(url)
@@ -156,6 +165,31 @@ pub async fn send_text_message(
             .and_then(serde_json::Value::as_str)
             .unwrap_or("wechat_send_failed")
             .to_string());
+    }
+
+    Ok(())
+}
+
+pub async fn send_typing(
+    client: &reqwest::Client,
+    base_url: &str,
+    token: &str,
+    contact_id: &str,
+) -> Result<(), String> {
+    let url = format!("{}/ilink/bot/sendtyping", base_url.trim_end_matches('/'));
+    let response = client
+        .post(url)
+        .headers(build_headers(Some(token))?)
+        .json(&json!({
+            "to_user_id": contact_id.trim(),
+            "base_info": base_info(),
+        }))
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+
+    if !response.status().is_success() {
+        return Err(format!("wechat_sendtyping_http_{}", response.status().as_u16()));
     }
 
     Ok(())

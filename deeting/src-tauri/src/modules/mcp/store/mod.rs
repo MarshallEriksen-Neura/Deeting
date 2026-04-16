@@ -10,6 +10,7 @@ use crate::modules::assistants::store::init_assistant_tables;
 use crate::modules::conversations::store::init_conversation_tables;
 use crate::modules::desktop_config::store_init::init_desktop_config_table;
 use crate::modules::desktop_runtime::runtime::execution_graph_store::init_execution_graph_tables;
+use crate::modules::llm_wiki::store::init_llm_wiki_tables;
 use crate::modules::mcp::commands::runtime::capability_registry_cache::CapabilityRegistryBaseCache;
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::policy::PersistedApprovalAction;
@@ -777,6 +778,7 @@ impl McpStore {
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
         init_desktop_config_table(self).await?;
+        init_llm_wiki_tables(self).await?;
         init_execution_graph_tables(self).await?;
         init_render_runtime_tables(self).await?;
         init_asset_registry_tables(self).await?;

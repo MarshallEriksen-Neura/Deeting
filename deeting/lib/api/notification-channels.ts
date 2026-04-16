@@ -31,9 +31,7 @@ export interface NotificationChannelList {
 }
 
 export interface ChannelConfig {
-  // Feishu / DingTalk / Webhook
   webhook_url?: string
-  // Feishu bot advanced config
   im_enabled?: boolean
   transport_preference?: "auto" | "direct" | "relay"
   chat_ids?: string[]
@@ -44,17 +42,14 @@ export interface ChannelConfig {
   bot_app_secret?: string
   relay_base_url?: string
   relay_shared_secret?: string
-  // WeChat desktop direct config
   access_policy?: "pairing" | "allowlist"
   allowed_contact_ids?: string[]
   notify_contact_ids?: string[]
   account_label?: string
   connection_state?: "disconnected" | "connecting" | "connected" | "error"
   last_connected_at?: string
-  // Telegram
   bot_token?: string
   chat_id?: string
-  // Email
   smtp_host?: string
   smtp_port?: number
   from_email?: string
@@ -63,11 +58,11 @@ export interface ChannelConfig {
   username?: string
   password?: string
   use_tls?: boolean
-  // DingTalk extras
   at_mobiles?: string[]
   is_at_all?: boolean
-  // Webhook extras
   method?: string
+  notify_config?: Record<string, unknown>
+  im_config?: Record<string, unknown>
 }
 
 export interface CreateChannelInput {

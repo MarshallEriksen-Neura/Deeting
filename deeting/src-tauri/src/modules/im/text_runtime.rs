@@ -5,7 +5,10 @@ use crate::modules::conversation::service as conversation;
 use crate::modules::im::handlers::{
     build_direct_card_action_outcome, generate_local_chat_reply_outcome,
 };
-use crate::modules::im::{ImConnectionProfile, MessageContent};
+use crate::modules::im::{
+    adapt_reply_for_platform, ImConnectionProfile, ImPlatformAdapter, ImReplyCapability,
+    ImReplyDelivery, MessageContent,
+};
 use crate::state::AppState;
 
 #[derive(Debug, Clone)]
@@ -106,18 +109,112 @@ impl TextImConversationRuntime {
 
         match reply_outcome.content {
             MessageContent::Text { text } => {
-                send_text(text).await?;
+                match adapt_reply_for_platform(
+                    &ImReplyCapability::PlainText { text },
+                    platform_adapter_for_profile(profile),
+                    channel_label,
+                ) {
+                    ImReplyDelivery::Native(MessageContent::Text { text })
+                    | ImReplyDelivery::DowngradedText(text) => {
+                        send_text(text).await?;
+                    }
+                    _ => {
+                        send_text(format!(
+                            "当前{}通道暂不支持该回复格式，请在桌面端查看完整结果。",
+                            channel_label
+                        ))
+                        .await?;
+                    }
+                }
             }
-            _ => {
-                send_text(format!(
-                    "当前{}通道暂不支持该回复格式，请在桌面端查看完整结果。",
-                    channel_label
-                ))
-                .await?;
+            MessageContent::Card { card } => {
+                match adapt_reply_for_platform(
+                    &ImReplyCapability::InteractiveCard { card },
+                    platform_adapter_for_profile(profile),
+                    channel_label,
+                ) {
+                    ImReplyDelivery::Native(MessageContent::Text { text })
+                    | ImReplyDelivery::DowngradedText(text) => {
+                        send_text(text).await?;
+                    }
+                    _ => {
+                        send_text(format!(
+                            "当前{}通道暂不支持该回复格式，请在桌面端查看完整结果。",
+                            channel_label
+                        ))
+                        .await?;
+                    }
+                }
+            }
+            MessageContent::Image { url } => {
+                match adapt_reply_for_platform(
+                    &ImReplyCapability::ImageRef { url },
+                    platform_adapter_for_profile(profile),
+                    channel_label,
+                ) {
+                    ImReplyDelivery::Native(MessageContent::Text { text })
+                    | ImReplyDelivery::DowngradedText(text) => {
+                        send_text(text).await?;
+                    }
+                    _ => {
+                        send_text(format!(
+                            "当前{}通道暂不支持该回复格式，请在桌面端查看完整结果。",
+                            channel_label
+                        ))
+                        .await?;
+                    }
+                }
+            }
+            MessageContent::File { name, url } => {
+                match adapt_reply_for_platform(
+                    &ImReplyCapability::FileRef { name, url },
+                    platform_adapter_for_profile(profile),
+                    channel_label,
+                ) {
+                    ImReplyDelivery::Native(MessageContent::Text { text })
+                    | ImReplyDelivery::DowngradedText(text) => {
+                        send_text(text).await?;
+                    }
+                    _ => {
+                        send_text(format!(
+                            "当前{}通道暂不支持该回复格式，请在桌面端查看完整结果。",
+                            channel_label
+                        ))
+                        .await?;
+                    }
+                }
+            }
+            MessageContent::Mixed { parts } => {
+                match adapt_reply_for_platform(
+                    &ImReplyCapability::MixedParts { parts },
+                    platform_adapter_for_profile(profile),
+                    channel_label,
+                ) {
+                    ImReplyDelivery::Native(MessageContent::Text { text })
+                    | ImReplyDelivery::DowngradedText(text) => {
+                        send_text(text).await?;
+                    }
+                    _ => {
+                        send_text(format!(
+                            "当前{}通道暂不支持该回复格式，请在桌面端查看完整结果。",
+                            channel_label
+                        ))
+                        .await?;
+                    }
+                }
             }
         }
 
         Ok(())
+    }
+}
+
+fn platform_adapter_for_profile(profile: &ImConnectionProfile) -> ImPlatformAdapter {
+    match profile.platform {
+        crate::modules::im::ImPlatform::Feishu => ImPlatformAdapter::Feishu,
+        crate::modules::im::ImPlatform::Telegram => ImPlatformAdapter::Telegram,
+        crate::modules::im::ImPlatform::Wechat => ImPlatformAdapter::Wechat,
+        _ => ImPlatformAdapter::Relay,
     }
 }
 

@@ -159,8 +159,32 @@ impl TelegramClient {
 
     /// 处理消息更新
     fn handle_message(&self, message: &TelegramMessage) -> Option<ImEvent> {
-        // 获取文本内容
-        let text = message.text.as_ref().or(message.caption.as_ref())?;
+        let parsed_content = if let Some(text) = message.text.as_ref() {
+            MessageContent::Text { text: text.clone() }
+        } else if let Some(document) = message.document.as_ref() {
+            MessageContent::File {
+                name: document
+                    .file_name
+                    .clone()
+                    .unwrap_or_else(|| "telegram-document".to_string()),
+                url: format!("telegram://document/{}", document.file_id),
+            }
+        } else if let Some(photo) = message.photo.as_ref().and_then(|items| items.last()) {
+            MessageContent::Image {
+                url: format!("telegram://photo/{}", photo.file_id),
+            }
+        } else if let Some(caption) = message.caption.as_ref() {
+            MessageContent::Text {
+                text: caption.clone(),
+            }
+        } else {
+            return None;
+        };
+
+        let text = match &parsed_content {
+            MessageContent::Text { text } => text.as_str(),
+            _ => message.caption.as_deref().unwrap_or_default(),
+        };
 
         // 确定聊天类型
         let chat_type = match message.chat.chat_type.as_str() {
@@ -249,7 +273,7 @@ impl TelegramClient {
             chat_type,
             message_id: message.message_id.to_string(),
             sender,
-            content: MessageContent::Text { text: text.clone() },
+            content: parsed_content,
             mentions,
             raw: serde_json::to_value(message).unwrap_or(serde_json::Value::Null),
         })
@@ -404,10 +428,51 @@ impl TelegramClient {
             reply_markup: None,
         };
 
+        self.execute_send_request(&url, &body).await
+    }
+
+    async fn send_photo_api(
+        &self,
+        chat_id: i64,
+        photo: &str,
+        caption: Option<&str>,
+        reply_to: Option<i64>,
+    ) -> Result<SentMessage, ImError> {
+        let url = self.api_url("sendPhoto");
+        let body = SendPhotoReq {
+            chat_id,
+            photo: photo.to_string(),
+            caption: caption.map(|value| value.to_string()),
+            reply_to_message_id: reply_to,
+        };
+        self.execute_send_request(&url, &body).await
+    }
+
+    async fn send_document_api(
+        &self,
+        chat_id: i64,
+        document: &str,
+        caption: Option<&str>,
+        reply_to: Option<i64>,
+    ) -> Result<SentMessage, ImError> {
+        let url = self.api_url("sendDocument");
+        let body = SendDocumentReq {
+            chat_id,
+            document: document.to_string(),
+            caption: caption.map(|value| value.to_string()),
+            reply_to_message_id: reply_to,
+        };
+        self.execute_send_request(&url, &body).await
+    }
+
+    async fn execute_send_request<T>(&self, url: &str, body: &T) -> Result<SentMessage, ImError>
+    where
+        T: serde::Serialize + ?Sized,
+    {
         let resp = self
             .http
-            .post(&url)
-            .json(&body)
+            .post(url)
+            .json(body)
             .send()
             .await
             .map_err(|e| ImError::SendError(e.to_string()))?;
@@ -589,18 +654,22 @@ impl ImClient for TelegramClient {
             .parse()
             .map_err(|_| ImError::SendError("无效的 chat_id".to_string()))?;
 
-        let text = match request.content {
-            MessageContent::Text { text } => text,
-            _ => return Err(ImError::NotImplemented),
-        };
-
         let reply_to = request
             .reply_to
             .map(|s| s.parse())
             .transpose()
             .map_err(|_| ImError::SendError("无效的 reply_to".to_string()))?;
 
-        let sent = self.send_message_api(chat_id, &text, reply_to).await?;
+        let sent = match request.content {
+            MessageContent::Text { text } => self.send_message_api(chat_id, &text, reply_to).await?,
+            MessageContent::Image { url } => self.send_photo_api(chat_id, &url, None, reply_to).await?,
+            MessageContent::File { name: _, url } => {
+                self.send_document_api(chat_id, &url, None, reply_to).await?
+            }
+            MessageContent::Card { .. } | MessageContent::Mixed { .. } => {
+                return Err(ImError::NotImplemented)
+            }
+        };
 
         Ok(SendMessageResponse {
             message_id: sent.message_id.to_string(),
@@ -660,8 +729,41 @@ mod tests {
             date: 1_717_171_717,
             text: text.map(str::to_string),
             caption: None,
+            photo: None,
+            document: None,
             entities: None,
             reply_to_message: None,
+        }
+    }
+
+    fn sample_photo_message() -> TelegramMessage {
+        TelegramMessage {
+            text: None,
+            caption: Some("photo caption".to_string()),
+            photo: Some(vec![TelegramPhotoSize {
+                file_id: "photo-file-id".to_string(),
+                file_unique_id: "photo-unique".to_string(),
+                width: 512,
+                height: 512,
+                file_size: Some(1024),
+            }]),
+            ..sample_message("private", None)
+        }
+    }
+
+    fn sample_document_message() -> TelegramMessage {
+        TelegramMessage {
+            text: None,
+            caption: Some("document caption".to_string()),
+            photo: None,
+            document: Some(TelegramDocument {
+                file_id: "document-file-id".to_string(),
+                file_unique_id: "document-unique".to_string(),
+                file_name: Some("report.pdf".to_string()),
+                mime_type: Some("application/pdf".to_string()),
+                file_size: Some(2048),
+            }),
+            ..sample_message("private", None)
         }
     }
 
@@ -697,6 +799,41 @@ mod tests {
         let event = client.handle_message(&sample_message("group", Some("hello group")));
 
         assert!(event.is_none(), "group messages should be ignored");
+    }
+
+    #[test]
+    fn handle_message_maps_photo_to_image_content() {
+        let client = make_client(false);
+        let event = client
+            .handle_message(&sample_photo_message())
+            .expect("photo message should become an event");
+
+        match event {
+            ImEvent::Message {
+                content: MessageContent::Image { url },
+                ..
+            } => assert_eq!(url, "telegram://photo/photo-file-id"),
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn handle_message_maps_document_to_file_content() {
+        let client = make_client(false);
+        let event = client
+            .handle_message(&sample_document_message())
+            .expect("document message should become an event");
+
+        match event {
+            ImEvent::Message {
+                content: MessageContent::File { name, url },
+                ..
+            } => {
+                assert_eq!(name, "report.pdf");
+                assert_eq!(url, "telegram://document/document-file-id");
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
     }
 
     #[test]

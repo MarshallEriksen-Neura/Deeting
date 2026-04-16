@@ -8,7 +8,11 @@ import { cn } from "@/lib/utils"
 import { GlassButton } from "@/components/ui/glass-button"
 import { CHANNEL_REQUIRED_FIELDS, fetchNotificationChannel, testNotificationChannel } from "@/lib/api/notification-channels"
 import type { ChannelConfig, ChannelType } from "@/lib/api/notification-channels"
-import { getDesktopImSettings, getPrimaryDesktopImResolution } from "@/lib/api/desktop-im"
+import {
+  getDesktopImSettings,
+  getPrimaryDesktopImResolution,
+  getPrimaryDesktopImRuntimeProfile,
+} from "@/lib/api/desktop-im"
 import {
   approveLocalWechatPairing,
   cancelLocalWechatPairing,
@@ -68,6 +72,10 @@ export function ChannelConfigForm({
     enabled: boolean
     effective: string
     message: string
+    runtimeState?: string
+    restartCount?: number
+    lastError?: string | null
+    capabilitySummary?: string
   } | null>(null)
   const [wechatDialogOpen, setWechatDialogOpen] = useState(false)
   const [wechatPairingId, setWechatPairingId] = useState<string | null>(null)
@@ -156,20 +164,38 @@ export function ChannelConfigForm({
       initialConfig?.connection_state === "error"
     ) {
       if (initialConfig.connection_state === "connected") {
-        setWechatConnectionState({
-          state: "connected",
-          accountLabel: initialConfig.account_label,
+        setWechatConnectionState((current) => {
+          if (
+            current.state === "connected" &&
+            current.accountLabel === initialConfig.account_label
+          ) {
+            return current
+          }
+          return {
+            state: "connected",
+            accountLabel: initialConfig.account_label,
+          }
         })
       } else if (initialConfig.connection_state === "connecting") {
-        setWechatConnectionState({ state: "connecting" })
+        setWechatConnectionState((current) =>
+          current.state === "connecting" ? current : { state: "connecting" }
+        )
       } else {
-        setWechatConnectionState({
-          state: "error",
-          error: t("wechat.errors.stateAbnormal"),
+        const errorText = t("wechat.errors.stateAbnormal")
+        setWechatConnectionState((current) => {
+          if (current.state === "error" && current.error === errorText) {
+            return current
+          }
+          return {
+            state: "error",
+            error: errorText,
+          }
         })
       }
     } else {
-      setWechatConnectionState({ state: "disconnected" })
+      setWechatConnectionState((current) =>
+        current.state === "disconnected" ? current : { state: "disconnected" }
+      )
     }
 
     if (!channelId || !isDesktopRuntime()) {
@@ -292,7 +318,8 @@ export function ChannelConfigForm({
 
   useEffect(() => {
     let active = true
-    const shouldLoadRuntimeHint = channelType === "feishu" || channelType === "telegram"
+    const shouldLoadRuntimeHint =
+      channelType === "feishu" || channelType === "telegram" || channelType === "wechat"
     if (!shouldLoadRuntimeHint || !isDesktopRuntime()) {
       setImRuntimeHint(null)
       return () => {
@@ -304,12 +331,29 @@ export function ChannelConfigForm({
       try {
         const snapshot = await getDesktopImSettings()
         const resolution = getPrimaryDesktopImResolution(snapshot, channelType)
+        const runtimeProfile = getPrimaryDesktopImRuntimeProfile(snapshot, channelType)
         if (!active) return
         if (resolution) {
+          const capabilitySummary = runtimeProfile
+            ? [
+                runtimeProfile.capabilities.inbound.length > 0
+                  ? `in:${runtimeProfile.capabilities.inbound.join(",")}`
+                  : null,
+                runtimeProfile.capabilities.outbound.length > 0
+                  ? `out:${runtimeProfile.capabilities.outbound.join(",")}`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")
+            : undefined
           setImRuntimeHint({
             enabled: resolution.enabled,
             effective: resolution.resolution.effective,
-            message: resolution.resolution.user_message,
+            message: runtimeProfile?.status_message || resolution.resolution.user_message,
+            runtimeState: runtimeProfile?.effective_state,
+            restartCount: runtimeProfile?.restart_count,
+            lastError: runtimeProfile?.last_error,
+            capabilitySummary,
           })
         } else {
           setImRuntimeHint(null)
@@ -329,10 +373,12 @@ export function ChannelConfigForm({
 
   const buildConfig = (): ChannelConfig => {
     const config: ChannelConfig = {}
+    const imConfig: Record<string, unknown> = {}
     for (const field of fields) {
       const value = values[field.key]
       if (field.valueKind === "boolean") {
         ;(config as Record<string, unknown>)[field.key] = Boolean(value)
+        imConfig[field.key] = Boolean(value)
         continue
       }
       if (typeof value !== "string" || value === "") {
@@ -345,6 +391,7 @@ export function ChannelConfigForm({
           .filter(Boolean)
         if (items.length > 0) {
           ;(config as Record<string, unknown>)[field.key] = items
+          imConfig[field.key] = items
         }
         continue
       }
@@ -352,12 +399,14 @@ export function ChannelConfigForm({
         const parsed = parseInt(value, 10)
         if (Number.isFinite(parsed)) {
           ;(config as Record<string, unknown>)[field.key] = parsed
+          imConfig[field.key] = parsed
         }
         continue
       }
       const normalized = value.trim()
       if (normalized) {
         ;(config as Record<string, unknown>)[field.key] = normalized
+        imConfig[field.key] = normalized
       }
     }
     if (channelType === "wechat") {
@@ -374,6 +423,19 @@ export function ChannelConfigForm({
       if (typeof values.account_label === "string" && values.account_label.trim().length > 0) {
         config.account_label = values.account_label.trim()
       }
+      imConfig.access_policy = config.access_policy
+      imConfig.im_enabled = config.im_enabled
+      imConfig.connection_state = config.connection_state
+      if (config.account_label) {
+        imConfig.account_label = config.account_label
+      }
+    }
+    if (channelType === "telegram") {
+      config.im_enabled = Boolean(values.im_enabled)
+      imConfig.im_enabled = config.im_enabled
+    }
+    if (channelType === "feishu" || channelType === "wechat" || channelType === "telegram") {
+      config.im_config = imConfig
     }
     return config
   }
@@ -381,6 +443,14 @@ export function ChannelConfigForm({
   const validateConfig = () => {
     if (channelType === "wechat") {
       return true
+    }
+    if (channelType === "telegram") {
+      const imEnabled = Boolean(values.im_enabled)
+      if (!imEnabled) return true
+      return required.every((key) => {
+        const value = values[key]
+        return typeof value === "string" && value.trim().length > 0
+      })
     }
     if (channelType !== "feishu") {
       return required.every((key) => {
@@ -809,14 +879,20 @@ export function ChannelConfigForm({
         fields.map(renderField)
       )}
 
-      {(channelType === "feishu" || channelType === "telegram") && imRuntimeHint ? (
+      {imRuntimeHint ? (
         <div className="rounded-xl border border-white/10 bg-[var(--foreground)]/[0.03] px-3 py-2 text-xs text-[var(--muted)]">
           <div className="font-medium text-[var(--foreground)]">
             {t("runtimeHint.currentDesktopIm", {
-              mode: imRuntimeHint.enabled ? imRuntimeHint.effective : t("runtimeHint.disabled"),
+              mode: imRuntimeHint.runtimeState || (imRuntimeHint.enabled ? imRuntimeHint.effective : t("runtimeHint.disabled")),
             })}
           </div>
           <div className="mt-1">{imRuntimeHint.message}</div>
+          {imRuntimeHint.capabilitySummary ? (
+            <div className="mt-1 opacity-80">{imRuntimeHint.capabilitySummary}</div>
+          ) : null}
+          {imRuntimeHint.lastError ? (
+            <div className="mt-1 text-red-300">{imRuntimeHint.lastError}</div>
+          ) : null}
         </div>
       ) : null}
 

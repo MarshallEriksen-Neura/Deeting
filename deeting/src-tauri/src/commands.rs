@@ -9,7 +9,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::llm_wiki::commands::save_local_llm_wiki_binding_command,
         crate::modules::llm_wiki::commands::bootstrap_local_llm_wiki_workspace_command,
         crate::modules::llm_wiki::commands::create_or_update_local_llm_wiki_maintainer_agent_command,
-        crate::modules::llm_wiki::commands::sync_local_llm_wiki_corpus_command,
+        crate::modules::llm_wiki::commands::reconcile_local_llm_wiki_corpus_command,
         crate::modules::llm_wiki::commands::search_local_llm_wiki_corpus_command,
         crate::modules::llm_wiki::commands::update_local_llm_wiki_automation_settings_command,
         crate::modules::llm_wiki::commands::dismiss_local_llm_wiki_automation_suggestion_command,

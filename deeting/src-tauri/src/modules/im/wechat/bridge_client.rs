@@ -11,7 +11,10 @@ use crate::utils::configure_background_tokio_command;
 use super::bridge_protocol::{
     BridgeEnvelope, BridgeRequest, BridgeResponseEnvelope, BridgeResponsePayload,
 };
-use super::types::{WechatGetUpdatesResponse, WechatQrCodeResponse, WechatQrStatusResponse};
+use super::types::{
+    WechatGetUpdatesResponse, WechatOutboundMessage, WechatQrCodeResponse,
+    WechatQrStatusResponse,
+};
 
 #[derive(Clone)]
 pub struct WechatBridgeClient {
@@ -106,6 +109,46 @@ impl WechatBridgeClient {
             .await?;
         match response.payload {
             BridgeResponsePayload::SendText { ok } if ok => Ok(()),
+            BridgeResponsePayload::Error { message } => Err(message),
+            _ => Err("wechat bridge returned unexpected response".to_string()),
+        }
+    }
+
+    pub async fn send_message(
+        &self,
+        base_url: &str,
+        token: &str,
+        message: WechatOutboundMessage,
+    ) -> Result<(), String> {
+        let response = self
+            .send(BridgeRequest::SendMessage {
+                base_url: base_url.trim().to_string(),
+                token: token.trim().to_string(),
+                message,
+            })
+            .await?;
+        match response.payload {
+            BridgeResponsePayload::SendMessage { ok } if ok => Ok(()),
+            BridgeResponsePayload::Error { message } => Err(message),
+            _ => Err("wechat bridge returned unexpected response".to_string()),
+        }
+    }
+
+    pub async fn send_typing(
+        &self,
+        base_url: &str,
+        token: &str,
+        contact_id: &str,
+    ) -> Result<(), String> {
+        let response = self
+            .send(BridgeRequest::SendTyping {
+                base_url: base_url.trim().to_string(),
+                token: token.trim().to_string(),
+                contact_id: contact_id.trim().to_string(),
+            })
+            .await?;
+        match response.payload {
+            BridgeResponsePayload::SendTyping { ok } if ok => Ok(()),
             BridgeResponsePayload::Error { message } => Err(message),
             _ => Err("wechat bridge returned unexpected response".to_string()),
         }

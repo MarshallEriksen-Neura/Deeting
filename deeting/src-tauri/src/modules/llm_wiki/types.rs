@@ -48,12 +48,15 @@ pub struct LocalLlmWikiWorkspaceStatus {
     pub last_bootstrapped_at: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalLlmWikiCorpusStatus {
     pub indexed_note_count: i64,
     pub managed_workspace_note_count: i64,
     pub legacy_vault_note_count: i64,
+    pub pending_note_count: i64,
+    pub failed_note_count: i64,
+    pub queued_change_count: i64,
     pub last_synced_at: Option<String>,
 }
 
@@ -170,7 +173,6 @@ pub struct LocalLlmWikiLintReport {
 #[serde(rename_all = "camelCase")]
 pub struct LocalLlmWikiState {
     pub binding: Option<LocalLlmWikiBinding>,
-    pub scan_summary: Option<LocalLlmWikiVaultScanSummary>,
     pub workspace_status: Option<LocalLlmWikiWorkspaceStatus>,
     pub corpus_status: Option<LocalLlmWikiCorpusStatus>,
     pub maintainer_agent: Option<LocalLlmWikiMaintainerAgentSummary>,
@@ -206,7 +208,7 @@ pub struct CreateOrUpdateLocalLlmWikiMaintainerAgentResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SyncLocalLlmWikiCorpusResult {
+pub struct ReconcileLocalLlmWikiCorpusResult {
     pub indexed_files: i64,
     pub removed_files: i64,
     pub state: LocalLlmWikiState,
@@ -223,10 +225,14 @@ pub struct SearchLocalLlmWikiCorpusRequest {
 #[serde(rename_all = "camelCase")]
 pub struct LocalLlmWikiCorpusSearchHit {
     pub asset_id: String,
+    pub doc_id: String,
+    pub chunk_index: i64,
     pub relative_path: String,
     pub title: String,
     pub scope: String,
     pub summary: String,
+    pub lexical_score: f64,
+    pub semantic_score: f64,
     pub score: f64,
 }
 

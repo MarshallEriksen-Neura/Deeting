@@ -24,6 +24,16 @@ pub enum BridgeRequest {
         text: String,
         context_token: String,
     },
+    SendMessage {
+        base_url: String,
+        token: String,
+        message: super::types::WechatOutboundMessage,
+    },
+    SendTyping {
+        base_url: String,
+        token: String,
+        contact_id: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,6 +50,8 @@ pub enum BridgeResponsePayload {
     FetchQrStatus { data: WechatQrStatusResponse },
     GetUpdates { data: WechatGetUpdatesResponse },
     SendText { ok: bool },
+    SendMessage { ok: bool },
+    SendTyping { ok: bool },
     Error { message: String },
 }
 

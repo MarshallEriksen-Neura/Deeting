@@ -15,8 +15,8 @@ import {
   previewLocalLlmWikiAdoption,
   runLocalLlmWikiLint,
   saveLocalLlmWikiBinding,
+  reconcileLocalLlmWikiCorpus,
   searchLocalLlmWikiCorpus,
-  syncLocalLlmWikiCorpus,
   supportsLocalLlmWiki,
   updateLocalLlmWikiAutomationSettings,
   type IngestLocalLlmWikiSelectionResult,
@@ -274,7 +274,7 @@ export function useLlmWiki(t: Translation) {
   const syncCorpus = React.useCallback(async () => {
     try {
       setIsSyncingCorpus(true)
-      const result = await syncLocalLlmWikiCorpus()
+      const result = await reconcileLocalLlmWikiCorpus()
       setState(result.state)
       toast.success(
         t("toast.corpusSynced", {

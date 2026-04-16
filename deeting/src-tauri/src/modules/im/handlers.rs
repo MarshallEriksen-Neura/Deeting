@@ -3,7 +3,10 @@ use tauri::AppHandle;
 
 use crate::modules::conversation::service as conversation;
 use crate::modules::conversation::types::ToolApprovalPayload;
-use crate::modules::im::{CardActionResponse, MessageContent, ToastResponse, ToastType};
+use crate::modules::im::{
+    extract_reply_capabilities, CardActionResponse, ImReplyCapability, MessageContent,
+    ToastResponse, ToastType,
+};
 use crate::state::AppState;
 
 pub(crate) use crate::modules::conversation::service::build_text_approval_prompt;
@@ -182,16 +185,30 @@ fn build_tool_approval_result_card(tool_name: &str, status: &str, detail: &str) 
 
 pub(crate) fn extract_local_chat_reply_outcome(response: &Value) -> Option<LocalChatReplyOutcome> {
     if let Some(payload) = conversation::extract_approval_payload(response) {
+        let card = build_tool_approval_card(&payload);
         return Some(LocalChatReplyOutcome {
-            content: MessageContent::Card {
-                card: build_tool_approval_card(&payload),
-            },
+            content: MessageContent::Card { card: card.clone() },
             approval_request: Some(payload),
         });
     }
 
-    conversation::extract_reply_text(response).map(|text| LocalChatReplyOutcome {
-        content: MessageContent::Text { text },
+    let extracted = extract_reply_capabilities(response)?;
+    let content = match &extracted.primary {
+        ImReplyCapability::PlainText { text } => MessageContent::Text { text: text.clone() },
+        ImReplyCapability::InteractiveCard { card } => MessageContent::Card { card: card.clone() },
+        ImReplyCapability::ImageRef { url } => MessageContent::Image { url: url.clone() },
+        ImReplyCapability::FileRef { name, url } => MessageContent::File {
+            name: name.clone(),
+            url: url.clone(),
+        },
+        ImReplyCapability::MixedParts { parts } => MessageContent::Mixed { parts: parts.clone() },
+        ImReplyCapability::UnsupportedRichContent { reason } => MessageContent::Text {
+            text: reason.clone(),
+        },
+    };
+
+    Some(LocalChatReplyOutcome {
+        content,
         approval_request: None,
     })
 }
@@ -392,6 +409,35 @@ pub(crate) async fn build_card_action_response(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extract_local_chat_reply_outcome_reads_rich_image_result_block() {
+        let response = serde_json::json!({
+            "choices": [{
+                "message": {
+                    "content": "desktop image ready",
+                    "meta_info": {
+                        "blocks": [{
+                            "type": "ui",
+                            "viewType": "image.result",
+                            "payload": {
+                                "url": "https://example.com/generated.png"
+                            }
+                        }]
+                    }
+                }
+            }]
+        });
+
+        let outcome = extract_local_chat_reply_outcome(&response).expect("reply outcome");
+        match outcome.content {
+            MessageContent::Image { url } => {
+                assert_eq!(url, "https://example.com/generated.png");
+            }
+            other => panic!("expected image reply, got {other:?}"),
+        }
+        assert!(outcome.approval_request.is_none());
+    }
 
     #[test]
     fn build_tool_approval_card_contains_expected_actions() {

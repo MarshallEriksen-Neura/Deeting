@@ -127,6 +127,14 @@ export const FIELD_DEFS: Record<ChannelType, FieldDef[]> = {
   ],
   telegram: [
     {
+      key: "im_enabled",
+      labelKey: "fields.telegram.im_enabled.label",
+      placeholderKey: "fields.telegram.im_enabled.placeholder",
+      type: "switch",
+      valueKind: "boolean",
+      descriptionKey: "fields.telegram.im_enabled.description",
+    },
+    {
       key: "bot_token",
       labelKey: "fields.telegram.bot_token.label",
       placeholderKey: "fields.telegram.bot_token.placeholder",
@@ -214,10 +222,10 @@ export const FEISHU_FIELD_GROUPS = [
 export type ChannelFormValue = string | boolean
 
 export function defaultFormValues(channelType: ChannelType): Record<string, ChannelFormValue> {
-  if (channelType === "wechat") {
+  if (channelType === "wechat" || channelType === "telegram") {
     return {
       im_enabled: true,
-      access_policy: "pairing",
+      ...(channelType === "wechat" ? { access_policy: "pairing" } : {}),
     }
   }
   return {}
@@ -229,8 +237,12 @@ export function configToFormValues(
 ): Record<string, ChannelFormValue> {
   if (!config) return {}
   const values: Record<string, ChannelFormValue> = {}
+  const imConfig =
+    config.im_config && typeof config.im_config === "object" ? config.im_config : undefined
   for (const field of fields) {
-    const raw = (config as Record<string, unknown>)[field.key]
+    const raw =
+      (imConfig ? (imConfig as Record<string, unknown>)[field.key] : undefined) ??
+      (config as Record<string, unknown>)[field.key]
     if (raw === undefined || raw === null) continue
     if (field.valueKind === "boolean") {
       values[field.key] = Boolean(raw)

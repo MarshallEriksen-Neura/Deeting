@@ -54,8 +54,8 @@ export function LlmWikiBindingCard({
   onRefresh: () => void
 }) {
   const binding = state?.binding
-  const scan = state?.scanSummary
-  const candidateFolders = scan?.candidateFolders ?? []
+  const corpus = state?.corpusStatus
+  const candidateFolders: Array<{ relativePath: string }> = []
   const isAdoptMode = bindingMode === "adopt_existing_folder"
 
   return (
@@ -208,7 +208,7 @@ export function LlmWikiBindingCard({
           </div>
         </div>
 
-        {binding && scan && (
+        {binding && (
           <div className="grid gap-3 rounded-[1.75rem] border border-white/70 bg-white/78 p-4 shadow-[0_20px_45px_-32px_rgba(15,23,42,0.32)] sm:grid-cols-2">
             <BindingInsight
               label={t("binding.insights.vaultName")}
@@ -224,11 +224,11 @@ export function LlmWikiBindingCard({
             />
             <BindingInsight
               label={t("binding.insights.candidates")}
-              value={scan.candidateFolders.length}
+              value={corpus?.managedWorkspaceNoteCount ?? 0}
             />
             <BindingInsight
               label={t("binding.insights.directories")}
-              value={scan.totalDirectories}
+              value={corpus?.indexedNoteCount ?? 0}
             />
           </div>
         )}

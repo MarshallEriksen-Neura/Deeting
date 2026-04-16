@@ -52,9 +52,10 @@ pub fn parse_message_content(message: &FeishuMessage) -> MessageContent {
             }
         }
         "post" => {
-            // 富文本消息，提取纯文本
             let text = extract_post_text(&content_json);
-            MessageContent::Text { text }
+            MessageContent::Mixed {
+                parts: vec![MessagePart::Text { text }],
+            }
         }
         _ => MessageContent::Text {
             text: content_str.to_string(),
@@ -239,7 +240,10 @@ pub fn build_message_content(content: &MessageContent) -> Result<String, ImError
 pub fn message_type_for_content(content: &MessageContent) -> &'static str {
     match content {
         MessageContent::Card { .. } => "interactive",
-        _ => "text",
+        MessageContent::Image { .. } => "image",
+        MessageContent::File { .. } => "file",
+        MessageContent::Mixed { .. } => "text",
+        MessageContent::Text { .. } => "text",
     }
 }
 

@@ -12,6 +12,8 @@
 pub(crate) mod handlers;
 mod manager;
 mod profile;
+mod reply_adapter;
+mod supervisor;
 pub mod runtime;
 mod text_runtime;
 mod types;
@@ -22,6 +24,8 @@ pub mod wechat;
 
 pub use manager::{ImManager, ImManagerBuilder};
 pub use profile::*;
+pub(crate) use reply_adapter::*;
+pub(crate) use supervisor::*;
 pub use types::*;
 
 #[cfg(test)]

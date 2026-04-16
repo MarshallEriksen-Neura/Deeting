@@ -45,6 +45,12 @@ jest.mock("@/lib/api/desktop-im", () => ({
       null
     )
   }),
+  getPrimaryDesktopImRuntimeProfile: jest.fn((snapshot, platform) => {
+    return (
+      snapshot?.runtime_profiles?.find((profile: { platform: string }) => profile.platform === platform) ??
+      null
+    )
+  }),
 }))
 
 jest.mock("@/lib/api/notification-channels", () => {
@@ -75,6 +81,7 @@ describe("NotificationChannelsClient telegram config", () => {
     mockGetDesktopImSettings.mockResolvedValue({
       profiles: [],
       resolved_profiles: [],
+      runtime_profiles: [],
     })
   })
 
@@ -89,6 +96,7 @@ describe("NotificationChannelsClient telegram config", () => {
     fireEvent.click(screen.getByRole("button", { name: "actions.addChannel" }))
     fireEvent.click(screen.getByRole("button", { name: "channelTypes.telegram.label" }))
 
+    expect(screen.getByText("fields.telegram.im_enabled.label", { selector: "label" })).toBeTruthy()
     expect(screen.getByText("fields.telegram.bot_token.label", { selector: "label" })).toBeTruthy()
     expect(screen.getByText("fields.telegram.chat_id.label", { selector: "label" })).toBeTruthy()
   })
@@ -123,6 +131,24 @@ describe("NotificationChannelsClient telegram config", () => {
           },
         },
       ],
+      runtime_profiles: [
+        {
+          profile_id: "notification-channel:telegram",
+          platform: "telegram",
+          display_name: "Telegram",
+          configured: true,
+          enabled: true,
+          effective_state: "running",
+          status_message: "Telegram direct runtime is running.",
+          last_error: null,
+          restart_count: 0,
+          capabilities: {
+            inbound: ["text", "image"],
+            outbound: ["text"],
+            degradations: ["rich_media_as_text_notice"],
+          },
+        },
+      ],
     })
 
     render(<NotificationChannelsClient />)
@@ -131,9 +157,10 @@ describe("NotificationChannelsClient telegram config", () => {
     fireEvent.click(screen.getByRole("button", { name: "channelTypes.telegram.label" }))
 
     await waitFor(() => {
-      expect(screen.getByText("runtimeHint.currentDesktopIm mode:direct")).toBeTruthy()
+      expect(screen.getByText("runtimeHint.currentDesktopIm mode:running")).toBeTruthy()
     })
-    expect(screen.getByText("Telegram direct transport is available.")).toBeTruthy()
+    expect(screen.getByText("Telegram direct runtime is running.")).toBeTruthy()
+    expect(screen.getByText("in:text,image · out:text")).toBeTruthy()
   })
 
   it("shows telegram disabled runtime status distinctly from operational state", async () => {
@@ -152,6 +179,24 @@ describe("NotificationChannelsClient telegram config", () => {
           },
         },
       ],
+      runtime_profiles: [
+        {
+          profile_id: "notification-channel:telegram",
+          platform: "telegram",
+          display_name: "Telegram",
+          configured: true,
+          enabled: false,
+          effective_state: "configured",
+          status_message: "Telegram desktop IM is configured but disabled.",
+          last_error: null,
+          restart_count: 0,
+          capabilities: {
+            inbound: ["text"],
+            outbound: ["text"],
+            degradations: [],
+          },
+        },
+      ],
     })
 
     render(<NotificationChannelsClient />)
@@ -160,8 +205,56 @@ describe("NotificationChannelsClient telegram config", () => {
     fireEvent.click(screen.getByRole("button", { name: "channelTypes.telegram.label" }))
 
     await waitFor(() => {
-      expect(screen.getByText("runtimeHint.currentDesktopIm mode:runtimeHint.disabled")).toBeTruthy()
+      expect(screen.getByText("runtimeHint.currentDesktopIm mode:configured")).toBeTruthy()
     })
-    expect(screen.getByText("Telegram desktop IM is disabled.")).toBeTruthy()
+    expect(screen.getByText("Telegram desktop IM is configured but disabled.")).toBeTruthy()
+  })
+
+  it("shows wechat runtime state from desktop IM snapshot", async () => {
+    mockGetDesktopImSettings.mockResolvedValue({
+      profiles: [],
+      resolved_profiles: [
+        {
+          profile_id: "notification-channel:wechat",
+          platform: "wechat",
+          display_name: "WeChat",
+          enabled: true,
+          resolution: {
+            effective: "direct",
+            reason_code: "direct_supported",
+            user_message: "WeChat direct transport is available.",
+          },
+        },
+      ],
+      runtime_profiles: [
+        {
+          profile_id: "notification-channel:wechat",
+          platform: "wechat",
+          display_name: "WeChat",
+          configured: true,
+          enabled: true,
+          effective_state: "running",
+          status_message: "WeChat direct runtime is running.",
+          last_error: null,
+          restart_count: 0,
+          capabilities: {
+            inbound: ["text", "image", "file"],
+            outbound: ["text"],
+            degradations: ["rich_media_as_text_notice"],
+          },
+        },
+      ],
+    })
+
+    render(<NotificationChannelsClient />)
+
+    fireEvent.click(screen.getByRole("button", { name: "actions.addChannel" }))
+    fireEvent.click(screen.getByRole("button", { name: "channelTypes.wechat.label" }))
+
+    await waitFor(() => {
+      expect(screen.getByText("runtimeHint.currentDesktopIm mode:running")).toBeTruthy()
+    })
+    expect(screen.getByText("WeChat direct runtime is running.")).toBeTruthy()
+    expect(screen.getByText("in:text,image,file · out:text")).toBeTruthy()
   })
 })

@@ -809,6 +809,8 @@ pub(crate) async fn run_schedule_tick(
 
     if let Some(corpus) = corpus_status.as_ref() {
         let last_synced_at = corpus.last_synced_at.as_deref().unwrap_or_default();
+        let has_backlog = corpus.queued_change_count > 0 || corpus.pending_note_count > 0;
+        let has_failures = corpus.failed_note_count > 0;
         let stale = if last_synced_at.is_empty() {
             true
         } else {
@@ -818,16 +820,20 @@ pub(crate) async fn run_schedule_tick(
                 .ok_or_else(|| "could not parse corpus sync timestamp".to_string())?;
             now_epoch.saturating_sub(sync_epoch) > MAINTENANCE_SCHEDULE_INTERVAL_SECS
         };
-        if stale {
+        if stale || has_backlog || has_failures {
             upsert_suggestion(
                 &mut state,
                 TRIGGER_MAINTENANCE_SCHEDULE,
                 ACTION_SYNC_CORPUS,
                 suggestion_fingerprint(TRIGGER_MAINTENANCE_SCHEDULE, "stale-corpus-sync"),
                 "Refresh the dedicated corpus",
-                "The dedicated LLM Wiki corpus looks stale. Run a sync before the next wiki maintenance pass.",
+                "The dedicated LLM Wiki corpus has pending changes, failures, or stale sync state. Run a reconcile before the next wiki maintenance pass.",
                 now.as_str(),
-                None,
+                Some(json!({
+                    "queuedChangeCount": corpus.queued_change_count,
+                    "pendingNoteCount": corpus.pending_note_count,
+                    "failedNoteCount": corpus.failed_note_count,
+                })),
             );
         } else {
             expire_suggestion_by_fingerprint(

@@ -2,7 +2,9 @@ use std::io::Write;
 
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use super::api::{fetch_login_qr, fetch_qr_status, get_updates, send_text_message};
+use super::api::{
+    fetch_login_qr, fetch_qr_status, get_updates, send_message, send_text_message, send_typing,
+};
 use super::bridge_protocol::{
     BridgeEnvelope, BridgeRequest, BridgeResponseEnvelope, BridgeResponsePayload,
 };
@@ -94,6 +96,22 @@ async fn handle_request(
                 Ok(()) => BridgeResponsePayload::SendText { ok: true },
                 Err(message) => BridgeResponsePayload::Error { message },
             }
+        }
+        BridgeRequest::SendMessage {
+            base_url,
+            token,
+            message,
+        } => match send_message(client, base_url.as_str(), token.as_str(), message).await {
+            Ok(()) => BridgeResponsePayload::SendMessage { ok: true },
+            Err(message) => BridgeResponsePayload::Error { message },
+        },
+        BridgeRequest::SendTyping {
+            base_url,
+            token,
+            contact_id,
+        } => match send_typing(client, base_url.as_str(), token.as_str(), contact_id.as_str()).await {
+            Ok(()) => BridgeResponsePayload::SendTyping { ok: true },
+            Err(message) => BridgeResponsePayload::Error { message },
         }
     };
 

@@ -82,10 +82,50 @@ pub struct ResolvedImConnectionProfile {
     pub resolution: ImTransportResolution,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImRuntimeState {
+    Configured,
+    Enabled,
+    Running,
+    Degraded,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ImRuntimeCapabilities {
+    #[serde(default)]
+    pub inbound: Vec<String>,
+    #[serde(default)]
+    pub outbound: Vec<String>,
+    #[serde(default)]
+    pub degradations: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImRuntimeProfileSnapshot {
+    pub profile_id: String,
+    pub platform: ImPlatform,
+    pub display_name: String,
+    pub configured: bool,
+    pub enabled: bool,
+    pub effective_state: ImRuntimeState,
+    pub status_message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+    #[serde(default)]
+    pub restart_count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_retry_at: Option<String>,
+    pub capabilities: ImRuntimeCapabilities,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LocalImSettingsSnapshot {
     pub profiles: Vec<ImConnectionProfile>,
     pub resolved_profiles: Vec<ResolvedImConnectionProfile>,
+    #[serde(default)]
+    pub runtime_profiles: Vec<ImRuntimeProfileSnapshot>,
 }
 
 impl ImConnectionProfile {
@@ -248,11 +288,59 @@ pub fn resolve_profiles(profiles: &[ImConnectionProfile]) -> Vec<ResolvedImConne
         .collect()
 }
 
-pub fn build_settings_snapshot(profiles: Vec<ImConnectionProfile>) -> LocalImSettingsSnapshot {
+fn feature_list(values: &[&str]) -> Vec<String> {
+    values.iter().map(|value| value.to_string()).collect()
+}
+
+pub fn platform_capabilities(
+    profile: &ImConnectionProfile,
+    resolution: &ImTransportResolution,
+) -> ImRuntimeCapabilities {
+    match (profile.platform, resolution.effective) {
+        (ImPlatform::Feishu, ImTransportKind::Direct) => ImRuntimeCapabilities {
+            inbound: feature_list(&["text", "image", "file", "card_action"]),
+            outbound: feature_list(&["text", "interactive_card", "image", "file"]),
+            degradations: feature_list(&["mixed_parts_to_text", "non_native_media_to_text_link"]),
+        },
+        (ImPlatform::Feishu, ImTransportKind::Relay) => ImRuntimeCapabilities {
+            inbound: feature_list(&["text"]),
+            outbound: feature_list(&["text"]),
+            degradations: feature_list(&["relay_runtime", "rich_content_to_text"]),
+        },
+        (ImPlatform::Telegram, _) => ImRuntimeCapabilities {
+            inbound: feature_list(&["text", "image", "file", "card_action"]),
+            outbound: feature_list(&["text", "image", "file"]),
+            degradations: feature_list(&[
+                "interactive_card_as_text",
+                "mixed_content_as_text_notice",
+            ]),
+        },
+        (ImPlatform::Wechat, _) => ImRuntimeCapabilities {
+            inbound: feature_list(&["text", "image", "file", "video", "voice"]),
+            outbound: feature_list(&["text"]),
+            degradations: feature_list(&[
+                "rich_media_as_text_notice",
+                "typing_reserved_for_future_phase",
+                "native_media_send_reserved",
+            ]),
+        },
+        _ => ImRuntimeCapabilities {
+            inbound: feature_list(&["text"]),
+            outbound: feature_list(&["text"]),
+            degradations: Vec::new(),
+        },
+    }
+}
+
+pub fn build_settings_snapshot(
+    profiles: Vec<ImConnectionProfile>,
+    runtime_profiles: Vec<ImRuntimeProfileSnapshot>,
+) -> LocalImSettingsSnapshot {
     let resolved_profiles = resolve_profiles(&profiles);
     LocalImSettingsSnapshot {
         profiles,
         resolved_profiles,
+        runtime_profiles,
     }
 }
 

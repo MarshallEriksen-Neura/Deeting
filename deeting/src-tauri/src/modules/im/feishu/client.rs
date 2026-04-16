@@ -241,10 +241,6 @@ impl FeishuClient {
                         let event: FeishuMessageEvent = serde_json::from_value(event_data.clone())
                             .map_err(|e| ImError::ParseError(e.to_string()))?;
 
-                        // 忽略非文本消息和非用户消息
-                        if event.message.message_type != "text" {
-                            return Ok(());
-                        }
                         if event.sender.sender_type.to_lowercase() != "user" {
                             return Ok(());
                         }
@@ -317,9 +313,6 @@ impl FeishuClient {
             "im.message.receive_v1" => {
                 let event_data: FeishuMessageEvent = serde_json::from_value(event.clone())
                     .map_err(|err| ImError::ParseError(err.to_string()))?;
-                if event_data.message.message_type != "text" {
-                    return Ok(());
-                }
                 if event_data.sender.sender_type.to_lowercase() != "user" {
                     return Ok(());
                 }

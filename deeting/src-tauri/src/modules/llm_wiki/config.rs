@@ -9,7 +9,6 @@ use super::types::{LocalLlmWikiAutomationState, LocalLlmWikiLintReport};
 
 pub(super) const LLM_WIKI_CONFIG_KEY: &str = "llm_wiki.binding.v1";
 pub(super) const LLM_WIKI_LAST_BOOTSTRAPPED_AT_KEY: &str = "llm_wiki.last_bootstrapped_at";
-pub(super) const LLM_WIKI_LAST_CORPUS_SYNC_AT_KEY: &str = "llm_wiki.last_corpus_sync_at";
 pub(super) const LLM_WIKI_AUTOMATION_STATE_KEY: &str = "llm_wiki.automation_state.v1";
 pub(super) const LLM_WIKI_LAST_LINT_REPORT_KEY: &str = "llm_wiki.last_lint_report.v1";
 pub(super) const DEFAULT_WORKSPACE_RELATIVE_PATH: &str = "Deeting Wiki";
@@ -71,21 +70,6 @@ pub(super) async fn save_last_bootstrapped_at(
 ) -> Result<(), McpError> {
     store
         .set_desktop_config(LLM_WIKI_LAST_BOOTSTRAPPED_AT_KEY, value)
-        .await
-}
-
-pub(super) async fn load_last_corpus_sync_at(store: &McpStore) -> Result<Option<String>, McpError> {
-    store
-        .get_desktop_config(LLM_WIKI_LAST_CORPUS_SYNC_AT_KEY)
-        .await
-}
-
-pub(super) async fn save_last_corpus_sync_at(
-    store: &McpStore,
-    value: &str,
-) -> Result<(), McpError> {
-    store
-        .set_desktop_config(LLM_WIKI_LAST_CORPUS_SYNC_AT_KEY, value)
         .await
 }
 

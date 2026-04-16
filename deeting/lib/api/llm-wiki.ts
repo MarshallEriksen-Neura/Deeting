@@ -53,6 +53,9 @@ export const LocalLlmWikiCorpusStatusSchema = z.object({
   indexedNoteCount: z.number(),
   managedWorkspaceNoteCount: z.number(),
   legacyVaultNoteCount: z.number(),
+  pendingNoteCount: z.number(),
+  failedNoteCount: z.number(),
+  queuedChangeCount: z.number(),
   lastSyncedAt: z.string().nullish(),
 })
 
@@ -109,7 +112,6 @@ export const LocalLlmWikiAutomationStateSchema = z.object({
 
 export const LocalLlmWikiStateSchema = z.object({
   binding: LocalLlmWikiBindingSchema.nullish(),
-  scanSummary: LocalLlmWikiVaultScanSummarySchema.nullish(),
   workspaceStatus: LocalLlmWikiWorkspaceStatusSchema.nullish(),
   corpusStatus: LocalLlmWikiCorpusStatusSchema.nullish(),
   maintainerAgent: LocalLlmWikiMaintainerAgentSummarySchema.nullish(),
@@ -147,7 +149,7 @@ export const CreateOrUpdateLocalLlmWikiMaintainerAgentResultSchema = z.object({
   state: LocalLlmWikiStateSchema,
 })
 
-export const SyncLocalLlmWikiCorpusResultSchema = z.object({
+export const ReconcileLocalLlmWikiCorpusResultSchema = z.object({
   indexedFiles: z.number(),
   removedFiles: z.number(),
   state: LocalLlmWikiStateSchema,
@@ -155,10 +157,14 @@ export const SyncLocalLlmWikiCorpusResultSchema = z.object({
 
 export const LocalLlmWikiCorpusSearchHitSchema = z.object({
   assetId: z.string(),
+  docId: z.string(),
+  chunkIndex: z.number(),
   relativePath: z.string(),
   title: z.string(),
   scope: z.string(),
   summary: z.string(),
+  lexicalScore: z.number(),
+  semanticScore: z.number(),
   score: z.number(),
 })
 
@@ -246,8 +252,8 @@ export type BootstrapLocalLlmWikiWorkspaceResult = z.infer<
 export type CreateOrUpdateLocalLlmWikiMaintainerAgentResult = z.infer<
   typeof CreateOrUpdateLocalLlmWikiMaintainerAgentResultSchema
 >
-export type SyncLocalLlmWikiCorpusResult = z.infer<
-  typeof SyncLocalLlmWikiCorpusResultSchema
+export type ReconcileLocalLlmWikiCorpusResult = z.infer<
+  typeof ReconcileLocalLlmWikiCorpusResultSchema
 >
 export type LocalLlmWikiCorpusSearchHit = z.infer<
   typeof LocalLlmWikiCorpusSearchHitSchema
@@ -312,7 +318,6 @@ export async function getLocalLlmWikiState(): Promise<LocalLlmWikiState> {
   if (!isTauriRuntime()) {
     return LocalLlmWikiStateSchema.parse({
       binding: null,
-      scanSummary: null,
       workspaceStatus: null,
       corpusStatus: null,
       maintainerAgent: null,
@@ -372,9 +377,9 @@ export async function createOrUpdateLocalLlmWikiMaintainerAgent(): Promise<Creat
   return CreateOrUpdateLocalLlmWikiMaintainerAgentResultSchema.parse(data)
 }
 
-export async function syncLocalLlmWikiCorpus(): Promise<SyncLocalLlmWikiCorpusResult> {
-  const data = await invokeTauri<unknown>("sync_local_llm_wiki_corpus_command")
-  return SyncLocalLlmWikiCorpusResultSchema.parse(data)
+export async function reconcileLocalLlmWikiCorpus(): Promise<ReconcileLocalLlmWikiCorpusResult> {
+  const data = await invokeTauri<unknown>("reconcile_local_llm_wiki_corpus_command")
+  return ReconcileLocalLlmWikiCorpusResultSchema.parse(data)
 }
 
 export async function searchLocalLlmWikiCorpus(

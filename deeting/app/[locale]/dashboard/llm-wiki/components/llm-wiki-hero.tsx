@@ -14,7 +14,7 @@ export function LlmWikiHero({
   t: Translation
   state: LocalLlmWikiState | null
 }) {
-  const scan = state?.scanSummary
+  const corpus = state?.corpusStatus
   const workspace = state?.workspaceStatus
 
   return (
@@ -56,12 +56,12 @@ export function LlmWikiHero({
         <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
           <HeroMetric
             label={t("hero.metrics.notes")}
-            value={scan?.totalMarkdownFiles ?? "—"}
+            value={corpus?.indexedNoteCount ?? "--"}
             hint={t("hero.metrics.notesHint")}
           />
           <HeroMetric
             label={t("hero.metrics.attachments")}
-            value={scan?.totalAttachmentFiles ?? "—"}
+            value={corpus?.queuedChangeCount ?? "--"}
             hint={t("hero.metrics.attachmentsHint")}
           />
           <HeroMetric

@@ -36,7 +36,7 @@ pub async fn run_telegram_direct_profile_worker(
                 chat_type,
                 message_id,
                 sender,
-                content: MessageContent::Text { text },
+                content,
                 ..
             } => {
                 if !matches!(sender.sender_type, SenderType::User) {
@@ -50,13 +50,27 @@ pub async fn run_telegram_direct_profile_worker(
                     continue;
                 }
 
+                let incoming_text = match content {
+                    MessageContent::Text { text } => text,
+                    MessageContent::Image { .. } => {
+                        "[telegram-rich:image] Telegram 图片输入已识别，当前先走兼容文本路径。".to_string()
+                    }
+                    MessageContent::File { .. } => {
+                        "[telegram-rich:file] Telegram 文件输入已识别，当前先走兼容文本路径。".to_string()
+                    }
+                    MessageContent::Mixed { .. } => {
+                        "[telegram-rich:mixed] Telegram 混合输入已识别，当前先走兼容文本路径。".to_string()
+                    }
+                    MessageContent::Card { .. } => continue,
+                };
+
                 text_runtime
                     .handle_incoming_text(
                         &app_state,
                         &app_handle,
                         &profile,
                         chat_id.as_str(),
-                        text.as_str(),
+                        incoming_text.as_str(),
                         "Telegram",
                         |reply_text| {
                             let text = reply_text;

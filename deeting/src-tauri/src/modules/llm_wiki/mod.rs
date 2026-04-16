@@ -6,5 +6,6 @@ mod corpus;
 mod maintenance;
 mod scan;
 pub mod service;
+pub mod store;
 mod templates;
 pub mod types;

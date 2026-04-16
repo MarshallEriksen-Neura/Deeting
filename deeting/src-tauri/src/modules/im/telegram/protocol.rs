@@ -21,6 +21,10 @@ pub struct TelegramMessage {
     pub date: i64,
     pub text: Option<String>,
     pub caption: Option<String>,
+    #[serde(default)]
+    pub photo: Option<Vec<TelegramPhotoSize>>,
+    #[serde(default)]
+    pub document: Option<TelegramDocument>,
     pub entities: Option<Vec<TelegramEntity>>,
     #[serde(default)]
     pub reply_to_message: Option<Box<TelegramMessage>>,
@@ -67,6 +71,30 @@ pub struct TelegramEntity {
     pub user: Option<TelegramUser>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TelegramPhotoSize {
+    pub file_id: String,
+    #[serde(default)]
+    pub file_unique_id: String,
+    pub width: i64,
+    pub height: i64,
+    #[serde(default)]
+    pub file_size: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TelegramDocument {
+    pub file_id: String,
+    #[serde(default)]
+    pub file_unique_id: String,
+    #[serde(default)]
+    pub file_name: Option<String>,
+    #[serde(default)]
+    pub mime_type: Option<String>,
+    #[serde(default)]
+    pub file_size: Option<i64>,
+}
+
 /// Telegram 回调查询
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TelegramCallbackQuery {
@@ -101,6 +129,26 @@ pub struct SendMessageReq {
     pub reply_to_message_id: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reply_markup: Option<InlineKeyboardMarkup>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SendPhotoReq {
+    pub chat_id: i64,
+    pub photo: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub caption: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply_to_message_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SendDocumentReq {
+    pub chat_id: i64,
+    pub document: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub caption: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply_to_message_id: Option<i64>,
 }
 
 /// 内联键盘

@@ -78,16 +78,22 @@ export function LlmWikiCorpusCard({
         <div className="grid gap-3 sm:grid-cols-3">
           <CorpusMetric
             label={t("corpus.metrics.indexed")}
-            value={corpus?.indexedNoteCount ?? "—"}
+            value={corpus?.indexedNoteCount ?? "--"}
           />
           <CorpusMetric
             label={t("corpus.metrics.workspace")}
-            value={corpus?.managedWorkspaceNoteCount ?? "—"}
+            value={corpus?.managedWorkspaceNoteCount ?? "--"}
           />
           <CorpusMetric
             label={t("corpus.metrics.legacy")}
-            value={corpus?.legacyVaultNoteCount ?? "—"}
+            value={corpus?.legacyVaultNoteCount ?? "--"}
           />
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <CorpusMetric label="Pending" value={corpus?.pendingNoteCount ?? "--"} />
+          <CorpusMetric label="Failed" value={corpus?.failedNoteCount ?? "--"} />
+          <CorpusMetric label="Queued" value={corpus?.queuedChangeCount ?? "--"} />
         </div>
 
         <div className="rounded-[1.5rem] border border-white/70 bg-slate-50/85 p-4 text-sm text-slate-700">
@@ -181,6 +187,10 @@ export function LlmWikiCorpusCard({
                         </div>
                         <ScopeBadge scope={hit.scope} t={t} />
                       </div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                        <span>{`doc ${hit.docId}`}</span>
+                        <span>{`chunk ${hit.chunkIndex}`}</span>
+                      </div>
                       <div className="mt-2 text-xs leading-5 text-slate-600">
                         {hit.summary}
                       </div>
@@ -223,6 +233,18 @@ export function LlmWikiCorpusCard({
                     label={t("corpus.inspector.score")}
                     value={selectedCorpusHit.score.toFixed(3)}
                   />
+                  <InspectorMetric
+                    label="Lexical"
+                    value={selectedCorpusHit.lexicalScore.toFixed(3)}
+                  />
+                  <InspectorMetric
+                    label="Semantic"
+                    value={selectedCorpusHit.semanticScore.toFixed(3)}
+                  />
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-xs text-slate-300">
+                  {`doc ${selectedCorpusHit.docId} | chunk ${selectedCorpusHit.chunkIndex}`}
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">

@@ -6,8 +6,8 @@ use super::service::{
     bootstrap_local_llm_wiki_workspace, confirm_local_llm_wiki_adoption,
     create_or_update_local_llm_wiki_maintainer_agent, dismiss_local_llm_wiki_automation_suggestion,
     execute_local_llm_wiki_automation_suggestion, get_local_llm_wiki_state,
-    ingest_local_llm_wiki_selection, preview_local_llm_wiki_adoption, run_local_llm_wiki_lint,
-    save_local_llm_wiki_binding, search_local_llm_wiki_corpus, sync_local_llm_wiki_corpus,
+    ingest_local_llm_wiki_selection, preview_local_llm_wiki_adoption, reconcile_local_llm_wiki_corpus,
+    run_local_llm_wiki_lint, save_local_llm_wiki_binding, search_local_llm_wiki_corpus,
     update_local_llm_wiki_automation_settings,
 };
 use super::types::{
@@ -15,9 +15,9 @@ use super::types::{
     CreateOrUpdateLocalLlmWikiMaintainerAgentResult, IngestLocalLlmWikiSelectionRequest,
     IngestLocalLlmWikiSelectionResult, LocalLlmWikiAdoptionPreview,
     LocalLlmWikiAutomationExecutionResult, LocalLlmWikiLintReport, LocalLlmWikiState,
-    PreviewLocalLlmWikiAdoptionRequest, SaveLocalLlmWikiBindingRequest,
-    SearchLocalLlmWikiCorpusRequest, SearchLocalLlmWikiCorpusResult, SyncLocalLlmWikiCorpusResult,
-    UpdateLocalLlmWikiAutomationSettingsRequest,
+    PreviewLocalLlmWikiAdoptionRequest, ReconcileLocalLlmWikiCorpusResult,
+    SaveLocalLlmWikiBindingRequest, SearchLocalLlmWikiCorpusRequest,
+    SearchLocalLlmWikiCorpusResult, UpdateLocalLlmWikiAutomationSettingsRequest,
 };
 
 #[tauri::command]
@@ -50,10 +50,10 @@ pub async fn create_or_update_local_llm_wiki_maintainer_agent_command(
 }
 
 #[tauri::command]
-pub async fn sync_local_llm_wiki_corpus_command(
+pub async fn reconcile_local_llm_wiki_corpus_command(
     state: State<'_, AppState>,
-) -> Result<SyncLocalLlmWikiCorpusResult, String> {
-    sync_local_llm_wiki_corpus(state.inner()).await
+) -> Result<ReconcileLocalLlmWikiCorpusResult, String> {
+    reconcile_local_llm_wiki_corpus(state.inner()).await
 }
 
 #[tauri::command]

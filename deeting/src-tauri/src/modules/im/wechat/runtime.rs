@@ -6,7 +6,10 @@ use crate::modules::im::text_runtime::TextImConversationRuntime;
 use crate::modules::im::ImConnectionProfile;
 use crate::state::AppState;
 
-use super::types::{WECHAT_ITEM_TYPE_TEXT, WECHAT_MESSAGE_TYPE_USER};
+use super::types::{
+    WECHAT_ITEM_TYPE_FILE, WECHAT_ITEM_TYPE_IMAGE, WECHAT_ITEM_TYPE_TEXT, WECHAT_ITEM_TYPE_VIDEO,
+    WECHAT_ITEM_TYPE_VOICE, WECHAT_MESSAGE_TYPE_USER,
+};
 
 const WECHAT_RUNTIME_RETRY_DELAY: Duration = Duration::from_secs(5);
 const WECHAT_SESSION_EXPIRED_RETRY_DELAY: Duration = Duration::from_secs(30);
@@ -91,19 +94,8 @@ pub async fn run_wechat_direct_profile_worker(
             else {
                 continue;
             };
-            let text = message
-                .item_list
-                .as_ref()
-                .into_iter()
-                .flatten()
-                .filter(|item| item.r#type == Some(WECHAT_ITEM_TYPE_TEXT))
-                .filter_map(|item| item.text_item.as_ref())
-                .filter_map(|item| item.text.as_deref())
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .collect::<Vec<_>>()
-                .join("\n");
-            if text.is_empty() {
+            let (text, richer_notice) = classify_incoming_message(&message);
+            if text.is_empty() && richer_notice.is_none() {
                 continue;
             }
 
@@ -200,13 +192,19 @@ pub async fn run_wechat_direct_profile_worker(
                 }
             }
 
+            let incoming_user_text = if text.is_empty() {
+                richer_notice.clone().unwrap_or_default()
+            } else {
+                text.clone()
+            };
+
             if let Err(err) = text_runtime
                 .handle_incoming_text(
                     &app_state,
                     &app_handle,
                     &profile,
                     contact_id,
-                    text.as_str(),
+                    incoming_user_text.as_str(),
                     "微信",
                     |reply_text| {
                         let app_state = app_state.clone();
@@ -269,6 +267,45 @@ async fn resolve_reply_context_token(
             .await?
             .as_deref(),
     ))
+}
+
+fn classify_incoming_message(message: &super::types::WechatMessage) -> (String, Option<String>) {
+    let mut text_parts = Vec::new();
+    let mut richer_kinds = Vec::new();
+
+    for item in message.item_list.as_ref().into_iter().flatten() {
+        match item.r#type {
+            Some(WECHAT_ITEM_TYPE_TEXT) => {
+                if let Some(text) = item
+                    .text_item
+                    .as_ref()
+                    .and_then(|entry| entry.text.as_deref())
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                {
+                    text_parts.push(text.to_string());
+                }
+            }
+            Some(WECHAT_ITEM_TYPE_IMAGE) => richer_kinds.push("image".to_string()),
+            Some(WECHAT_ITEM_TYPE_FILE) => richer_kinds.push("file".to_string()),
+            Some(WECHAT_ITEM_TYPE_VIDEO) => richer_kinds.push("video".to_string()),
+            Some(WECHAT_ITEM_TYPE_VOICE) => richer_kinds.push("voice".to_string()),
+            Some(other) => richer_kinds.push(format!("item_type_{other}")),
+            None => richer_kinds.push("unknown_item".to_string()),
+        }
+    }
+
+    let text = text_parts.join("\n");
+    let richer_notice = if richer_kinds.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "[wx-rich:{}] 当前桌面微信 IM 仍以文本为主，富媒体输入已被识别并进入兼容降级路径。",
+            richer_kinds.join(",")
+        ))
+    };
+
+    (text, richer_notice)
 }
 
 fn select_context_token(
