@@ -6,6 +6,7 @@ import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Progress } from "@/components/ui/progress"
 import { useI18n } from "@/hooks/use-i18n"
 import {
   installLocalSandboxBoxlite,
@@ -17,6 +18,29 @@ import { useSandboxInstallGuide, useSandboxStatus } from "@/lib/swr/use-sandbox-
 
 interface DesktopSandboxSettingsCardProps {
   isTauriRuntime: boolean
+}
+
+type InstallStage = "download" | "verify" | "extract" | "done"
+
+interface InstallProgressPayload {
+  stage: InstallStage
+  percent: number
+  bytesDownloaded?: number | null
+  bytesTotal?: number | null
+}
+
+interface InstallProgressState extends InstallProgressPayload {}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B"
+  const units = ["B", "KB", "MB", "GB"]
+  let value = bytes
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`
 }
 
 export function DesktopSandboxSettingsCard({
@@ -31,6 +55,9 @@ export function DesktopSandboxSettingsCard({
   const [isPreparing, setIsPreparing] = React.useState(false)
   const [isRepairing, setIsRepairing] = React.useState(false)
   const [isRebuilding, setIsRebuilding] = React.useState(false)
+  const [installProgress, setInstallProgress] = React.useState<InstallProgressState | null>(
+    null
+  )
 
   if (!isTauriRuntime) {
     return null
@@ -64,14 +91,25 @@ export function DesktopSandboxSettingsCard({
   }
 
   const handleInstall = async () => {
+    let unlisten: (() => void) | undefined
     try {
       setIsInstalling(true)
+      setInstallProgress({ stage: "download", percent: 0 })
+      const { listen } = await import("@tauri-apps/api/event")
+      unlisten = await listen<InstallProgressPayload>(
+        "sandbox://boxlite-install",
+        (event) => {
+          setInstallProgress(event.payload)
+        }
+      )
       await installLocalSandboxBoxlite()
       await handleRefresh()
       toast.success(t("agent.sandbox.installSuccess"))
     } catch (err) {
       toast.error(formatActionError(err))
     } finally {
+      if (unlisten) unlisten()
+      setInstallProgress(null)
       setIsInstalling(false)
     }
   }
@@ -226,6 +264,27 @@ export function DesktopSandboxSettingsCard({
               ) : null}
             </div>
           </>
+        ) : null}
+
+        {/* Install progress */}
+        {installProgress ? (
+          <div className="space-y-2 rounded-xl border border-indigo-500/20 bg-indigo-500/[0.04] p-4 dark:border-indigo-400/15 dark:bg-indigo-400/[0.06]">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-medium text-foreground">
+                {t(`agent.sandbox.installStage.${installProgress.stage}`)}
+              </p>
+              <p className="font-mono text-[11px] text-muted-foreground">
+                {Math.min(100, Math.max(0, Math.round(installProgress.percent)))}%
+              </p>
+            </div>
+            <Progress value={installProgress.percent} className="h-1.5" />
+            {installProgress.stage === "download" && installProgress.bytesTotal ? (
+              <p className="font-mono text-[11px] text-muted-foreground">
+                {formatBytes(installProgress.bytesDownloaded ?? 0)} /{" "}
+                {formatBytes(installProgress.bytesTotal)}
+              </p>
+            ) : null}
+          </div>
         ) : null}
 
         {/* Install guide */}

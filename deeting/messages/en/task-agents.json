@@ -16,7 +16,8 @@
       "reindex": "Reindex",
       "reindexing": "Reindexing...",
       "runPreview": "Run Preview",
-      "runningPreview": "Running Preview..."
+      "runningPreview": "Running Preview...",
+      "backToStarter": "Back to Create"
     },
     "stats": {
       "total": "Total Agents",

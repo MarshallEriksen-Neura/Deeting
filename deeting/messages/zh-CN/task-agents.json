@@ -16,7 +16,8 @@
       "reindexing": "重新索引中...",
       "runPreview": "运行预览",
       "runningPreview": "预览运行中...",
-      "importClaude": "导入 Claude 智能体"
+      "importClaude": "导入 Claude 智能体",
+      "backToStarter": "返回创建智能体"
     },
     "stats": {
       "total": "智能体总数",

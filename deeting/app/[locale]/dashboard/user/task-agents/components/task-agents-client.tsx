@@ -120,6 +120,7 @@ export function TaskAgentsClient() {
     handleImportClaudeAgents,
     handleDiscardConfirm,
     handleDiscardCancel,
+    handleCreateNew,
   } = useTaskAgents(t)
 
   if (desktopSupport === null) {
@@ -196,6 +197,7 @@ export function TaskAgentsClient() {
             dateFormatter={dateFormatter}
             onDelete={() => setDeleteDialogOpen(true)}
             onSave={handleSave}
+            onBackToStarter={handleCreateNew}
           />
 
           <GlassCardContent className="pt-4">

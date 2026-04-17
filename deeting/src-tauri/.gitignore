@@ -3,6 +3,7 @@
 /target/
 /crates/*/target/
 /gen/schemas
+/binaries/
 
 # Cargo package extraction metadata inside vendored crates
 /crates/deeting-boxlite-sidecar/vendor/**/.cargo-ok

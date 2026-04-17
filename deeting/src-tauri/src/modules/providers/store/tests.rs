@@ -647,6 +647,127 @@ async fn quick_add_models_infers_capabilities_and_upstream_paths() {
 }
 
 #[tokio::test]
+async fn reconcile_synced_models_soft_deletes_missing_and_preserves_edited_capabilities() {
+    let store = init_store().await;
+    let instance_id = insert_instance(&store).await;
+
+    store
+        .quick_add_models(
+            &instance_id,
+            vec!["gpt-4o-mini".to_string(), "legacy-model".to_string()],
+            None,
+        )
+        .await
+        .expect("seed models");
+
+    let seeded = store
+        .list_models(Some(instance_id.clone()), None)
+        .await
+        .expect("list seeded models");
+    let gpt_row = seeded
+        .iter()
+        .find(|m| m.model_id == "gpt-4o-mini")
+        .expect("gpt row");
+    store
+        .update_model(
+            &gpt_row.id,
+            crate::modules::providers::types::ProviderModelUpdateRequest {
+                display_name: None,
+                is_active: None,
+                capabilities: Some(vec!["embedding".to_string()]),
+                unified_model_id: None,
+                upstream_path: None,
+                weight: None,
+                priority: None,
+                pricing_config: None,
+                limit_config: None,
+                tokenizer_config: None,
+                routing_config: None,
+                config_override: None,
+                source: None,
+                extra_meta: None,
+            },
+        )
+        .await
+        .expect("user-edit capabilities");
+
+    store
+        .reconcile_synced_models(
+            &instance_id,
+            vec!["gpt-4o-mini".to_string(), "gpt-4o-new".to_string()],
+        )
+        .await
+        .expect("reconcile");
+
+    let models = store
+        .list_models(Some(instance_id), None)
+        .await
+        .expect("list post-reconcile");
+
+    let gpt = models
+        .iter()
+        .find(|m| m.model_id == "gpt-4o-mini")
+        .expect("gpt preserved");
+    assert!(gpt.is_active, "present model should stay active");
+    assert_eq!(
+        gpt.capabilities,
+        vec!["embedding".to_string()],
+        "user-edited capabilities must survive reconcile"
+    );
+
+    let new_model = models
+        .iter()
+        .find(|m| m.model_id == "gpt-4o-new")
+        .expect("new model inserted");
+    assert!(new_model.is_active);
+    assert_eq!(new_model.source, "synced");
+
+    let legacy = models
+        .iter()
+        .find(|m| m.model_id == "legacy-model")
+        .expect("legacy row kept for history");
+    assert!(
+        !legacy.is_active,
+        "missing model should be soft-deleted, not hard-deleted"
+    );
+}
+
+#[tokio::test]
+async fn reconcile_synced_models_reactivates_previously_soft_deleted_model() {
+    let store = init_store().await;
+    let instance_id = insert_instance(&store).await;
+
+    store
+        .quick_add_models(&instance_id, vec!["gpt-4o-mini".to_string()], None)
+        .await
+        .expect("seed");
+
+    store
+        .reconcile_synced_models(&instance_id, vec![])
+        .await
+        .expect("reconcile with empty remote soft-deletes everything");
+
+    let after_clear = store
+        .list_models(Some(instance_id.clone()), None)
+        .await
+        .expect("list after clear");
+    assert_eq!(after_clear.len(), 1);
+    assert!(!after_clear[0].is_active);
+
+    store
+        .reconcile_synced_models(&instance_id, vec!["gpt-4o-mini".to_string()])
+        .await
+        .expect("reconcile brings it back");
+
+    let after_revive = store
+        .list_models(Some(instance_id), None)
+        .await
+        .expect("list after revive");
+    assert_eq!(after_revive.len(), 1, "should reactivate, not duplicate");
+    assert!(after_revive[0].is_active);
+}
+
+#[tokio::test]
 async fn quick_add_models_is_idempotent_for_same_model_and_instance() {
     let store = init_store().await;
     let instance_id = insert_instance(&store).await;

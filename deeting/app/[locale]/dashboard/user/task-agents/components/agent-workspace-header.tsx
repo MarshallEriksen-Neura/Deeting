@@ -1,6 +1,6 @@
 "use client"
 
-import { Save, Trash2 } from "lucide-react"
+import { ArrowLeft, Save, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -24,6 +24,7 @@ type AgentWorkspaceHeaderProps = {
   dateFormatter: Intl.DateTimeFormat
   onDelete: () => void
   onSave: () => void
+  onBackToStarter: () => void
 }
 
 export function AgentWorkspaceHeader({
@@ -37,6 +38,7 @@ export function AgentWorkspaceHeader({
   dateFormatter,
   onDelete,
   onSave,
+  onBackToStarter,
 }: AgentWorkspaceHeaderProps) {
   const title = selectedAgent
     ? selectedAgent.name
@@ -107,6 +109,18 @@ export function AgentWorkspaceHeader({
 
         {/* Action buttons */}
         <div className="flex shrink-0 items-center gap-2">
+          {!isStarterState ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onBackToStarter}
+              disabled={isSaving}
+              className="h-8 rounded-lg border-white/8 text-[12px]"
+            >
+              <ArrowLeft className="mr-1.5 size-3.5" />
+              {t("actions.backToStarter")}
+            </Button>
+          ) : null}
           {selectedAgent ? (
             <Button
               variant="outline"

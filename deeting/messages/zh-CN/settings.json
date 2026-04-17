@@ -237,6 +237,12 @@
         "copyCommand": "复制命令",
         "copySuccess": "命令已复制",
         "installSuccess": "BoxLite 安装完成，状态已刷新。",
+        "installStage": {
+          "download": "正在下载 BoxLite 安装包...",
+          "verify": "正在校验文件完整性...",
+          "extract": "正在解压并安装到 WSL...",
+          "done": "安装完成"
+        },
         "prepareSuccess": "沙箱准备完成，状态已刷新。",
         "repairSuccess": "沙箱修复完成，状态已刷新。",
         "rebuildSuccess": "沙箱运行环境已重建，状态已刷新。",

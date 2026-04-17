@@ -18,7 +18,9 @@ use uuid::Uuid;
 
 use crate::modules::custom_task_agents::store::get_custom_task_agent as get_custom_task_agent_profile;
 use crate::modules::custom_task_agents::types::CustomTaskAgentProfile;
-use crate::modules::monitor::agent_runtime::validate_monitor_task_agent_profile;
+use crate::modules::monitor::agent_runtime::{
+    effective_monitor_tool_names, validate_monitor_task_agent_profile,
+};
 use crate::modules::monitor::store::MonitorStore;
 use crate::modules::monitor::types::{
     monitor_delivery_policy_from_notify_config, LocalMonitorActionResponse,
@@ -277,10 +279,15 @@ impl MonitorState {
 
     pub async fn create_task(
         &self,
-        payload: LocalMonitorTaskCreateRequest,
+        mut payload: LocalMonitorTaskCreateRequest,
     ) -> Result<LocalMonitorCreateResponse, String> {
-        self.ensure_bindable_task_agent(payload.assistant_id.as_str())
+        let profile = self
+            .ensure_bindable_task_agent(payload.assistant_id.as_str())
             .await?;
+        payload.allowed_tools = Some(materialize_monitor_allowed_tools(
+            &profile,
+            payload.allowed_tools.take(),
+        ));
         let task = self.shared.store.create_task(payload).await?;
         Ok(LocalMonitorCreateResponse {
             id: task.id,
@@ -296,10 +303,24 @@ impl MonitorState {
     pub async fn update_task(
         &self,
         task_id: String,
-        payload: LocalMonitorTaskUpdateRequest,
+        mut payload: LocalMonitorTaskUpdateRequest,
     ) -> Result<LocalMonitorTask, String> {
+        let current = self
+            .shared
+            .store
+            .get_task(task_id.as_str())
+            .await?
+            .ok_or_else(|| "任务不存在".to_string())?;
         if let Some(assistant_id) = payload.assistant_id.as_deref() {
-            self.ensure_bindable_task_agent(assistant_id).await?;
+            let profile = self.ensure_bindable_task_agent(assistant_id).await?;
+            if payload.allowed_tools.is_none() {
+                payload.allowed_tools = Some(materialize_monitor_allowed_tools(&profile, None));
+            }
+        } else if payload.allowed_tools.is_none() && current.allowed_tools.is_empty() {
+            if let Some(assistant_id) = current.assistant_id.as_deref() {
+                let profile = self.ensure_bindable_task_agent(assistant_id).await?;
+                payload.allowed_tools = Some(materialize_monitor_allowed_tools(&profile, None));
+            }
         }
         let task = self
             .shared
@@ -778,6 +799,16 @@ fn derive_monitor_display_status(status: &str, binding_state: &str) -> String {
     }
 }
 
+fn materialize_monitor_allowed_tools(
+    profile: &CustomTaskAgentProfile,
+    requested_allowed_tools: Option<Vec<String>>,
+) -> Vec<String> {
+    match requested_allowed_tools {
+        Some(values) if values.iter().any(|value| !value.trim().is_empty()) => values,
+        _ => effective_monitor_tool_names(profile, &[]),
+    }
+}
+
 fn make_default_agent_id() -> String {
     format!("desktop-{}", Uuid::new_v4().simple())
 }
@@ -883,6 +914,49 @@ mod tests {
     #[test]
     fn supported_notification_channels_include_wechat() {
         assert!(is_supported_notification_channel("wechat"));
+    }
+
+    #[test]
+    fn materialize_monitor_allowed_tools_defaults_to_explicit_profile_snapshot() {
+        let profile = CustomTaskAgentProfile {
+            id: "agent-1".to_string(),
+            name: "Agent".to_string(),
+            description: None,
+            task_prompt: "watch".to_string(),
+            invocation_kind:
+                crate::modules::custom_task_agents::types::CustomTaskAgentInvocationKind::Chat,
+            preferred_for_image_generation: false,
+            model_config: None,
+            callable_mcp_tool_ids: vec!["tool.search".to_string()],
+            guidance_skill_ids: Vec::new(),
+            callable_skill_action_refs: vec![
+                crate::modules::custom_task_agents::types::CustomTaskAgentSkillActionRef {
+                    skill_id: "system/monitor".to_string(),
+                    action_id: "sys_create_monitor".to_string(),
+                },
+            ],
+            bound_asset_id: None,
+            tags: Vec::new(),
+            discoverable: true,
+            is_enabled: true,
+            is_deleted: false,
+            source_kind: None,
+            source_path: None,
+            source_repo: None,
+            source_ref: None,
+            source_hash: None,
+            created_at: "2026-03-28T00:00:00Z".to_string(),
+            updated_at: "2026-03-28T00:00:00Z".to_string(),
+        };
+
+        let materialized = materialize_monitor_allowed_tools(&profile, None);
+        assert_eq!(
+            materialized,
+            vec![
+                "skill_action__system-monitor__sys_create_monitor".to_string(),
+                "tool.search".to_string(),
+            ]
+        );
     }
 
     #[test]

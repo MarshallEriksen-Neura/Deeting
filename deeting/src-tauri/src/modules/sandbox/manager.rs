@@ -27,6 +27,7 @@ use crate::modules::sandbox::backend_wsl::{
 };
 #[cfg(target_os = "windows")]
 use crate::modules::sandbox::installer::{install_boxlite_wsl, BoxLiteInstallerConfig};
+use crate::modules::sandbox::installer::ProgressReporter as BoxLiteInstallProgressReporter;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30 * 60;
 const DEFAULT_MAX_SANDBOXES: usize = 50;
@@ -298,7 +299,10 @@ impl SandboxRuntimeManager {
         }
     }
 
-    pub async fn install_boxlite(&self) -> Result<SandboxReadinessReport, SandboxError> {
+    pub async fn install_boxlite(
+        &self,
+        reporter: Option<BoxLiteInstallProgressReporter>,
+    ) -> Result<SandboxReadinessReport, SandboxError> {
         #[cfg(target_os = "windows")]
         {
             let wsl = diagnose_wsl_availability();
@@ -311,12 +315,13 @@ impl SandboxRuntimeManager {
             let config = BoxLiteInstallerConfig {
                 data_dir: self.options.home_dir.join("sandbox"),
             };
-            install_boxlite_wsl(&config).await?;
+            install_boxlite_wsl(&config, reporter).await?;
             return self.prepare().await;
         }
 
         #[cfg(not(target_os = "windows"))]
         {
+            let _ = reporter;
             Ok(self.status_report().await)
         }
     }
@@ -1147,9 +1152,15 @@ impl SandboxRuntimeManager {
             if let Some(provisioner) = provisioner {
                 if provisioner.installation_record().is_some() {
                     let auto_endpoint = provisioner.endpoint();
-                    if is_bridge_candidate_reachable(&auto_endpoint) {
-                        if let Ok(provider) = Self::try_wsl_backend(&auto_endpoint, options) {
-                            return Ok(provider);
+                    match Self::try_wsl_backend(&auto_endpoint, options) {
+                        Ok(provider) => return Ok(provider),
+                        Err(err) => {
+                            log::warn!(
+                                "boxrun WSL backend at managed endpoint {} unavailable: code={} detail={}",
+                                auto_endpoint,
+                                err.code(),
+                                err
+                            );
                         }
                     }
                 }

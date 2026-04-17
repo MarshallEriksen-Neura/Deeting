@@ -2,13 +2,15 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 #[cfg(target_os = "windows")]
 use crate::modules::sandbox::backend_wsl::{
-    detect_wsl_arch, resolve_wsl_home_dir, shell_quote, windows_path_to_wsl,
+    decode_wsl_text, detect_wsl_arch, resolve_wsl_home_dir, shell_quote, windows_path_to_wsl,
 };
 use crate::modules::sandbox::error::SandboxError;
 #[cfg(target_os = "windows")]
@@ -41,12 +43,33 @@ struct BoxLiteReleaseAsset {
     sha256: &'static str,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoxLiteInstallProgress {
+    pub stage: &'static str,
+    pub percent: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bytes_downloaded: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bytes_total: Option<u64>,
+}
+
+pub type ProgressReporter = Arc<dyn Fn(BoxLiteInstallProgress) + Send + Sync>;
+
+fn report(reporter: Option<&ProgressReporter>, progress: BoxLiteInstallProgress) {
+    if let Some(reporter) = reporter {
+        reporter(progress);
+    }
+}
+
 pub async fn install_boxlite_wsl(
     config: &BoxLiteInstallerConfig,
+    reporter: Option<ProgressReporter>,
 ) -> Result<BoxLiteInstallationRecord, SandboxError> {
     #[cfg(not(target_os = "windows"))]
     {
         let _ = config;
+        let _ = reporter;
         return Err(SandboxError::Unavailable(
             "managed BoxLite installation is only supported on Windows + WSL".to_string(),
         ));
@@ -56,9 +79,30 @@ pub async fn install_boxlite_wsl(
     {
         fs::create_dir_all(&config.data_dir)?;
 
+        report(
+            reporter.as_ref(),
+            BoxLiteInstallProgress {
+                stage: "download",
+                percent: 0,
+                bytes_downloaded: Some(0),
+                bytes_total: None,
+            },
+        );
+
         let wsl_arch = detect_wsl_arch()?;
         let release = release_asset_for_wsl_arch(&wsl_arch)?;
-        let downloaded_asset = download_release_asset(&config.data_dir, &release).await?;
+        let downloaded_asset =
+            download_release_asset(&config.data_dir, &release, reporter.as_ref()).await?;
+
+        report(
+            reporter.as_ref(),
+            BoxLiteInstallProgress {
+                stage: "verify",
+                percent: 85,
+                bytes_downloaded: None,
+                bytes_total: None,
+            },
+        );
 
         let wsl_home = resolve_wsl_home_dir()?;
         let install_root = format!("{wsl_home}/.deeting/sandbox/boxlite");
@@ -66,6 +110,16 @@ pub async fn install_boxlite_wsl(
         let wsl_binary_path = format!("{wsl_install_dir}/boxlite");
         let wsl_boxlite_home = format!("{install_root}/home");
         let asset_wsl_path = windows_path_to_wsl(&downloaded_asset)?;
+
+        report(
+            reporter.as_ref(),
+            BoxLiteInstallProgress {
+                stage: "extract",
+                percent: 92,
+                bytes_downloaded: None,
+                bytes_total: None,
+            },
+        );
 
         install_cli_into_wsl(
             &asset_wsl_path,
@@ -89,6 +143,16 @@ pub async fn install_boxlite_wsl(
             serde_json::to_vec_pretty(&record)
                 .map_err(|err| SandboxError::Internal(err.to_string()))?,
         )?;
+
+        report(
+            reporter.as_ref(),
+            BoxLiteInstallProgress {
+                stage: "done",
+                percent: 100,
+                bytes_downloaded: None,
+                bytes_total: None,
+            },
+        );
 
         Ok(record)
     }
@@ -131,11 +195,21 @@ fn release_asset_url(release: &BoxLiteReleaseAsset) -> String {
 async fn download_release_asset(
     data_dir: &Path,
     release: &BoxLiteReleaseAsset,
+    reporter: Option<&ProgressReporter>,
 ) -> Result<PathBuf, SandboxError> {
     let download_dir = data_dir.join("downloads");
     fs::create_dir_all(&download_dir)?;
     let download_path = download_dir.join(release.asset_name);
     if download_path.is_file() && verify_file_sha256(&download_path, release.sha256)? {
+        report(
+            reporter,
+            BoxLiteInstallProgress {
+                stage: "download",
+                percent: 80,
+                bytes_downloaded: None,
+                bytes_total: None,
+            },
+        );
         return Ok(download_path);
     }
 
@@ -146,11 +220,44 @@ async fn download_release_asset(
         .send()
         .await?;
     let response = response.error_for_status()?;
-    let bytes = response.bytes().await?;
-    verify_bytes_sha256(bytes.as_ref(), release.sha256)?;
+    let total_bytes = response.content_length();
+
+    let mut buffer: Vec<u8> = match total_bytes {
+        Some(len) => Vec::with_capacity(len as usize),
+        None => Vec::new(),
+    };
+    let mut stream = response.bytes_stream();
+    let mut downloaded: u64 = 0;
+    let mut last_emit_percent: u32 = 0;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        buffer.extend_from_slice(&chunk);
+        downloaded = downloaded.saturating_add(chunk.len() as u64);
+
+        let percent = match total_bytes {
+            Some(total) if total > 0 => {
+                let fraction = downloaded as f64 / total as f64;
+                (fraction.clamp(0.0, 1.0) * 80.0) as u32
+            }
+            _ => 40,
+        };
+        if percent >= last_emit_percent.saturating_add(2) || percent >= 80 {
+            last_emit_percent = percent;
+            report(
+                reporter,
+                BoxLiteInstallProgress {
+                    stage: "download",
+                    percent,
+                    bytes_downloaded: Some(downloaded),
+                    bytes_total: total_bytes,
+                },
+            );
+        }
+    }
+    verify_bytes_sha256(&buffer, release.sha256)?;
 
     let temp_path = download_path.with_extension("partial");
-    fs::write(&temp_path, &bytes)?;
+    fs::write(&temp_path, &buffer)?;
     let _ = fs::remove_file(&download_path);
     fs::rename(temp_path, &download_path)?;
     Ok(download_path)
@@ -163,38 +270,74 @@ fn install_cli_into_wsl(
     wsl_binary_path: &str,
     wsl_boxlite_home: &str,
 ) -> Result<(), SandboxError> {
+    for (label, value) in [
+        ("asset", asset_wsl_path),
+        ("install_dir", wsl_install_dir),
+        ("binary_path", wsl_binary_path),
+        ("boxlite_home", wsl_boxlite_home),
+    ] {
+        if value.trim().is_empty() {
+            return Err(SandboxError::Unavailable(format!(
+                "failed to install BoxLite CLI into WSL: {label} resolved to an empty path"
+            )));
+        }
+    }
     let script = format!(
-        "set -eu; \
-asset={asset}; \
-install_dir={install_dir}; \
-binary_path={binary_path}; \
-boxlite_home={boxlite_home}; \
-tmp_dir=\"$install_dir.tmp\"; \
-rm -rf \"$tmp_dir\"; \
-mkdir -p \"$tmp_dir\" \"$boxlite_home\"; \
-tar -xzf \"$asset\" -C \"$tmp_dir\"; \
-binary=$(find \"$tmp_dir\" -type f -name boxlite | head -n 1); \
-if [ -z \"$binary\" ]; then echo 'boxlite binary not found in archive' >&2; exit 1; fi; \
-rm -rf \"$install_dir\"; \
-mkdir -p \"$install_dir\"; \
-mv \"$binary\" \"$binary_path\"; \
-chmod +x \"$binary_path\"; \
-rm -rf \"$tmp_dir\"",
+        "#!/usr/bin/env bash\n\
+set -eu\n\
+asset={asset}\n\
+install_dir={install_dir}\n\
+binary_path={binary_path}\n\
+boxlite_home={boxlite_home}\n\
+tmp_dir=\"${{install_dir}}.tmp\"\n\
+rm -rf \"$tmp_dir\"\n\
+mkdir -p \"$tmp_dir\" \"$boxlite_home\"\n\
+tar -xzf \"$asset\" -C \"$tmp_dir\"\n\
+binary=$(find \"$tmp_dir\" -type f -name boxlite | head -n 1)\n\
+if [ -z \"$binary\" ]; then echo 'boxlite binary not found in archive' >&2; exit 1; fi\n\
+rm -rf \"$install_dir\"\n\
+mkdir -p \"$install_dir\"\n\
+mv \"$binary\" \"$binary_path\"\n\
+chmod +x \"$binary_path\"\n\
+rm -rf \"$tmp_dir\"\n",
         asset = shell_quote(asset_wsl_path),
         install_dir = shell_quote(wsl_install_dir),
         binary_path = shell_quote(wsl_binary_path),
         boxlite_home = shell_quote(wsl_boxlite_home),
     );
+
+    // wsl.exe's argument translation mangles complex inline scripts that mix
+    // single quotes, double quotes and `$var` expansions — the dollar-sign
+    // references get stripped en route to bash, which is why shell variables
+    // arrive empty. Materialise the script on disk and execute it by path.
+    let script_host_path = std::env::temp_dir().join(format!(
+        "deeting-boxlite-install-{}.sh",
+        std::process::id()
+    ));
+    fs::write(&script_host_path, script.as_bytes())?;
+    let script_wsl_path = windows_path_to_wsl(&script_host_path).inspect_err(|_| {
+        let _ = fs::remove_file(&script_host_path);
+    })?;
+
     let mut command = std::process::Command::new("wsl.exe");
     configure_background_std_command(&mut command);
     let output = command
-        .args(["--", "bash", "-lc", &script])
-        .output()
-        .map_err(|err| {
-            SandboxError::Unavailable(format!("failed to install BoxLite CLI into WSL: {err}"))
-        })?;
+        .args(["--", "bash", script_wsl_path.as_str()])
+        .output();
+    let _ = fs::remove_file(&script_host_path);
+    let output = output.map_err(|err| {
+        SandboxError::Unavailable(format!("failed to install BoxLite CLI into WSL: {err}"))
+    })?;
     if !output.status.success() {
-        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stderr = decode_wsl_text(&output.stderr);
+        let stdout = decode_wsl_text(&output.stdout);
+        let detail = if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            format!("exit code {}", output.status.code().unwrap_or(-1))
+        };
         return Err(SandboxError::Unavailable(format!(
             "failed to install BoxLite CLI into WSL: {detail}"
         )));

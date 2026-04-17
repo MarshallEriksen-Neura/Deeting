@@ -183,6 +183,85 @@ impl ProviderStore {
         Ok(())
     }
 
+    /// Reconcile the model list for an instance against a fresh upstream
+    /// snapshot: models absent from `remote_model_ids` are soft-deleted
+    /// (`is_active = 0`), previously-known models have only their activation
+    /// and sync timestamp touched — capabilities, pricing, and other
+    /// user-edited config are preserved verbatim.
+    pub async fn reconcile_synced_models(
+        &self,
+        instance_id: &str,
+        remote_model_ids: Vec<String>,
+    ) -> Result<(), ProviderError> {
+        let now = now_rfc3339()?;
+        let preferred_chat_upstream_path = self
+            .preferred_upstream_path_for_instance_capability(instance_id, CHAT_CAPABILITY)
+            .await?;
+        let mut tx = self.begin_write().await?;
+
+        sqlx::query(
+            "UPDATE provider_models SET is_active = 0, updated_at = ? WHERE instance_id = ?",
+        )
+        .bind(&now)
+        .bind(instance_id)
+        .execute(&mut *tx)
+        .await?;
+
+        for model_id in remote_model_ids {
+            let reactivated = sqlx::query(
+                "UPDATE provider_models
+                 SET is_active = 1, synced_at = ?, updated_at = ?
+                 WHERE instance_id = ? AND model_id = ?",
+            )
+            .bind(&now)
+            .bind(&now)
+            .bind(instance_id)
+            .bind(&model_id)
+            .execute(&mut *tx)
+            .await?;
+
+            if reactivated.rows_affected() > 0 {
+                continue;
+            }
+
+            let capabilities = guess_capabilities(&model_id);
+            let primary_capability = capabilities
+                .first()
+                .map(String::as_str)
+                .unwrap_or(CHAT_CAPABILITY);
+            let upstream_path = if primary_capability == CHAT_CAPABILITY {
+                preferred_chat_upstream_path
+                    .as_deref()
+                    .unwrap_or_else(|| upstream_path_for_capability(primary_capability))
+            } else {
+                upstream_path_for_capability(primary_capability)
+            };
+            let id = Uuid::new_v4().to_string();
+            sqlx::query(
+                "INSERT INTO provider_models (
+                    id, instance_id, capabilities, model_id, display_name,
+                    upstream_path, pricing_config, limit_config, tokenizer_config,
+                    routing_config, config_override, source, extra_meta, weight, priority,
+                    is_active, synced_at, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, '{}', '{}', '{}', '{}', '{}', 'synced', '{}', 100, 0, 1, ?, ?, ?)",
+            )
+            .bind(&id)
+            .bind(instance_id)
+            .bind(serde_json::to_string(&capabilities).unwrap_or_else(|_| "[]".to_string()))
+            .bind(&model_id)
+            .bind(&model_id)
+            .bind(upstream_path)
+            .bind(&now)
+            .bind(&now)
+            .bind(&now)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+        Ok(())
+    }
+
     pub async fn quick_add_models(
         &self,
         instance_id: &str,

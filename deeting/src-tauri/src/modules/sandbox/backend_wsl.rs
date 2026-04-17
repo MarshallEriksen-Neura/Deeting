@@ -184,7 +184,7 @@ pub fn resolve_wsl_home_dir() -> Result<String, SandboxError> {
     let mut command = Command::new("wsl.exe");
     configure_background_std_command(&mut command);
     let output = command
-        .args(["--", "sh", "-lc", "printf %s \"$HOME\""])
+        .args(["--", "sh", "-c", "printf %s \"$HOME\""])
         .output()
         .map_err(|err| SandboxError::Unavailable(format!("failed to resolve WSL home: {err}")))?;
     if !output.status.success() {
@@ -206,8 +206,9 @@ pub fn detect_wsl_arch() -> Result<String, SandboxError> {
     ensure_wsl_available()?;
     let mut command = Command::new("wsl.exe");
     configure_background_std_command(&mut command);
+    // Use `-c` (not `-lc`) to avoid login-shell profile output contaminating `uname -m`.
     let output = command
-        .args(["--", "sh", "-lc", "uname -m"])
+        .args(["--", "sh", "-c", "uname -m"])
         .output()
         .map_err(|err| {
             SandboxError::Unavailable(format!("failed to inspect WSL architecture: {err}"))
@@ -275,23 +276,75 @@ fn normalize_windows_path_for_wsl(raw: &str) -> String {
     raw.trim().replace('\\', "/")
 }
 
-fn decode_wsl_text(bytes: &[u8]) -> String {
+pub fn decode_wsl_text(bytes: &[u8]) -> String {
     let trimmed_bytes = if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE {
         &bytes[2..]
     } else {
         bytes
     };
 
-    if should_decode_as_utf16le(trimmed_bytes) {
-        let mut units = Vec::with_capacity(trimmed_bytes.len() / 2);
-        for chunk in trimmed_bytes.chunks_exact(2) {
-            units.push(u16::from_le_bytes([chunk[0], chunk[1]]));
+    // wsl.exe emits its own diagnostic messages as UTF-16 LE (Windows console
+    // convention) while the guest process streams UTF-8. Concatenated stderr
+    // therefore looks like `[UTF-16 LE ... \r\0\n\0][UTF-8 ...]`. Split at the
+    // last UTF-16 CRLF terminator so each half is decoded in its native
+    // encoding; otherwise one side devolves into replacement characters.
+    let split = utf16le_prefix_end(trimmed_bytes);
+    let (head, tail) = trimmed_bytes.split_at(split);
+
+    let mut out = String::new();
+    if !head.is_empty() {
+        out.push_str(&decode_utf16le_lossy(head));
+    }
+    if !tail.is_empty() {
+        if should_decode_as_utf16le(tail) {
+            out.push_str(&decode_utf16le_lossy(tail));
+        } else {
+            out.push_str(&String::from_utf8_lossy(tail));
         }
-        let decoded = String::from_utf16_lossy(&units);
-        return decoded.trim_matches(char::from(0)).trim().to_string();
     }
 
-    String::from_utf8_lossy(trimmed_bytes).trim().to_string()
+    out.trim_matches(char::from(0)).trim().to_string()
+}
+
+fn decode_utf16le_lossy(bytes: &[u8]) -> String {
+    let even_len = bytes.len() & !1;
+    let mut units = Vec::with_capacity(even_len / 2);
+    for chunk in bytes[..even_len].chunks_exact(2) {
+        units.push(u16::from_le_bytes([chunk[0], chunk[1]]));
+    }
+    String::from_utf16_lossy(&units)
+}
+
+fn utf16le_prefix_end(bytes: &[u8]) -> usize {
+    // Locate the last `\r\x00\n\x00` pair that sits on an even byte offset and
+    // whose preceding window looks like UTF-16 LE. Anything after that pair is
+    // treated as a different encoding (typically UTF-8 from the guest shell).
+    let mut last_end = 0;
+    let mut i = 0;
+    while i + 4 <= bytes.len() {
+        if bytes[i] == b'\r' && bytes[i + 1] == 0 && bytes[i + 2] == b'\n' && bytes[i + 3] == 0 {
+            let window_end = i + 4;
+            if window_looks_like_utf16le(&bytes[..window_end]) {
+                last_end = window_end;
+            }
+            i += 4;
+        } else {
+            i += 2;
+        }
+    }
+    last_end
+}
+
+fn window_looks_like_utf16le(bytes: &[u8]) -> bool {
+    if bytes.len() < 2 || bytes.len() % 2 != 0 {
+        return false;
+    }
+    let pairs = bytes.len() / 2;
+    let zero_odd = (0..pairs).filter(|k| bytes[k * 2 + 1] == 0).count();
+    // ASCII-heavy UTF-16 LE content keeps nearly every odd byte at zero; even
+    // when mixed with CJK glyphs (whose high byte is non-zero) the ratio stays
+    // comfortably above 25%.
+    zero_odd * 4 >= pairs
 }
 
 fn should_decode_as_utf16le(bytes: &[u8]) -> bool {

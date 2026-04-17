@@ -16,6 +16,9 @@ use crate::modules::monitor::types::{
 
 const LOCAL_MONITOR_USER_ID: &str = "00000000-0000-0000-0000-000000000000";
 const DEFAULT_MONITOR_CRON: &str = "0 */6 * * *";
+const DEFAULT_INTERVAL_MINUTES: i64 = 360;
+const MAX_LOCAL_MONITOR_TASKS: i64 = 50;
+const MIN_MONITOR_INTERVAL_MINUTES: i64 = 5;
 const MAX_ERROR_COUNT: i64 = 3;
 const FAILURE_RETRY_SECONDS: i64 = 60;
 const DEFAULT_CLAIM_LEASE_SECONDS: i64 = 180;
@@ -322,6 +325,20 @@ impl MonitorStore {
         &self,
         payload: LocalMonitorTaskCreateRequest,
     ) -> Result<LocalMonitorTask, String> {
+        let existing_task_count =
+            sqlx::query("SELECT COUNT(1) AS total FROM local_monitor_tasks WHERE is_active = 1")
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|err| err.to_string())?
+                .try_get::<i64, _>("total")
+                .unwrap_or(0)
+                .max(0);
+        if existing_task_count >= MAX_LOCAL_MONITOR_TASKS {
+            return Err(format!(
+                "desktop local monitor 最多允许 {} 个任务，请先删除或停用不再需要的任务",
+                MAX_LOCAL_MONITOR_TASKS
+            ));
+        }
         let title = payload.title.trim().to_string();
         let objective = payload.objective.trim().to_string();
         let assistant_id = normalize_assistant_id(payload.assistant_id)?;
@@ -335,6 +352,7 @@ impl MonitorStore {
         let now_ts = now_unix_timestamp();
         let now_iso = now_rfc3339();
         let (next_run_ts, interval_minutes) = schedule_metadata_for_cron_expr(&cron_expr, now_ts)?;
+        ensure_minimum_monitor_interval_minutes(interval_minutes)?;
         let notify_config =
             normalize_monitor_notify_config(&payload.notify_config.unwrap_or_else(|| json!({})));
         let allowed_tools = normalize_allowed_tools(payload.allowed_tools.unwrap_or_default());
@@ -417,6 +435,7 @@ impl MonitorStore {
         let now_ts = now_unix_timestamp();
         let (next_scheduled_run_ts, interval_minutes) =
             schedule_metadata_for_cron_expr(&cron_expr, now_ts)?;
+        ensure_minimum_monitor_interval_minutes(interval_minutes)?;
         let analysis_mode = match payload.analysis_mode.as_deref() {
             Some(value) => normalize_analysis_mode(Some(value)),
             None => current.analysis_mode.clone(),
@@ -1763,6 +1782,16 @@ fn schedule_metadata_for_cron_expr(cron_expr: &str, after_ts: i64) -> Result<(i6
     Ok((first, ((second - first) / 60).max(1)))
 }
 
+fn ensure_minimum_monitor_interval_minutes(interval_minutes: i64) -> Result<(), String> {
+    if interval_minutes < MIN_MONITOR_INTERVAL_MINUTES {
+        return Err(format!(
+            "desktop local monitor 最小执行间隔为 {} 分钟，当前约为 {} 分钟",
+            MIN_MONITOR_INTERVAL_MINUTES, interval_minutes
+        ));
+    }
+    Ok(())
+}
+
 fn next_run_timestamp_after(cron_expr: &str, after_ts: i64) -> Result<i64, String> {
     let (minute_matcher, hour_matcher) = parse_supported_cron_expr(cron_expr)?;
     let mut candidate_ts = after_ts - after_ts.rem_euclid(60) + 60;
@@ -1913,6 +1942,43 @@ mod tests {
         assert_eq!(created.policy_state, json!({}));
     }
 
+    #[tokio::test]
+    async fn create_task_rejects_when_task_cap_is_reached() {
+        let store = build_store().await;
+
+        for index in 0..MAX_LOCAL_MONITOR_TASKS {
+            store
+                .create_task(LocalMonitorTaskCreateRequest {
+                    title: format!("task-{index}"),
+                    objective: "Monitor developments".to_string(),
+                    assistant_id: "agent-1".to_string(),
+                    cron_expr: Some("0 */6 * * *".to_string()),
+                    analysis_mode: None,
+                    notify_config: None,
+                    allowed_tools: None,
+                    execution_target: None,
+                })
+                .await
+                .expect("task should be created");
+        }
+
+        let error = store
+            .create_task(LocalMonitorTaskCreateRequest {
+                title: "task-over-limit".to_string(),
+                objective: "Monitor developments".to_string(),
+                assistant_id: "agent-1".to_string(),
+                cron_expr: Some("0 */6 * * *".to_string()),
+                analysis_mode: None,
+                notify_config: None,
+                allowed_tools: None,
+                execution_target: None,
+            })
+            .await
+            .expect_err("task cap should be enforced");
+
+        assert!(error.contains("最多允许"));
+    }
+
     #[test]
     fn schedule_metadata_aligns_fixed_daily_cron_to_wall_clock() {
         let now = time::OffsetDateTime::parse(
@@ -1955,6 +2021,44 @@ mod tests {
     fn normalize_supported_cron_expr_rejects_unsupported_day_of_month() {
         let error = normalize_supported_cron_expr(Some("0 9 1 * *")).expect_err("cron should fail");
         assert!(error.contains("desktop local monitor"));
+    }
+
+    #[test]
+    fn minimum_interval_rejects_every_minute_cron() {
+        let now = time::OffsetDateTime::parse(
+            "2026-03-25T08:10:00Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .expect("timestamp")
+        .unix_timestamp();
+
+        let (_, cadence_minutes) =
+            schedule_metadata_for_cron_expr("*/1 * * * *", now).expect("schedule");
+        let error = ensure_minimum_monitor_interval_minutes(cadence_minutes)
+            .expect_err("interval should fail");
+
+        assert!(error.contains("最小执行间隔"));
+    }
+
+    #[tokio::test]
+    async fn create_task_rejects_every_minute_cron() {
+        let store = build_store().await;
+
+        let error = store
+            .create_task(LocalMonitorTaskCreateRequest {
+                title: "too-fast".to_string(),
+                objective: "Monitor developments".to_string(),
+                assistant_id: "agent-1".to_string(),
+                cron_expr: Some("*/1 * * * *".to_string()),
+                analysis_mode: None,
+                notify_config: None,
+                allowed_tools: None,
+                execution_target: None,
+            })
+            .await
+            .expect_err("fast cron should fail");
+
+        assert!(error.contains("最小执行间隔"));
     }
 
     #[tokio::test]

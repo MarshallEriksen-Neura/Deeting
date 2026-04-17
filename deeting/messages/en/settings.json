@@ -237,6 +237,12 @@
         "copyCommand": "Copy command",
         "copySuccess": "Command copied",
         "installSuccess": "BoxLite installation finished. Status refreshed.",
+        "installStage": {
+          "download": "Downloading BoxLite release...",
+          "verify": "Verifying checksum...",
+          "extract": "Extracting and installing into WSL...",
+          "done": "Install complete"
+        },
         "prepareSuccess": "Sandbox prepare finished. Status refreshed.",
         "repairSuccess": "Sandbox repair finished. Status refreshed.",
         "rebuildSuccess": "Sandbox runtime rebuilt. Status refreshed.",

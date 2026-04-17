@@ -722,7 +722,7 @@ pub async fn sync_local_provider_models(
     state
         .providers
         .store
-        .quick_add_models(&instance_id, model_ids, None)
+        .reconcile_synced_models(&instance_id, model_ids)
         .await
         .map_err(|e| e.to_string())?;
 
