@@ -6,8 +6,8 @@ use crate::modules::im::handlers::{
     build_direct_card_action_outcome, generate_local_chat_reply_outcome,
 };
 use crate::modules::im::{
-    adapt_reply_for_platform, ImConnectionProfile, ImPlatformAdapter, ImReplyCapability,
-    ImReplyDelivery, MessageContent,
+    adapt_reply_for_platform, ImConnectionProfile, ImPlatform, ImPlatformAdapter,
+    ImReplyCapability, ImReplyDelivery, MessageContent, MessagePart,
 };
 use crate::state::AppState;
 
@@ -59,10 +59,8 @@ impl TextImConversationRuntime {
 
                 let mut sent_any = false;
                 for follow_up in outcome.follow_up_messages {
-                    if let MessageContent::Text { text } = follow_up {
-                        send_message(MessageContent::Text { text }).await?;
-                        sent_any = true;
-                    }
+                    send_message(follow_up).await?;
+                    sent_any = true;
                 }
                 if !sent_any {
                     send_message(MessageContent::Text {
@@ -115,6 +113,8 @@ impl TextImConversationRuntime {
             return Ok(());
         }
 
+        let fallback_text = reply_outcome.fallback_text.clone();
+
         match reply_outcome.content {
             MessageContent::Text { text } => {
                 match adapt_reply_for_platform(
@@ -126,7 +126,10 @@ impl TextImConversationRuntime {
                         send_message(content).await?;
                     }
                     ImReplyDelivery::DowngradedText(text) => {
-                        send_message(MessageContent::Text { text }).await?;
+                        send_message(MessageContent::Text {
+                            text: fallback_text.clone().unwrap_or(text),
+                        })
+                        .await?;
                     }
                 }
             }
@@ -140,49 +143,61 @@ impl TextImConversationRuntime {
                         send_message(content).await?;
                     }
                     ImReplyDelivery::DowngradedText(text) => {
-                        send_message(MessageContent::Text { text }).await?;
+                        send_message(MessageContent::Text {
+                            text: fallback_text.clone().unwrap_or(text),
+                        })
+                        .await?;
                     }
                 }
             }
             MessageContent::Image { url } => {
-                match adapt_reply_for_platform(
+                match adapt_reply_for_profile(
                     &ImReplyCapability::ImageRef { url },
-                    platform_adapter_for_profile(profile),
+                    profile,
                     channel_label,
                 ) {
                     ImReplyDelivery::Native(content) => {
                         send_message(content).await?;
                     }
                     ImReplyDelivery::DowngradedText(text) => {
-                        send_message(MessageContent::Text { text }).await?;
+                        send_message(MessageContent::Text {
+                            text: fallback_text.clone().unwrap_or(text),
+                        })
+                        .await?;
                     }
                 }
             }
             MessageContent::File { name, url } => {
-                match adapt_reply_for_platform(
+                match adapt_reply_for_profile(
                     &ImReplyCapability::FileRef { name, url },
-                    platform_adapter_for_profile(profile),
+                    profile,
                     channel_label,
                 ) {
                     ImReplyDelivery::Native(content) => {
                         send_message(content).await?;
                     }
                     ImReplyDelivery::DowngradedText(text) => {
-                        send_message(MessageContent::Text { text }).await?;
+                        send_message(MessageContent::Text {
+                            text: fallback_text.clone().unwrap_or(text),
+                        })
+                        .await?;
                     }
                 }
             }
             MessageContent::Mixed { parts } => {
-                match adapt_reply_for_platform(
+                match adapt_reply_for_profile(
                     &ImReplyCapability::MixedParts { parts },
-                    platform_adapter_for_profile(profile),
+                    profile,
                     channel_label,
                 ) {
                     ImReplyDelivery::Native(content) => {
                         send_message(content).await?;
                     }
                     ImReplyDelivery::DowngradedText(text) => {
-                        send_message(MessageContent::Text { text }).await?;
+                        send_message(MessageContent::Text {
+                            text: fallback_text.clone().unwrap_or(text),
+                        })
+                        .await?;
                     }
                 }
             }
@@ -201,6 +216,110 @@ fn platform_adapter_for_profile(profile: &ImConnectionProfile) -> ImPlatformAdap
     }
 }
 
+fn adapt_reply_for_profile(
+    capability: &ImReplyCapability,
+    profile: &ImConnectionProfile,
+    channel_label: &str,
+) -> ImReplyDelivery {
+    if profile.platform == ImPlatform::Telegram {
+        return adapt_telegram_reply_for_profile(capability, profile, channel_label);
+    }
+    if profile.platform == ImPlatform::Wechat {
+        return adapt_wechat_reply_for_profile(capability, channel_label);
+    }
+
+    adapt_reply_for_platform(
+        capability,
+        platform_adapter_for_profile(profile),
+        channel_label,
+    )
+}
+
+fn adapt_telegram_reply_for_profile(
+    capability: &ImReplyCapability,
+    profile: &ImConnectionProfile,
+    channel_label: &str,
+) -> ImReplyDelivery {
+    match capability {
+        ImReplyCapability::ImageRef { .. } | ImReplyCapability::FileRef { .. }
+            if !profile.direct_config.telegram_media_enabled =>
+        {
+            ImReplyDelivery::DowngradedText(format!(
+                "当前{}通道的媒体回复能力未开启，请在桌面端查看完整结果。",
+                channel_label
+            ))
+        }
+        ImReplyCapability::MixedParts { parts } => {
+            let has_image = parts
+                .iter()
+                .any(|part| matches!(part, MessagePart::Image { .. }));
+            let all_remote_images = parts.iter().all(|part| match part {
+                MessagePart::Text { .. } => true,
+                MessagePart::Image { url } => {
+                    let normalized = url.trim().to_ascii_lowercase();
+                    normalized.starts_with("https://") || normalized.starts_with("http://")
+                }
+            });
+
+            if has_image && !profile.direct_config.telegram_media_enabled {
+                return ImReplyDelivery::DowngradedText(format!(
+                    "当前{}通道的媒体回复能力未开启，请在桌面端查看完整结果。",
+                    channel_label
+                ));
+            }
+
+            if all_remote_images {
+                return ImReplyDelivery::Native(MessageContent::Mixed {
+                    parts: parts.clone(),
+                });
+            }
+
+            ImReplyDelivery::DowngradedText(format!(
+                "当前{}通道暂不支持发送本地或平台私有图片引用，请在桌面端查看完整结果。",
+                channel_label
+            ))
+        }
+        _ => adapt_reply_for_platform(
+            capability,
+            platform_adapter_for_profile(profile),
+            channel_label,
+        ),
+    }
+}
+
+fn adapt_wechat_reply_for_profile(
+    capability: &ImReplyCapability,
+    channel_label: &str,
+) -> ImReplyDelivery {
+    match capability {
+        ImReplyCapability::MixedParts { parts } => {
+            let all_remote_images = parts.iter().all(|part| match part {
+                MessagePart::Text { .. } => true,
+                MessagePart::Image { url } => {
+                    let normalized = url.trim().to_ascii_lowercase();
+                    normalized.starts_with("https://") || normalized.starts_with("http://")
+                }
+            });
+
+            if all_remote_images {
+                return ImReplyDelivery::Native(MessageContent::Mixed {
+                    parts: parts.clone(),
+                });
+            }
+
+            ImReplyDelivery::DowngradedText(format!(
+                "当前{}通道暂不支持发送本地或平台私有图片引用，请在桌面端查看完整结果。",
+                channel_label
+            ))
+        }
+        _ => adapt_reply_for_platform(
+            capability,
+            ImPlatformAdapter::Wechat,
+            channel_label,
+        ),
+    }
+}
+
 pub(crate) fn parse_text_approval_command(text: &str) -> Option<bool> {
     match text.trim() {
         "1" => Some(true),
@@ -211,12 +330,139 @@ pub(crate) fn parse_text_approval_command(text: &str) -> Option<bool> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_text_approval_command;
+    use super::{adapt_reply_for_profile, parse_text_approval_command};
+    use crate::modules::im::{
+        ImConnectionProfile, ImPlatform, ImReplyCapability, ImReplyDelivery, MessageContent,
+        MessagePart,
+    };
 
     #[test]
     fn parse_text_approval_command_accepts_numeric_choices() {
         assert_eq!(parse_text_approval_command("1"), Some(true));
         assert_eq!(parse_text_approval_command("0"), Some(false));
         assert_eq!(parse_text_approval_command(" yes "), None);
+    }
+
+    fn telegram_profile(media_enabled: bool) -> ImConnectionProfile {
+        let mut profile = ImConnectionProfile::default_telegram();
+        profile.platform = ImPlatform::Telegram;
+        profile.direct_config.telegram_media_enabled = media_enabled;
+        profile
+    }
+
+    #[test]
+    fn telegram_mixed_parts_stay_native_when_media_gate_is_enabled() {
+        let delivery = adapt_reply_for_profile(
+            &ImReplyCapability::MixedParts {
+                parts: vec![
+                    MessagePart::Text {
+                        text: "summary".to_string(),
+                    },
+                    MessagePart::Image {
+                        url: "https://example.com/image.png".to_string(),
+                    },
+                ],
+            },
+            &telegram_profile(true),
+            "Telegram",
+        );
+
+        match delivery {
+            ImReplyDelivery::Native(MessageContent::Mixed { parts }) => {
+                assert_eq!(parts.len(), 2);
+            }
+            other => panic!("expected native mixed delivery, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn telegram_mixed_parts_downgrade_when_media_gate_is_disabled() {
+        let delivery = adapt_reply_for_profile(
+            &ImReplyCapability::MixedParts {
+                parts: vec![MessagePart::Image {
+                    url: "https://example.com/image.png".to_string(),
+                }],
+            },
+            &telegram_profile(false),
+            "Telegram",
+        );
+
+        match delivery {
+            ImReplyDelivery::DowngradedText(text) => {
+                assert!(text.contains("媒体回复能力未开启"));
+            }
+            other => panic!("expected downgraded delivery, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn telegram_mixed_parts_downgrade_when_image_is_not_remote() {
+        let delivery = adapt_reply_for_profile(
+            &ImReplyCapability::MixedParts {
+                parts: vec![MessagePart::Image {
+                    url: "file:///tmp/image.png".to_string(),
+                }],
+            },
+            &telegram_profile(true),
+            "Telegram",
+        );
+
+        match delivery {
+            ImReplyDelivery::DowngradedText(text) => {
+                assert!(text.contains("本地或平台私有图片引用"));
+            }
+            other => panic!("expected downgraded delivery, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn wechat_mixed_parts_stay_native_when_images_are_remote() {
+        let mut profile = ImConnectionProfile::default_telegram();
+        profile.platform = ImPlatform::Wechat;
+
+        let delivery = adapt_reply_for_profile(
+            &ImReplyCapability::MixedParts {
+                parts: vec![
+                    MessagePart::Text {
+                        text: "summary".to_string(),
+                    },
+                    MessagePart::Image {
+                        url: "https://example.com/image.png".to_string(),
+                    },
+                ],
+            },
+            &profile,
+            "微信",
+        );
+
+        match delivery {
+            ImReplyDelivery::Native(MessageContent::Mixed { parts }) => {
+                assert_eq!(parts.len(), 2);
+            }
+            other => panic!("expected native mixed delivery, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn wechat_mixed_parts_downgrade_when_image_is_not_remote() {
+        let mut profile = ImConnectionProfile::default_telegram();
+        profile.platform = ImPlatform::Wechat;
+
+        let delivery = adapt_reply_for_profile(
+            &ImReplyCapability::MixedParts {
+                parts: vec![MessagePart::Image {
+                    url: "file:///tmp/image.png".to_string(),
+                }],
+            },
+            &profile,
+            "微信",
+        );
+
+        match delivery {
+            ImReplyDelivery::DowngradedText(text) => {
+                assert!(text.contains("本地或平台私有图片引用"));
+            }
+            other => panic!("expected downgraded delivery, got {other:?}"),
+        }
     }
 }

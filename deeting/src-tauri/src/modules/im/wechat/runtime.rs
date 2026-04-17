@@ -3,7 +3,7 @@ use std::time::Duration;
 use log::{info, warn};
 
 use crate::modules::im::text_runtime::TextImConversationRuntime;
-use crate::modules::im::{ImConnectionProfile, MessageContent};
+use crate::modules::im::{ImConnectionProfile, MessageContent, MessagePart};
 use crate::state::AppState;
 
 use super::types::{
@@ -204,6 +204,8 @@ pub async fn run_wechat_direct_profile_worker(
                     account.base_url.as_str(),
                     account.token.as_str(),
                     contact_id,
+                    reply_context_token.as_str(),
+                    1,
                 )
                 .await
             {
@@ -228,7 +230,7 @@ pub async fn run_wechat_direct_profile_worker(
                         let context_token = reply_context_token.clone();
                         let contact_id = contact_id.to_string();
                         async move {
-                            send_content(
+                            let result = send_content(
                                 &app_state,
                                 base_url.as_str(),
                                 token.as_str(),
@@ -236,7 +238,18 @@ pub async fn run_wechat_direct_profile_worker(
                                 content,
                                 context_token.as_str(),
                             )
-                            .await
+                            .await;
+                            let _ = app_state
+                                .wechat
+                                .send_typing(
+                                    base_url.as_str(),
+                                    token.as_str(),
+                                    contact_id.as_str(),
+                                    context_token.as_str(),
+                                    2,
+                                )
+                                .await;
+                            result
                         }
                     },
                 )
@@ -300,10 +313,42 @@ fn classify_incoming_message(message: &super::types::WechatMessage) -> (String, 
                     text_parts.push(text.to_string());
                 }
             }
-            Some(WECHAT_ITEM_TYPE_IMAGE) => richer_kinds.push("image".to_string()),
-            Some(WECHAT_ITEM_TYPE_FILE) => richer_kinds.push("file".to_string()),
-            Some(WECHAT_ITEM_TYPE_VIDEO) => richer_kinds.push("video".to_string()),
-            Some(WECHAT_ITEM_TYPE_VOICE) => richer_kinds.push("voice".to_string()),
+            Some(WECHAT_ITEM_TYPE_IMAGE) => richer_kinds.push(format!(
+                "image:{}",
+                item.image_item
+                    .as_ref()
+                    .and_then(|entry| entry.url.as_deref())
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("asset")
+            )),
+            Some(WECHAT_ITEM_TYPE_FILE) => richer_kinds.push(format!(
+                "file:{}",
+                item.file_item
+                    .as_ref()
+                    .and_then(|entry| entry.name.as_deref().or(entry.url.as_deref()))
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("asset")
+            )),
+            Some(WECHAT_ITEM_TYPE_VIDEO) => richer_kinds.push(format!(
+                "video:{}",
+                item.video_item
+                    .as_ref()
+                    .and_then(|entry| entry.name.as_deref().or(entry.url.as_deref()))
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("asset")
+            )),
+            Some(WECHAT_ITEM_TYPE_VOICE) => richer_kinds.push(format!(
+                "voice:{}",
+                item.voice_item
+                    .as_ref()
+                    .and_then(|entry| entry.name.as_deref().or(entry.url.as_deref()))
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("asset")
+            )),
             Some(other) => richer_kinds.push(format!("item_type_{other}")),
             None => richer_kinds.push("unknown_item".to_string()),
         }
@@ -409,6 +454,22 @@ async fn send_content(
                 .send_message(base_url, token, message)
                 .await
         }
+        MessageContent::Mixed { parts } => {
+            let item_list = build_mixed_outbound_items(parts)?;
+            let message = super::types::WechatOutboundMessage {
+                to_user_id: contact_id.to_string(),
+                from_user_id: String::new(),
+                client_id: uuid::Uuid::new_v4().to_string(),
+                message_type: super::types::WECHAT_MESSAGE_TYPE_BOT,
+                message_state: super::types::WECHAT_MESSAGE_STATE_FINISH,
+                context_token: context_token.to_string(),
+                item_list,
+            };
+            app_state
+                .wechat
+                .send_message(base_url, token, message)
+                .await
+        }
         other => {
             send_text(
                 app_state,
@@ -453,6 +514,42 @@ fn classify_outbound_file_item(
     super::types::WechatOutboundMessageItem::file(name, url)
 }
 
+fn build_mixed_outbound_items(
+    parts: Vec<MessagePart>,
+) -> Result<Vec<super::types::WechatOutboundMessageItem>, String> {
+    let mut items = Vec::new();
+
+    for part in parts {
+        match part {
+            MessagePart::Text { text } => {
+                let normalized = markdown_to_plain_text(text.as_str());
+                if !normalized.is_empty() {
+                    items.push(super::types::WechatOutboundMessageItem::text(normalized));
+                }
+            }
+            MessagePart::Image { url } => {
+                let normalized = url.trim();
+                if normalized.is_empty() {
+                    continue;
+                }
+                let lowered = normalized.to_ascii_lowercase();
+                if !lowered.starts_with("https://") && !lowered.starts_with("http://") {
+                    return Err("wechat mixed parts require remote image URLs".to_string());
+                }
+                items.push(super::types::WechatOutboundMessageItem::image(
+                    normalized.to_string(),
+                ));
+            }
+        }
+    }
+
+    if items.is_empty() {
+        return Err("wechat mixed parts produced no sendable items".to_string());
+    }
+
+    Ok(items)
+}
+
 fn markdown_to_plain_text(input: &str) -> String {
     input
         .replace("```", "")
@@ -466,7 +563,10 @@ fn markdown_to_plain_text(input: &str) -> String {
 mod tests {
     use crate::modules::im::text_runtime::parse_text_approval_command;
 
-    use super::{classify_incoming_message, classify_outbound_file_item, select_context_token};
+    use super::{
+        build_mixed_outbound_items, classify_incoming_message, classify_outbound_file_item,
+        select_context_token,
+    };
 
     #[test]
     fn parse_text_approval_command_accepts_numeric_choices() {
@@ -525,7 +625,8 @@ mod tests {
 
         let (text, notice) = classify_incoming_message(&message);
         assert_eq!(text, "hello");
-        assert!(notice.unwrap_or_default().contains("image"));
+        let notice = notice.unwrap_or_default();
+        assert!(notice.contains("image:https://example.com/image.png"));
     }
 
     #[test]
@@ -547,5 +648,32 @@ mod tests {
             "https://example.com/report.pdf".to_string(),
         );
         assert_eq!(file.r#type, super::super::types::WECHAT_ITEM_TYPE_FILE);
+    }
+
+    #[test]
+    fn build_mixed_outbound_items_preserves_text_and_remote_images() {
+        let items = build_mixed_outbound_items(vec![
+            super::super::MessagePart::Text {
+                text: "hello".to_string(),
+            },
+            super::super::MessagePart::Image {
+                url: "https://example.com/image.png".to_string(),
+            },
+        ])
+        .expect("mixed items");
+
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].r#type, super::super::types::WECHAT_ITEM_TYPE_TEXT);
+        assert_eq!(items[1].r#type, super::super::types::WECHAT_ITEM_TYPE_IMAGE);
+    }
+
+    #[test]
+    fn build_mixed_outbound_items_rejects_non_remote_images() {
+        let err = build_mixed_outbound_items(vec![super::super::MessagePart::Image {
+            url: "file:///tmp/image.png".to_string(),
+        }])
+        .expect_err("non-remote image should fail");
+
+        assert!(err.contains("remote image URLs"));
     }
 }

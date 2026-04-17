@@ -3,7 +3,8 @@ use std::io::Write;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use super::api::{
-    fetch_login_qr, fetch_qr_status, get_updates, send_message, send_text_message, send_typing,
+    fetch_login_qr, fetch_qr_status, get_config, get_updates, get_upload_url, send_message,
+    send_text_message, send_typing,
 };
 use super::bridge_protocol::{
     BridgeEnvelope, BridgeRequest, BridgeResponseEnvelope, BridgeResponsePayload,
@@ -106,17 +107,55 @@ async fn handle_request(
             base_url,
             token,
             contact_id,
+            context_token,
+            status,
         } => match send_typing(
             client,
             base_url.as_str(),
             token.as_str(),
             contact_id.as_str(),
+            context_token.as_str(),
+            status,
         )
         .await
         {
             Ok(()) => BridgeResponsePayload::SendTyping { ok: true },
             Err(message) => BridgeResponsePayload::Error { message },
         },
+        BridgeRequest::GetUploadUrl {
+            base_url,
+            token,
+            file_name,
+        } => match get_upload_url(
+            client,
+            base_url.as_str(),
+            token.as_str(),
+            file_name.as_str(),
+        )
+        .await
+        {
+            Ok(data) => BridgeResponsePayload::GetUploadUrl { data },
+            Err(message) => BridgeResponsePayload::Error { message },
+        },
+        BridgeRequest::GetConfig {
+            base_url,
+            token,
+            contact_id,
+            context_token,
+        } => {
+            match get_config(
+                client,
+                base_url.as_str(),
+                token.as_str(),
+                contact_id.as_str(),
+                context_token.as_deref(),
+            )
+            .await
+            {
+                Ok(data) => BridgeResponsePayload::GetConfig { data },
+                Err(message) => BridgeResponsePayload::Error { message },
+            }
+        }
     };
 
     BridgeResponseEnvelope {

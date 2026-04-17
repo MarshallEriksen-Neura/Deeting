@@ -44,15 +44,15 @@
         },
         "bootstrap": {
           "title": "Bootstrap + Sync",
-          "description": "Create the bounded wiki scaffold, then sync the dedicated corpus that only the maintainer agent will use.",
+          "description": "Create the bounded wiki scaffold, then reconcile the dedicated corpus that only the maintainer agent will use.",
           "ready": "Workspace is ready at {path} and the dedicated corpus has {count} indexed notes.",
-          "pending": "Create the managed workspace and run at least one corpus sync before the maintainer can search local wiki evidence."
+          "pending": "Create the managed workspace and run at least one corpus reconcile before the maintainer can search local wiki evidence."
         },
         "handoff": {
           "title": "Inspect + Handoff",
-          "description": "Open the Corpus & Inspector tab, review the material hits, then sync the maintenance agent so delegated wiki work stays visible and bounded.",
+          "description": "Open the Corpus & Inspector tab, review the material hits, then reconcile the maintenance agent setup so delegated wiki work stays visible and bounded.",
           "ready": "Inspector has been exercised with {count} visible result(s), and {name} is ready for delegated maintenance.",
-          "pending": "Open the Corpus & Inspector tab, run one material search, and sync the maintenance agent before delegating wiki work.",
+          "pending": "Open the Corpus & Inspector tab, run one material search, and reconcile the maintenance agent setup before delegating wiki work.",
           "pendingWithMaintainer": "{name} is ready. Go to the Corpus & Inspector tab and run one more material search to verify the context it will see."
         }
       }
@@ -403,7 +403,7 @@
           "sessionEndSuggested": "The system created an organization suggestion for a session that just ended.",
           "valuableAnswerDisabled": "Valuable-answer suggestions are turned off, so no suggestion was created this time.",
           "valuableAnswerSuggested": "The system created an organization suggestion for a valuable answer.",
-          "corpusSyncObserved": "Material refresh completed. Added {indexedFiles} item(s) and cleared {removedFiles} stale item(s).",
+          "corpusReconcileObserved": "Material reconcile completed. Added {indexedFiles} item(s) and cleared {removedFiles} stale item(s).",
           "newSourceAutoExecuted": "After new material was detected, the system automatically started a maintenance task.",
           "newSourceAutoFailed": "Automatic maintenance after detecting new material failed.",
           "maintenanceAutoExecuted": "The system automatically started a routine maintenance task.",
@@ -424,7 +424,7 @@
           "description": "These automations can refresh materials, create reminders, or start maintenance work, but they do not widen the main chat assistant's default retrieval scope."
         },
       "actions": {
-        "sync_corpus": "Refresh materials",
+        "reconcile_corpus": "Refresh materials",
         "create_maintainer_agent": "Set up maintenance agent",
         "inspect_corpus": "Review materials",
         "run_maintenance_review": "Start maintenance",
@@ -434,7 +434,7 @@
       "triggers": {
         "on_vault_bound": "Vault connected",
         "on_workspace_bootstrapped": "Workspace ready",
-        "on_corpus_sync_completed": "Materials refreshed",
+        "on_corpus_reconcile_completed": "Materials reconciled",
         "on_session_end": "Session ended",
         "on_valuable_answer": "Valuable answer detected",
         "on_maintenance_schedule": "Routine check",
@@ -468,8 +468,8 @@
       "bindingSaveFailed": "Failed to save vault binding.",
       "workspaceBootstrapped": "Workspace ready. Created {files} files and {directories} directories.",
       "bootstrapFailed": "Failed to create the managed workspace.",
-      "corpusSynced": "Corpus synced. Indexed {indexed} files and removed {removed} stale entries.",
-      "corpusSyncFailed": "Failed to sync the LLM Wiki corpus.",
+      "corpusReconciled": "Corpus reconciled. Indexed {indexed} files and removed {removed} stale entries.",
+      "corpusReconcileFailed": "Failed to reconcile the LLM Wiki corpus.",
       "corpusSearchFailed": "Failed to search the LLM Wiki corpus.",
       "maintainerAgentReady": "{name} is ready for delegated maintenance.",
       "maintainerAgentFailed": "Failed to create or update the maintainer agent.",

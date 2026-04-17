@@ -9,3 +9,4 @@ pub mod service;
 pub mod store;
 mod templates;
 pub mod types;
+pub mod watcher;

@@ -31,13 +31,13 @@ type SuggestionCopyKey =
   | "memoryPromotion"
 
 const suggestionCopyKeyBySignature: Record<string, SuggestionCopyKey> = {
-  "on_vault_bound:sync_corpus": "initialCorpusSync",
+  "on_vault_bound:reconcile_corpus": "initialCorpusSync",
   "on_workspace_bootstrapped:create_maintainer_agent": "createMaintainerAgent",
-  "on_maintenance_schedule:sync_corpus": "refreshCorpus",
+  "on_maintenance_schedule:reconcile_corpus": "refreshCorpus",
   "on_maintenance_schedule:run_maintenance_review": "maintenanceReview",
   "on_session_end:crystallize_session_summary": "sessionCrystallization",
   "on_valuable_answer:crystallize_session_summary": "valuableAnswer",
-  "on_corpus_sync_completed:inspect_corpus": "inspectAfterSync",
+  "on_corpus_reconcile_completed:inspect_corpus": "inspectAfterSync",
   "on_new_source:run_maintenance_review": "reviewNewSources",
   "on_repeated_stable_conclusion:promote_to_memory": "memoryPromotion",
 }
@@ -417,8 +417,8 @@ function getAuditMessage(
       return t("automation.auditCopy.valuableAnswerDisabled")
     case "on_valuable_answer:suggested":
       return t("automation.auditCopy.valuableAnswerSuggested")
-    case "on_corpus_sync_completed:observed":
-      return t("automation.auditCopy.corpusSyncObserved", {
+    case "on_corpus_reconcile_completed:observed":
+      return t("automation.auditCopy.corpusReconcileObserved", {
         indexedFiles: getMetadataNumber(metadata, "indexedFiles") ?? 0,
         removedFiles: getMetadataNumber(metadata, "removedFiles") ?? 0,
       })

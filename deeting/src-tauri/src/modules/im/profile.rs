@@ -40,6 +40,8 @@ pub struct ImDirectConfig {
     #[serde(default)]
     pub telegram_bot_token: String,
     #[serde(default)]
+    pub telegram_media_enabled: bool,
+    #[serde(default)]
     pub wechat_account_id: String,
 }
 
@@ -313,17 +315,30 @@ pub fn platform_capabilities(
         },
         (ImPlatform::Telegram, _) => ImRuntimeCapabilities {
             inbound: feature_list(&["text", "image", "file", "card_action"]),
-            outbound: feature_list(&["text", "image", "file"]),
-            degradations: feature_list(&[
-                "interactive_card_as_text",
-                "mixed_content_as_text_notice",
-            ]),
+            outbound: if profile.direct_config.telegram_media_enabled {
+                feature_list(&["text", "image", "file", "mixed"])
+            } else {
+                feature_list(&["text"])
+            },
+            degradations: if profile.direct_config.telegram_media_enabled {
+                feature_list(&[
+                    "interactive_card_as_text",
+                    "non_remote_media_reference_to_text",
+                ])
+            } else {
+                feature_list(&[
+                    "interactive_card_as_text",
+                    "telegram_media_gate_disabled",
+                    "mixed_content_as_text_notice",
+                ])
+            },
         },
         (ImPlatform::Wechat, _) => ImRuntimeCapabilities {
             inbound: feature_list(&["text", "image", "file", "video", "voice"]),
-            outbound: feature_list(&["text", "image", "file", "video", "voice", "typing"]),
+            outbound: feature_list(&["text", "image", "file", "video", "voice", "typing", "mixed"]),
             degradations: feature_list(&[
                 "upload_or_cdn_policy_still_evolving",
+                "non_remote_media_reference_to_text",
             ]),
         },
         _ => ImRuntimeCapabilities {
@@ -361,6 +376,7 @@ mod tests {
                 feishu_app_id: "cli_xxx".to_string(),
                 feishu_app_secret: "secret".to_string(),
                 telegram_bot_token: String::new(),
+                telegram_media_enabled: false,
                 wechat_account_id: String::new(),
             },
             relay_config: ImRelayConfig {
@@ -381,6 +397,7 @@ mod tests {
                 feishu_app_id: String::new(),
                 feishu_app_secret: String::new(),
                 telegram_bot_token: "telegram-token".to_string(),
+                telegram_media_enabled: false,
                 wechat_account_id: String::new(),
             },
             relay_config: ImRelayConfig::default(),

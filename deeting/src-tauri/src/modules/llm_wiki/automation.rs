@@ -15,7 +15,7 @@ use super::config::{
     load_automation_state, load_binding, normalize_vault_root, resolve_workspace_path,
     save_automation_state, PersistedLlmWikiBinding,
 };
-use super::corpus::sync_corpus;
+use super::corpus::reconcile_corpus;
 use super::service::{create_or_update_local_llm_wiki_maintainer_agent, get_local_llm_wiki_state};
 use super::types::{
     LocalLlmWikiAutomationAuditEntry, LocalLlmWikiAutomationExecutionResult,
@@ -27,14 +27,14 @@ const LLM_WIKI_MAINTAINER_SOURCE_KIND: &str = "llm_wiki_maintainer";
 
 const TRIGGER_VAULT_BOUND: &str = "on_vault_bound";
 const TRIGGER_WORKSPACE_BOOTSTRAPPED: &str = "on_workspace_bootstrapped";
-const TRIGGER_CORPUS_SYNC_COMPLETED: &str = "on_corpus_sync_completed";
+const TRIGGER_CORPUS_RECONCILE_COMPLETED: &str = "on_corpus_reconcile_completed";
 const TRIGGER_SESSION_END: &str = "on_session_end";
 const TRIGGER_VALUABLE_ANSWER: &str = "on_valuable_answer";
 const TRIGGER_MAINTENANCE_SCHEDULE: &str = "on_maintenance_schedule";
 const TRIGGER_NEW_SOURCE: &str = "on_new_source";
 const TRIGGER_REPEATED_STABLE_CONCLUSION: &str = "on_repeated_stable_conclusion";
 
-const ACTION_SYNC_CORPUS: &str = "sync_corpus";
+const ACTION_RECONCILE_CORPUS: &str = "reconcile_corpus";
 const ACTION_CREATE_MAINTAINER_AGENT: &str = "create_maintainer_agent";
 const ACTION_INSPECT_CORPUS: &str = "inspect_corpus";
 const ACTION_RUN_MAINTENANCE_REVIEW: &str = "run_maintenance_review";
@@ -172,21 +172,21 @@ pub(crate) async fn execute_suggestion(
     let mut workflow_run_id = None;
     let mut memory_action = None;
     let execution_result: Result<Option<String>, String> = match suggestion.action_kind.as_str() {
-        ACTION_SYNC_CORPUS => {
+        ACTION_RECONCILE_CORPUS => {
             let binding = binding
                 .ok_or_else(|| "llm wiki binding has not been configured yet".to_string())?;
             let vault_root = normalize_vault_root(&binding.vault_root)?;
             let workspace_path =
                 resolve_workspace_path(&vault_root, &binding.workspace_relative_path);
             let (indexed_files, removed_files, _) =
-                sync_corpus(app_state, &vault_root, &workspace_path).await?;
+                reconcile_corpus(app_state, &vault_root, &workspace_path).await?;
             push_audit(
                 &mut automation,
                 suggestion.trigger.as_str(),
                 "info",
                 "executed",
                 format!(
-                    "Executed corpus sync suggestion. Indexed {} files and removed {} stale entries.",
+                    "Executed corpus reconcile suggestion. Indexed {} files and removed {} stale entries.",
                     indexed_files, removed_files
                 ),
                 now.as_str(),
@@ -197,7 +197,7 @@ pub(crate) async fn execute_suggestion(
                 })),
             );
             Ok(Some(format!(
-                "Corpus synced. Indexed {} files and removed {} stale entries.",
+                "Corpus reconciled. Indexed {} files and removed {} stale entries.",
                 indexed_files, removed_files
             )))
         }
@@ -407,7 +407,7 @@ pub(crate) async fn handle_vault_bound(app_state: &AppState) -> Result<(), Strin
     if state.settings.auto_sync_on_vault_bound {
         let vault_root = normalize_vault_root(&binding.vault_root)?;
         let workspace_path = resolve_workspace_path(&vault_root, &binding.workspace_relative_path);
-        match sync_corpus(app_state, &vault_root, &workspace_path).await {
+        match reconcile_corpus(app_state, &vault_root, &workspace_path).await {
             Ok((indexed_files, removed_files, _)) => {
                 transition_suggestion_status_by_fingerprint(
                     &mut state,
@@ -422,7 +422,7 @@ pub(crate) async fn handle_vault_bound(app_state: &AppState) -> Result<(), Strin
                     "info",
                     "auto_executed",
                     format!(
-                        "Auto-synced the dedicated corpus after vault binding. Indexed {} files and removed {} stale entries.",
+                        "Auto-reconciled the dedicated corpus after vault binding. Indexed {} files and removed {} stale entries.",
                         indexed_files, removed_files
                     ),
                     now.as_str(),
@@ -456,10 +456,10 @@ pub(crate) async fn handle_vault_bound(app_state: &AppState) -> Result<(), Strin
         upsert_suggestion(
             &mut state,
             TRIGGER_VAULT_BOUND,
-            ACTION_SYNC_CORPUS,
+            ACTION_RECONCILE_CORPUS,
             suggestion_fingerprint(TRIGGER_VAULT_BOUND, "initial-corpus-sync"),
-            "Run the first corpus sync",
-            "The vault is bound. Sync the dedicated LLM Wiki corpus so maintainer-only retrieval is ready.",
+            "Run the first corpus reconcile",
+            "The vault is bound. Reconcile the dedicated LLM Wiki corpus so maintainer-only retrieval is ready.",
             now.as_str(),
             None,
         );
@@ -489,7 +489,7 @@ pub(crate) async fn handle_workspace_bootstrapped(app_state: &AppState) -> Resul
                 ACTION_CREATE_MAINTAINER_AGENT,
                 suggestion_fingerprint(TRIGGER_WORKSPACE_BOOTSTRAPPED, "maintainer-agent"),
                 "Create the maintainer agent",
-                "The workspace scaffold is ready. Create or sync the dedicated maintainer agent before delegating wiki upkeep.",
+                "The workspace scaffold is ready. Create or reconcile the dedicated maintainer agent before delegating wiki upkeep.",
                 now.as_str(),
                 None,
             );
@@ -519,7 +519,7 @@ pub(crate) async fn handle_workspace_bootstrapped(app_state: &AppState) -> Resul
     Ok(())
 }
 
-pub(crate) async fn handle_corpus_sync_completed(
+pub(crate) async fn handle_corpus_reconcile_completed(
     app_state: &AppState,
     indexed_files: i64,
     removed_files: i64,
@@ -815,19 +815,19 @@ pub(crate) async fn run_schedule_tick(
             true
         } else {
             let now_epoch = parse_rfc3339_to_unix_epoch(&now)
-                .ok_or_else(|| "could not parse current sync timestamp".to_string())?;
+                .ok_or_else(|| "could not parse current reconcile timestamp".to_string())?;
             let sync_epoch = parse_rfc3339_to_unix_epoch(last_synced_at)
-                .ok_or_else(|| "could not parse corpus sync timestamp".to_string())?;
+                .ok_or_else(|| "could not parse corpus reconcile timestamp".to_string())?;
             now_epoch.saturating_sub(sync_epoch) > MAINTENANCE_SCHEDULE_INTERVAL_SECS
         };
         if stale || has_backlog || has_failures {
             upsert_suggestion(
                 &mut state,
                 TRIGGER_MAINTENANCE_SCHEDULE,
-                ACTION_SYNC_CORPUS,
+                ACTION_RECONCILE_CORPUS,
                 suggestion_fingerprint(TRIGGER_MAINTENANCE_SCHEDULE, "stale-corpus-sync"),
                 "Refresh the dedicated corpus",
-                "The dedicated LLM Wiki corpus has pending changes, failures, or stale sync state. Run a reconcile before the next wiki maintenance pass.",
+                "The dedicated LLM Wiki corpus has pending changes, failures, or stale reconcile state. Run a reconcile before the next wiki maintenance pass.",
                 now.as_str(),
                 Some(json!({
                     "queuedChangeCount": corpus.queued_change_count,
@@ -1097,11 +1097,11 @@ async fn handle_corpus_sync_followups(
     let now = now_rfc3339().map_err(|err| err.to_string())?;
     push_audit(
         state,
-        TRIGGER_CORPUS_SYNC_COMPLETED,
+        TRIGGER_CORPUS_RECONCILE_COMPLETED,
         "info",
         "observed",
         format!(
-            "Corpus sync completed. Indexed {} files and removed {} stale entries.",
+            "Corpus reconcile completed. Indexed {} files and removed {} stale entries.",
             indexed_files, removed_files
         ),
         now.as_str(),
@@ -1114,9 +1114,9 @@ async fn handle_corpus_sync_followups(
     if state.settings.auto_refresh_inspector_on_corpus_sync {
         upsert_suggestion(
             state,
-            TRIGGER_CORPUS_SYNC_COMPLETED,
+            TRIGGER_CORPUS_RECONCILE_COMPLETED,
             ACTION_INSPECT_CORPUS,
-            suggestion_fingerprint(TRIGGER_CORPUS_SYNC_COMPLETED, "inspect-after-sync"),
+            suggestion_fingerprint(TRIGGER_CORPUS_RECONCILE_COMPLETED, "inspect-after-sync"),
             "Inspect the refreshed corpus",
             "The dedicated corpus changed. Review a few hits in the inspector before you hand off to the maintainer.",
             now.as_str(),
@@ -1125,7 +1125,7 @@ async fn handle_corpus_sync_followups(
     } else {
         transition_suggestion_status_by_fingerprint(
             state,
-            suggestion_fingerprint(TRIGGER_CORPUS_SYNC_COMPLETED, "inspect-after-sync").as_str(),
+            suggestion_fingerprint(TRIGGER_CORPUS_RECONCILE_COMPLETED, "inspect-after-sync").as_str(),
             STATUS_EXPIRED,
             now.as_str(),
             None,

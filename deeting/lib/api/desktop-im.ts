@@ -30,6 +30,7 @@ export interface DesktopImDirectConfig {
   feishu_app_id: string
   feishu_app_secret: string
   telegram_bot_token: string
+  telegram_media_enabled: boolean
 }
 
 export interface DesktopImRelayConfig {
@@ -105,6 +106,7 @@ export function createDefaultFeishuProfile(): DesktopImConnectionProfile {
       feishu_app_id: "",
       feishu_app_secret: "",
       telegram_bot_token: "",
+      telegram_media_enabled: false,
     },
     relay_config: {
       base_url: "",

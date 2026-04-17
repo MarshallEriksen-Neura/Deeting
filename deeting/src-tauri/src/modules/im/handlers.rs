@@ -20,6 +20,7 @@ pub(crate) struct ImCardActionOutcome {
 #[derive(Debug, Clone)]
 pub(crate) struct LocalChatReplyOutcome {
     pub content: MessageContent,
+    pub fallback_text: Option<String>,
     pub approval_request: Option<ToolApprovalPayload>,
 }
 
@@ -188,11 +189,16 @@ pub(crate) fn extract_local_chat_reply_outcome(response: &Value) -> Option<Local
         let card = build_tool_approval_card(&payload);
         return Some(LocalChatReplyOutcome {
             content: MessageContent::Card { card: card.clone() },
+            fallback_text: None,
             approval_request: Some(payload),
         });
     }
 
     let extracted = extract_reply_capabilities(response)?;
+    let fallback_text = extracted.fallbacks.iter().find_map(|capability| match capability {
+        ImReplyCapability::PlainText { text } => Some(text.clone()),
+        _ => None,
+    });
     let content = match &extracted.primary {
         ImReplyCapability::PlainText { text } => MessageContent::Text { text: text.clone() },
         ImReplyCapability::InteractiveCard { card } => MessageContent::Card { card: card.clone() },
@@ -211,12 +217,9 @@ pub(crate) fn extract_local_chat_reply_outcome(response: &Value) -> Option<Local
 
     Some(LocalChatReplyOutcome {
         content,
+        fallback_text,
         approval_request: None,
     })
-}
-
-pub(crate) fn extract_local_chat_reply_content(response: &Value) -> Option<MessageContent> {
-    extract_local_chat_reply_outcome(response).map(|outcome| outcome.content)
 }
 
 fn follow_up_texts_to_messages(texts: Vec<String>) -> Vec<MessageContent> {
@@ -224,21 +227,6 @@ fn follow_up_texts_to_messages(texts: Vec<String>) -> Vec<MessageContent> {
         .into_iter()
         .map(|text| MessageContent::Text { text })
         .collect()
-}
-
-pub(crate) async fn generate_local_chat_reply_content(
-    app_state: &AppState,
-    app_handle: &AppHandle,
-    text: &str,
-    session_id: &str,
-) -> Result<Option<MessageContent>, String> {
-    let Some(response) =
-        conversation::execute_text_chat_raw(app_state, app_handle, text, session_id).await?
-    else {
-        return Ok(None);
-    };
-
-    Ok(extract_local_chat_reply_content(&response))
 }
 
 pub(crate) async fn generate_local_chat_reply_outcome(
@@ -438,6 +426,7 @@ mod tests {
             }
             other => panic!("expected image reply, got {other:?}"),
         }
+        assert_eq!(outcome.fallback_text.as_deref(), Some("desktop image ready"));
         assert!(outcome.approval_request.is_none());
     }
 
@@ -497,7 +486,7 @@ mod tests {
 
     #[test]
     fn extract_local_chat_reply_content_prefers_approval_card() {
-        let content = extract_local_chat_reply_content(&serde_json::json!({
+        let outcome = extract_local_chat_reply_outcome(&serde_json::json!({
             "choices": [{
                 "message": {
                     "content": "普通文本不该优先展示",
@@ -522,7 +511,7 @@ mod tests {
         }))
         .expect("reply content should be extracted");
 
-        match content {
+        match outcome.content {
             crate::modules::im::MessageContent::Card { card } => {
                 let title = card
                     .get("header")

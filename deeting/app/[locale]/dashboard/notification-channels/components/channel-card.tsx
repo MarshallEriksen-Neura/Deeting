@@ -4,6 +4,11 @@ import { useCallback, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { ChevronDown, ChevronUp, Trash2 } from "lucide-react"
 import { useTranslations } from "next-intl"
+import {
+  getPrimaryDesktopImResolution,
+  getPrimaryDesktopImRuntimeProfile,
+  type DesktopImSettingsSnapshot,
+} from "@/lib/api/desktop-im"
 import { GlassCard } from "@/components/ui/glass-card"
 import { GlassButton } from "@/components/ui/glass-button"
 import { Switch } from "@/components/ui/switch"
@@ -28,9 +33,11 @@ import { CHANNEL_COLORS, CHANNEL_ICONS } from "./channel-shared"
 
 export function ChannelCard({
   channel,
+  desktopImSnapshot,
   onRefresh,
 }: {
   channel: NotificationChannel
+  desktopImSnapshot?: DesktopImSettingsSnapshot | null
   onRefresh: () => void | Promise<unknown>
 }) {
   const t = useTranslations("dashboard.notificationChannelsPage")
@@ -42,6 +49,41 @@ export function ChannelCard({
   const Icon = CHANNEL_ICONS[channel.channel]
   const channelLabel = t(`channelTypes.${channel.channel}.label`)
   const channelDescription = t(`channelTypes.${channel.channel}.description`)
+  const runtimeResolution =
+    channel.channel === "feishu" || channel.channel === "telegram" || channel.channel === "wechat"
+      ? getPrimaryDesktopImResolution(desktopImSnapshot, channel.channel)
+      : null
+  const runtimeProfile =
+    channel.channel === "feishu" || channel.channel === "telegram" || channel.channel === "wechat"
+      ? getPrimaryDesktopImRuntimeProfile(desktopImSnapshot, channel.channel)
+      : null
+  const runtimeState = runtimeProfile?.effective_state
+  const runtimeBadgeTone =
+    runtimeState === "running"
+      ? "bg-emerald-500/10 text-emerald-300"
+      : runtimeState === "degraded"
+        ? "bg-amber-500/10 text-amber-300"
+        : runtimeState === "unavailable"
+          ? "bg-red-500/10 text-red-300"
+          : "bg-sky-500/10 text-sky-300"
+  const runtimeLabel = runtimeState
+    ? `IM ${runtimeState}`
+    : runtimeResolution?.enabled
+      ? `IM ${runtimeResolution.resolution.effective}`
+      : null
+  const runtimeMessage = runtimeProfile?.status_message || runtimeResolution?.resolution.user_message
+  const capabilitySummary = runtimeProfile
+    ? [
+        runtimeProfile.capabilities.inbound.length > 0
+          ? `in:${runtimeProfile.capabilities.inbound.join(",")}`
+          : null,
+        runtimeProfile.capabilities.outbound.length > 0
+          ? `out:${runtimeProfile.capabilities.outbound.join(",")}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : null
 
   const handleToggle = useCallback(async () => {
     setToggling(true)
@@ -111,6 +153,34 @@ export function ChannelCard({
               </span>
             ) : null}
           </div>
+          {runtimeLabel ? (
+            <div className="mt-2 space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={cn(
+                    "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.04em]",
+                    runtimeBadgeTone
+                  )}
+                >
+                  {runtimeLabel}
+                </span>
+                {runtimeProfile?.restart_count ? (
+                  <span className="text-[10px] text-[var(--muted)]">
+                    restart:{runtimeProfile.restart_count}
+                  </span>
+                ) : null}
+              </div>
+              {runtimeMessage ? (
+                <div className="text-[11px] leading-5 text-[var(--muted)]">{runtimeMessage}</div>
+              ) : null}
+              {capabilitySummary ? (
+                <div className="text-[10px] text-[var(--muted)]/80">{capabilitySummary}</div>
+              ) : null}
+              {runtimeProfile?.last_error ? (
+                <div className="text-[11px] text-red-300">{runtimeProfile.last_error}</div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div className="flex items-center gap-1">

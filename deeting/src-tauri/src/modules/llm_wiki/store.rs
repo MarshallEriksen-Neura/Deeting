@@ -107,6 +107,14 @@ impl CatalogRow {
     }
 }
 
+#[derive(Debug, Clone)]
+struct PendingChange {
+    queue_id: String,
+    relative_path: String,
+    absolute_path: Option<String>,
+    change_kind: String,
+}
+
 pub(crate) async fn init_llm_wiki_tables(store: &McpStore) -> Result<(), McpError> {
     sqlx::query(
         r#"
@@ -288,38 +296,58 @@ pub(crate) async fn load_corpus_status(
 
     let aggregate_row = sqlx::query(
         r#"
+        WITH doc_counts AS (
+          SELECT
+            COALESCE(SUM(CASE WHEN deleted_at IS NULL THEN 1 ELSE 0 END), 0) AS total_docs,
+            COALESCE(SUM(CASE WHEN deleted_at IS NULL AND scope = ? THEN 1 ELSE 0 END), 0) AS managed_docs,
+            COALESCE(SUM(CASE WHEN deleted_at IS NULL AND scope = ? THEN 1 ELSE 0 END), 0) AS legacy_docs,
+            COALESCE(SUM(CASE WHEN deleted_at IS NULL AND index_status = ? THEN 1 ELSE 0 END), 0) AS pending_docs,
+            COALESCE(SUM(CASE WHEN deleted_at IS NULL AND index_status = ? THEN 1 ELSE 0 END), 0) AS failed_docs
+          FROM llm_wiki_document
+          WHERE workspace_id = ?
+        ),
+        queue_counts AS (
+          SELECT COUNT(*) AS queued_docs
+          FROM llm_wiki_change_queue
+          WHERE workspace_id = ? AND completed_at IS NULL
+        ),
+        latest_run AS (
+          SELECT completed_at
+          FROM llm_wiki_sync_run
+          WHERE workspace_id = ? AND status = ?
+          ORDER BY created_at DESC
+          LIMIT 1
+        )
         SELECT
-          COALESCE(SUM(CASE WHEN deleted_at IS NULL THEN 1 ELSE 0 END), 0) AS total_docs,
-          COALESCE(SUM(CASE WHEN deleted_at IS NULL AND scope = ? THEN 1 ELSE 0 END), 0) AS managed_docs,
-          COALESCE(SUM(CASE WHEN deleted_at IS NULL AND scope = ? THEN 1 ELSE 0 END), 0) AS legacy_docs
-        FROM llm_wiki_document
-        WHERE workspace_id = ?;
+          doc_counts.total_docs,
+          doc_counts.managed_docs,
+          doc_counts.legacy_docs,
+          doc_counts.pending_docs,
+          doc_counts.failed_docs,
+          queue_counts.queued_docs,
+          latest_run.completed_at
+        FROM doc_counts
+        CROSS JOIN queue_counts
+        LEFT JOIN latest_run ON 1 = 1;
         "#,
     )
     .bind(SCOPE_MANAGED_WORKSPACE)
     .bind(SCOPE_LEGACY_VAULT)
+    .bind(INDEX_STATUS_PENDING)
+    .bind(INDEX_STATUS_FAILED)
     .bind(normalized_workspace_id)
+    .bind(normalized_workspace_id)
+    .bind(normalized_workspace_id)
+    .bind(RUN_STATUS_COMPLETED)
     .fetch_one(&store.pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
-    let latest_run = sqlx::query(
-        r#"
-        SELECT completed_at
-        FROM llm_wiki_sync_run
-        WHERE workspace_id = ? AND status = ?
-        ORDER BY created_at DESC
-        LIMIT 1;
-        "#,
-    )
-    .bind(normalized_workspace_id)
-    .bind(RUN_STATUS_COMPLETED)
-    .fetch_optional(&store.pool)
-    .await
-    .map_err(|err| McpError::Storage(err.to_string()))?;
-
     Ok(LocalLlmWikiCorpusStatus {
-        indexed_note_count: aggregate_row.try_get::<i64, _>("total_docs").unwrap_or(0).max(0),
+        indexed_note_count: aggregate_row
+            .try_get::<i64, _>("total_docs")
+            .unwrap_or(0)
+            .max(0),
         managed_workspace_note_count: aggregate_row
             .try_get::<i64, _>("managed_docs")
             .unwrap_or(0)
@@ -328,35 +356,21 @@ pub(crate) async fn load_corpus_status(
             .try_get::<i64, _>("legacy_docs")
             .unwrap_or(0)
             .max(0),
-        pending_note_count: sqlx::query_scalar::<_, i64>(
-            "SELECT COALESCE(SUM(CASE WHEN deleted_at IS NULL AND index_status = ? THEN 1 ELSE 0 END), 0) FROM llm_wiki_document WHERE workspace_id = ?;",
-        )
-        .bind(INDEX_STATUS_PENDING)
-        .bind(normalized_workspace_id)
-        .fetch_one(&store.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?
-        .max(0),
-        failed_note_count: sqlx::query_scalar::<_, i64>(
-            "SELECT COALESCE(SUM(CASE WHEN deleted_at IS NULL AND index_status = ? THEN 1 ELSE 0 END), 0) FROM llm_wiki_document WHERE workspace_id = ?;",
-        )
-        .bind(INDEX_STATUS_FAILED)
-        .bind(normalized_workspace_id)
-        .fetch_one(&store.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?
-        .max(0),
-        queued_change_count: sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM llm_wiki_change_queue WHERE workspace_id = ? AND completed_at IS NULL;",
-        )
-        .bind(normalized_workspace_id)
-        .fetch_one(&store.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?
-        .max(0),
-        last_synced_at: latest_run
-            .as_ref()
-            .and_then(|row| row.try_get::<Option<String>, _>("completed_at").ok())
+        pending_note_count: aggregate_row
+            .try_get::<i64, _>("pending_docs")
+            .unwrap_or(0)
+            .max(0),
+        failed_note_count: aggregate_row
+            .try_get::<i64, _>("failed_docs")
+            .unwrap_or(0)
+            .max(0),
+        queued_change_count: aggregate_row
+            .try_get::<i64, _>("queued_docs")
+            .unwrap_or(0)
+            .max(0),
+        last_synced_at: aggregate_row
+            .try_get::<Option<String>, _>("completed_at")
+            .ok()
             .flatten(),
     })
 }
@@ -444,17 +458,84 @@ pub(crate) async fn rebuild_projection_assets(
         .into_iter()
         .filter(|document| changed_ids.contains(&document.doc_id))
     {
-        app_state
+        let existing_projection_assets = app_state
             .memory
             .service
-            .delete_assets_by_package(&document.doc_id)
+            .list_assets_by_package(&document.doc_id, Some(CHUNK_ASSET_TYPE))
             .await
             .map_err(|err| McpError::Storage(err.to_string()))?;
+        let existing_projection_by_chunk = existing_projection_assets
+            .into_iter()
+            .filter_map(|asset| {
+                let chunk_id = asset
+                    .get("metadata")
+                    .and_then(|value| value.get("chunk_id"))
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())?
+                    .to_string();
+                let chunk_hash = asset
+                    .get("metadata")
+                    .and_then(|value| value.get("chunk_hash"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
+                let asset_id = asset
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)?;
+                Some((chunk_id, (asset_id, chunk_hash)))
+            })
+            .collect::<HashMap<_, _>>();
+
         if document.is_deleted() || document.index_status != INDEX_STATUS_INDEXED {
+            let stale_projection_ids = existing_projection_by_chunk
+                .into_values()
+                .map(|(asset_id, _)| asset_id)
+                .collect::<Vec<_>>();
+            if !stale_projection_ids.is_empty() {
+                app_state
+                    .memory
+                    .service
+                    .delete_assets_by_ids(&stale_projection_ids)
+                    .await
+                    .map_err(|err| McpError::Storage(err.to_string()))?;
+            }
             continue;
         }
 
-        let chunks = list_chunks_for_document(app_state.mcp.store.as_ref(), &document.doc_id).await?;
+        let chunks =
+            list_chunks_for_document(app_state.mcp.store.as_ref(), &document.doc_id).await?;
+        let current_chunk_ids = chunks
+            .iter()
+            .map(|chunk| chunk.chunk_id.clone())
+            .collect::<HashSet<_>>();
+        let stale_projection_ids = existing_projection_by_chunk
+            .iter()
+            .filter(|(chunk_id, _)| !current_chunk_ids.contains(*chunk_id))
+            .map(|(_, (asset_id, _))| asset_id.clone())
+            .collect::<Vec<_>>();
+        if !stale_projection_ids.is_empty() {
+            app_state
+                .memory
+                .service
+                .delete_assets_by_ids(&stale_projection_ids)
+                .await
+                .map_err(|err| McpError::Storage(err.to_string()))?;
+        }
+
+        let chunks_to_project = chunks
+            .into_iter()
+            .filter(|chunk| {
+                existing_projection_by_chunk
+                    .get(&chunk.chunk_id)
+                    .and_then(|(_, chunk_hash)| chunk_hash.as_deref())
+                    != Some(chunk.chunk_hash.as_str())
+            })
+            .collect::<Vec<_>>();
+        if chunks_to_project.is_empty() {
+            continue;
+        }
+
         let memory_service = app_state.memory.service.clone();
         let embedding = app_state.providers.embedding.clone();
         let workspace_id_owned = normalized_workspace_id.to_string();
@@ -463,7 +544,7 @@ pub(crate) async fn rebuild_projection_assets(
         let scope = document.scope.clone();
         let title = document.title.clone();
 
-        let per_document_projected = stream::iter(chunks.into_iter().map(|chunk| {
+        let per_document_projected = stream::iter(chunks_to_project.into_iter().map(|chunk| {
             let memory_service = memory_service.clone();
             let embedding = embedding.clone();
             let workspace_id_owned = workspace_id_owned.clone();
@@ -490,6 +571,7 @@ pub(crate) async fn rebuild_projection_assets(
                             "workspace_id": workspace_id_owned,
                             "doc_id": doc_id,
                             "chunk_id": chunk.chunk_id,
+                            "chunk_hash": chunk.chunk_hash,
                             "chunk_index": chunk.chunk_index,
                             "relative_path": relative_path,
                             "scope": scope,
@@ -532,6 +614,7 @@ pub(crate) async fn search_corpus(
     }
 
     let lexical_query = build_fts_query(normalized_query);
+    let query_tokens = tokenize_query(normalized_query);
     let mut candidates = HashMap::<String, LlmWikiQueryHit>::new();
 
     if let Some(fts_query) = lexical_query.as_deref() {
@@ -542,19 +625,9 @@ pub(crate) async fn search_corpus(
               d.relative_path,
               d.title,
               d.scope,
-              c.chunk_id,
-              c.chunk_index,
-              c.text_content,
               bm25(llm_wiki_document_fts) AS lexical_rank
             FROM llm_wiki_document_fts
             INNER JOIN llm_wiki_document d ON d.doc_id = llm_wiki_document_fts.doc_id
-            LEFT JOIN llm_wiki_chunk c ON c.chunk_id = (
-              SELECT c2.chunk_id
-              FROM llm_wiki_chunk c2
-              WHERE c2.doc_id = d.doc_id
-              ORDER BY c2.chunk_index ASC
-              LIMIT 1
-            )
             WHERE llm_wiki_document_fts.workspace_id = ?
               AND llm_wiki_document_fts MATCH ?
               AND d.deleted_at IS NULL
@@ -572,8 +645,8 @@ pub(crate) async fn search_corpus(
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
         for row in rows {
-            let chunk_id = row.try_get::<String, _>("chunk_id").unwrap_or_default();
-            if chunk_id.trim().is_empty() {
+            let doc_id = row.try_get::<String, _>("doc_id").unwrap_or_default();
+            if doc_id.trim().is_empty() {
                 continue;
             }
             let lexical_rank = row
@@ -581,26 +654,27 @@ pub(crate) async fn search_corpus(
                 .unwrap_or(0.0)
                 .max(0.0);
             let lexical_score = 1.0 / (1.0 + lexical_rank);
-            candidates.insert(
-                chunk_id.clone(),
-                LlmWikiQueryHit {
-                    doc_id: row.try_get::<String, _>("doc_id").unwrap_or_default(),
-                    chunk_id,
-                    chunk_index: row.try_get::<i64, _>("chunk_index").unwrap_or(0).max(0),
-                    relative_path: row
-                        .try_get::<String, _>("relative_path")
-                        .unwrap_or_default(),
-                    title: row.try_get::<String, _>("title").unwrap_or_default(),
-                    scope: row.try_get::<String, _>("scope").unwrap_or_default(),
-                    snippet: truncate_text_chars(
-                        &row.try_get::<String, _>("text_content").unwrap_or_default(),
-                        240,
-                    ),
-                    lexical_score,
-                    semantic_score: 0.0,
-                    final_score: lexical_score,
-                },
-            );
+            if let Some((chunk_id, chunk_index, snippet)) =
+                select_best_chunk_for_doc(store, &doc_id, &query_tokens).await?
+            {
+                candidates.insert(
+                    chunk_id.clone(),
+                    LlmWikiQueryHit {
+                        doc_id,
+                        chunk_id,
+                        chunk_index,
+                        relative_path: row
+                            .try_get::<String, _>("relative_path")
+                            .unwrap_or_default(),
+                        title: row.try_get::<String, _>("title").unwrap_or_default(),
+                        scope: row.try_get::<String, _>("scope").unwrap_or_default(),
+                        snippet,
+                        lexical_score,
+                        semantic_score: 0.0,
+                        final_score: lexical_score,
+                    },
+                );
+            }
         }
     }
 
@@ -775,8 +849,22 @@ async fn sync_internal(
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
-    let discovered =
-        collect_filesystem_documents(vault_root, workspace_path).map_err(McpError::Storage)?;
+    let pending_changes = list_pending_changes(store, &workspace_id).await?;
+    let queue_relative_paths = pending_changes
+        .iter()
+        .map(|change| change.relative_path.clone())
+        .collect::<HashSet<_>>();
+    let queue_delete_paths = pending_changes
+        .iter()
+        .filter(|change| change.change_kind == CHANGE_KIND_DELETE)
+        .map(|change| change.relative_path.clone())
+        .collect::<HashSet<_>>();
+    let discovered = if pending_changes.is_empty() {
+        collect_filesystem_documents(vault_root, workspace_path).map_err(McpError::Storage)?
+    } else {
+        collect_filesystem_documents_for_changes(vault_root, workspace_path, &pending_changes)
+            .map_err(McpError::Storage)?
+    };
     let existing = list_documents(store, &workspace_id).await?;
     let existing_by_path = existing
         .iter()
@@ -809,17 +897,6 @@ async fn sync_internal(
         match build_document_snapshot(stub) {
             Ok(snapshot) => {
                 upsert_document_snapshot(store, &workspace_id, &snapshot, &now).await?;
-                enqueue_change(
-                    store,
-                    &workspace_id,
-                    Some(snapshot.doc_id.as_str()),
-                    snapshot.relative_path.as_str(),
-                    Some(snapshot.absolute_path.as_str()),
-                    CHANGE_KIND_UPSERT,
-                    normalized_trigger,
-                    &now,
-                )
-                .await?;
                 indexed_files += 1;
                 changed_doc_ids.push(snapshot.doc_id);
             }
@@ -831,10 +908,24 @@ async fn sync_internal(
         }
     }
 
-    for stale in existing
-        .iter()
-        .filter(|row| !row.is_deleted() && !current_paths.contains(&row.relative_path))
-    {
+    let stale_iter: Vec<&CatalogRow> = if pending_changes.is_empty() {
+        existing
+            .iter()
+            .filter(|row| !row.is_deleted() && !current_paths.contains(&row.relative_path))
+            .collect()
+    } else {
+        existing
+            .iter()
+            .filter(|row| {
+                !row.is_deleted()
+                    && (queue_delete_paths.contains(&row.relative_path)
+                        || queue_relative_paths.contains(&row.relative_path)
+                            && !current_paths.contains(&row.relative_path))
+            })
+            .collect()
+    };
+
+    for stale in stale_iter {
         tombstone_document(store, &workspace_id, stale, normalized_trigger, &now).await?;
         removed_files += 1;
         changed_doc_ids.push(stale.doc_id.clone());
@@ -872,6 +963,14 @@ async fn sync_internal(
     .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    if !pending_changes.is_empty() {
+        let pending_ids = pending_changes
+            .iter()
+            .map(|change| change.queue_id.as_str())
+            .collect::<Vec<_>>();
+        mark_pending_changes_completed(store, &pending_ids, &now).await?;
+    }
 
     let status = load_corpus_status(store, &workspace_id).await?;
     let _ = failed_files;
@@ -1174,7 +1273,7 @@ async fn tombstone_document(
     store: &McpStore,
     workspace_id: &str,
     document: &CatalogRow,
-    trigger_source: &str,
+    _trigger_source: &str,
     now: &str,
 ) -> Result<(), McpError> {
     let mut tx = store.begin_write().await?;
@@ -1209,21 +1308,11 @@ async fn tombstone_document(
     tx.commit()
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
-
-    enqueue_change(
-        store,
-        workspace_id,
-        Some(document.doc_id.as_str()),
-        document.relative_path.as_str(),
-        None,
-        CHANGE_KIND_DELETE,
-        trigger_source,
-        now,
-    )
-    .await
+    let _ = workspace_id;
+    Ok(())
 }
 
-async fn enqueue_change(
+pub(crate) async fn enqueue_change(
     store: &McpStore,
     workspace_id: &str,
     doc_id: Option<&str>,
@@ -1233,6 +1322,22 @@ async fn enqueue_change(
     trigger_source: &str,
     now: &str,
 ) -> Result<(), McpError> {
+    sqlx::query(
+        r#"
+        DELETE FROM llm_wiki_change_queue
+        WHERE workspace_id = ?
+          AND relative_path = ?
+          AND change_kind = ?
+          AND completed_at IS NULL;
+        "#,
+    )
+    .bind(workspace_id)
+    .bind(relative_path)
+    .bind(change_kind)
+    .execute(&store.write_pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
     sqlx::query(
         r#"
         INSERT INTO llm_wiki_change_queue (
@@ -1253,6 +1358,125 @@ async fn enqueue_change(
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
     Ok(())
+}
+
+async fn list_pending_changes(
+    store: &McpStore,
+    workspace_id: &str,
+) -> Result<Vec<PendingChange>, McpError> {
+    let rows = sqlx::query(
+        r#"
+        SELECT queue_id, relative_path, absolute_path, change_kind
+        FROM llm_wiki_change_queue
+        WHERE workspace_id = ? AND completed_at IS NULL
+        ORDER BY queued_at ASC;
+        "#,
+    )
+    .bind(workspace_id)
+    .fetch_all(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+    Ok(rows
+        .into_iter()
+        .map(|row| PendingChange {
+            queue_id: row.try_get::<String, _>("queue_id").unwrap_or_default(),
+            relative_path: row
+                .try_get::<String, _>("relative_path")
+                .unwrap_or_default(),
+            absolute_path: row
+                .try_get::<Option<String>, _>("absolute_path")
+                .ok()
+                .flatten(),
+            change_kind: row.try_get::<String, _>("change_kind").unwrap_or_default(),
+        })
+        .collect())
+}
+
+async fn mark_pending_changes_completed(
+    store: &McpStore,
+    queue_ids: &[&str],
+    now: &str,
+) -> Result<(), McpError> {
+    if queue_ids.is_empty() {
+        return Ok(());
+    }
+    let predicate = queue_ids
+        .iter()
+        .map(|id| format!("queue_id = '{}'", id.replace('\'', "''")))
+        .collect::<Vec<_>>()
+        .join(" OR ");
+    sqlx::query(&format!(
+        "UPDATE llm_wiki_change_queue SET completed_at = ? WHERE {};",
+        predicate
+    ))
+    .bind(now)
+    .execute(&store.write_pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+    Ok(())
+}
+
+fn collect_filesystem_documents_for_changes(
+    vault_root: &Path,
+    workspace_path: &Path,
+    pending_changes: &[PendingChange],
+) -> Result<Vec<FilesystemDocumentStub>, String> {
+    let mut stubs = Vec::new();
+    let mut seen_paths = HashSet::new();
+
+    for change in pending_changes {
+        let candidate_path = change
+            .absolute_path
+            .as_deref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| vault_root.join(change.relative_path.as_str()));
+        if !candidate_path.exists() || !candidate_path.is_file() {
+            continue;
+        }
+        if candidate_path
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(|value| !value.eq_ignore_ascii_case("md"))
+            .unwrap_or(true)
+        {
+            continue;
+        }
+
+        let relative_path = candidate_path
+            .strip_prefix(vault_root)
+            .unwrap_or(candidate_path.as_path())
+            .to_string_lossy()
+            .replace('\\', "/");
+        if !seen_paths.insert(relative_path.clone()) {
+            continue;
+        }
+
+        let metadata = std::fs::metadata(&candidate_path)
+            .map_err(|err| format!("failed to inspect {}: {}", candidate_path.display(), err))?;
+        let modified = metadata
+            .modified()
+            .ok()
+            .and_then(|value| value.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|value| i64::try_from(value.as_millis()).unwrap_or(i64::MAX))
+            .unwrap_or(0);
+        let size_bytes = i64::try_from(metadata.len()).unwrap_or(i64::MAX);
+        let scope = if candidate_path.starts_with(workspace_path) {
+            SCOPE_MANAGED_WORKSPACE
+        } else {
+            SCOPE_LEGACY_VAULT
+        };
+        stubs.push(FilesystemDocumentStub {
+            doc_id: format!("llm_wiki_doc::{}", hash_text(&relative_path)),
+            relative_path,
+            absolute_path: candidate_path.to_string_lossy().to_string(),
+            scope: scope.to_string(),
+            mtime_unix_ms: modified,
+            size_bytes,
+        });
+    }
+
+    stubs.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+    Ok(stubs)
 }
 
 fn collect_filesystem_documents(
@@ -1383,16 +1607,49 @@ fn build_document_snapshot(
 }
 
 fn build_fts_query(query: &str) -> Option<String> {
-    let tokens = query
-        .split(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '-'))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .collect::<Vec<_>>();
+    let tokens = tokenize_query(query);
     if tokens.is_empty() {
         None
     } else {
         Some(tokens.join(" OR "))
     }
+}
+
+fn tokenize_query(query: &str) -> Vec<String> {
+    query
+        .split(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '-'))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_ascii_lowercase())
+        .collect::<Vec<_>>()
+}
+
+async fn select_best_chunk_for_doc(
+    store: &McpStore,
+    doc_id: &str,
+    query_tokens: &[String],
+) -> Result<Option<(String, i64, String)>, McpError> {
+    let chunks = list_chunks_for_document(store, doc_id).await?;
+    let best = chunks
+        .into_iter()
+        .map(|chunk| {
+            let text_lower = chunk.text.to_ascii_lowercase();
+            let overlap = query_tokens
+                .iter()
+                .filter(|token| text_lower.contains(token.as_str()))
+                .count() as i64;
+            let score = overlap * 1000 - chunk.chunk_index;
+            (score, chunk)
+        })
+        .max_by_key(|(score, _)| *score)
+        .map(|(_, chunk)| {
+            (
+                chunk.chunk_id,
+                chunk.chunk_index,
+                truncate_text_chars(&chunk.text, 240),
+            )
+        });
+    Ok(best)
 }
 
 fn split_text_into_chunks(text: &str) -> Vec<String> {
@@ -1489,5 +1746,180 @@ fn normalize_non_empty<'a>(raw: &'a str, fallback: &'a str) -> &'a str {
         fallback
     } else {
         trimmed
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn make_store() -> McpStore {
+        let store = McpStore::new("sqlite::memory:")
+            .await
+            .expect("create store");
+        store.init().await.expect("init store");
+        init_llm_wiki_tables(&store)
+            .await
+            .expect("init llm wiki tables");
+        store
+    }
+
+    #[tokio::test]
+    async fn load_corpus_status_aggregates_document_and_queue_state() {
+        let store = make_store().await;
+        let workspace_id = "C:/vault/Deeting Wiki";
+        sqlx::query(
+            r#"
+            INSERT INTO llm_wiki_document (
+              workspace_id, doc_id, relative_path, absolute_path, scope, title, summary,
+              mtime_unix_ms, size_bytes, content_hash, index_status, last_indexed_at,
+              embedding_version, discovered_at, updated_at, deleted_at, tombstoned_at, last_error
+            ) VALUES
+              (?, 'doc-1', 'wiki/a.md', 'C:/vault/Deeting Wiki/wiki/a.md', ?, 'A', '', 1, 10, 'h1', ?, '2026-04-17T00:00:00Z', 'v1', '2026-04-17T00:00:00Z', '2026-04-17T00:00:00Z', NULL, NULL, NULL),
+              (?, 'doc-2', 'legacy/b.md', 'C:/vault/legacy/b.md', ?, 'B', '', 2, 11, 'h2', ?, NULL, 'v1', '2026-04-17T00:00:00Z', '2026-04-17T00:00:00Z', NULL, NULL, 'err'),
+              (?, 'doc-3', 'legacy/c.md', 'C:/vault/legacy/c.md', ?, 'C', '', 3, 12, 'h3', ?, NULL, 'v1', '2026-04-17T00:00:00Z', '2026-04-17T00:00:00Z', NULL, NULL, NULL);
+            "#,
+        )
+        .bind(workspace_id)
+        .bind(SCOPE_MANAGED_WORKSPACE)
+        .bind(INDEX_STATUS_INDEXED)
+        .bind(workspace_id)
+        .bind(SCOPE_LEGACY_VAULT)
+        .bind(INDEX_STATUS_FAILED)
+        .bind(workspace_id)
+        .bind(SCOPE_LEGACY_VAULT)
+        .bind(INDEX_STATUS_PENDING)
+        .execute(&store.write_pool)
+        .await
+        .expect("insert documents");
+
+        sqlx::query(
+            r#"
+            INSERT INTO llm_wiki_change_queue (
+              queue_id, workspace_id, doc_id, relative_path, absolute_path,
+              change_kind, trigger_source, attempt_count, queued_at, claimed_at, completed_at, last_error
+            ) VALUES
+              ('q-1', ?, 'doc-3', 'legacy/c.md', 'C:/vault/legacy/c.md', 'upsert', 'watcher', 0, '2026-04-17T00:00:00Z', NULL, NULL, NULL),
+              ('q-2', ?, 'doc-2', 'legacy/b.md', 'C:/vault/legacy/b.md', 'upsert', 'watcher', 0, '2026-04-17T00:00:01Z', NULL, '2026-04-17T00:00:02Z', NULL);
+            "#,
+        )
+        .bind(workspace_id)
+        .bind(workspace_id)
+        .execute(&store.write_pool)
+        .await
+        .expect("insert queue");
+
+        sqlx::query(
+            r#"
+            INSERT INTO llm_wiki_sync_run (
+              run_id, workspace_id, run_kind, trigger_source, status, duration_ms,
+              discovered_count, changed_count, deleted_count, projected_count, queued_count,
+              error_json, created_at, completed_at
+            ) VALUES ('run-1', ?, 'reconcile', 'manual', 'completed', 100, 3, 2, 0, 2, 1, NULL, '2026-04-17T00:00:03Z', '2026-04-17T00:00:04Z');
+            "#,
+        )
+        .bind(workspace_id)
+        .execute(&store.write_pool)
+        .await
+        .expect("insert run");
+
+        let status = load_corpus_status(&store, workspace_id)
+            .await
+            .expect("load status");
+        assert_eq!(status.indexed_note_count, 3);
+        assert_eq!(status.managed_workspace_note_count, 1);
+        assert_eq!(status.legacy_vault_note_count, 2);
+        assert_eq!(status.pending_note_count, 1);
+        assert_eq!(status.failed_note_count, 1);
+        assert_eq!(status.queued_change_count, 1);
+        assert_eq!(
+            status.last_synced_at.as_deref(),
+            Some("2026-04-17T00:00:04Z")
+        );
+    }
+
+    #[tokio::test]
+    async fn enqueue_change_replaces_pending_duplicate_for_same_path_and_kind() {
+        let store = make_store().await;
+        let workspace_id = "C:/vault/Deeting Wiki";
+
+        enqueue_change(
+            &store,
+            workspace_id,
+            Some("doc-1"),
+            "wiki/a.md",
+            Some("C:/vault/Deeting Wiki/wiki/a.md"),
+            CHANGE_KIND_UPSERT,
+            "watcher",
+            "2026-04-17T00:00:00Z",
+        )
+        .await
+        .expect("enqueue first");
+        enqueue_change(
+            &store,
+            workspace_id,
+            Some("doc-1"),
+            "wiki/a.md",
+            Some("C:/vault/Deeting Wiki/wiki/a.md"),
+            CHANGE_KIND_UPSERT,
+            "watcher",
+            "2026-04-17T00:00:01Z",
+        )
+        .await
+        .expect("enqueue duplicate");
+
+        let rows = list_pending_changes(&store, workspace_id)
+            .await
+            .expect("list pending");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].relative_path, "wiki/a.md");
+        assert_eq!(rows[0].change_kind, CHANGE_KIND_UPSERT);
+    }
+
+    #[tokio::test]
+    async fn select_best_chunk_for_doc_prefers_highest_query_overlap() {
+        let store = make_store().await;
+        let workspace_id = "C:/vault/Deeting Wiki";
+        sqlx::query(
+            r#"
+            INSERT INTO llm_wiki_document (
+              workspace_id, doc_id, relative_path, absolute_path, scope, title, summary,
+              mtime_unix_ms, size_bytes, content_hash, index_status, last_indexed_at,
+              embedding_version, discovered_at, updated_at, deleted_at, tombstoned_at, last_error
+            ) VALUES (?, 'doc-1', 'wiki/a.md', 'C:/vault/Deeting Wiki/wiki/a.md', ?, 'A', '', 1, 10, 'h1', ?, NULL, 'v1', '2026-04-17T00:00:00Z', '2026-04-17T00:00:00Z', NULL, NULL, NULL);
+            "#,
+        )
+        .bind(workspace_id)
+        .bind(SCOPE_MANAGED_WORKSPACE)
+        .bind(INDEX_STATUS_INDEXED)
+        .execute(&store.write_pool)
+        .await
+        .expect("insert document");
+
+        sqlx::query(
+            r#"
+            INSERT INTO llm_wiki_chunk (
+              chunk_id, workspace_id, doc_id, chunk_index, text_content, token_count, chunk_hash, created_at, updated_at
+            ) VALUES
+              ('c-1', ?, 'doc-1', 0, 'alpha only content', 3, 'h1', '2026-04-17T00:00:00Z', '2026-04-17T00:00:00Z'),
+              ('c-2', ?, 'doc-1', 1, 'alpha beta overlap content', 4, 'h2', '2026-04-17T00:00:00Z', '2026-04-17T00:00:00Z'),
+              ('c-3', ?, 'doc-1', 2, 'beta only content', 3, 'h3', '2026-04-17T00:00:00Z', '2026-04-17T00:00:00Z');
+            "#,
+        )
+        .bind(workspace_id)
+        .bind(workspace_id)
+        .bind(workspace_id)
+        .execute(&store.write_pool)
+        .await
+        .expect("insert chunks");
+
+        let best =
+            select_best_chunk_for_doc(&store, "doc-1", &["alpha".to_string(), "beta".to_string()])
+                .await
+                .expect("select best")
+                .expect("best chunk");
+        assert_eq!(best.0, "c-2");
+        assert_eq!(best.1, 1);
+        assert!(best.2.contains("alpha beta"));
     }
 }

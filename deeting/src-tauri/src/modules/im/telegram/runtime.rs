@@ -155,7 +155,6 @@ pub async fn run_telegram_direct_profile_worker(
                     profile.id, status
                 );
             }
-            _ => {}
         }
     }
 

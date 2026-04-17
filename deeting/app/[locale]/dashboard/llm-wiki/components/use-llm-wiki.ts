@@ -277,7 +277,7 @@ export function useLlmWiki(t: Translation) {
       const result = await reconcileLocalLlmWikiCorpus()
       setState(result.state)
       toast.success(
-        t("toast.corpusSynced", {
+        t("toast.corpusReconciled", {
           indexed: result.indexedFiles,
           removed: result.removedFiles,
         }),
@@ -289,7 +289,7 @@ export function useLlmWiki(t: Translation) {
       }
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : t("toast.corpusSyncFailed"),
+        error instanceof Error ? error.message : t("toast.corpusReconcileFailed"),
       )
     } finally {
       setIsSyncingCorpus(false)

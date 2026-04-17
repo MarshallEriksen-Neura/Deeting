@@ -1,11 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { useNotificationChannels } from "@/lib/swr/use-notification-channels"
 import { createNotificationChannel } from "@/lib/api/notification-channels"
 import { CHANNEL_META } from "@/lib/api/notification-channels"
 import type { ChannelType } from "@/lib/api/notification-channels"
+import { getDesktopImSettings, type DesktopImSettingsSnapshot } from "@/lib/api/desktop-im"
 import { GlassCard } from "@/components/ui/glass-card"
 import { AddChannelCard } from "./add-channel-card"
 import { ChannelCard } from "./channel-card"
@@ -17,10 +18,15 @@ export function NotificationChannelsClient() {
   const { data, isLoading, mutate } = useNotificationChannels()
   const [showAdd, setShowAdd] = useState(false)
   const [addType, setAddType] = useState<ChannelType | null>(null)
+  const [desktopImSnapshot, setDesktopImSnapshot] = useState<DesktopImSettingsSnapshot | null>(null)
 
   const enabledChannelTypes: ChannelType[] = ["feishu", "wechat", "telegram"]
   const channels = (data?.items ?? []).filter((channel) =>
     enabledChannelTypes.includes(channel.channel)
+  )
+  const desktopImChannelKey = useMemo(
+    () => channels.map((channel) => `${channel.id}:${channel.updated_at}:${channel.is_active}`).join("|"),
+    [channels]
   )
   const selectableTypes = (Object.keys(CHANNEL_META) as ChannelType[]).filter(
     (type) => enabledChannelTypes.includes(type) && (isDesktopRuntime() || type !== "wechat")
@@ -28,6 +34,35 @@ export function NotificationChannelsClient() {
   const availableTypes = selectableTypes.filter(
     (type) => !channels.some((channel) => channel.channel === type)
   )
+
+  useEffect(() => {
+    let active = true
+    const shouldLoadDesktopIm = isDesktopRuntime() && channels.length > 0
+    if (!shouldLoadDesktopIm) {
+      setDesktopImSnapshot(null)
+      return () => {
+        active = false
+      }
+    }
+
+    const loadDesktopIm = async () => {
+      try {
+        const snapshot = await getDesktopImSettings()
+        if (active) {
+          setDesktopImSnapshot(snapshot)
+        }
+      } catch {
+        if (active) {
+          setDesktopImSnapshot(null)
+        }
+      }
+    }
+
+    void loadDesktopIm()
+    return () => {
+      active = false
+    }
+  }, [desktopImChannelKey, channels.length])
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-8">
@@ -63,7 +98,11 @@ export function NotificationChannelsClient() {
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ duration: 0.2 }}
                 >
-                  <ChannelCard channel={channel} onRefresh={mutate} />
+                  <ChannelCard
+                    channel={channel}
+                    desktopImSnapshot={desktopImSnapshot}
+                    onRefresh={mutate}
+                  />
                 </motion.div>
               ))}
         </AnimatePresence>

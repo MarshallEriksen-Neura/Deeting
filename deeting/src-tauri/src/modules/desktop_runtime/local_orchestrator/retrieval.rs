@@ -551,6 +551,11 @@ async fn prefetch_selected_knowledge(
             SELECTED_KNOWLEDGE_RESULT_LIMIT,
         );
     }
+    selected_hits = expand_selected_knowledge_hit_windows(ctx, &selected_hits, 1).await;
+    let window_expanded_count = selected_hits
+        .iter()
+        .filter(|hit| hit.match_reasons.iter().any(|reason| reason == "window:+1"))
+        .count();
 
     let overview_lines = document_contexts
         .iter()
@@ -566,13 +571,33 @@ async fn prefetch_selected_knowledge(
         .map(|hit| {
             let snippet = compact_knowledge_snippet(&hit.content, 260);
             let section_suffix = format_selected_hit_section_path(&hit.section_path);
+            let explain_suffix = format_selected_hit_explain(hit);
             format!(
-                "- [{}{} #{}] {}",
+                "- [{}{} #{}{}] {}",
                 hit.file_name,
                 section_suffix,
                 hit.index + 1,
+                explain_suffix,
                 snippet
             )
+        })
+        .collect::<Vec<_>>();
+    let explain_items = selected_hits
+        .iter()
+        .map(|hit| {
+            json!({
+                "chunk_id": hit.chunk_id,
+                "file_id": hit.file_id,
+                "file_name": hit.file_name,
+                "index": hit.index,
+                "score": hit.score,
+                "lexical_score": hit.lexical_score,
+                "match_reasons": hit.match_reasons,
+                "score_breakdown": hit.score_breakdown,
+                "section_path": hit.section_path,
+                "chunk_type": hit.chunk_type,
+                "quality_flags": hit.quality_flags,
+            })
         })
         .collect::<Vec<_>>();
 
@@ -602,9 +627,11 @@ async fn prefetch_selected_knowledge(
             "count": excerpt_lines.len(),
             "overview_count": overview_lines.len(),
             "fallback_used": fallback_used,
+            "window_expanded_count": window_expanded_count,
             "search_error": lexical_search_failed || semantic_search_failed,
             "lexical_error": lexical_search_failed,
             "semantic_error": semantic_search_failed,
+            "explain": explain_items,
         }),
     })
 }
@@ -695,6 +722,12 @@ pub(super) fn build_selected_knowledge_fallback_hits(
                 char_count: chunk.char_count,
                 content_hash: chunk.content_hash.clone(),
                 quality_flags: chunk.quality_flags.clone(),
+                lexical_score: None,
+                match_reasons: vec!["fallback:leading_chunk".to_string()],
+                score_breakdown: Some(json!({
+                    "lexical_score": null,
+                    "fallback_used": true,
+                })),
                 score: 0.0,
             });
             if hits.len() >= limit {
@@ -882,6 +915,11 @@ fn local_knowledge_search_hit_from_semantic_result(
         char_count,
         content_hash,
         quality_flags,
+        lexical_score: None,
+        match_reasons: vec!["semantic:topk".to_string()],
+        score_breakdown: Some(json!({
+            "semantic_score": (result.score as f64).max(0.0),
+        })),
         score: (result.score as f64).max(0.0),
     })
 }
@@ -928,6 +966,80 @@ fn format_selected_hit_section_path(section_path: &[String]) -> String {
     } else {
         format!(" :: {}", normalized.join(" > "))
     }
+}
+
+fn format_selected_hit_explain(hit: &LocalKnowledgeSearchHit) -> String {
+    let reasons = hit
+        .match_reasons
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    if reasons.is_empty() {
+        String::new()
+    } else {
+        format!(" | {}", reasons.join(","))
+    }
+}
+
+async fn expand_selected_knowledge_hit_windows(
+    ctx: &LocalWorkflowContext,
+    hits: &[LocalKnowledgeSearchHit],
+    radius: i64,
+) -> Vec<LocalKnowledgeSearchHit> {
+    let mut expanded_hits = Vec::with_capacity(hits.len());
+    for hit in hits {
+        let offset = hit.index.saturating_sub(radius).max(0);
+        let limit = radius.saturating_mul(2).saturating_add(1).max(1);
+        let response = ctx
+            .app_state
+            .knowledge
+            .store
+            .list_local_user_document_chunks(
+                &hit.file_id,
+                LocalUserDocumentChunkListQuery {
+                    offset: Some(offset),
+                    limit: Some(limit),
+                },
+            )
+            .await;
+        let Ok(response) = response else {
+            expanded_hits.push(hit.clone());
+            continue;
+        };
+        let window_chunks = response
+            .items
+            .into_iter()
+            .filter(|chunk| !looks_like_docx_field_artifact(&chunk.content))
+            .collect::<Vec<_>>();
+        if window_chunks.is_empty() {
+            expanded_hits.push(hit.clone());
+            continue;
+        }
+
+        let expanded_content = window_chunks
+            .iter()
+            .map(|chunk| chunk.content.trim())
+            .filter(|value| !value.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        if expanded_content.is_empty() || expanded_content == hit.content {
+            expanded_hits.push(hit.clone());
+            continue;
+        }
+
+        let mut expanded_hit = hit.clone();
+        expanded_hit.content = expanded_content;
+        if !expanded_hit
+            .match_reasons
+            .iter()
+            .any(|reason| reason == "window:+1")
+        {
+            expanded_hit.match_reasons.push("window:+1".to_string());
+        }
+        expanded_hits.push(expanded_hit);
+    }
+    expanded_hits
 }
 
 fn looks_like_docx_field_artifact(content: &str) -> bool {

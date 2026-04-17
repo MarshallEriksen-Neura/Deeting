@@ -152,16 +152,6 @@
             "label": "Bot Open ID",
             "placeholder": "ou_xxx (optional, for precise @ mentions)"
           },
-          "bot_model": {
-            "label": "Reply Model",
-            "placeholder": "Select a reply model (optional)",
-            "description": "When empty, desktop default secretary/chat model is used."
-          },
-          "bot_system_prompt": {
-            "label": "System Prompt",
-            "placeholder": "Optional: define reply style for this channel",
-            "description": "Replies always use the current secretary model; this only controls channel-specific reply style."
-          },
           "bot_app_id": {
             "label": "Feishu App ID",
             "placeholder": "cli_xxx (optional channel override)"
@@ -202,16 +192,6 @@
             "placeholder": "Select access policy",
             "description": "Pairing is default; allowlist mode only permits approved contacts."
           },
-          "bot_model": {
-            "label": "Reply Model",
-            "placeholder": "Select a reply model (optional)",
-            "description": "When empty, desktop default secretary/chat model is used."
-          },
-          "bot_system_prompt": {
-            "label": "System Prompt",
-            "placeholder": "Optional: define reply style for this WeChat channel",
-            "description": "Replies always use the current secretary model; this only controls channel-specific reply style."
-          },
           "notify_contact_ids": {
             "label": "Proactive Notify Contacts",
             "placeholder": "One contact_id per line",
@@ -225,6 +205,16 @@
           }
         },
         "telegram": {
+          "im_enabled": {
+            "label": "Enable Desktop IM",
+            "placeholder": "",
+            "description": "When enabled, desktop starts the Telegram bot runtime on this machine."
+          },
+          "media_enabled": {
+            "label": "Enable Media Replies",
+            "placeholder": "",
+            "description": "Keep this off by default. Turn it on only when Telegram image/file replies should be sent natively instead of downgraded to text."
+          },
           "bot_token": {
             "label": "Bot Token",
             "placeholder": "123456:ABC-DEF..."
@@ -292,10 +282,6 @@
           "description": "Controls whether desktop directly connects the Feishu bot and how direct/relay is chosen.",
           "disabledHint": "Desktop IM is disabled, so direct and reply fields below are dimmed temporarily.",
           "preferenceHint": "Current preference: {mode}"
-        },
-        "replyBehavior": {
-          "title": "Reply Behavior",
-          "description": "Replies always use the current secretary model; this section only controls reply style."
         }
       },
       "runtimeHint": {

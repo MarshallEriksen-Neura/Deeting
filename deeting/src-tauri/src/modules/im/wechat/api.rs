@@ -175,13 +175,24 @@ pub async fn send_typing(
     base_url: &str,
     token: &str,
     contact_id: &str,
+    context_token: &str,
+    status: i64,
 ) -> Result<(), String> {
+    let config = get_config(client, base_url, token, contact_id, Some(context_token)).await?;
+    let typing_ticket = config
+        .get("typing_ticket")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "wechat_typing_ticket_missing".to_string())?;
     let url = format!("{}/ilink/bot/sendtyping", base_url.trim_end_matches('/'));
     let response = client
         .post(url)
         .headers(build_headers(Some(token))?)
         .json(&json!({
-            "to_user_id": contact_id.trim(),
+            "ilink_user_id": contact_id.trim(),
+            "typing_ticket": typing_ticket,
+            "status": status,
             "base_info": base_info(),
         }))
         .send()
@@ -196,4 +207,68 @@ pub async fn send_typing(
     }
 
     Ok(())
+}
+
+pub async fn get_upload_url(
+    client: &reqwest::Client,
+    base_url: &str,
+    token: &str,
+    file_name: &str,
+) -> Result<serde_json::Value, String> {
+    let url = format!("{}/ilink/bot/getuploadurl", base_url.trim_end_matches('/'));
+    let response = client
+        .post(url)
+        .headers(build_headers(Some(token))?)
+        .json(&json!({
+            "file_name": file_name.trim(),
+            "base_info": base_info(),
+        }))
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "wechat_getuploadurl_http_{}",
+            response.status().as_u16()
+        ));
+    }
+
+    response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|err| err.to_string())
+}
+
+pub async fn get_config(
+    client: &reqwest::Client,
+    base_url: &str,
+    token: &str,
+    contact_id: &str,
+    context_token: Option<&str>,
+) -> Result<serde_json::Value, String> {
+    let url = format!("{}/ilink/bot/getconfig", base_url.trim_end_matches('/'));
+    let response = client
+        .post(url)
+        .headers(build_headers(Some(token))?)
+        .json(&json!({
+            "ilink_user_id": contact_id.trim(),
+            "context_token": context_token.map(str::trim).filter(|value| !value.is_empty()),
+            "base_info": base_info(),
+        }))
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "wechat_getconfig_http_{}",
+            response.status().as_u16()
+        ));
+    }
+
+    response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|err| err.to_string())
 }

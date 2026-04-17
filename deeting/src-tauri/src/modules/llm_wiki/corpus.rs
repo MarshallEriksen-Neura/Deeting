@@ -10,7 +10,7 @@ use super::store::{
 };
 use super::types::{LocalLlmWikiCorpusSearchHit, LocalLlmWikiCorpusStatus};
 
-pub(super) async fn sync_corpus(
+pub(super) async fn reconcile_corpus(
     app_state: &AppState,
     vault_root: &Path,
     workspace_path: &Path,

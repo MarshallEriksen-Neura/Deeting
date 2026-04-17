@@ -523,6 +523,60 @@ impl MemoryStore {
         Ok(results)
     }
 
+    pub async fn list_assets_by_package(
+        &self,
+        pkg_name: &str,
+        asset_type: Option<&str>,
+    ) -> Result<Vec<serde_json::Value>, MemoryError> {
+        let normalized_pkg_name = pkg_name.trim();
+        if normalized_pkg_name.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let table = self.conn.open_table(LOCAL_ASSET_TABLE).execute().await?;
+        let mut filters = vec![format!("pkg_name = '{}'", sql_escape(normalized_pkg_name))];
+        if let Some(asset_type) = asset_type.map(str::trim).filter(|value| !value.is_empty()) {
+            filters.push(format!("asset_type = '{}'", sql_escape(asset_type)));
+        }
+        let stmt = table
+            .query()
+            .only_if(filters.join(" AND "))
+            .select(Select::columns(&[
+                "id",
+                "name",
+                "description",
+                "asset_type",
+                "source_type",
+                "pkg_name",
+                "metadata_json",
+            ]));
+        let batches = stmt.execute().await?.try_collect::<Vec<_>>().await?;
+        let mut results = Vec::new();
+        for batch in batches {
+            let id_col = as_string_col(&batch, "id")?;
+            let name_col = as_string_col(&batch, "name")?;
+            let desc_col = as_string_col(&batch, "description")?;
+            let a_type_col = as_string_col(&batch, "asset_type")?;
+            let s_type_col = as_string_col(&batch, "source_type")?;
+            let pkg_col = as_string_col(&batch, "pkg_name")?;
+            let meta_col = as_string_col(&batch, "metadata_json")?;
+
+            for row in 0..batch.num_rows() {
+                results.push(serde_json::json!({
+                    "id": id_col.value(row),
+                    "name": name_col.value(row),
+                    "description": desc_col.value(row),
+                    "asset_type": a_type_col.value(row),
+                    "source_type": s_type_col.value(row),
+                    "pkg_name": nullable_string(pkg_col, row),
+                    "metadata": nullable_string(meta_col, row)
+                        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
+                }));
+            }
+        }
+        Ok(results)
+    }
+
     async fn search_assets_in_table(
         &self,
         table_name: &str,

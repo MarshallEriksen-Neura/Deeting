@@ -53,7 +53,7 @@ pub fn parse_message_content(message: &FeishuMessage) -> MessageContent {
         }
         "post" => MessageContent::Mixed {
             parts: extract_post_parts(&content_json),
-        }
+        },
         _ => MessageContent::Text {
             text: content_str.to_string(),
         },
@@ -98,10 +98,7 @@ fn extract_post_parts(content: &Value) -> Vec<MessagePart> {
     }
 
     if parts.is_empty() {
-        let text = content
-            .to_string()
-            .trim()
-            .to_string();
+        let text = content.to_string().trim().to_string();
         if !text.is_empty() {
             parts.push(MessagePart::Text { text });
         }
@@ -409,9 +406,7 @@ mod tests {
             .expect("paragraph array");
         assert_eq!(first_paragraph.len(), 2);
         assert_eq!(
-            first_paragraph[1]
-                .get("image_key")
-                .and_then(Value::as_str),
+            first_paragraph[1].get("image_key").and_then(Value::as_str),
             Some("img-key")
         );
     }

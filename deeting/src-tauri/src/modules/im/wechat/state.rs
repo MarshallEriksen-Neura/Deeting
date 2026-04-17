@@ -309,10 +309,37 @@ impl WechatState {
         base_url: &str,
         token: &str,
         contact_id: &str,
+        context_token: &str,
+        status: i64,
     ) -> Result<(), String> {
         self.shared
             .bridge
-            .send_typing(base_url, token, contact_id)
+            .send_typing(base_url, token, contact_id, context_token, status)
+            .await
+    }
+
+    pub async fn get_upload_url(
+        &self,
+        base_url: &str,
+        token: &str,
+        file_name: &str,
+    ) -> Result<serde_json::Value, String> {
+        self.shared
+            .bridge
+            .get_upload_url(base_url, token, file_name)
+            .await
+    }
+
+    pub async fn get_config(
+        &self,
+        base_url: &str,
+        token: &str,
+        contact_id: &str,
+        context_token: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
+        self.shared
+            .bridge
+            .get_config(base_url, token, contact_id, context_token)
             .await
     }
 

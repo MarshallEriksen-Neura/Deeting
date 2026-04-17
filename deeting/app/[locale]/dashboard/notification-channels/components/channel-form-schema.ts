@@ -31,13 +31,6 @@ export const FIELD_DEFS: Record<ChannelType, FieldDef[]> = {
       placeholderKey: "fields.feishu.bot_open_id.placeholder",
     },
     {
-      key: "bot_system_prompt",
-      labelKey: "fields.feishu.bot_system_prompt.label",
-      placeholderKey: "fields.feishu.bot_system_prompt.placeholder",
-      type: "textarea",
-      descriptionKey: "fields.feishu.bot_system_prompt.description",
-    },
-    {
       key: "bot_app_id",
       labelKey: "fields.feishu.bot_app_id.label",
       placeholderKey: "fields.feishu.bot_app_id.placeholder",
@@ -110,13 +103,6 @@ export const FIELD_DEFS: Record<ChannelType, FieldDef[]> = {
       descriptionKey: "fields.wechat.access_policy.description",
     },
     {
-      key: "bot_system_prompt",
-      labelKey: "fields.wechat.bot_system_prompt.label",
-      placeholderKey: "fields.wechat.bot_system_prompt.placeholder",
-      type: "textarea",
-      descriptionKey: "fields.wechat.bot_system_prompt.description",
-    },
-    {
       key: "notify_contact_ids",
       labelKey: "fields.wechat.notify_contact_ids.label",
       placeholderKey: "fields.wechat.notify_contact_ids.placeholder",
@@ -133,6 +119,14 @@ export const FIELD_DEFS: Record<ChannelType, FieldDef[]> = {
       type: "switch",
       valueKind: "boolean",
       descriptionKey: "fields.telegram.im_enabled.description",
+    },
+    {
+      key: "media_enabled",
+      labelKey: "fields.telegram.media_enabled.label",
+      placeholderKey: "fields.telegram.media_enabled.placeholder",
+      type: "switch",
+      valueKind: "boolean",
+      descriptionKey: "fields.telegram.media_enabled.description",
     },
     {
       key: "bot_token",
@@ -212,11 +206,6 @@ export const FEISHU_FIELD_GROUPS = [
       "relay_shared_secret",
     ],
   },
-  {
-    titleKey: "feishuGroups.replyBehavior.title",
-    descriptionKey: "feishuGroups.replyBehavior.description",
-    keys: ["bot_system_prompt"],
-  },
 ] as const
 
 export type ChannelFormValue = string | boolean
@@ -226,6 +215,7 @@ export function defaultFormValues(channelType: ChannelType): Record<string, Chan
     return {
       im_enabled: true,
       ...(channelType === "wechat" ? { access_policy: "pairing" } : {}),
+      ...(channelType === "telegram" ? { media_enabled: false } : {}),
     }
   }
   return {}

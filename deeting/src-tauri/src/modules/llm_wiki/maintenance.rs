@@ -9,7 +9,7 @@ use crate::state::AppState;
 use super::config::{
     load_binding, normalize_vault_root, resolve_workspace_path, save_last_lint_report,
 };
-use super::corpus::sync_corpus;
+use super::corpus::reconcile_corpus;
 use super::types::{
     IngestLocalLlmWikiSelectionRequest, LocalLlmWikiLintFinding, LocalLlmWikiLintReport,
 };
@@ -87,7 +87,7 @@ pub(super) async fn ingest_selection(
         &raw_files_copied,
     )?;
 
-    let _ = sync_corpus(app_state, &vault_root, &workspace_path).await?;
+    let _ = reconcile_corpus(app_state, &vault_root, &workspace_path).await?;
     Ok((
         ingested_paths,
         skipped_paths,

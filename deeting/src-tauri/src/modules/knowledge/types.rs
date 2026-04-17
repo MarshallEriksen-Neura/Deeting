@@ -96,6 +96,9 @@ pub struct LocalKnowledgeSearchHit {
     pub char_count: i64,
     pub content_hash: Option<String>,
     pub quality_flags: Vec<String>,
+    pub lexical_score: Option<f64>,
+    pub match_reasons: Vec<String>,
+    pub score_breakdown: Option<Value>,
     pub score: f64,
 }
 

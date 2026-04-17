@@ -894,6 +894,16 @@ impl MemoryService {
         self.store.list_assets_catalog().await
     }
 
+    pub async fn list_assets_by_package(
+        &self,
+        pkg_name: &str,
+        asset_type: Option<&str>,
+    ) -> Result<Vec<serde_json::Value>, MemoryError> {
+        self.store
+            .list_assets_by_package(pkg_name, asset_type)
+            .await
+    }
+
     pub async fn local_asset_vector_dimension(&self) -> Result<Option<i32>, MemoryError> {
         self.store.local_asset_vector_dimension().await
     }

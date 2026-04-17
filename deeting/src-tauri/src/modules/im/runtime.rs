@@ -10,15 +10,66 @@ use tokio::time::sleep;
 use crate::state::AppState;
 
 use super::feishu::{FeishuClient, FeishuConfig};
-use super::handlers::{build_direct_card_action_outcome, generate_local_chat_reply_content};
+use super::handlers::{build_direct_card_action_outcome, generate_local_chat_reply_outcome};
 use super::{
+    adapt_reply_for_platform,
     build_settings_snapshot, mark_profile_degraded, mark_profile_running, mark_profile_unavailable,
     replace_supervisor_profiles, resolve_transport, supervisor_snapshots, ImClient,
-    ImConnectionProfile, ImEvent, ImPlatform, ImTransportKind, ImTransportPreference,
-    LocalImSettingsSnapshot, MessageContent, SendMessageRequest,
+    ImConnectionProfile, ImEvent, ImPlatform, ImPlatformAdapter, ImReplyCapability,
+    ImReplyDelivery, ImTransportKind, ImTransportPreference, LocalImSettingsSnapshot,
+    MessageContent, SendMessageRequest,
 };
 
 type ImWorkerHandle = tauri::async_runtime::JoinHandle<()>;
+
+enum ImWorkerFailureDisposition {
+    Retry,
+    Unavailable,
+}
+
+fn classify_worker_failure(
+    profile: &ImConnectionProfile,
+    err: &str,
+) -> ImWorkerFailureDisposition {
+    let normalized = err.trim().to_ascii_lowercase();
+
+    if normalized.is_empty() {
+        return ImWorkerFailureDisposition::Retry;
+    }
+
+    let is_config_like = normalized.contains("missing")
+        || normalized.contains("not configured")
+        || normalized.contains("configerror")
+        || normalized.contains("autherror")
+        || normalized.contains("transport is unavailable")
+        || normalized.contains("bot_token 未配置")
+        || normalized.contains("缺少")
+        || normalized.contains("未配置");
+    if is_config_like {
+        return ImWorkerFailureDisposition::Unavailable;
+    }
+
+    match profile.platform {
+        ImPlatform::Telegram => {
+            if normalized.contains("telegram getupdates is unavailable because a webhook is still configured")
+                || normalized.contains("telegram getupdates is unavailable because another poller appears to be active")
+                || normalized.contains("webhook is still configured")
+                || normalized.contains("another poller appears to be active")
+            {
+                return ImWorkerFailureDisposition::Unavailable;
+            }
+        }
+        ImPlatform::Wechat => {
+            if normalized.contains("wechat account is not connected") {
+                return ImWorkerFailureDisposition::Unavailable;
+            }
+        }
+        ImPlatform::Feishu => {}
+        _ => {}
+    }
+
+    ImWorkerFailureDisposition::Retry
+}
 
 fn im_worker_slot() -> &'static Mutex<Option<ImWorkerHandle>> {
     static IM_WORKER_HANDLE: OnceLock<Mutex<Option<ImWorkerHandle>>> = OnceLock::new();
@@ -55,8 +106,7 @@ fn derive_profile_from_notification_channel(
             let has_im_fields = config_bool(&channel.config, "im_enabled").unwrap_or(true)
                 || config_string(&channel.config, "bot_token").is_some()
                 || config_string(&channel.config, "chat_id").is_some()
-                || config_string(&channel.config, "bot_model").is_some()
-                || config_string(&channel.config, "bot_system_prompt").is_some();
+                || config_bool(&channel.config, "media_enabled").is_some();
             if !has_im_fields {
                 return None;
             }
@@ -72,13 +122,16 @@ fn derive_profile_from_notification_channel(
             profile.transport_preference = ImTransportPreference::Direct;
             profile.direct_config.telegram_bot_token =
                 config_string(&channel.config, "bot_token").unwrap_or_default();
+            profile.direct_config.telegram_media_enabled =
+                config_bool(&channel.config, "media_enabled").unwrap_or(false);
             return Some(profile);
         }
         "wechat" => {
             let has_im_fields = config_bool(&channel.config, "im_enabled").unwrap_or(false)
                 || config_string(&channel.config, "access_policy").is_some()
-                || config_string(&channel.config, "bot_model").is_some()
-                || config_string(&channel.config, "bot_system_prompt").is_some();
+                || config_string(&channel.config, "account_label").is_some()
+                || config_string(&channel.config, "connection_state").is_some()
+                || config_value(&channel.config, "notify_contact_ids").is_some();
             if !has_im_fields {
                 return None;
             }
@@ -140,6 +193,48 @@ fn derive_profile_from_notification_channel(
     profile.relay_config.shared_secret =
         config_string(&channel.config, "relay_shared_secret").unwrap_or_default();
     Some(profile)
+}
+
+fn adapt_reply_content_for_platform(
+    content: MessageContent,
+    fallback_text: Option<&str>,
+    platform: ImPlatformAdapter,
+    channel_label: &str,
+) -> MessageContent {
+    let delivery = match content {
+        MessageContent::Text { text } => adapt_reply_for_platform(
+            &ImReplyCapability::PlainText { text },
+            platform,
+            channel_label,
+        ),
+        MessageContent::Card { card } => adapt_reply_for_platform(
+            &ImReplyCapability::InteractiveCard { card },
+            platform,
+            channel_label,
+        ),
+        MessageContent::Image { url } => adapt_reply_for_platform(
+            &ImReplyCapability::ImageRef { url },
+            platform,
+            channel_label,
+        ),
+        MessageContent::File { name, url } => adapt_reply_for_platform(
+            &ImReplyCapability::FileRef { name, url },
+            platform,
+            channel_label,
+        ),
+        MessageContent::Mixed { parts } => adapt_reply_for_platform(
+            &ImReplyCapability::MixedParts { parts },
+            platform,
+            channel_label,
+        ),
+    };
+
+    match delivery {
+        ImReplyDelivery::Native(content) => content,
+        ImReplyDelivery::DowngradedText(text) => MessageContent::Text {
+            text: fallback_text.unwrap_or(text.as_str()).to_string(),
+        },
+    }
 }
 
 fn normalize_profiles(mut profiles: Vec<ImConnectionProfile>) -> Vec<ImConnectionProfile> {
@@ -253,7 +348,7 @@ async fn run_feishu_direct_profile_worker(
                         profile.id, chat_id, e
                     );
                 }
-                let reply_content = match generate_local_chat_reply_content(
+                let reply_outcome = match generate_local_chat_reply_outcome(
                     &app_state,
                     &app_handle,
                     incoming_text.as_str(),
@@ -261,7 +356,7 @@ async fn run_feishu_direct_profile_worker(
                 )
                 .await
                 {
-                    Ok(Some(content)) => content,
+                    Ok(Some(outcome)) => outcome,
                     Ok(None) => continue,
                     Err(e) => {
                         warn!(
@@ -271,6 +366,12 @@ async fn run_feishu_direct_profile_worker(
                         continue;
                     }
                 };
+                let reply_content = adapt_reply_content_for_platform(
+                    reply_outcome.content,
+                    reply_outcome.fallback_text.as_deref(),
+                    ImPlatformAdapter::Feishu,
+                    "飞书",
+                );
                 let user_ref = sender
                     .name
                     .as_deref()
@@ -369,7 +470,6 @@ async fn run_feishu_direct_profile_worker(
                     profile.id, status
                 );
             }
-            _ => {}
         }
     }
 
@@ -491,6 +591,17 @@ async fn supervise_profile_worker(
                 sleep(Duration::from_secs(retry_secs)).await;
             }
             Err(err) => {
+                if matches!(
+                    classify_worker_failure(&profile, &err),
+                    ImWorkerFailureDisposition::Unavailable
+                ) {
+                    mark_profile_unavailable(&profile, err.clone()).await;
+                    warn!(
+                        "im_profile_worker_terminal_failure profile={} err={}",
+                        profile.id, err
+                    );
+                    break;
+                }
                 restart_count = restart_count.saturating_add(1);
                 if restart_count > MAX_RESTARTS {
                     mark_profile_unavailable(
@@ -596,7 +707,8 @@ mod tests {
                 "chat_id": "12345",
                 "im_config": {
                     "im_enabled": true,
-                    "bot_token": "telegram-token"
+                    "bot_token": "telegram-token",
+                    "media_enabled": true
                 }
             }),
             true,
@@ -606,6 +718,7 @@ mod tests {
             derive_profile_from_notification_channel(&channel, None).expect("telegram profile");
         assert!(profile.enabled);
         assert_eq!(profile.direct_config.telegram_bot_token, "telegram-token");
+        assert!(profile.direct_config.telegram_media_enabled);
     }
 
     #[test]
@@ -617,7 +730,8 @@ mod tests {
                 "im_enabled": false,
                 "im_config": {
                     "im_enabled": true,
-                    "bot_token": "nested-token"
+                    "bot_token": "nested-token",
+                    "media_enabled": true
                 }
             }),
             true,
@@ -627,6 +741,7 @@ mod tests {
             derive_profile_from_notification_channel(&channel, None).expect("telegram profile");
         assert!(profile.enabled);
         assert_eq!(profile.direct_config.telegram_bot_token, "nested-token");
+        assert!(profile.direct_config.telegram_media_enabled);
     }
 
     #[test]
@@ -636,7 +751,8 @@ mod tests {
             serde_json::json!({
                 "bot_token": "telegram-token",
                 "chat_id": "12345",
-                "im_enabled": false
+                "im_enabled": false,
+                "media_enabled": true
             }),
             true,
         );
@@ -644,5 +760,140 @@ mod tests {
         let profile =
             derive_profile_from_notification_channel(&channel, None).expect("telegram profile");
         assert!(!profile.enabled);
+    }
+
+    #[test]
+    fn derive_profile_ignores_telegram_style_only_fields() {
+        let channel = notification_channel(
+            "telegram",
+            serde_json::json!({
+                "bot_system_prompt": "reply like an operator"
+            }),
+            true,
+        );
+
+        assert!(derive_profile_from_notification_channel(&channel, None).is_none());
+    }
+
+    #[test]
+    fn derive_profile_ignores_wechat_style_only_fields() {
+        let channel = notification_channel(
+            "wechat",
+            serde_json::json!({
+                "bot_system_prompt": "reply like a secretary"
+            }),
+            true,
+        );
+
+        assert!(derive_profile_from_notification_channel(&channel, Some("wx-account")).is_none());
+    }
+
+    #[test]
+    fn derive_profile_keeps_wechat_notify_targets_as_im_signal() {
+        let channel = notification_channel(
+            "wechat",
+            serde_json::json!({
+                "im_config": {
+                    "im_enabled": true,
+                    "notify_contact_ids": ["wxid_1", "wxid_2"]
+                }
+            }),
+            true,
+        );
+
+        let profile = derive_profile_from_notification_channel(&channel, Some("wx-account"))
+            .expect("wechat profile");
+        assert!(profile.enabled);
+        assert_eq!(profile.direct_config.wechat_account_id, "wx-account");
+    }
+
+    #[test]
+    fn adapt_reply_content_for_platform_downgrades_http_image_for_feishu() {
+        let content = adapt_reply_content_for_platform(
+            MessageContent::Image {
+                url: "https://example.com/image.png".to_string(),
+            },
+            None,
+            ImPlatformAdapter::Feishu,
+            "飞书",
+        );
+
+        match content {
+            MessageContent::Text { text } => {
+                assert!(text.contains("飞书"));
+                assert!(text.contains("image.png"));
+            }
+            other => panic!("expected downgraded text, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn adapt_reply_content_for_platform_keeps_feishu_asset_image_native() {
+        let content = adapt_reply_content_for_platform(
+            MessageContent::Image {
+                url: "feishu://image/img-key".to_string(),
+            },
+            None,
+            ImPlatformAdapter::Feishu,
+            "飞书",
+        );
+
+        match content {
+            MessageContent::Image { url } => assert_eq!(url, "feishu://image/img-key"),
+            other => panic!("expected native image, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn adapt_reply_content_for_platform_prefers_fallback_text_when_downgrading() {
+        let content = adapt_reply_content_for_platform(
+            MessageContent::Image {
+                url: "https://example.com/image.png".to_string(),
+            },
+            Some("desktop fallback text"),
+            ImPlatformAdapter::Feishu,
+            "飞书",
+        );
+
+        match content {
+            MessageContent::Text { text } => assert_eq!(text, "desktop fallback text"),
+            other => panic!("expected fallback text, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_worker_failure_marks_telegram_webhook_conflict_unavailable() {
+        let profile = ImConnectionProfile::default_telegram();
+
+        assert!(matches!(
+            classify_worker_failure(
+                &profile,
+                "Telegram getUpdates is unavailable because a webhook is still configured: Conflict"
+            ),
+            ImWorkerFailureDisposition::Unavailable
+        ));
+    }
+
+    #[test]
+    fn classify_worker_failure_marks_wechat_disconnected_account_unavailable() {
+        let profile = ImConnectionProfile {
+            platform: ImPlatform::Wechat,
+            ..ImConnectionProfile::default_telegram()
+        };
+
+        assert!(matches!(
+            classify_worker_failure(&profile, "wechat account is not connected"),
+            ImWorkerFailureDisposition::Unavailable
+        ));
+    }
+
+    #[test]
+    fn classify_worker_failure_keeps_transient_errors_retryable() {
+        let profile = ImConnectionProfile::default_telegram();
+
+        assert!(matches!(
+            classify_worker_failure(&profile, "temporary network timeout"),
+            ImWorkerFailureDisposition::Retry
+        ));
     }
 }

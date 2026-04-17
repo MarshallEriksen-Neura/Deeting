@@ -543,6 +543,27 @@ impl TelegramClient {
     }
 }
 
+fn summarize_telegram_mixed_parts(parts: &[MessagePart]) -> (Option<String>, String) {
+    let mut first_image = None;
+    let mut text_parts = Vec::new();
+    for part in parts {
+        match part {
+            MessagePart::Text { text } => {
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    text_parts.push(trimmed.to_string());
+                }
+            }
+            MessagePart::Image { url } => {
+                if first_image.is_none() {
+                    first_image = Some(url.clone());
+                }
+            }
+        }
+    }
+    (first_image, text_parts.join("\n\n"))
+}
+
 fn telegram_api_error_message(code: i32, description: &str) -> String {
     let trimmed = description.trim();
     if code == 409 && trimmed.to_ascii_lowercase().contains("webhook") {
@@ -671,8 +692,32 @@ impl ImClient for TelegramClient {
                 self.send_document_api(chat_id, &url, None, reply_to)
                     .await?
             }
-            MessageContent::Card { .. } | MessageContent::Mixed { .. } => {
-                return Err(ImError::NotImplemented)
+            MessageContent::Card { .. } => {
+                self.send_message_api(
+                    chat_id,
+                    "Interactive card content is available in the desktop app.",
+                    reply_to,
+                )
+                .await?
+            }
+            MessageContent::Mixed { parts } => {
+                let (first_image, caption) = summarize_telegram_mixed_parts(&parts);
+                if let Some(image_url) = first_image {
+                    self.send_photo_api(
+                        chat_id,
+                        &image_url,
+                        (!caption.trim().is_empty()).then_some(caption.as_str()),
+                        reply_to,
+                    )
+                    .await?
+                } else {
+                    let text = if caption.trim().is_empty() {
+                        "Mixed content is available in the desktop app.".to_string()
+                    } else {
+                        caption
+                    };
+                    self.send_message_api(chat_id, &text, reply_to).await?
+                }
             }
         };
 
@@ -872,5 +917,23 @@ mod tests {
         assert!(rendered.contains("webhook"));
         assert!(rendered.contains("getUpdates"));
         assert!(rendered.contains("409"));
+    }
+
+    #[test]
+    fn summarize_telegram_mixed_parts_extracts_first_image_and_caption() {
+        let (image, caption) = summarize_telegram_mixed_parts(&[
+            MessagePart::Text {
+                text: "hello".to_string(),
+            },
+            MessagePart::Image {
+                url: "https://example.com/image.png".to_string(),
+            },
+            MessagePart::Text {
+                text: "world".to_string(),
+            },
+        ]);
+
+        assert_eq!(image.as_deref(), Some("https://example.com/image.png"));
+        assert_eq!(caption, "hello\n\nworld");
     }
 }

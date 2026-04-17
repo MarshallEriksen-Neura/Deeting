@@ -152,16 +152,6 @@
             "label": "机器人 Open ID",
             "placeholder": "ou_xxx（可选，用于精确匹配@）"
           },
-          "bot_model": {
-            "label": "回复模型",
-            "placeholder": "选择一个回复模型（可选）",
-            "description": "留空时使用桌面端当前默认的秘书/聊天模型。"
-          },
-          "bot_system_prompt": {
-            "label": "系统提示词",
-            "placeholder": "可选：定义该渠道机器人的回复风格",
-            "description": "回复固定使用当前秘书模型；这里只控制该渠道的回复风格。"
-          },
           "bot_app_id": {
             "label": "飞书 App ID",
             "placeholder": "cli_xxx（可选，渠道级覆盖）"
@@ -202,16 +192,6 @@
             "placeholder": "选择访问策略",
             "description": "默认使用配对码模式；切换为白名单后，只允许已授权联系人进入本地 AI。"
           },
-          "bot_model": {
-            "label": "回复模型",
-            "placeholder": "选择一个回复模型（可选）",
-            "description": "留空时使用桌面端当前默认的秘书/聊天模型。"
-          },
-          "bot_system_prompt": {
-            "label": "系统提示词",
-            "placeholder": "可选：定义该微信渠道的回复风格",
-            "description": "回复固定使用当前秘书模型；这里只控制该微信渠道的回复风格。"
-          },
           "notify_contact_ids": {
             "label": "主动通知目标联系人",
             "placeholder": "每行一个 contact_id",
@@ -225,6 +205,16 @@
           }
         },
         "telegram": {
+          "im_enabled": {
+            "label": "启用桌面 IM",
+            "placeholder": "",
+            "description": "启用后，桌面端会在当前机器上启动 Telegram bot 运行时。"
+          },
+          "media_enabled": {
+            "label": "启用媒体回复",
+            "placeholder": "",
+            "description": "默认关闭。仅当你希望 Telegram 图片/文件回复走原生发送，而不是降级成文本提示时再开启。"
+          },
           "bot_token": {
             "label": "Bot Token",
             "placeholder": "123456:ABC-DEF..."
@@ -292,15 +282,11 @@
           "description": "决定桌面端是否直接接入飞书机器人，以及直连 / Relay 的选择方式。",
           "disabledHint": "当前未启用桌面 IM，下面的直连与回复字段会暂时弱化显示。",
           "preferenceHint": "当前偏好：{mode}"
-        },
-        "replyBehavior": {
-          "title": "回复行为",
-          "description": "回复固定使用当前秘书模型；这里只控制回复风格。"
         }
       },
       "runtimeHint": {
         "currentDesktopIm": "当前桌面 IM: {mode}",
-        "disabled": "disabled"
+        "disabled": "已禁用"
       },
       "test": {
         "success": "测试通知已发送成功",

@@ -7,7 +7,7 @@ use super::adoption::{normalize_confirm_adoption_payload, preview_adoption};
 use super::automation::{
     dismiss_suggestion as dismiss_llm_wiki_automation_suggestion_inner,
     execute_suggestion as execute_llm_wiki_automation_suggestion_inner,
-    handle_corpus_sync_completed, handle_vault_bound, handle_workspace_bootstrapped,
+    handle_corpus_reconcile_completed, handle_vault_bound, handle_workspace_bootstrapped,
     update_automation_settings as update_llm_wiki_automation_settings_inner,
 };
 use super::maintenance::{ingest_selection as ingest_llm_wiki_selection_inner, run_lint};
@@ -29,7 +29,7 @@ use super::config::{
     LLM_WIKI_MODE_ADOPT_EXISTING_FOLDER, LLM_WIKI_MODE_MANAGED_WORKSPACE, READ_SCOPE_WHOLE_VAULT,
     WRITE_SCOPE_MANAGED_WORKSPACE,
 };
-use super::corpus::{bootstrap_corpus, load_corpus_status, search_corpus, sync_corpus};
+use super::corpus::{bootstrap_corpus, load_corpus_status, reconcile_corpus, search_corpus};
 use super::scan::{inspect_workspace, scan_vault};
 use super::templates::{build_bootstrap_files, build_recommended_agent_prompt};
 use super::types::{
@@ -259,8 +259,8 @@ pub async fn reconcile_local_llm_wiki_corpus(
     let vault_root = normalize_vault_root(&binding.vault_root)?;
     let workspace_path = resolve_workspace_path(&vault_root, &binding.workspace_relative_path);
     let (indexed_files, removed_files, _) =
-        sync_corpus(app_state, &vault_root, &workspace_path).await?;
-    handle_corpus_sync_completed(app_state, indexed_files, removed_files).await?;
+        reconcile_corpus(app_state, &vault_root, &workspace_path).await?;
+    handle_corpus_reconcile_completed(app_state, indexed_files, removed_files).await?;
 
     let state = build_state_from_binding(app_state.mcp.store.as_ref(), binding).await?;
     Ok(super::types::ReconcileLocalLlmWikiCorpusResult {

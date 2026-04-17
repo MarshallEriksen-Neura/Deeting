@@ -21,6 +21,7 @@ const LOCAL_DESKTOP_USER_ID: &str = "00000000-0000-0000-0000-000000000000";
 const LOCAL_KNOWLEDGE_CHUNK_MAX_CHARS: usize = 1200;
 const LOCAL_KNOWLEDGE_CHUNK_OVERLAP_CHARS: usize = 120;
 const LOCAL_KNOWLEDGE_CHUNK_MIN_CHARS: usize = 120;
+const LOCAL_KNOWLEDGE_FTS_TABLE: &str = "knowledge_chunk_fts";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LocalKnowledgeBlock {
@@ -44,6 +45,14 @@ struct LocalKnowledgeChunkDraft {
     token_count: i64,
     content_hash: String,
     quality_flags: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct LocalKnowledgeRankComputation {
+    score: f64,
+    lexical_score: f64,
+    match_reasons: Vec<String>,
+    score_breakdown: serde_json::Value,
 }
 
 pub struct KnowledgeStore {
@@ -87,6 +96,24 @@ impl KnowledgeStore {
                 }
             }
         }
+    }
+
+    async fn delete_knowledge_chunk_fts_rows_for_document<'e, E>(
+        &self,
+        executor: E,
+        document_id: &str,
+    ) -> Result<(), KnowledgeError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+    {
+        sqlx::query(&format!(
+            "DELETE FROM {LOCAL_KNOWLEDGE_FTS_TABLE} WHERE document_id = ?;"
+        ))
+        .bind(document_id)
+        .execute(executor)
+        .await
+        .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
+        Ok(())
     }
 
     pub async fn init(&self) -> Result<(), KnowledgeError> {
@@ -290,6 +317,46 @@ impl KnowledgeStore {
             "quality_flags TEXT NOT NULL DEFAULT '[]'",
         )
         .await?;
+
+        sqlx::query(&format!(
+            r#"
+            CREATE VIRTUAL TABLE IF NOT EXISTS {LOCAL_KNOWLEDGE_FTS_TABLE}
+            USING fts5(
+              chunk_id UNINDEXED,
+              document_id UNINDEXED,
+              text_content,
+              section_path,
+              chunk_type,
+              tokenize='unicode61'
+            );
+            "#
+        ))
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
+
+        sqlx::query(&format!("DELETE FROM {LOCAL_KNOWLEDGE_FTS_TABLE};"))
+            .execute(&self.write_pool)
+            .await
+            .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
+
+        sqlx::query(&format!(
+            r#"
+            INSERT INTO {LOCAL_KNOWLEDGE_FTS_TABLE} (
+              chunk_id, document_id, text_content, section_path, chunk_type
+            )
+            SELECT
+              id,
+              document_id,
+              text_content,
+              COALESCE(section_path, '[]'),
+              COALESCE(chunk_type, 'paragraph')
+            FROM knowledge_chunk;
+            "#
+        ))
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
         Ok(())
     }
@@ -1094,6 +1161,9 @@ impl KnowledgeStore {
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
+        self.delete_knowledge_chunk_fts_rows_for_document(&self.write_pool, &normalized_id)
+            .await?;
+
         let result = sqlx::query(
             r#"
             DELETE FROM user_document
@@ -1157,6 +1227,9 @@ impl KnowledgeStore {
         .execute(&self.write_pool)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
+
+        self.delete_knowledge_chunk_fts_rows_for_document(&self.write_pool, &normalized_id)
+            .await?;
 
         let meta_info_row = sqlx::query(
             r#"
@@ -1366,12 +1439,9 @@ impl KnowledgeStore {
         if file_ids.is_some() && document_ids.is_empty() {
             return Ok(Vec::new());
         }
-        let mut where_predicate = String::new();
-        for (index, _) in lowered_tokens.iter().enumerate() {
-            if index > 0 {
-                where_predicate.push_str(" OR ");
-            }
-            where_predicate.push_str("LOWER(kc.text_content) LIKE ? ESCAPE '\\'");
+        let fts_query = build_local_knowledge_fts_query(&lowered_tokens, &query_lower);
+        if fts_query.trim().is_empty() {
+            return Ok(Vec::new());
         }
         let document_filter = if document_ids.is_empty() {
             String::new()
@@ -1398,26 +1468,25 @@ impl KnowledgeStore {
               kc.char_count AS char_count,
               kc.content_hash AS content_hash,
               kc.quality_flags AS quality_flags,
-              ud.filename AS file_name
-            FROM knowledge_chunk kc
+              ud.filename AS file_name,
+              bm25({LOCAL_KNOWLEDGE_FTS_TABLE}, 1.0, 0.8, 0.6) AS bm25_score
+            FROM {LOCAL_KNOWLEDGE_FTS_TABLE}
+            INNER JOIN knowledge_chunk kc
+              ON kc.id = {LOCAL_KNOWLEDGE_FTS_TABLE}.chunk_id
             INNER JOIN user_document ud
               ON ud.id = kc.document_id AND ud.user_id = kc.user_id
-            WHERE kc.user_id = ?
+            WHERE {LOCAL_KNOWLEDGE_FTS_TABLE} MATCH ?
+              AND kc.user_id = ?
               AND ud.status = 'indexed'
-              AND ({where_predicate})
               {document_filter}
-            ORDER BY kc.updated_at DESC, kc.chunk_index ASC
+            ORDER BY bm25_score ASC, kc.chunk_index ASC
             LIMIT 300;
             "#
         );
 
-        let mut query_builder = sqlx::query(&sql).bind(LOCAL_DESKTOP_USER_ID);
-        for token in &lowered_tokens {
-            query_builder = query_builder.bind(format!(
-                "%{}%",
-                token.replace('%', "\\%").replace('_', "\\_")
-            ));
-        }
+        let mut query_builder = sqlx::query(&sql)
+            .bind(&fts_query)
+            .bind(LOCAL_DESKTOP_USER_ID);
         for file_id in document_ids {
             query_builder = query_builder.bind(file_id);
         }
@@ -1439,25 +1508,30 @@ impl KnowledgeStore {
                 .ok()
                 .and_then(|value| serde_json::from_str::<Vec<String>>(&value).ok())
                 .unwrap_or_default();
+            let file_name: String = row.try_get("file_name")?;
             let chunk_type = row
                 .try_get::<String, _>("chunk_type")
                 .unwrap_or_else(|_| "paragraph".to_string());
+            let bm25_score = row.try_get::<f64, _>("bm25_score").unwrap_or(999.0);
             let content_lower = content.to_ascii_lowercase();
-            let score = compute_local_knowledge_match_score(
+            let file_name_lower = file_name.to_ascii_lowercase();
+            let rank = compute_local_knowledge_match_score(
                 &query_lower,
                 &lowered_tokens,
+                &file_name_lower,
                 &content_lower,
                 &section_path,
                 &chunk_type,
                 &quality_flags,
+                bm25_score,
             );
-            if score <= 0.0 {
+            if rank.score <= 0.0 {
                 continue;
             }
             scored_hits.push(LocalKnowledgeSearchHit {
                 chunk_id: row.try_get("chunk_id")?,
                 file_id: row.try_get("file_id")?,
-                file_name: row.try_get("file_name")?,
+                file_name,
                 index: row.try_get::<i64, _>("chunk_index").unwrap_or(0).max(0),
                 content,
                 token_count: row.try_get::<i64, _>("token_count").unwrap_or(0).max(0),
@@ -1471,7 +1545,10 @@ impl KnowledgeStore {
                     .try_get::<Option<String>, _>("content_hash")
                     .unwrap_or(None),
                 quality_flags,
-                score,
+                lexical_score: Some(rank.lexical_score),
+                match_reasons: rank.match_reasons,
+                score_breakdown: Some(rank.score_breakdown),
+                score: rank.score,
             });
         }
 
@@ -1521,6 +1598,9 @@ impl KnowledgeStore {
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
+        self.delete_knowledge_chunk_fts_rows_for_document(&mut *tx, file_id)
+            .await?;
+
         for (index, chunk) in chunks.iter().enumerate() {
             let chunk_id = Uuid::new_v4().to_string();
             let section_path_text = serde_json::to_string(&chunk.section_path)?;
@@ -1542,7 +1622,7 @@ impl KnowledgeStore {
             .bind(&chunk.content)
             .bind(chunk.token_count.max(0))
             .bind(&chunk.chunk_type)
-            .bind(section_path_text)
+            .bind(&section_path_text)
             .bind(chunk.page_hint)
             .bind(chunk.char_start)
             .bind(chunk.char_end)
@@ -1551,6 +1631,23 @@ impl KnowledgeStore {
             .bind(quality_flags_text)
             .bind(&now)
             .bind(&now)
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
+
+            sqlx::query(&format!(
+                r#"
+                INSERT INTO {LOCAL_KNOWLEDGE_FTS_TABLE} (
+                  chunk_id, document_id, text_content, section_path, chunk_type
+                )
+                VALUES (?, ?, ?, ?, ?);
+                "#
+            ))
+            .bind(&chunk_id)
+            .bind(file_id)
+            .bind(&chunk.content)
+            .bind(&section_path_text)
+            .bind(&chunk.chunk_type)
             .execute(&mut *tx)
             .await
             .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
@@ -1600,6 +1697,9 @@ impl KnowledgeStore {
         .execute(&mut *tx)
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
+
+        self.delete_knowledge_chunk_fts_rows_for_document(&mut *tx, file_id)
+            .await?;
 
         sqlx::query(
             r#"
@@ -1812,59 +1912,6 @@ fn extract_local_document_object_key(meta_info: &serde_json::Value) -> Option<St
     } else {
         Some(normalized.to_string())
     }
-}
-
-fn split_local_document_text_into_chunks(text: &str) -> Vec<String> {
-    let normalized = text.trim();
-    if normalized.is_empty() {
-        return Vec::new();
-    }
-
-    let chars: Vec<char> = normalized.chars().collect();
-    if chars.len() <= LOCAL_KNOWLEDGE_CHUNK_MAX_CHARS {
-        return vec![normalized.to_string()];
-    }
-
-    let mut chunks = Vec::new();
-    let mut start = 0usize;
-    while start < chars.len() {
-        let mut end = (start + LOCAL_KNOWLEDGE_CHUNK_MAX_CHARS).min(chars.len());
-        if end < chars.len() {
-            let scan_floor = start + (LOCAL_KNOWLEDGE_CHUNK_MAX_CHARS / 2);
-            let mut cursor = end;
-            while cursor > scan_floor {
-                let current = chars[cursor - 1];
-                if current.is_whitespace()
-                    || matches!(current, '。' | '！' | '？' | '.' | '!' | '?' | '\n')
-                {
-                    end = cursor;
-                    break;
-                }
-                cursor -= 1;
-            }
-        }
-
-        let chunk = chars[start..end]
-            .iter()
-            .collect::<String>()
-            .trim()
-            .to_string();
-        if !chunk.is_empty() {
-            chunks.push(chunk);
-        }
-
-        if end >= chars.len() {
-            break;
-        }
-        let next_start = end.saturating_sub(LOCAL_KNOWLEDGE_CHUNK_OVERLAP_CHARS);
-        if next_start == start {
-            start = end;
-        } else {
-            start = next_start;
-        }
-    }
-
-    chunks
 }
 
 fn split_local_document_text_into_chunks_structure_first(
@@ -2350,69 +2397,137 @@ fn tokenize_local_search_query(query: &str) -> Vec<String> {
     tokens
 }
 
+fn build_local_knowledge_fts_query(tokens_lower: &[String], query_lower: &str) -> String {
+    let mut parts = Vec::new();
+    let normalized_query = query_lower.trim();
+    if !normalized_query.is_empty() {
+        parts.push(format!("\"{}\"", normalized_query.replace('"', "\"\"")));
+    }
+    for token in tokens_lower {
+        let normalized = token.trim();
+        if normalized.is_empty() {
+            continue;
+        }
+        let quoted = format!("\"{}\"", normalized.replace('"', "\"\""));
+        if !parts.contains(&quoted) {
+            parts.push(quoted);
+        }
+    }
+    parts.join(" OR ")
+}
+
 fn compute_local_knowledge_match_score(
     query_lower: &str,
     tokens_lower: &[String],
+    file_name_lower: &str,
     content_lower: &str,
     section_path: &[String],
     chunk_type: &str,
     quality_flags: &[String],
-) -> f64 {
+    bm25_score: f64,
+) -> LocalKnowledgeRankComputation {
     if content_lower.is_empty() {
-        return 0.0;
+        return LocalKnowledgeRankComputation {
+            score: 0.0,
+            lexical_score: 0.0,
+            match_reasons: Vec::new(),
+            score_breakdown: serde_json::json!({
+                "lexical_score": 0.0,
+                "filename_boost": 0.0,
+                "heading_boost": 0.0,
+                "chunk_type_boost": 0.0,
+                "quality_penalty": 0.0,
+            }),
+        };
     }
-    let mut score = 0.0;
+    let mut lexical_score = normalize_local_bm25_score(bm25_score);
+    let mut filename_boost = 0.0;
+    let mut heading_boost = 0.0;
+    let mut chunk_type_boost = 0.0;
+    let mut quality_penalty = 0.0;
+    let mut match_reasons = Vec::new();
     let section_lower = section_path
         .iter()
         .map(|value| value.trim().to_ascii_lowercase())
         .filter(|value| !value.is_empty())
         .collect::<Vec<_>>();
     if !query_lower.is_empty() && content_lower.contains(query_lower) {
-        score += 8.0;
+        lexical_score += 0.45;
+        match_reasons.push("fts:body".to_string());
     }
     if !query_lower.is_empty()
         && section_lower
             .iter()
             .any(|value| value.contains(query_lower))
     {
-        score += 3.0;
+        heading_boost += 0.35;
+        match_reasons.push("fts:section".to_string());
+    }
+    if !query_lower.is_empty() && file_name_lower.contains(query_lower) {
+        filename_boost += 0.25;
+        match_reasons.push("fts:filename".to_string());
     }
     for token in tokens_lower {
-        let mut start = 0usize;
-        let mut token_hits = 0usize;
-        while start < content_lower.len() {
-            let Some(pos) = content_lower[start..].find(token) else {
-                break;
-            };
-            token_hits += 1;
-            start += pos + token.len();
-        }
-        if token_hits > 0 {
-            score += (token_hits as f64) * (1.0 + (token.len() as f64 / 10.0));
+        if file_name_lower.contains(token) {
+            filename_boost += 0.08;
         }
         let heading_hits = section_lower
             .iter()
             .filter(|value| value.contains(token))
             .count();
         if heading_hits > 0 {
-            score += (heading_hits as f64) * 1.5;
+            heading_boost += (heading_hits as f64) * 0.08;
         }
     }
     match chunk_type {
-        "title" | "heading" => score += 2.0,
-        "list" => score += 0.75,
-        "table" | "code" => score += 0.25,
+        "title" | "heading" => {
+            chunk_type_boost += 0.2;
+            match_reasons.push(format!("type:{chunk_type}"));
+        }
+        "list" => {
+            chunk_type_boost += 0.08;
+            match_reasons.push(format!("type:{chunk_type}"));
+        }
+        "table" | "code" => {
+            chunk_type_boost += 0.04;
+            match_reasons.push(format!("type:{chunk_type}"));
+        }
         _ => {}
     }
     for flag in quality_flags {
         match flag.as_str() {
-            "short_chunk" => score -= 0.35,
-            "near_limit" => score -= 0.1,
-            "noisy_chunk" => score -= 2.5,
+            "short_chunk" => quality_penalty -= 0.08,
+            "near_limit" => quality_penalty -= 0.03,
+            "noisy_chunk" => {
+                quality_penalty -= 0.45;
+                match_reasons.push("quality:noisy".to_string());
+            }
             _ => {}
         }
     }
-    score
+    let score =
+        (lexical_score + filename_boost + heading_boost + chunk_type_boost + quality_penalty)
+            .max(0.0);
+    LocalKnowledgeRankComputation {
+        score,
+        lexical_score,
+        match_reasons,
+        score_breakdown: serde_json::json!({
+            "lexical_score": lexical_score,
+            "filename_boost": filename_boost,
+            "heading_boost": heading_boost,
+            "chunk_type_boost": chunk_type_boost,
+            "quality_penalty": quality_penalty,
+        }),
+    }
+}
+
+fn normalize_local_bm25_score(raw: f64) -> f64 {
+    if !raw.is_finite() {
+        return 0.0;
+    }
+    let clamped = raw.max(0.0);
+    1.0 / (1.0 + clamped)
 }
 
 fn estimate_local_tokens(text: &str) -> i64 {
@@ -2556,21 +2671,37 @@ Selected knowledge should use scoped hybrid recall.
         let boosted = compute_local_knowledge_match_score(
             "chunking",
             &["chunking".to_string()],
+            "knowledge-guide",
             "generic paragraph about alpha beta",
             &["Knowledge".to_string(), "Chunking".to_string()],
             "paragraph",
             &[],
+            1.2,
         );
         let penalized = compute_local_knowledge_match_score(
             "chunking",
             &["chunking".to_string()],
+            "notes",
             "generic paragraph about alpha beta chunking",
             &[],
             "paragraph",
             &["noisy_chunk".to_string()],
+            1.2,
         );
 
-        assert!(boosted > 0.0);
-        assert!(boosted > penalized);
+        assert!(boosted.score > 0.0);
+        assert!(boosted.score > penalized.score);
+    }
+
+    #[test]
+    fn build_local_knowledge_fts_query_prefers_phrase_and_token_terms() {
+        let query = build_local_knowledge_fts_query(
+            &["knowledge".to_string(), "chunking".to_string()],
+            "desktop knowledge chunking",
+        );
+
+        assert!(query.contains("\"desktop knowledge chunking\""));
+        assert!(query.contains("\"knowledge\""));
+        assert!(query.contains("\"chunking\""));
     }
 }

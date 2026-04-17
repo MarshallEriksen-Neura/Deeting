@@ -33,6 +33,19 @@ pub enum BridgeRequest {
         base_url: String,
         token: String,
         contact_id: String,
+        context_token: String,
+        status: i64,
+    },
+    GetUploadUrl {
+        base_url: String,
+        token: String,
+        file_name: String,
+    },
+    GetConfig {
+        base_url: String,
+        token: String,
+        contact_id: String,
+        context_token: Option<String>,
     },
 }
 
@@ -52,6 +65,8 @@ pub enum BridgeResponsePayload {
     SendText { ok: bool },
     SendMessage { ok: bool },
     SendTyping { ok: bool },
+    GetUploadUrl { data: serde_json::Value },
+    GetConfig { data: serde_json::Value },
     Error { message: String },
 }
 

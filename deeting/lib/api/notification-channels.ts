@@ -36,8 +36,6 @@ export interface ChannelConfig {
   transport_preference?: "auto" | "direct" | "relay"
   chat_ids?: string[]
   bot_open_id?: string
-  bot_model?: string
-  bot_system_prompt?: string
   bot_app_id?: string
   bot_app_secret?: string
   relay_base_url?: string
@@ -50,6 +48,7 @@ export interface ChannelConfig {
   last_connected_at?: string
   bot_token?: string
   chat_id?: string
+  media_enabled?: boolean
   smtp_host?: string
   smtp_port?: number
   from_email?: string

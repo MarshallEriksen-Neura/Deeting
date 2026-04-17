@@ -432,7 +432,9 @@ export function ChannelConfigForm({
     }
     if (channelType === "telegram") {
       config.im_enabled = Boolean(values.im_enabled)
+      config.media_enabled = Boolean(values.media_enabled)
       imConfig.im_enabled = config.im_enabled
+      imConfig.media_enabled = config.media_enabled
     }
     if (channelType === "feishu" || channelType === "wechat" || channelType === "telegram") {
       config.im_config = imConfig
@@ -634,9 +636,6 @@ export function ChannelConfigForm({
     }
     if (["relay_base_url", "relay_shared_secret"].includes(fieldKey)) {
       return !isFeishuImEnabled || transportPreference === "direct"
-    }
-    if (fieldKey === "bot_system_prompt") {
-      return !isFeishuImEnabled
     }
     return false
   }

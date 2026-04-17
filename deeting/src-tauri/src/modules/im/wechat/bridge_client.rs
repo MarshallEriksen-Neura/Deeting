@@ -138,16 +138,62 @@ impl WechatBridgeClient {
         base_url: &str,
         token: &str,
         contact_id: &str,
+        context_token: &str,
+        status: i64,
     ) -> Result<(), String> {
         let response = self
             .send(BridgeRequest::SendTyping {
                 base_url: base_url.trim().to_string(),
                 token: token.trim().to_string(),
                 contact_id: contact_id.trim().to_string(),
+                context_token: context_token.trim().to_string(),
+                status,
             })
             .await?;
         match response.payload {
             BridgeResponsePayload::SendTyping { ok } if ok => Ok(()),
+            BridgeResponsePayload::Error { message } => Err(message),
+            _ => Err("wechat bridge returned unexpected response".to_string()),
+        }
+    }
+
+    pub async fn get_upload_url(
+        &self,
+        base_url: &str,
+        token: &str,
+        file_name: &str,
+    ) -> Result<serde_json::Value, String> {
+        let response = self
+            .send(BridgeRequest::GetUploadUrl {
+                base_url: base_url.trim().to_string(),
+                token: token.trim().to_string(),
+                file_name: file_name.trim().to_string(),
+            })
+            .await?;
+        match response.payload {
+            BridgeResponsePayload::GetUploadUrl { data } => Ok(data),
+            BridgeResponsePayload::Error { message } => Err(message),
+            _ => Err("wechat bridge returned unexpected response".to_string()),
+        }
+    }
+
+    pub async fn get_config(
+        &self,
+        base_url: &str,
+        token: &str,
+        contact_id: &str,
+        context_token: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
+        let response = self
+            .send(BridgeRequest::GetConfig {
+                base_url: base_url.trim().to_string(),
+                token: token.trim().to_string(),
+                contact_id: contact_id.trim().to_string(),
+                context_token: context_token.map(str::to_string),
+            })
+            .await?;
+        match response.payload {
+            BridgeResponsePayload::GetConfig { data } => Ok(data),
             BridgeResponsePayload::Error { message } => Err(message),
             _ => Err("wechat bridge returned unexpected response".to_string()),
         }

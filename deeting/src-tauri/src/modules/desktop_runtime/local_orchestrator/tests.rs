@@ -964,6 +964,9 @@ fn fuse_selected_knowledge_hits_merges_lexical_and_semantic_candidates() {
             char_count: 15,
             content_hash: Some("hash-hit-1".to_string()),
             quality_flags: Vec::new(),
+            lexical_score: Some(0.92),
+            match_reasons: vec!["fts:body".to_string(), "fts:section".to_string()],
+            score_breakdown: Some(json!({ "lexical_score": 0.92 })),
             score: 12.0,
         },
         crate::modules::knowledge::types::LocalKnowledgeSearchHit {
@@ -981,6 +984,9 @@ fn fuse_selected_knowledge_hits_merges_lexical_and_semantic_candidates() {
             char_count: 12,
             content_hash: Some("hash-hit-2".to_string()),
             quality_flags: vec!["short_chunk".to_string()],
+            lexical_score: Some(0.71),
+            match_reasons: vec!["fts:body".to_string()],
+            score_breakdown: Some(json!({ "lexical_score": 0.71 })),
             score: 8.0,
         },
     ];
@@ -1000,6 +1006,9 @@ fn fuse_selected_knowledge_hits_merges_lexical_and_semantic_candidates() {
             char_count: 13,
             content_hash: Some("hash-hit-3".to_string()),
             quality_flags: Vec::new(),
+            lexical_score: None,
+            match_reasons: vec!["semantic:topk".to_string()],
+            score_breakdown: Some(json!({ "semantic_score": 0.9 })),
             score: 0.9,
         },
         crate::modules::knowledge::types::LocalKnowledgeSearchHit {
@@ -1017,6 +1026,9 @@ fn fuse_selected_knowledge_hits_merges_lexical_and_semantic_candidates() {
             char_count: 15,
             content_hash: Some("hash-hit-1".to_string()),
             quality_flags: Vec::new(),
+            lexical_score: None,
+            match_reasons: vec!["semantic:topk".to_string()],
+            score_breakdown: Some(json!({ "semantic_score": 0.8 })),
             score: 0.8,
         },
     ];

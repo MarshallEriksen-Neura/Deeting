@@ -403,7 +403,7 @@
           "sessionEndSuggested": "系统已为刚结束的会话生成一条整理建议。",
           "valuableAnswerDisabled": "高价值回答提醒已关闭，这次没有生成整理建议。",
           "valuableAnswerSuggested": "系统已为一条高价值回答生成整理建议。",
-          "corpusSyncObserved": "资料更新完成。新增 {indexedFiles} 条，清理 {removedFiles} 条过期内容。",
+          "corpusReconcileObserved": "资料对账完成。新增 {indexedFiles} 条，清理 {removedFiles} 条过期内容。",
           "newSourceAutoExecuted": "发现新资料后，系统已自动发起一次维护任务。",
           "newSourceAutoFailed": "发现新资料后自动发起维护失败。",
           "maintenanceAutoExecuted": "系统已自动发起一次例行维护任务。",
@@ -424,7 +424,7 @@
           "description": "这些自动整理只会刷新资料、生成提醒或发起维护，不会扩大主聊天的默认检索范围。"
         },
       "actions": {
-        "sync_corpus": "更新资料",
+        "reconcile_corpus": "更新资料",
         "create_maintainer_agent": "设置维护助手",
         "inspect_corpus": "查看资料",
         "run_maintenance_review": "发起维护",
@@ -434,7 +434,7 @@
       "triggers": {
         "on_vault_bound": "已连接笔记库",
         "on_workspace_bootstrapped": "工作区已准备好",
-        "on_corpus_sync_completed": "资料刚更新",
+        "on_corpus_reconcile_completed": "资料已完成对账",
         "on_session_end": "会话刚结束",
         "on_valuable_answer": "高价值回答",
         "on_maintenance_schedule": "例行检查",
@@ -468,8 +468,8 @@
       "bindingSaveFailed": "保存 Vault 绑定失败。",
       "workspaceBootstrapped": "工作区已就绪，共创建 {files} 个文件和 {directories} 个目录。",
       "bootstrapFailed": "创建受控工作区失败。",
-      "corpusSynced": "Corpus 已同步，新增索引 {indexed} 个文件，移除过期条目 {removed} 个。",
-      "corpusSyncFailed": "同步 LLM Wiki corpus 失败。",
+      "corpusReconciled": "Corpus 已完成对账，新增索引 {indexed} 个文件，移除过期条目 {removed} 个。",
+      "corpusReconcileFailed": "对账 LLM Wiki corpus 失败。",
       "corpusSearchFailed": "搜索 LLM Wiki corpus 失败。",
       "maintainerAgentReady": "{name} 已可用于委托维护。",
       "maintainerAgentFailed": "创建或更新维护 Agent 失败。",
