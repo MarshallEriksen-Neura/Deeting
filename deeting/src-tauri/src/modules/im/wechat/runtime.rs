@@ -561,6 +561,7 @@ fn markdown_to_plain_text(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::modules::im::MessagePart;
     use crate::modules::im::text_runtime::parse_text_approval_command;
 
     use super::{
@@ -653,10 +654,10 @@ mod tests {
     #[test]
     fn build_mixed_outbound_items_preserves_text_and_remote_images() {
         let items = build_mixed_outbound_items(vec![
-            super::super::MessagePart::Text {
+            MessagePart::Text {
                 text: "hello".to_string(),
             },
-            super::super::MessagePart::Image {
+            MessagePart::Image {
                 url: "https://example.com/image.png".to_string(),
             },
         ])
@@ -669,7 +670,7 @@ mod tests {
 
     #[test]
     fn build_mixed_outbound_items_rejects_non_remote_images() {
-        let err = build_mixed_outbound_items(vec![super::super::MessagePart::Image {
+        let err = build_mixed_outbound_items(vec![MessagePart::Image {
             url: "file:///tmp/image.png".to_string(),
         }])
         .expect_err("non-remote image should fail");

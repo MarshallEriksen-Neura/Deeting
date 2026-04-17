@@ -434,6 +434,7 @@
       "triggers": {
         "on_vault_bound": "已连接笔记库",
         "on_workspace_bootstrapped": "工作区已准备好",
+        "on_corpus_sync_completed": "资料同步完成",
         "on_corpus_reconcile_completed": "资料已完成对账",
         "on_session_end": "会话刚结束",
         "on_valuable_answer": "高价值回答",

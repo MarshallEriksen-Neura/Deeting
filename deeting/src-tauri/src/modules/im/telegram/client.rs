@@ -170,8 +170,23 @@ impl TelegramClient {
                 url: format!("telegram://document/{}", document.file_id),
             }
         } else if let Some(photo) = message.photo.as_ref().and_then(|items| items.last()) {
-            MessageContent::Image {
-                url: format!("telegram://photo/{}", photo.file_id),
+            let image_url = format!("telegram://photo/{}", photo.file_id);
+            if let Some(caption) = message
+                .caption
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                MessageContent::Mixed {
+                    parts: vec![
+                        MessagePart::Text {
+                            text: caption.to_string(),
+                        },
+                        MessagePart::Image { url: image_url },
+                    ],
+                }
+            } else {
+                MessageContent::Image { url: image_url }
             }
         } else if let Some(caption) = message.caption.as_ref() {
             MessageContent::Text {
@@ -860,9 +875,19 @@ mod tests {
 
         match event {
             ImEvent::Message {
-                content: MessageContent::Image { url },
+                content: MessageContent::Mixed { parts },
                 ..
-            } => assert_eq!(url, "telegram://photo/photo-file-id"),
+            } => {
+                assert_eq!(parts.len(), 2);
+                assert!(matches!(
+                    &parts[0],
+                    MessagePart::Text { text } if text == "photo caption"
+                ));
+                assert!(matches!(
+                    &parts[1],
+                    MessagePart::Image { url } if url == "telegram://photo/photo-file-id"
+                ));
+            }
             other => panic!("unexpected event: {other:?}"),
         }
     }

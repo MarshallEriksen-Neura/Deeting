@@ -300,8 +300,8 @@ pub fn platform_capabilities(
 ) -> ImRuntimeCapabilities {
     match (profile.platform, resolution.effective) {
         (ImPlatform::Feishu, ImTransportKind::Direct) => ImRuntimeCapabilities {
-            inbound: feature_list(&["text", "image", "file", "card_action"]),
-            outbound: feature_list(&["text", "interactive_card", "image", "file"]),
+            inbound: feature_list(&["text", "image", "file", "mixed", "card_action"]),
+            outbound: feature_list(&["text", "interactive_card", "image", "file", "mixed"]),
             degradations: feature_list(&[
                 "mixed_parts_to_text",
                 "non_native_media_to_text_link",
@@ -314,7 +314,7 @@ pub fn platform_capabilities(
             degradations: feature_list(&["relay_runtime", "rich_content_to_text"]),
         },
         (ImPlatform::Telegram, _) => ImRuntimeCapabilities {
-            inbound: feature_list(&["text", "image", "file", "card_action"]),
+            inbound: feature_list(&["text", "image", "file", "mixed", "card_action"]),
             outbound: if profile.direct_config.telegram_media_enabled {
                 feature_list(&["text", "image", "file", "mixed"])
             } else {
@@ -334,7 +334,7 @@ pub fn platform_capabilities(
             },
         },
         (ImPlatform::Wechat, _) => ImRuntimeCapabilities {
-            inbound: feature_list(&["text", "image", "file", "video", "voice"]),
+            inbound: feature_list(&["text", "image", "file", "video", "voice", "mixed"]),
             outbound: feature_list(&["text", "image", "file", "video", "voice", "typing", "mixed"]),
             degradations: feature_list(&[
                 "upload_or_cdn_policy_still_evolving",
@@ -452,5 +452,53 @@ mod tests {
 
         assert_eq!(resolved.effective, ImTransportKind::Direct);
         assert_eq!(resolved.reason_code, ImTransportReasonCode::DirectSupported);
+    }
+
+    #[test]
+    fn feishu_direct_capabilities_include_mixed_content() {
+        let profile = feishu_profile(ImTransportPreference::Auto);
+        let resolution = resolve_transport(&profile);
+
+        let capabilities = platform_capabilities(&profile, &resolution);
+
+        assert!(capabilities.inbound.contains(&"mixed".to_string()));
+        assert!(capabilities.outbound.contains(&"mixed".to_string()));
+    }
+
+    #[test]
+    fn telegram_media_enabled_capabilities_include_mixed_outbound() {
+        let mut profile = telegram_profile(ImTransportPreference::Auto);
+        profile.direct_config.telegram_media_enabled = true;
+        let resolution = resolve_transport(&profile);
+
+        let capabilities = platform_capabilities(&profile, &resolution);
+
+        assert!(capabilities.inbound.contains(&"mixed".to_string()));
+        assert!(capabilities.outbound.contains(&"mixed".to_string()));
+        assert!(capabilities
+            .degradations
+            .contains(&"non_remote_media_reference_to_text".to_string()));
+    }
+
+    #[test]
+    fn wechat_capabilities_include_mixed_surface() {
+        let profile = ImConnectionProfile {
+            id: "profile-wechat".to_string(),
+            platform: ImPlatform::Wechat,
+            display_name: "WeChat".to_string(),
+            enabled: true,
+            transport_preference: ImTransportPreference::Direct,
+            direct_config: ImDirectConfig {
+                wechat_account_id: "wx-account".to_string(),
+                ..Default::default()
+            },
+            relay_config: ImRelayConfig::default(),
+        };
+        let resolution = resolve_transport(&profile);
+
+        let capabilities = platform_capabilities(&profile, &resolution);
+
+        assert!(capabilities.inbound.contains(&"mixed".to_string()));
+        assert!(capabilities.outbound.contains(&"mixed".to_string()));
     }
 }

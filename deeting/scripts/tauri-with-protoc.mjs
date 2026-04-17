@@ -42,15 +42,21 @@ function resolveProtoc() {
 }
 
 function resolveTauriCommand() {
-  const localTauri = path.resolve(
-    projectRoot,
-    "node_modules",
-    ".bin",
-    isWindows ? "tauri.cmd" : "tauri"
-  );
-  if (existsSync(localTauri)) {
-    return localTauri;
+  const binDir = path.resolve(projectRoot, "node_modules", ".bin");
+
+  // On Windows, spawning `.cmd` directly with `shell: false` fails (EINVAL).
+  // Prefer the native binary if present, otherwise fall back to the shim.
+  const candidates = isWindows
+    ? ["tauri.exe", "tauri.cmd"]
+    : ["tauri"];
+
+  for (const candidate of candidates) {
+    const resolved = path.resolve(binDir, candidate);
+    if (existsSync(resolved)) {
+      return resolved;
+    }
   }
+
   return "tauri";
 }
 
@@ -67,7 +73,11 @@ if (!protocPath) {
   process.exit(1);
 }
 
-const tauriResult = spawnSync(resolveTauriCommand(), args, {
+const tauriCommand = resolveTauriCommand();
+const tauriUseShell =
+  isWindows && (tauriCommand === "tauri" || tauriCommand.endsWith(".cmd"));
+
+const tauriResult = spawnSync(tauriCommand, args, {
   cwd: projectRoot,
   env: buildTauriEnv(
     {
@@ -76,7 +86,7 @@ const tauriResult = spawnSync(resolveTauriCommand(), args, {
     },
     protocPath
   ),
-  shell: false,
+  shell: tauriUseShell,
   stdio: "inherit",
 });
 
@@ -84,9 +94,15 @@ if (tauriResult.error) {
   console.error(
     `[tauri-with-protoc] failed to execute tauri CLI: ${tauriResult.error.message}`
   );
-  console.error(
-    "[tauri-with-protoc] Install dependencies first (npm install / bun install) so @tauri-apps/cli is available."
-  );
+  if (isWindows && tauriResult.error.code === "EINVAL") {
+    console.error(
+      "[tauri-with-protoc] On Windows, .cmd shims require running under a shell. Prefer node_modules/.bin/tauri.exe or rerun with dependencies installed."
+    );
+  } else {
+    console.error(
+      "[tauri-with-protoc] Install dependencies first (npm install / bun install) so @tauri-apps/cli is available."
+    );
+  }
   process.exit(1);
 }
 

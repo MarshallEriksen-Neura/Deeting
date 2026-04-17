@@ -83,6 +83,7 @@
     "prevStep": "Previous"
   },
   "deltaStates": {
+    "none": "No change",
     "provisional": "Pending",
     "applied": "Applied",
     "superseded": "Updated",

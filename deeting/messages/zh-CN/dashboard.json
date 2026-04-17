@@ -331,7 +331,7 @@
         "codePlaceholder": "输入 6 位配对码",
         "approve": "批准配对",
         "reject": "拒绝配对",
-        "approved": "已批准联系人 {contactId}",
+        "approvedContact": "已批准联系人 {contactId}",
         "approveFailed": "批准配对失败",
         "rejected": "已拒绝该配对请求",
         "rejectFailed": "拒绝配对失败"

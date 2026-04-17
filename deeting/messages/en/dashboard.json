@@ -331,7 +331,7 @@
         "codePlaceholder": "Enter 6-digit pairing code",
         "approve": "Approve Pairing",
         "reject": "Reject Pairing",
-        "approved": "Approved contact {contactId}",
+        "approvedContact": "Approved contact {contactId}",
         "approveFailed": "Failed to approve pairing",
         "rejected": "Pairing request rejected",
         "rejectFailed": "Failed to reject pairing"

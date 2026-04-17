@@ -434,6 +434,7 @@
       "triggers": {
         "on_vault_bound": "Vault connected",
         "on_workspace_bootstrapped": "Workspace ready",
+        "on_corpus_sync_completed": "Materials synced",
         "on_corpus_reconcile_completed": "Materials reconciled",
         "on_session_end": "Session ended",
         "on_valuable_answer": "Valuable answer detected",

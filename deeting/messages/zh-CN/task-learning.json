@@ -83,6 +83,7 @@
     "prevStep": "上一步"
   },
   "deltaStates": {
+    "none": "无变更",
     "provisional": "待确认",
     "applied": "已生效",
     "superseded": "已更新",
