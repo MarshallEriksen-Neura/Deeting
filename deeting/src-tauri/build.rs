@@ -15,6 +15,17 @@ fn build_boxlite_sidecar() -> Result<(), String> {
     let manifest_dir = PathBuf::from(
         env::var("CARGO_MANIFEST_DIR").map_err(|e| e.to_string())?,
     );
+    let out_dir = PathBuf::from(env::var("OUT_DIR").map_err(|e| e.to_string())?);
+    let main_target_dir = out_dir
+        .ancestors()
+        .nth(3)
+        .ok_or("failed to resolve main profile target dir from OUT_DIR")?
+        .to_path_buf();
+    let main_target_root = out_dir
+        .ancestors()
+        .nth(4)
+        .ok_or("failed to resolve main target root from OUT_DIR")?
+        .to_path_buf();
     let sidecar_manifest = manifest_dir
         .join("crates")
         .join("deeting-boxlite-sidecar")
@@ -37,11 +48,14 @@ fn build_boxlite_sidecar() -> Result<(), String> {
 
     let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".into());
+    let sidecar_target_root = main_target_root.join("sidecar-build");
 
     let mut cmd = Command::new(&cargo);
     cmd.arg("build")
         .arg("--manifest-path")
-        .arg(&sidecar_manifest);
+        .arg(&sidecar_manifest)
+        .arg("--target-dir")
+        .arg(&sidecar_target_root);
     if profile == "release" {
         cmd.arg("--release");
     }
@@ -51,11 +65,7 @@ fn build_boxlite_sidecar() -> Result<(), String> {
         return Err(format!("cargo build for sidecar exited with {status}"));
     }
 
-    let sidecar_target = sidecar_manifest
-        .parent()
-        .unwrap()
-        .join("target")
-        .join(&profile);
+    let sidecar_target = sidecar_target_root.join(&profile);
     let bin_name = if cfg!(windows) {
         "deeting-boxlite-sidecar.exe"
     } else {
@@ -69,12 +79,6 @@ fn build_boxlite_sidecar() -> Result<(), String> {
         ));
     }
 
-    let out_dir = PathBuf::from(env::var("OUT_DIR").map_err(|e| e.to_string())?);
-    let main_target_dir = out_dir
-        .ancestors()
-        .nth(3)
-        .ok_or("failed to resolve main target dir from OUT_DIR")?
-        .to_path_buf();
     let dest = main_target_dir.join(bin_name);
     std::fs::copy(&built, &dest).map_err(|e| {
         format!(
