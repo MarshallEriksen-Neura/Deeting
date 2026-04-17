@@ -1,7 +1,10 @@
+use std::collections::BTreeSet;
+
 use serde_json::Value;
 use tauri::AppHandle;
 
 use crate::modules::custom_task_agents::runtime::preview_custom_task_agent;
+use crate::modules::custom_task_agents::skill_actions::callable_skill_action_name;
 use crate::modules::custom_task_agents::types::{
     CustomTaskAgentInvocationKind, CustomTaskAgentPreviewRequest, CustomTaskAgentProfile,
 };
@@ -15,6 +18,60 @@ pub(crate) struct MonitorTaskAgentExecution {
     pub(crate) model_id: String,
     pub(crate) tokens_used: i64,
     pub(crate) tool_trace: Vec<Value>,
+}
+
+#[cfg(test)]
+mod effective_tool_tests {
+    use super::*;
+
+    #[test]
+    fn effective_monitor_tool_names_follow_requested_allowlist() {
+        let profile = CustomTaskAgentProfile {
+            id: "agent-1".to_string(),
+            name: "Agent One".to_string(),
+            description: Some("monitor agent".to_string()),
+            task_prompt: "watch the world".to_string(),
+            invocation_kind: CustomTaskAgentInvocationKind::Chat,
+            preferred_for_image_generation: false,
+            model_config: None,
+            callable_mcp_tool_ids: vec!["search_sdk".to_string(), "tool.search".to_string()],
+            guidance_skill_ids: Vec::new(),
+            callable_skill_action_refs: vec![
+                crate::modules::custom_task_agents::types::CustomTaskAgentSkillActionRef {
+                    skill_id: "system/monitor".to_string(),
+                    action_id: "sys_create_monitor".to_string(),
+                },
+            ],
+            bound_asset_id: None,
+            tags: Vec::new(),
+            discoverable: true,
+            is_enabled: true,
+            is_deleted: false,
+            source_kind: None,
+            source_path: None,
+            source_repo: None,
+            source_ref: None,
+            source_hash: None,
+            created_at: "2026-03-25T00:00:00Z".to_string(),
+            updated_at: "2026-03-25T00:00:00Z".to_string(),
+        };
+
+        let names = effective_monitor_tool_names(
+            &profile,
+            &[
+                "tool.search".to_string(),
+                "skill_action__system-monitor__sys_create_monitor".to_string(),
+            ],
+        );
+
+        assert_eq!(
+            names,
+            vec![
+                "skill_action__system-monitor__sys_create_monitor".to_string(),
+                "tool.search".to_string(),
+            ]
+        );
+    }
 }
 
 pub(crate) fn validate_monitor_task_agent_profile(
@@ -66,6 +123,104 @@ pub(crate) fn build_monitor_task_agent_message(task: &LocalMonitorTask) -> Strin
     )
 }
 
+pub(crate) fn build_monitor_task_agent_message_with_tools(
+    task: &LocalMonitorTask,
+    effective_tool_names: &[String],
+) -> String {
+    let snapshot = task
+        .last_snapshot
+        .as_ref()
+        .filter(|value| value.is_object())
+        .map(Value::to_string)
+        .unwrap_or_else(|| "{}".to_string());
+    let tools = if effective_tool_names.is_empty() {
+        "none".to_string()
+    } else {
+        effective_tool_names.join(", ")
+    };
+    let policy_state = if task.policy_state.is_object()
+        && task
+            .policy_state
+            .as_object()
+            .is_some_and(|items| !items.is_empty())
+    {
+        task.policy_state.to_string()
+    } else {
+        "{}".to_string()
+    };
+    format!(
+        "你正在作为已绑定的主动寻猎任务智能体执行研判。\n任务标题: {}\n监控目标: {}\n执行频率: {}\n研判模式: {}\n允许工具: {}\n策略状态: {}\n历史快照: {}\n\n请输出 JSON:\n{{\"is_significant_change\": boolean, \"change_summary\": \"markdown\", \"new_snapshot\": {{}}, \"strategy_tag\": \"string\", \"observations\": {{}}}}",
+        task.title,
+        task.objective,
+        task.cron_expr,
+        task.analysis_mode,
+        tools,
+        policy_state,
+        snapshot
+    )
+}
+
+pub(crate) fn effective_monitor_tool_names(
+    profile: &CustomTaskAgentProfile,
+    requested_allowed_tools: &[String],
+) -> Vec<String> {
+    let filtered = filter_monitor_callable_profile(profile, requested_allowed_tools);
+    let mut names = BTreeSet::new();
+    for tool_id in filtered.callable_mcp_tool_ids {
+        names.insert(tool_id);
+    }
+    for reference in filtered.callable_skill_action_refs {
+        names.insert(callable_skill_action_name(
+            reference.skill_id.as_str(),
+            reference.action_id.as_str(),
+        ));
+    }
+    names.into_iter().collect()
+}
+
+fn filter_monitor_callable_profile(
+    profile: &CustomTaskAgentProfile,
+    requested_allowed_tools: &[String],
+) -> CustomTaskAgentProfile {
+    if requested_allowed_tools.is_empty() {
+        return profile.clone();
+    }
+
+    let allowed = requested_allowed_tools
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .collect::<BTreeSet<_>>();
+    if allowed.is_empty() {
+        return profile.clone();
+    }
+
+    let mut filtered = profile.clone();
+    filtered.callable_mcp_tool_ids = profile
+        .callable_mcp_tool_ids
+        .iter()
+        .filter(|tool_id| allowed.contains(tool_id.as_str()))
+        .cloned()
+        .collect();
+    filtered.callable_skill_action_refs = profile
+        .callable_skill_action_refs
+        .iter()
+        .filter(|reference| {
+            let callable_name = callable_skill_action_name(
+                reference.skill_id.as_str(),
+                reference.action_id.as_str(),
+            );
+            let qualified_name = format!("{}#{}", reference.skill_id, reference.action_id);
+            let slash_name = format!("{}/{}", reference.skill_id, reference.action_id);
+            allowed.contains(callable_name.as_str())
+                || allowed.contains(qualified_name.as_str())
+                || allowed.contains(slash_name.as_str())
+        })
+        .cloned()
+        .collect();
+    filtered
+}
+
 async fn resolve_monitor_task_agent_max_rounds(app_state: &AppState) -> u32 {
     let configured_max_rounds = app_state
         .mcp
@@ -81,15 +236,17 @@ pub(crate) async fn execute_monitor_task_agent(
     app_handle: &AppHandle,
     app_state: &AppState,
     profile: &CustomTaskAgentProfile,
+    task: &LocalMonitorTask,
     message: &str,
 ) -> Result<MonitorTaskAgentExecution, String> {
     validate_monitor_task_agent_profile(profile)?;
     let max_rounds = resolve_monitor_task_agent_max_rounds(app_state).await;
+    let effective_profile = filter_monitor_callable_profile(profile, &task.allowed_tools);
 
     let response = preview_custom_task_agent(
         app_handle,
         app_state,
-        profile,
+        &effective_profile,
         CustomTaskAgentPreviewRequest {
             message: message.to_string(),
             image_urls: Vec::new(),

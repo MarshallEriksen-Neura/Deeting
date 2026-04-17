@@ -12,10 +12,9 @@ use crate::state::AppState;
 use super::feishu::{FeishuClient, FeishuConfig};
 use super::handlers::{build_direct_card_action_outcome, generate_local_chat_reply_outcome};
 use super::{
-    adapt_reply_for_platform,
-    build_settings_snapshot, mark_profile_degraded, mark_profile_running, mark_profile_unavailable,
-    replace_supervisor_profiles, resolve_transport, supervisor_snapshots, ImClient,
-    ImConnectionProfile, ImEvent, ImPlatform, ImPlatformAdapter, ImReplyCapability,
+    adapt_reply_for_platform, build_settings_snapshot, mark_profile_degraded, mark_profile_running,
+    mark_profile_unavailable, replace_supervisor_profiles, resolve_transport, supervisor_snapshots,
+    ImClient, ImConnectionProfile, ImEvent, ImPlatform, ImPlatformAdapter, ImReplyCapability,
     ImReplyDelivery, ImTransportKind, ImTransportPreference, LocalImSettingsSnapshot,
     MessageContent, SendMessageRequest,
 };
@@ -27,10 +26,7 @@ enum ImWorkerFailureDisposition {
     Unavailable,
 }
 
-fn classify_worker_failure(
-    profile: &ImConnectionProfile,
-    err: &str,
-) -> ImWorkerFailureDisposition {
+fn classify_worker_failure(profile: &ImConnectionProfile, err: &str) -> ImWorkerFailureDisposition {
     let normalized = err.trim().to_ascii_lowercase();
 
     if normalized.is_empty() {
@@ -51,9 +47,11 @@ fn classify_worker_failure(
 
     match profile.platform {
         ImPlatform::Telegram => {
-            if normalized.contains("telegram getupdates is unavailable because a webhook is still configured")
-                || normalized.contains("telegram getupdates is unavailable because another poller appears to be active")
-                || normalized.contains("webhook is still configured")
+            if normalized.contains(
+                "telegram getupdates is unavailable because a webhook is still configured",
+            ) || normalized.contains(
+                "telegram getupdates is unavailable because another poller appears to be active",
+            ) || normalized.contains("webhook is still configured")
                 || normalized.contains("another poller appears to be active")
             {
                 return ImWorkerFailureDisposition::Unavailable;

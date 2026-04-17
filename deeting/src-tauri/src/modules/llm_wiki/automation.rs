@@ -1125,7 +1125,8 @@ async fn handle_corpus_sync_followups(
     } else {
         transition_suggestion_status_by_fingerprint(
             state,
-            suggestion_fingerprint(TRIGGER_CORPUS_RECONCILE_COMPLETED, "inspect-after-sync").as_str(),
+            suggestion_fingerprint(TRIGGER_CORPUS_RECONCILE_COMPLETED, "inspect-after-sync")
+                .as_str(),
             STATUS_EXPIRED,
             now.as_str(),
             None,

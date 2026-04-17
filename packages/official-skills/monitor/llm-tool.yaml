@@ -6,8 +6,15 @@ tools:
       properties:
         title: { type: string }
         objective: { type: string }
+        assistant_id:
+          type: string
+          description: "Required bound chat task-agent ID for the desktop-local monitor."
         cron_expr: { type: string, default: "0 */6 * * *" }
-      required: ["title", "objective"]
+        allowed_tools:
+          type: array
+          items: { type: string }
+          description: "Optional effective tool allowlist intersected with the bound task-agent callables."
+      required: ["title", "objective", "assistant_id"]
 
   - name: sys_list_monitors
     description: "List all active monitors."

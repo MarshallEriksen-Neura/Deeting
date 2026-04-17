@@ -561,8 +561,8 @@ fn markdown_to_plain_text(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::modules::im::MessagePart;
     use crate::modules::im::text_runtime::parse_text_approval_command;
+    use crate::modules::im::MessagePart;
 
     use super::{
         build_mixed_outbound_items, classify_incoming_message, classify_outbound_file_item,

@@ -312,11 +312,7 @@ fn adapt_wechat_reply_for_profile(
                 channel_label
             ))
         }
-        _ => adapt_reply_for_platform(
-            capability,
-            ImPlatformAdapter::Wechat,
-            channel_label,
-        ),
+        _ => adapt_reply_for_platform(capability, ImPlatformAdapter::Wechat, channel_label),
     }
 }
 

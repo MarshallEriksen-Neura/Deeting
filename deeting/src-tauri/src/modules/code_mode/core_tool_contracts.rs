@@ -409,12 +409,12 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
                 "properties": {
                     "title": { "type": "string", "description": "Human-readable monitor title." },
                     "objective": { "type": "string", "description": "Task objective the assistant should execute." },
-                    "assistant_id": { "type": "string", "description": "Local assistant ID to run for this monitor." },
+                    "assistant_id": { "type": "string", "description": "Required bound local chat task-agent ID for this monitor." },
                     "cron_expr": { "type": "string", "description": "Optional cron expression controlling the schedule." },
                     "analysis_mode": { "type": "string", "description": "Optional analysis mode override." },
                     "notify_config": { "type": "object", "description": "Optional notification configuration." },
-                    "allowed_tools": { "type": "array", "items": { "type": "string" }, "description": "Optional tool allowlist for monitor execution." },
-                    "execution_target": { "type": "string", "description": "Optional execution target." }
+                    "allowed_tools": { "type": "array", "items": { "type": "string" }, "description": "Optional effective tool allowlist intersected with the bound task-agent callables." },
+                    "execution_target": { "type": "string", "description": "Optional execution target. Desktop-local monitor only accepts 'desktop'." }
                 },
                 "required": ["title", "objective", "assistant_id"]
             }),
@@ -437,7 +437,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
             example_arguments: json!({
                 "title": "Daily Site Check",
                 "objective": "Check the homepage and summarize any visible failures.",
-                "assistant_id": "assistant.weather",
+                "assistant_id": "agent.weather",
                 "cron_expr": "0 */6 * * *"
             }),
         },

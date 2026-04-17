@@ -7,7 +7,10 @@ use crate::modules::desktop_runtime::local_orchestrator::{
     LocalOrchestrationEngine, LocalWorkflowStep, StepResult, StepResultContext,
 };
 
-use super::agent_runtime::{build_monitor_task_agent_message, execute_monitor_task_agent};
+use super::agent_runtime::{
+    build_monitor_task_agent_message_with_tools, effective_monitor_tool_names,
+    execute_monitor_task_agent,
+};
 use super::output_contract::normalize_monitor_output;
 use super::run_events::{build_run_event, build_run_terminal_event, project_tool_trace_run_events};
 use super::types::{LocalExecutionResult, LocalMonitorTask, MonitorRunEventKind};
@@ -237,7 +240,12 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorBuildPromptStep {
                 "monitor.prompt.building",
                 None,
             );
-            let prompt = build_monitor_task_agent_message(&ctx.task);
+            let profile = ctx
+                .agent_profile
+                .as_ref()
+                .ok_or_else(|| "monitor task agent missing".to_string())?;
+            let effective_tools = effective_monitor_tool_names(profile, &ctx.task.allowed_tools);
+            let prompt = build_monitor_task_agent_message_with_tools(&ctx.task, &effective_tools);
             ctx.prompt = Some(prompt);
             ctx.emit_status(
                 "evolve",
@@ -289,21 +297,22 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorInvokeTaskAgentStep {
                 })),
             );
 
-            let response = execute_monitor_task_agent(&app_handle, &app_state, &profile, &prompt)
-                .await
-                .map_err(|err| {
-                    let error_message = err.clone();
-                    ctx.emit_status(
-                        "evolve",
-                        "monitor_execute_task_agent",
-                        "failed",
-                        "monitor.agent.error",
-                        Some(json!({
-                            "message": error_message,
-                        })),
-                    );
-                    err.to_string()
-                })?;
+            let response =
+                execute_monitor_task_agent(&app_handle, &app_state, &profile, &ctx.task, &prompt)
+                    .await
+                    .map_err(|err| {
+                        let error_message = err.clone();
+                        ctx.emit_status(
+                            "evolve",
+                            "monitor_execute_task_agent",
+                            "failed",
+                            "monitor.agent.error",
+                            Some(json!({
+                                "message": error_message,
+                            })),
+                        );
+                        err.to_string()
+                    })?;
 
             let content = response.content;
             if content.trim().is_empty() {

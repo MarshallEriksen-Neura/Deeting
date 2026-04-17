@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::BTreeSet;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 
@@ -53,6 +54,13 @@ struct LocalKnowledgeRankComputation {
     lexical_score: f64,
     match_reasons: Vec<String>,
     score_breakdown: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LocalKnowledgeFtsRepairPlan {
+    Healthy,
+    Documents(Vec<String>),
+    FullRebuild,
 }
 
 pub struct KnowledgeStore {
@@ -114,6 +122,174 @@ impl KnowledgeStore {
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
         Ok(())
+    }
+
+    async fn rebuild_local_knowledge_fts_index(&self) -> Result<(), KnowledgeError> {
+        sqlx::query(&format!("DELETE FROM {LOCAL_KNOWLEDGE_FTS_TABLE};"))
+            .execute(&self.write_pool)
+            .await
+            .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
+
+        sqlx::query(&format!(
+            r#"
+            INSERT INTO {LOCAL_KNOWLEDGE_FTS_TABLE} (
+              chunk_id, document_id, text_content, section_path, chunk_type
+            )
+            SELECT
+              id,
+              document_id,
+              text_content,
+              COALESCE(section_path, '[]'),
+              COALESCE(chunk_type, 'paragraph')
+            FROM knowledge_chunk
+            WHERE user_id = ?;
+            "#
+        ))
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn sync_local_knowledge_fts_rows_for_document_in_tx(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        document_id: &str,
+    ) -> Result<(), KnowledgeError> {
+        self.delete_knowledge_chunk_fts_rows_for_document(&mut **tx, document_id)
+            .await?;
+
+        sqlx::query(&format!(
+            r#"
+            INSERT INTO {LOCAL_KNOWLEDGE_FTS_TABLE} (
+              chunk_id, document_id, text_content, section_path, chunk_type
+            )
+            SELECT
+              id,
+              document_id,
+              text_content,
+              COALESCE(section_path, '[]'),
+              COALESCE(chunk_type, 'paragraph')
+            FROM knowledge_chunk
+            WHERE user_id = ?
+              AND document_id = ?;
+            "#
+        ))
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(document_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn local_knowledge_fts_repair_plan(
+        &self,
+    ) -> Result<LocalKnowledgeFtsRepairPlan, KnowledgeError> {
+        let chunk_total_row = sqlx::query(
+            r#"
+            SELECT COUNT(*) AS total
+            FROM knowledge_chunk
+            WHERE user_id = ?;
+            "#,
+        )
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
+        let chunk_total = chunk_total_row
+            .try_get::<i64, _>("total")
+            .unwrap_or(0)
+            .max(0);
+
+        let fts_total_row = sqlx::query(&format!(
+            "SELECT COUNT(*) AS total FROM {LOCAL_KNOWLEDGE_FTS_TABLE};"
+        ))
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
+        let fts_total = fts_total_row.try_get::<i64, _>("total").unwrap_or(0).max(0);
+
+        let mut affected_documents = BTreeSet::new();
+
+        let missing_or_stale_rows = sqlx::query(&format!(
+            r#"
+            SELECT DISTINCT
+              kc.document_id AS actual_document_id,
+              fts.document_id AS fts_document_id
+            FROM knowledge_chunk kc
+            LEFT JOIN {LOCAL_KNOWLEDGE_FTS_TABLE} fts
+              ON fts.chunk_id = kc.id
+            WHERE kc.user_id = ?
+              AND (
+                fts.chunk_id IS NULL
+                OR fts.document_id IS NULL
+                OR fts.document_id != kc.document_id
+                OR fts.text_content != kc.text_content
+                OR fts.section_path != COALESCE(kc.section_path, '[]')
+                OR fts.chunk_type != COALESCE(kc.chunk_type, 'paragraph')
+              );
+            "#
+        ))
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
+        for row in missing_or_stale_rows {
+            if let Ok(actual_document_id) = row.try_get::<String, _>("actual_document_id") {
+                let trimmed = actual_document_id.trim();
+                if !trimmed.is_empty() {
+                    affected_documents.insert(trimmed.to_string());
+                }
+            }
+            if let Ok(fts_document_id) = row.try_get::<String, _>("fts_document_id") {
+                let trimmed = fts_document_id.trim();
+                if !trimmed.is_empty() {
+                    affected_documents.insert(trimmed.to_string());
+                }
+            }
+        }
+
+        let orphaned_fts_rows = sqlx::query(&format!(
+            r#"
+            SELECT DISTINCT fts.document_id AS document_id
+            FROM {LOCAL_KNOWLEDGE_FTS_TABLE} fts
+            LEFT JOIN knowledge_chunk kc
+              ON kc.id = fts.chunk_id
+            WHERE kc.id IS NULL;
+            "#
+        ))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
+        for row in orphaned_fts_rows {
+            let Some(document_id) = row
+                .try_get::<String, _>("document_id")
+                .ok()
+                .map(|value| value.trim().to_string())
+            else {
+                return Ok(LocalKnowledgeFtsRepairPlan::FullRebuild);
+            };
+            if document_id.is_empty() {
+                return Ok(LocalKnowledgeFtsRepairPlan::FullRebuild);
+            }
+            affected_documents.insert(document_id);
+        }
+
+        if affected_documents.is_empty() {
+            return if chunk_total == fts_total {
+                Ok(LocalKnowledgeFtsRepairPlan::Healthy)
+            } else {
+                Ok(LocalKnowledgeFtsRepairPlan::FullRebuild)
+            };
+        }
+
+        Ok(LocalKnowledgeFtsRepairPlan::Documents(
+            affected_documents.into_iter().collect(),
+        ))
     }
 
     pub async fn init(&self) -> Result<(), KnowledgeError> {
@@ -335,28 +511,25 @@ impl KnowledgeStore {
         .await
         .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
 
-        sqlx::query(&format!("DELETE FROM {LOCAL_KNOWLEDGE_FTS_TABLE};"))
-            .execute(&self.write_pool)
-            .await
-            .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
-
-        sqlx::query(&format!(
-            r#"
-            INSERT INTO {LOCAL_KNOWLEDGE_FTS_TABLE} (
-              chunk_id, document_id, text_content, section_path, chunk_type
-            )
-            SELECT
-              id,
-              document_id,
-              text_content,
-              COALESCE(section_path, '[]'),
-              COALESCE(chunk_type, 'paragraph')
-            FROM knowledge_chunk;
-            "#
-        ))
-        .execute(&self.write_pool)
-        .await
-        .map_err(|err| KnowledgeError::Storage(err.to_string()))?;
+        match self.local_knowledge_fts_repair_plan().await? {
+            LocalKnowledgeFtsRepairPlan::Healthy => {}
+            LocalKnowledgeFtsRepairPlan::Documents(document_ids) => {
+                log::info!(
+                    "knowledge.store: repairing local knowledge FTS rows during init for {} documents",
+                    document_ids.len()
+                );
+                let mut tx = self.begin_write().await?;
+                for document_id in &document_ids {
+                    self.sync_local_knowledge_fts_rows_for_document_in_tx(&mut tx, document_id)
+                        .await?;
+                }
+                tx.commit().await?;
+            }
+            LocalKnowledgeFtsRepairPlan::FullRebuild => {
+                log::info!("knowledge.store: rebuilding local knowledge FTS index during init");
+                self.rebuild_local_knowledge_fts_index().await?;
+            }
+        }
 
         Ok(())
     }
@@ -2397,18 +2570,29 @@ fn tokenize_local_search_query(query: &str) -> Vec<String> {
     tokens
 }
 
+fn sanitize_fts5_token(token: &str) -> String {
+    token.replace('"', "\"\"").replace('*', "").replace('^', "")
+}
+
+fn is_fts5_operator(token: &str) -> bool {
+    matches!(
+        token.to_ascii_uppercase().as_str(),
+        "AND" | "OR" | "NOT" | "NEAR"
+    )
+}
+
 fn build_local_knowledge_fts_query(tokens_lower: &[String], query_lower: &str) -> String {
     let mut parts = Vec::new();
     let normalized_query = query_lower.trim();
-    if !normalized_query.is_empty() {
-        parts.push(format!("\"{}\"", normalized_query.replace('"', "\"\"")));
+    if !normalized_query.is_empty() && !is_fts5_operator(normalized_query) {
+        parts.push(format!("\"{}\"", sanitize_fts5_token(normalized_query)));
     }
     for token in tokens_lower {
         let normalized = token.trim();
-        if normalized.is_empty() {
+        if normalized.is_empty() || is_fts5_operator(normalized) {
             continue;
         }
-        let quoted = format!("\"{}\"", normalized.replace('"', "\"\""));
+        let quoted = format!("\"{}\"", sanitize_fts5_token(normalized));
         if !parts.contains(&quoted) {
             parts.push(quoted);
         }
@@ -2522,12 +2706,17 @@ fn compute_local_knowledge_match_score(
     }
 }
 
+/// SQLite `bm25()` returns negative values where more-negative = more relevant.
+/// Convert to a 0..1 range where higher = more relevant using sigmoid normalization.
 fn normalize_local_bm25_score(raw: f64) -> f64 {
     if !raw.is_finite() {
         return 0.0;
     }
-    let clamped = raw.max(0.0);
-    1.0 / (1.0 + clamped)
+    // raw is negative (e.g. -2.5 for a strong match, -0.1 for a weak one).
+    // Flip sign so that higher absolute relevance maps to a higher positive value,
+    // then apply sigmoid to map into (0, 1].
+    let magnitude = (-raw).max(0.0);
+    1.0 - 1.0 / (1.0 + magnitude)
 }
 
 fn estimate_local_tokens(text: &str) -> i64 {
@@ -2597,6 +2786,117 @@ fn reverse_ordering(value: Ordering) -> Ordering {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    async fn build_test_store() -> KnowledgeStore {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("create sqlite memory pool");
+        sqlx::query("PRAGMA foreign_keys = ON;")
+            .execute(&pool)
+            .await
+            .expect("enable sqlite foreign keys");
+
+        let store = KnowledgeStore::with_pools(pool.clone(), pool);
+        store.init().await.expect("init knowledge store");
+        store
+    }
+
+    async fn insert_test_document(store: &KnowledgeStore, document_id: &str) {
+        let now = "2026-04-17T00:00:00Z";
+        sqlx::query(
+            r#"
+            INSERT INTO user_document (
+              id,
+              user_id,
+              media_asset_id,
+              filename,
+              status,
+              chunk_count,
+              meta_info,
+              created_at,
+              updated_at
+            )
+            VALUES (?, ?, ?, ?, 'indexed', 1, '{}', ?, ?);
+            "#,
+        )
+        .bind(document_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(format!("asset-{document_id}"))
+        .bind(format!("{document_id}.md"))
+        .bind(now)
+        .bind(now)
+        .execute(&store.write_pool)
+        .await
+        .expect("insert test document");
+    }
+
+    async fn insert_test_chunk(
+        store: &KnowledgeStore,
+        document_id: &str,
+        chunk_id: &str,
+        text_content: &str,
+    ) {
+        let now = "2026-04-17T00:00:00Z";
+        let char_count = text_content.chars().count() as i64;
+        sqlx::query(
+            r#"
+            INSERT INTO knowledge_chunk (
+              id,
+              document_id,
+              user_id,
+              chunk_index,
+              text_content,
+              token_count,
+              chunk_type,
+              section_path,
+              page_hint,
+              char_start,
+              char_end,
+              char_count,
+              content_hash,
+              quality_flags,
+              created_at,
+              updated_at
+            )
+            VALUES (?, ?, ?, 0, ?, 8, 'paragraph', '["Section"]', NULL, 0, ?, ?, 'hash', '[]', ?, ?);
+            "#,
+        )
+        .bind(chunk_id)
+        .bind(document_id)
+        .bind(LOCAL_DESKTOP_USER_ID)
+        .bind(text_content)
+        .bind(char_count)
+        .bind(char_count)
+        .bind(now)
+        .bind(now)
+        .execute(&store.write_pool)
+        .await
+        .expect("insert test chunk");
+    }
+
+    async fn insert_test_fts_row(
+        store: &KnowledgeStore,
+        document_id: &str,
+        chunk_id: &str,
+        text_content: &str,
+    ) {
+        sqlx::query(&format!(
+            r#"
+            INSERT INTO {LOCAL_KNOWLEDGE_FTS_TABLE} (
+              chunk_id, document_id, text_content, section_path, chunk_type
+            )
+            VALUES (?, ?, ?, '["Section"]', 'paragraph');
+            "#
+        ))
+        .bind(chunk_id)
+        .bind(document_id)
+        .bind(text_content)
+        .execute(&store.write_pool)
+        .await
+        .expect("insert test fts row");
+    }
 
     #[test]
     fn strip_local_document_raw_text_removes_only_processing_payload() {
@@ -2676,7 +2976,7 @@ Selected knowledge should use scoped hybrid recall.
             &["Knowledge".to_string(), "Chunking".to_string()],
             "paragraph",
             &[],
-            1.2,
+            -1.2,
         );
         let penalized = compute_local_knowledge_match_score(
             "chunking",
@@ -2686,7 +2986,7 @@ Selected knowledge should use scoped hybrid recall.
             &[],
             "paragraph",
             &["noisy_chunk".to_string()],
-            1.2,
+            -1.2,
         );
 
         assert!(boosted.score > 0.0);
@@ -2703,5 +3003,120 @@ Selected knowledge should use scoped hybrid recall.
         assert!(query.contains("\"desktop knowledge chunking\""));
         assert!(query.contains("\"knowledge\""));
         assert!(query.contains("\"chunking\""));
+    }
+
+    #[test]
+    fn normalize_local_bm25_score_prefers_more_negative_scores() {
+        let strong = normalize_local_bm25_score(-2.5);
+        let weak = normalize_local_bm25_score(-0.1);
+        let zero = normalize_local_bm25_score(0.0);
+        let positive = normalize_local_bm25_score(1.2);
+
+        assert!(strong > weak);
+        assert!(weak > zero);
+        assert_eq!(zero, 0.0);
+        assert_eq!(positive, 0.0);
+    }
+
+    #[test]
+    fn build_local_knowledge_fts_query_skips_reserved_operators_and_strips_syntax() {
+        let query = build_local_knowledge_fts_query(
+            &[
+                "knowledge".to_string(),
+                "and".to_string(),
+                "near".to_string(),
+                "road*map".to_string(),
+                "note^".to_string(),
+            ],
+            "AND",
+        );
+
+        assert_eq!(query, "\"knowledge\" OR \"roadmap\" OR \"note\"");
+    }
+
+    #[tokio::test]
+    async fn local_knowledge_fts_repair_plan_skips_healthy_index() {
+        let store = build_test_store().await;
+        insert_test_document(&store, "doc-healthy").await;
+        insert_test_chunk(&store, "doc-healthy", "chunk-healthy", "healthy text").await;
+        insert_test_fts_row(&store, "doc-healthy", "chunk-healthy", "healthy text").await;
+
+        assert_eq!(
+            store
+                .local_knowledge_fts_repair_plan()
+                .await
+                .expect("check healthy fts state"),
+            LocalKnowledgeFtsRepairPlan::Healthy
+        );
+    }
+
+    #[tokio::test]
+    async fn local_knowledge_fts_repair_plan_targets_affected_documents() {
+        let store = build_test_store().await;
+        insert_test_document(&store, "doc-stale").await;
+        insert_test_chunk(&store, "doc-stale", "chunk-stale", "fresh text").await;
+        insert_test_fts_row(&store, "doc-legacy", "chunk-stale", "stale text").await;
+
+        assert_eq!(
+            store
+                .local_knowledge_fts_repair_plan()
+                .await
+                .expect("plan targeted repair"),
+            LocalKnowledgeFtsRepairPlan::Documents(vec![
+                "doc-legacy".to_string(),
+                "doc-stale".to_string(),
+            ])
+        );
+    }
+
+    #[tokio::test]
+    async fn init_repairs_missing_local_knowledge_fts_rows() {
+        let store = build_test_store().await;
+        insert_test_document(&store, "doc-repair").await;
+        insert_test_chunk(&store, "doc-repair", "chunk-repair", "repair me").await;
+
+        assert_eq!(
+            store
+                .local_knowledge_fts_repair_plan()
+                .await
+                .expect("detect missing fts row"),
+            LocalKnowledgeFtsRepairPlan::Documents(vec!["doc-repair".to_string()])
+        );
+
+        store.init().await.expect("repair local knowledge fts");
+
+        assert_eq!(
+            store
+                .local_knowledge_fts_repair_plan()
+                .await
+                .expect("confirm repaired fts state"),
+            LocalKnowledgeFtsRepairPlan::Healthy
+        );
+
+        let repaired_row = sqlx::query(&format!(
+            r#"
+            SELECT document_id, text_content
+            FROM {LOCAL_KNOWLEDGE_FTS_TABLE}
+            WHERE chunk_id = ?
+            LIMIT 1;
+            "#
+        ))
+        .bind("chunk-repair")
+        .fetch_one(&store.pool)
+        .await
+        .expect("fetch repaired fts row");
+
+        assert_eq!(
+            repaired_row
+                .try_get::<String, _>("document_id")
+                .expect("read repaired document id"),
+            "doc-repair"
+        );
+        assert_eq!(
+            repaired_row
+                .try_get::<String, _>("text_content")
+                .expect("read repaired text content"),
+            "repair me"
+        );
     }
 }

@@ -195,10 +195,13 @@ pub(crate) fn extract_local_chat_reply_outcome(response: &Value) -> Option<Local
     }
 
     let extracted = extract_reply_capabilities(response)?;
-    let fallback_text = extracted.fallbacks.iter().find_map(|capability| match capability {
-        ImReplyCapability::PlainText { text } => Some(text.clone()),
-        _ => None,
-    });
+    let fallback_text = extracted
+        .fallbacks
+        .iter()
+        .find_map(|capability| match capability {
+            ImReplyCapability::PlainText { text } => Some(text.clone()),
+            _ => None,
+        });
     let content = match &extracted.primary {
         ImReplyCapability::PlainText { text } => MessageContent::Text { text: text.clone() },
         ImReplyCapability::InteractiveCard { card } => MessageContent::Card { card: card.clone() },
@@ -426,7 +429,10 @@ mod tests {
             }
             other => panic!("expected image reply, got {other:?}"),
         }
-        assert_eq!(outcome.fallback_text.as_deref(), Some("desktop image ready"));
+        assert_eq!(
+            outcome.fallback_text.as_deref(),
+            Some("desktop image ready")
+        );
         assert!(outcome.approval_request.is_none());
     }
 

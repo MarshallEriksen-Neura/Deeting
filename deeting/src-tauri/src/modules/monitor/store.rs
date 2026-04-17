@@ -16,9 +16,9 @@ use crate::modules::monitor::types::{
 
 const LOCAL_MONITOR_USER_ID: &str = "00000000-0000-0000-0000-000000000000";
 const DEFAULT_MONITOR_CRON: &str = "0 */6 * * *";
-const DEFAULT_INTERVAL_MINUTES: i64 = 360;
 const MAX_ERROR_COUNT: i64 = 3;
 const FAILURE_RETRY_SECONDS: i64 = 60;
+const DEFAULT_CLAIM_LEASE_SECONDS: i64 = 180;
 const DEFAULT_CHANNEL_PRIORITY: i64 = 100;
 const DEFAULT_ANALYSIS_MODE: &str = "concise";
 
@@ -94,6 +94,7 @@ impl MonitorStore {
               total_tokens INTEGER NOT NULL DEFAULT 0,
               current_interval_minutes INTEGER NOT NULL DEFAULT 360,
               next_run_ts INTEGER,
+              claim_until_ts INTEGER,
               assistant_id TEXT,
               model_id TEXT,
               is_active INTEGER NOT NULL DEFAULT 1,
@@ -125,6 +126,13 @@ impl MonitorStore {
             "local_monitor_tasks",
             "policy_state_json",
             "TEXT NOT NULL DEFAULT '{}'",
+        )
+        .await?;
+        ensure_column(
+            &self.write_pool,
+            "local_monitor_tasks",
+            "claim_until_ts",
+            "INTEGER",
         )
         .await?;
 
@@ -323,15 +331,15 @@ impl MonitorStore {
         if objective.is_empty() {
             return Err("objective 不能为空".to_string());
         }
-        let cron_expr = normalize_cron_expr(payload.cron_expr.as_deref())?;
-        let interval_minutes = estimate_cron_interval_minutes(&cron_expr);
+        let cron_expr = normalize_supported_cron_expr(payload.cron_expr.as_deref())?;
         let now_ts = now_unix_timestamp();
         let now_iso = now_rfc3339();
-        let next_run_ts = now_ts + interval_minutes * 60;
+        let (next_run_ts, interval_minutes) = schedule_metadata_for_cron_expr(&cron_expr, now_ts)?;
         let notify_config =
             normalize_monitor_notify_config(&payload.notify_config.unwrap_or_else(|| json!({})));
         let allowed_tools = normalize_allowed_tools(payload.allowed_tools.unwrap_or_default());
-        let execution_target = normalize_execution_target(payload.execution_target.as_deref());
+        let execution_target =
+            normalize_desktop_execution_target(payload.execution_target.as_deref())?;
         let analysis_mode = normalize_analysis_mode(payload.analysis_mode.as_deref());
         let policy_state = json!({});
 
@@ -396,7 +404,7 @@ impl MonitorStore {
         }
 
         let cron_expr = if let Some(value) = payload.cron_expr.as_deref() {
-            normalize_cron_expr(Some(value))?
+            normalize_supported_cron_expr(Some(value))?
         } else {
             current.cron_expr
         };
@@ -405,7 +413,10 @@ impl MonitorStore {
             None => current.assistant_id.clone(),
         };
         let assistant_id = assistant_id.ok_or_else(|| "assistant_id 不能为空".to_string())?;
-        let interval_minutes = estimate_cron_interval_minutes(&cron_expr);
+        let now_iso = now_rfc3339();
+        let now_ts = now_unix_timestamp();
+        let (next_scheduled_run_ts, interval_minutes) =
+            schedule_metadata_for_cron_expr(&cron_expr, now_ts)?;
         let analysis_mode = match payload.analysis_mode.as_deref() {
             Some(value) => normalize_analysis_mode(Some(value)),
             None => current.analysis_mode.clone(),
@@ -424,18 +435,19 @@ impl MonitorStore {
             .allowed_tools
             .map(normalize_allowed_tools)
             .unwrap_or(current.allowed_tools);
-        let execution_target =
-            normalize_execution_target(payload.execution_target.as_deref().or(Some("desktop")));
-
-        let now_iso = now_rfc3339();
-        let now_ts = now_unix_timestamp();
+        let execution_target = normalize_desktop_execution_target(
+            payload
+                .execution_target
+                .as_deref()
+                .or(Some(current.execution_target.as_str())),
+        )?;
         let mut next_run_ts = current
             .next_run_at
             .as_deref()
             .and_then(parse_rfc3339_to_unix)
-            .unwrap_or(now_ts + interval_minutes * 60);
+            .unwrap_or(next_scheduled_run_ts);
         if payload.cron_expr.is_some() || status == "active" {
-            next_run_ts = now_ts + interval_minutes * 60;
+            next_run_ts = next_scheduled_run_ts;
         }
         if status != "active" {
             next_run_ts = 0;
@@ -455,6 +467,7 @@ impl MonitorStore {
                 analysis_mode = ?,
                 current_interval_minutes = ?,
                 next_run_ts = ?,
+                claim_until_ts = NULL,
                 updated_at = ?
             WHERE id = ? AND is_active = 1
             "#,
@@ -493,10 +506,8 @@ impl MonitorStore {
         let Some(task) = self.get_task(task_id).await? else {
             return Ok(None);
         };
-        let interval_minutes = task
-            .current_interval_minutes
-            .unwrap_or(DEFAULT_INTERVAL_MINUTES);
-        let next_run_ts = now_unix_timestamp() + interval_minutes * 60;
+        let now_ts = now_unix_timestamp();
+        let (next_run_ts, _) = schedule_metadata_for_cron_expr(task.cron_expr.as_str(), now_ts)?;
         self.update_status(task_id, "active", Some(next_run_ts))
             .await
     }
@@ -508,6 +519,7 @@ impl MonitorStore {
             SET is_active = 0,
                 status = 'paused',
                 next_run_ts = NULL,
+                claim_until_ts = NULL,
                 updated_at = ?
             WHERE id = ? AND is_active = 1
             "#,
@@ -526,6 +538,7 @@ impl MonitorStore {
             r#"
             UPDATE local_monitor_tasks
             SET next_run_ts = ?,
+                claim_until_ts = NULL,
                 updated_at = ?
             WHERE id = ? AND status = 'active' AND is_active = 1
             "#,
@@ -1092,25 +1105,55 @@ impl MonitorStore {
     pub async fn list_due_tasks(&self, limit: i64) -> Result<Vec<LocalMonitorTask>, String> {
         let safe_limit = limit.clamp(1, 50);
         let now_ts = now_unix_timestamp();
+        let claim_until_ts = now_ts + DEFAULT_CLAIM_LEASE_SECONDS;
         let rows = sqlx::query(
             r#"
-            SELECT * FROM local_monitor_tasks
+            SELECT id FROM local_monitor_tasks
             WHERE is_active = 1
               AND status = 'active'
               AND next_run_ts IS NOT NULL
               AND next_run_ts <= ?
+              AND (claim_until_ts IS NULL OR claim_until_ts <= ?)
             ORDER BY next_run_ts ASC, rowid ASC
             LIMIT ?
             "#,
         )
         .bind(now_ts)
+        .bind(now_ts)
         .bind(safe_limit)
-        .fetch_all(&self.pool)
+        .fetch_all(&self.write_pool)
         .await
         .map_err(|err| err.to_string())?;
         let mut items = Vec::with_capacity(rows.len());
         for row in rows {
-            items.push(row_to_task(&row)?);
+            let task_id: String = row.try_get("id").map_err(|err| err.to_string())?;
+            let claim_result = sqlx::query(
+                r#"
+                UPDATE local_monitor_tasks
+                SET claim_until_ts = ?,
+                    updated_at = ?
+                WHERE id = ?
+                  AND is_active = 1
+                  AND status = 'active'
+                  AND next_run_ts IS NOT NULL
+                  AND next_run_ts <= ?
+                  AND (claim_until_ts IS NULL OR claim_until_ts <= ?)
+                "#,
+            )
+            .bind(claim_until_ts)
+            .bind(now_rfc3339())
+            .bind(task_id.as_str())
+            .bind(now_ts)
+            .bind(now_ts)
+            .execute(&self.write_pool)
+            .await
+            .map_err(|err| err.to_string())?;
+            if claim_result.rows_affected() == 0 {
+                continue;
+            }
+            if let Some(task) = self.get_task(task_id.as_str()).await? {
+                items.push(task);
+            }
         }
         Ok(items)
     }
@@ -1122,8 +1165,8 @@ impl MonitorStore {
     ) -> Result<(), String> {
         let now_ts = now_unix_timestamp();
         let now_iso = now_rfc3339();
-        let interval_minutes = estimate_cron_interval_minutes(&task.cron_expr);
-        let next_run_ts = now_ts + interval_minutes * 60;
+        let (next_run_ts, interval_minutes) =
+            schedule_metadata_for_cron_expr(task.cron_expr.as_str(), now_ts)?;
         let summary = truncate(&result.change_summary, 4000);
         let output_data = json!({
             "is_significant_change": result.is_significant_change,
@@ -1174,6 +1217,7 @@ impl MonitorStore {
                 total_tokens = total_tokens + ?,
                 current_interval_minutes = ?,
                 next_run_ts = ?,
+                claim_until_ts = NULL,
                 updated_at = ?
             WHERE id = ? AND is_active = 1
             "#,
@@ -1241,6 +1285,7 @@ impl MonitorStore {
                 error_count = ?,
                 last_executed_ts = ?,
                 next_run_ts = ?,
+                claim_until_ts = NULL,
                 updated_at = ?
             WHERE id = ? AND is_active = 1
             "#,
@@ -1272,6 +1317,7 @@ impl MonitorStore {
             UPDATE local_monitor_tasks
             SET status = ?,
                 next_run_ts = ?,
+                claim_until_ts = NULL,
                 updated_at = ?
             WHERE id = ? AND is_active = 1
             "#,
@@ -1420,9 +1466,27 @@ fn normalize_status(raw: &str) -> &'static str {
     }
 }
 
+#[allow(dead_code)]
 fn normalize_execution_target(raw: Option<&str>) -> String {
     let _ = raw;
     "desktop".to_string()
+}
+
+fn normalize_supported_cron_expr(raw: Option<&str>) -> Result<String, String> {
+    let cron_expr = normalize_cron_expr(raw)?;
+    parse_supported_cron_expr(&cron_expr)?;
+    Ok(cron_expr)
+}
+
+fn normalize_desktop_execution_target(raw: Option<&str>) -> Result<String, String> {
+    let normalized = raw.unwrap_or("desktop").trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "" | "desktop" | "desktop_preferred" => Ok("desktop".to_string()),
+        other => Err(format!(
+            "desktop local monitor only supports execution_target=desktop, got '{}'",
+            other
+        )),
+    }
 }
 
 fn normalize_assistant_id(raw: String) -> Result<String, String> {
@@ -1592,6 +1656,7 @@ fn normalize_allowed_tools(values: Vec<String>) -> Vec<String> {
     normalized
 }
 
+#[allow(dead_code)]
 fn estimate_cron_interval_minutes(cron_expr: &str) -> i64 {
     let parts: Vec<&str> = cron_expr.split_whitespace().collect();
     if parts.len() != 5 {
@@ -1627,6 +1692,7 @@ fn estimate_cron_interval_minutes(cron_expr: &str) -> i64 {
     DEFAULT_INTERVAL_MINUTES
 }
 
+#[allow(dead_code)]
 fn parse_step(part: &str) -> Option<i64> {
     let part = part.trim();
     if !part.starts_with("*/") {
@@ -1634,6 +1700,91 @@ fn parse_step(part: &str) -> Option<i64> {
     }
     let raw = part.trim_start_matches("*/");
     raw.parse::<i64>().ok().filter(|value| *value > 0)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CronFieldMatcher {
+    Any,
+    Step(u8),
+    Exact(u8),
+}
+
+fn parse_supported_cron_expr(
+    cron_expr: &str,
+) -> Result<(CronFieldMatcher, CronFieldMatcher), String> {
+    let parts: Vec<&str> = cron_expr.split_whitespace().collect();
+    if parts.len() != 5 {
+        return Err("Cron 表达式非法: 必须是 5 段".to_string());
+    }
+    if parts[2] != "*" || parts[3] != "*" || parts[4] != "*" {
+        return Err(
+            "desktop local monitor 目前仅支持按分钟/小时的 5 段 Cron，且日/月/周字段必须为 *"
+                .to_string(),
+        );
+    }
+    Ok((
+        parse_cron_field(parts[0], 59, "minute")?,
+        parse_cron_field(parts[1], 23, "hour")?,
+    ))
+}
+
+fn parse_cron_field(part: &str, max: u8, field_name: &str) -> Result<CronFieldMatcher, String> {
+    let part = part.trim();
+    if part == "*" {
+        return Ok(CronFieldMatcher::Any);
+    }
+    if let Some(raw_step) = part.strip_prefix("*/") {
+        let step = raw_step
+            .parse::<u8>()
+            .map_err(|_| format!("Cron 表达式非法: {} 字段步长无效", field_name))?;
+        if step == 0 || step > max {
+            return Err(format!(
+                "Cron 表达式非法: {} 字段步长必须在 1..={} 之间",
+                field_name, max
+            ));
+        }
+        return Ok(CronFieldMatcher::Step(step));
+    }
+    let exact = part
+        .parse::<u8>()
+        .map_err(|_| format!("Cron 表达式非法: {} 字段仅支持 *, */n, 或整数", field_name))?;
+    if exact > max {
+        return Err(format!(
+            "Cron 表达式非法: {} 字段必须在 0..={} 之间",
+            field_name, max
+        ));
+    }
+    Ok(CronFieldMatcher::Exact(exact))
+}
+
+fn schedule_metadata_for_cron_expr(cron_expr: &str, after_ts: i64) -> Result<(i64, i64), String> {
+    let first = next_run_timestamp_after(cron_expr, after_ts)?;
+    let second = next_run_timestamp_after(cron_expr, first)?;
+    Ok((first, ((second - first) / 60).max(1)))
+}
+
+fn next_run_timestamp_after(cron_expr: &str, after_ts: i64) -> Result<i64, String> {
+    let (minute_matcher, hour_matcher) = parse_supported_cron_expr(cron_expr)?;
+    let mut candidate_ts = after_ts - after_ts.rem_euclid(60) + 60;
+    for _ in 0..(366 * 24 * 60) {
+        let candidate = time::OffsetDateTime::from_unix_timestamp(candidate_ts)
+            .map_err(|err| err.to_string())?;
+        if cron_field_matches(hour_matcher, candidate.hour())
+            && cron_field_matches(minute_matcher, candidate.minute())
+        {
+            return Ok(candidate_ts);
+        }
+        candidate_ts += 60;
+    }
+    Err("Cron 表达式非法: 无法在一年内求出下一次执行时间".to_string())
+}
+
+fn cron_field_matches(matcher: CronFieldMatcher, value: u8) -> bool {
+    match matcher {
+        CronFieldMatcher::Any => true,
+        CronFieldMatcher::Step(step) => value % step == 0,
+        CronFieldMatcher::Exact(expected) => value == expected,
+    }
 }
 
 fn parse_json_value(raw: &str) -> Value {
@@ -1760,6 +1911,84 @@ mod tests {
         assert_eq!(created.assistant_id.as_deref(), Some("agent-1"));
         assert_eq!(created.analysis_mode, "alert_first");
         assert_eq!(created.policy_state, json!({}));
+    }
+
+    #[test]
+    fn schedule_metadata_aligns_fixed_daily_cron_to_wall_clock() {
+        let now = time::OffsetDateTime::parse(
+            "2026-03-25T08:10:00Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .expect("timestamp")
+        .unix_timestamp();
+
+        let (next_run_ts, cadence_minutes) =
+            schedule_metadata_for_cron_expr("0 9 * * *", now).expect("schedule");
+
+        assert_eq!(
+            ts_to_rfc3339(next_run_ts).as_deref(),
+            Some("2026-03-25T09:00:00Z")
+        );
+        assert_eq!(cadence_minutes, 24 * 60);
+    }
+
+    #[test]
+    fn schedule_metadata_aligns_hour_step_cron_to_wall_clock() {
+        let now = time::OffsetDateTime::parse(
+            "2026-03-25T08:10:00Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .expect("timestamp")
+        .unix_timestamp();
+
+        let (next_run_ts, cadence_minutes) =
+            schedule_metadata_for_cron_expr("0 */6 * * *", now).expect("schedule");
+
+        assert_eq!(
+            ts_to_rfc3339(next_run_ts).as_deref(),
+            Some("2026-03-25T12:00:00Z")
+        );
+        assert_eq!(cadence_minutes, 6 * 60);
+    }
+
+    #[test]
+    fn normalize_supported_cron_expr_rejects_unsupported_day_of_month() {
+        let error = normalize_supported_cron_expr(Some("0 9 1 * *")).expect_err("cron should fail");
+        assert!(error.contains("desktop local monitor"));
+    }
+
+    #[tokio::test]
+    async fn list_due_tasks_claims_rows_until_execution_finishes() {
+        let store = build_store().await;
+
+        let created = store
+            .create_task(LocalMonitorTaskCreateRequest {
+                title: "Iran watch".to_string(),
+                objective: "Monitor developments".to_string(),
+                assistant_id: "agent-1".to_string(),
+                cron_expr: Some("*/30 * * * *".to_string()),
+                analysis_mode: None,
+                notify_config: None,
+                allowed_tools: None,
+                execution_target: None,
+            })
+            .await
+            .expect("task should be created");
+
+        store
+            .trigger_task(created.id.as_str())
+            .await
+            .expect("trigger should succeed");
+
+        let first = store.list_due_tasks(5).await.expect("claim should succeed");
+        let second = store
+            .list_due_tasks(5)
+            .await
+            .expect("second claim should succeed");
+
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].id, created.id);
+        assert!(second.is_empty());
     }
 
     #[test]

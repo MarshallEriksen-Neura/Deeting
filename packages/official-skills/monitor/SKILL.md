@@ -13,7 +13,7 @@ Proactive monitoring and alerting system.
 
 ## Available Tools
 
-- `sys_create_monitor` — Create a persistent monitoring task. Required: `title`, `objective`. Optional: `cron_expr`.
+- `sys_create_monitor` — Create a persistent monitoring task. Required: `title`, `objective`, `assistant_id`. Optional: `cron_expr`, `allowed_tools`.
 - `sys_list_monitors` — List all active monitors.
 
 ## Usage Notes
