@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Loader2, Play } from "lucide-react"
 
 import { CodeBlock } from "@/components/chat/code-block"
@@ -59,6 +59,7 @@ export function RunnableCodeFence({
   const appendMessageBlocks = useChatStore((state) => state.appendMessageBlocks)
   const upsertMessageToolResult = useChatStore((state) => state.upsertMessageToolResult)
   const [isRunning, setIsRunning] = useState(false)
+  const [editableSource, setEditableSource] = useState(source)
 
   const runnableLanguage = useMemo(
     () => normalizeRunnableFenceLanguage(language),
@@ -68,8 +69,16 @@ export function RunnableCodeFence({
     () => buildRunnableFenceCallId(messageId, fenceId),
     [fenceId, messageId]
   )
+
+  useEffect(() => {
+    setEditableSource(source)
+  }, [source])
+
   const canRun =
-    !!sessionId && !!runnableLanguage && isTauriRuntime() && source.trim().length > 0
+    !!sessionId &&
+    !!runnableLanguage &&
+    isTauriRuntime() &&
+    editableSource.trim().length > 0
 
   const handleRun = async () => {
     if (!canRun || !sessionId || !runnableLanguage || isRunning) return
@@ -93,7 +102,7 @@ export function RunnableCodeFence({
       const result = await runLocalSandboxCodeSnippet({
         sessionId,
         language: runnableLanguage,
-        code: source,
+        code: editableSource,
         executionTimeoutSecs: DEFAULT_EXECUTION_TIMEOUT_SECS,
       })
       upsertMessageToolResult(messageId, {
@@ -138,6 +147,8 @@ export function RunnableCodeFence({
     <CodeBlock
       className={className}
       language={language}
+      editableValue={editableSource}
+      onEditableValueChange={setEditableSource}
       headerActions={
         canRun ? (
           <Button
@@ -157,7 +168,7 @@ export function RunnableCodeFence({
         ) : null
       }
     >
-      {source}
+      {editableSource}
     </CodeBlock>
   )
 }

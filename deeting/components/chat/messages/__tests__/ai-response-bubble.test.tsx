@@ -452,7 +452,7 @@ describe("AIResponseBubble debug panel", () => {
     );
   });
 
-  it("disables runnable fences when the assistant message already contains tool activity", () => {
+  it("keeps runnable fences enabled when the assistant message also contains tool activity", () => {
     const parts: MessageBlock[] = [
       { id: "text-mixed-1", type: "text", content: "```python\nprint('hi')\n```" },
       {
@@ -476,7 +476,7 @@ describe("AIResponseBubble debug panel", () => {
 
     expect(screen.getByTestId("markdown-viewer")).toHaveAttribute(
       "data-enable-runnable-fences",
-      "false",
+      "true",
     );
   });
 

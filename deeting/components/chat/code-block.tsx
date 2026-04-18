@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react"
 import { ChevronDown, ChevronUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/hooks/use-i18n"
 import { HoverCopyButton, extractTextFromNode } from "@/components/chat/copyable-pre"
@@ -12,15 +13,24 @@ export function CodeBlock({
   className,
   language,
   headerActions,
+  editableValue,
+  onEditableValueChange,
 }: {
   children: React.ReactNode
   className?: string
   language?: string
   headerActions?: React.ReactNode
+  editableValue?: string
+  onEditableValueChange?: (value: string) => void
 }) {
   const t = useI18n("chat")
   const [collapsed, setCollapsed] = useState(false)
-  const rawText = useMemo(() => extractTextFromNode(children), [children])
+  const isEditable =
+    typeof editableValue === "string" && typeof onEditableValueChange === "function"
+  const rawText = useMemo(
+    () => (isEditable ? editableValue : extractTextFromNode(children)),
+    [children, editableValue, isEditable]
+  )
   const trimmed = rawText.replace(/\n$/, "")
   const lines = useMemo(() => trimmed.split("\n"), [trimmed])
   const label = language || "text"
@@ -50,6 +60,16 @@ export function CodeBlock({
       {collapsed ? (
         <div className="px-3 py-2 text-xs text-muted-foreground">
           {t("codeBlock.collapsed", { count: lines.length })}
+        </div>
+      ) : isEditable ? (
+        <div className="px-3 py-2">
+          <Textarea
+            value={editableValue}
+            onChange={(event) => onEditableValueChange(event.target.value)}
+            spellCheck={false}
+            rows={Math.min(Math.max(lines.length, 6), 24)}
+            className="min-h-0 resize-y border-0 bg-transparent px-0 py-0 font-mono text-xs leading-5 shadow-none focus-visible:border-transparent focus-visible:ring-0"
+          />
         </div>
       ) : (
         <div className="grid grid-cols-[auto_1fr] gap-3 px-3 py-2">
