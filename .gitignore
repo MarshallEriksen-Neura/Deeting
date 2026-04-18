@@ -8,6 +8,7 @@ security/
 __pycache__/
 .claude/
 .codex/
+.codex-*/
 .workflow/
 .specify/
 .uv-cache/

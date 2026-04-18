@@ -262,9 +262,7 @@ async fn select_model_by_bandit(
     app_state: &AppState,
     models: &[crate::modules::providers::types::ProviderModel],
 ) -> crate::modules::providers::types::ProviderModel {
-    use crate::modules::providers::bandit_selector::{
-        select_arm, BanditConfig, BanditStrategy,
-    };
+    use crate::modules::providers::bandit_selector::{select_arm, BanditConfig, BanditStrategy};
     use crate::modules::providers::store::{BANDIT_DEFAULT_SCENE, BANDIT_DEFAULT_STRATEGY};
 
     let current_time_rfc3339 = now_rfc3339();

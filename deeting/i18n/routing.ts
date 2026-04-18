@@ -8,58 +8,6 @@ export const routing = defineRouting({
   defaultLocale: "zh-CN",
   // 根据需要前缀，首页默认无前缀，其他路由带前缀，便于 SEO
   localePrefix: "as-needed",
-  // 预留路径映射（示例，可按需扩展）
-  pathnames: {
-    "/": "/",
-    "/dashboard": {
-      "zh-CN": "/dashboard",
-      en: "/dashboard",
-    },
-    "/profile": {
-      "zh-CN": "/profile",
-      en: "/profile",
-    },
-    "/settings": {
-      "zh-CN": "/settings",
-      en: "/settings",
-    },
-    "/docs": {
-      "zh-CN": "/docs",
-      en: "/docs",
-    },
-    "/spec-agent": {
-      "zh-CN": "/spec-agent",
-      en: "/spec-agent",
-    },
-    "/spec-agent/node/[id]": {
-      "zh-CN": "/spec-agent/node/[id]",
-      en: "/spec-agent/node/[id]",
-    },
-    "/chat": {
-      "zh-CN": "/chat",
-      en: "/chat",
-    },
-    "/chat/select-agent": {
-      "zh-CN": "/chat/select-agent",
-      en: "/chat/select-agent",
-    },
-    "/chat/coder": {
-      "zh-CN": "/chat/coder",
-      en: "/chat/coder",
-    },
-    "/chat/voice": {
-      "zh-CN": "/chat/voice",
-      en: "/chat/voice",
-    },
-    "/island": {
-      "zh-CN": "/island",
-      en: "/island",
-    },
-    "/dashboard/approval-rules": {
-      "zh-CN": "/dashboard/approval-rules",
-      en: "/dashboard/approval-rules",
-    },
-  },
 })
 
 export type AppLocale = (typeof routing)["locales"][number]

@@ -36,7 +36,10 @@ fn arm(arm_id: &str, alpha: f64, beta: f64, successes: i64, failures: i64) -> Ba
 
 #[test]
 fn strategy_parse_accepts_known_values() {
-    assert_eq!(BanditStrategy::parse("thompson"), Some(BanditStrategy::Thompson));
+    assert_eq!(
+        BanditStrategy::parse("thompson"),
+        Some(BanditStrategy::Thompson)
+    );
     assert_eq!(BanditStrategy::parse("UCB1"), Some(BanditStrategy::Ucb));
     assert_eq!(
         BanditStrategy::parse("epsilon_greedy"),
@@ -57,12 +60,18 @@ fn strategy_parse_or_falls_back() {
 fn thompson_cold_start_is_bounded_and_stochastic() {
     let cfg = BanditConfig::default();
     let mut rng = StdRng::seed_from_u64(42);
-    let samples: Vec<f64> = (0..32).map(|_| score_thompson(None, &cfg, &mut rng)).collect();
+    let samples: Vec<f64> = (0..32)
+        .map(|_| score_thompson(None, &cfg, &mut rng))
+        .collect();
     for s in &samples {
         assert!((0.0..=1.0).contains(s), "sample {} out of [0,1]", s);
     }
     let mean: f64 = samples.iter().sum::<f64>() / samples.len() as f64;
-    assert!(mean > 0.2 && mean < 0.8, "Beta(1,1) mean should be ~0.5, got {}", mean);
+    assert!(
+        mean > 0.2 && mean < 0.8,
+        "Beta(1,1) mean should be ~0.5, got {}",
+        mean
+    );
 }
 
 #[test]
@@ -79,7 +88,11 @@ fn thompson_prefers_confidently_successful_arm_on_average() {
             winner_wins += 1;
         }
     }
-    assert!(winner_wins > 180, "winner should dominate, got {}/200", winner_wins);
+    assert!(
+        winner_wins > 180,
+        "winner should dominate, got {}/200",
+        winner_wins
+    );
 }
 
 #[test]
@@ -92,7 +105,11 @@ fn ucb_cold_start_maximises_exploration() {
 
 #[test]
 fn ucb_formula_matches_reference() {
-    let cfg = BanditConfig { ucb_c: 2.0, ucb_min_trials: 1, ..BanditConfig::default() };
+    let cfg = BanditConfig {
+        ucb_c: 2.0,
+        ucb_min_trials: 1,
+        ..BanditConfig::default()
+    };
     let state = arm("x", 1.0, 1.0, 3, 1);
     let score = score_ucb(Some(&state), &cfg);
     let expected = 0.75 + 2.0 * ((5.0_f64.ln()) / 4.0).sqrt();
@@ -101,7 +118,10 @@ fn ucb_formula_matches_reference() {
 
 #[test]
 fn epsilon_greedy_pure_exploitation_when_epsilon_zero() {
-    let cfg = BanditConfig { epsilon: 0.0, ..BanditConfig::default() };
+    let cfg = BanditConfig {
+        epsilon: 0.0,
+        ..BanditConfig::default()
+    };
     let mut rng = StdRng::seed_from_u64(1);
     let state = arm("x", 1.0, 1.0, 7, 3);
     assert!((score_epsilon_greedy(Some(&state), &cfg, &mut rng) - 0.7).abs() < 1e-9);

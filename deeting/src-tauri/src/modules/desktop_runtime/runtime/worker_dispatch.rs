@@ -196,9 +196,7 @@ async fn select_custom_task_agent_candidate_with_bandit(
     semantic_ranks: &HashMap<String, usize>,
     profile_prior_scores: &HashMap<String, f32>,
 ) -> Option<WorkerTargetSelection> {
-    use crate::modules::providers::bandit_selector::{
-        select_arm, BanditConfig, BanditStrategy,
-    };
+    use crate::modules::providers::bandit_selector::{select_arm, BanditConfig, BanditStrategy};
     use crate::modules::providers::store::{
         utils::now_rfc3339, BANDIT_DEFAULT_STRATEGY, BANDIT_SCENE_WORKER_SELECTION,
     };
@@ -210,8 +208,7 @@ async fn select_custom_task_agent_candidate_with_bandit(
     }
     let candidate_count = candidates.len();
     let shortlist_len = candidate_count.min(WORKER_CANDIDATE_SHORTLIST_LIMIT);
-    let shortlist: Vec<WorkerCandidateCard> =
-        candidates.drain(..shortlist_len).collect();
+    let shortlist: Vec<WorkerCandidateCard> = candidates.drain(..shortlist_len).collect();
 
     let arms = app_state
         .providers

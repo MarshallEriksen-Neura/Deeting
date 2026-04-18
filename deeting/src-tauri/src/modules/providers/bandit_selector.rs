@@ -70,8 +70,16 @@ pub fn score_thompson<R: Rng + ?Sized>(
     let (alpha, beta) = match state {
         None => (cfg.thompson_prior_alpha, cfg.thompson_prior_beta),
         Some(s) => {
-            let a = if s.alpha > 0.0 { s.alpha } else { cfg.thompson_prior_alpha };
-            let b = if s.beta > 0.0 { s.beta } else { cfg.thompson_prior_beta };
+            let a = if s.alpha > 0.0 {
+                s.alpha
+            } else {
+                cfg.thompson_prior_alpha
+            };
+            let b = if s.beta > 0.0 {
+                s.beta
+            } else {
+                cfg.thompson_prior_beta
+            };
             (a, b)
         }
     };

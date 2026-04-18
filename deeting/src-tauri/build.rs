@@ -12,9 +12,7 @@ fn main() {
 }
 
 fn build_boxlite_sidecar() -> Result<(), String> {
-    let manifest_dir = PathBuf::from(
-        env::var("CARGO_MANIFEST_DIR").map_err(|e| e.to_string())?,
-    );
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").map_err(|e| e.to_string())?);
     let out_dir = PathBuf::from(env::var("OUT_DIR").map_err(|e| e.to_string())?);
     let main_target_dir = out_dir
         .ancestors()

@@ -249,10 +249,7 @@ pub(crate) async fn compute_route_bandit_scores(
     };
 
     let mut rng = rand::thread_rng();
-    let find_state = |key: &str| {
-        arms.iter()
-            .find(|arm| arm.arm_id.as_deref() == Some(key))
-    };
+    let find_state = |key: &str| arms.iter().find(|arm| arm.arm_id.as_deref() == Some(key));
     let direct = score_arm(find_state(ACTION_ROUTE_DIRECT), strategy, &cfg, &mut rng);
     let worker = score_arm(find_state(ACTION_ROUTE_WORKER), strategy, &cfg, &mut rng);
     Some(RouteBanditScores { direct, worker })

@@ -1025,8 +1025,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for PromptVariantSelectionStep {
             };
             use crate::modules::providers::store::BANDIT_DEFAULT_STRATEGY;
 
-            let variants: Vec<&'static str> =
-                vec![PROMPT_VARIANT_DETAILED, PROMPT_VARIANT_CONCISE];
+            let variants: Vec<&'static str> = vec![PROMPT_VARIANT_DETAILED, PROMPT_VARIANT_CONCISE];
 
             let now_rfc3339 = time::OffsetDateTime::now_utc()
                 .format(&time::format_description::well_known::Rfc3339)

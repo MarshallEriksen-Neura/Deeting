@@ -1018,7 +1018,12 @@ async fn record_task_learning_bandit_feedback(
                 routing_config: None,
                 reward_metric_type: None,
             };
-            if let Err(err) = app_state.providers.store.record_bandit_feedback(feedback).await {
+            if let Err(err) = app_state
+                .providers
+                .store
+                .record_bandit_feedback(feedback)
+                .await
+            {
                 log::warn!(
                     "task learning route bandit feedback failed session={} err={}",
                     session_id,
@@ -1069,9 +1074,7 @@ async fn record_task_learning_bandit_feedback(
         .map(|value| value.trim())
         .filter(|value| !value.is_empty())
     {
-        if let Some(success) =
-            discovery_judgment_to_success(outcome.discovery_judgment.as_str())
-        {
+        if let Some(success) = discovery_judgment_to_success(outcome.discovery_judgment.as_str()) {
             let feedback = BanditFeedbackRequest {
                 scene: Some(BANDIT_SCENE_MEMORY_RECALL.to_string()),
                 arm_id: arm_id.to_string(),

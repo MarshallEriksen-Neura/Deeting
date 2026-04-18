@@ -29,9 +29,9 @@ use crate::modules::sandbox::backend_host::{HostBackendOptions, HostPythonBacken
 use crate::modules::sandbox::backend_wsl::{
     diagnose_wsl_availability, WslBackendOptions, WslBoxrunBackend,
 };
+use crate::modules::sandbox::installer::ProgressReporter as BoxLiteInstallProgressReporter;
 #[cfg(target_os = "windows")]
 use crate::modules::sandbox::installer::{install_boxlite_wsl, BoxLiteInstallerConfig};
-use crate::modules::sandbox::installer::ProgressReporter as BoxLiteInstallProgressReporter;
 use crate::modules::sandbox::provisioner::PrepareProgressReporter;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30 * 60;
@@ -374,7 +374,8 @@ impl SandboxRuntimeManager {
         &self,
         reporter: Option<BoxLiteInstallProgressReporter>,
     ) -> Result<SandboxReadinessReport, SandboxError> {
-        self.install_boxlite_with_proxy_settings(reporter, None).await
+        self.install_boxlite_with_proxy_settings(reporter, None)
+            .await
     }
 
     pub(crate) async fn install_boxlite_with_proxy_settings(
@@ -728,6 +729,20 @@ impl SandboxRuntimeManager {
                     let _ = self.prepare().await;
                     continue;
                 }
+                Err(err)
+                    if is_stopped_handle_error(&err)
+                        && attempt + 1 < SESSION_BUSY_RETRY_ATTEMPTS =>
+                {
+                    log::warn!(
+                        "sandbox handle invalidated for session {} (attempt {}/{}), recreating sandbox",
+                        normalized_session,
+                        attempt + 1,
+                        SESSION_BUSY_RETRY_ATTEMPTS
+                    );
+                    self.cleanup_missing_sandbox_state(normalized_session, &lease, &backend)
+                        .await;
+                    continue;
+                }
                 Err(err) => return Err(err),
             }
         }
@@ -787,6 +802,20 @@ impl SandboxRuntimeManager {
                 {
                     log::warn!(
                         "sandbox missing for session {} (attempt {}/{}), retrying without auto-prepare",
+                        normalized_session,
+                        attempt + 1,
+                        SESSION_BUSY_RETRY_ATTEMPTS
+                    );
+                    self.cleanup_missing_sandbox_state(normalized_session, &lease, &backend)
+                        .await;
+                    continue;
+                }
+                Err(err)
+                    if is_stopped_handle_error(&err)
+                        && attempt + 1 < SESSION_BUSY_RETRY_ATTEMPTS =>
+                {
+                    log::warn!(
+                        "sandbox handle invalidated for session {} (attempt {}/{}), retrying without auto-prepare",
                         normalized_session,
                         attempt + 1,
                         SESSION_BUSY_RETRY_ATTEMPTS
@@ -857,6 +886,20 @@ impl SandboxRuntimeManager {
                     self.cleanup_missing_sandbox_state(lease_key, &lease, &backend)
                         .await;
                     let _ = self.prepare().await;
+                    continue;
+                }
+                Err(err)
+                    if is_stopped_handle_error(&err)
+                        && attempt + 1 < SESSION_BUSY_RETRY_ATTEMPTS =>
+                {
+                    log::warn!(
+                        "sandbox handle invalidated for key {} (attempt {}/{}), recreating sandbox",
+                        lease_key,
+                        attempt + 1,
+                        SESSION_BUSY_RETRY_ATTEMPTS
+                    );
+                    self.cleanup_missing_sandbox_state(lease_key, &lease, &backend)
+                        .await;
                     continue;
                 }
                 Err(err) => return Err(err),
@@ -1879,8 +1922,21 @@ fn is_missing_sandbox_error(err: &SandboxError) -> bool {
     }
 }
 
+fn is_stopped_handle_error(err: &SandboxError) -> bool {
+    match err {
+        SandboxError::Internal(message) => {
+            let lowered = message.to_ascii_lowercase();
+            lowered.contains("handle invalidated after stop")
+                || lowered.contains("use runtime.get() to get a new handle")
+        }
+        _ => false,
+    }
+}
+
 fn should_retry_execution_probe_after_error(err: &SandboxError) -> bool {
-    is_missing_sandbox_error(err) || matches!(err, SandboxError::Network(_))
+    is_missing_sandbox_error(err)
+        || is_stopped_handle_error(err)
+        || matches!(err, SandboxError::Network(_))
 }
 
 fn now_unix_ms() -> i64 {
@@ -1930,6 +1986,12 @@ mod tests {
         FailedNotFound,
     }
 
+    #[derive(Clone, Copy)]
+    enum MockRecoverableProbeFailure {
+        Network,
+        InvalidatedHandle,
+    }
+
     #[derive(Clone)]
     struct MockProbeProvider {
         outcome: MockProbeOutcome,
@@ -1938,6 +2000,7 @@ mod tests {
     #[derive(Clone)]
     struct MockRecoverableProbeProvider {
         state: Arc<Mutex<MockProviderState>>,
+        failure: MockRecoverableProbeFailure,
     }
 
     #[async_trait]
@@ -2021,9 +2084,15 @@ mod tests {
                     error_message: None,
                 });
             }
-            Err(SandboxError::Network(
-                "bridge dropped the probe request".to_string(),
-            ))
+            Err(match self.failure {
+                MockRecoverableProbeFailure::Network => {
+                    SandboxError::Network("bridge dropped the probe request".to_string())
+                }
+                MockRecoverableProbeFailure::InvalidatedHandle => SandboxError::Internal(
+                    "stopped: Handle invalidated after stop(). Use runtime.get() to get a new handle."
+                        .to_string(),
+                ),
+            })
         }
     }
 
@@ -2157,6 +2226,17 @@ mod tests {
         )));
     }
 
+    #[test]
+    fn stopped_handle_errors_are_detected() {
+        assert!(is_stopped_handle_error(&SandboxError::Internal(
+            "stopped: Handle invalidated after stop(). Use runtime.get() to get a new handle."
+                .to_string(),
+        )));
+        assert!(!is_stopped_handle_error(&SandboxError::NotFound(
+            "sandbox missing".to_string()
+        )));
+    }
+
     #[tokio::test]
     async fn missing_sandbox_retry_recreates_box_when_name_alias_is_stale() {
         let session_id = "chat-session";
@@ -2264,6 +2344,34 @@ mod tests {
     async fn execution_probe_retries_after_network_failure_and_recovers() {
         let provider = MockRecoverableProbeProvider {
             state: Arc::new(Mutex::new(MockProviderState::default())),
+            failure: MockRecoverableProbeFailure::Network,
+        };
+        let state = provider.state.clone();
+        let manager = test_manager(Arc::new(provider));
+
+        let probe = manager.programmatic_execution_probe().await;
+        assert_eq!(probe.status, SandboxExecutionProbeStatus::Passed);
+
+        let state = state.lock().await;
+        let probe_box_name = session_to_box_name(EXECUTION_PROBE_SESSION_ID);
+        assert_eq!(
+            state.run_calls,
+            vec![
+                format!("{probe_box_name}-id"),
+                format!("{probe_box_name}-id")
+            ]
+        );
+        assert_eq!(
+            state.stop_calls,
+            vec![format!("{probe_box_name}-id"), probe_box_name]
+        );
+    }
+
+    #[tokio::test]
+    async fn execution_probe_retries_after_invalidated_handle_and_recovers() {
+        let provider = MockRecoverableProbeProvider {
+            state: Arc::new(Mutex::new(MockProviderState::default())),
+            failure: MockRecoverableProbeFailure::InvalidatedHandle,
         };
         let state = provider.state.clone();
         let manager = test_manager(Arc::new(provider));
@@ -2318,4 +2426,3 @@ mod tests {
         assert!(actions.iter().any(|step| step.contains("Rebuild")));
     }
 }
-

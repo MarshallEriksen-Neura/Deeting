@@ -100,14 +100,13 @@ pub(crate) async fn install_boxlite_wsl(
             .map(build_proxy_aware_reqwest_client_for_settings)
             .transpose()
             .map_err(SandboxError::Validation)?;
-        let downloaded_asset =
-            download_release_asset(
-                &config.data_dir,
-                &release,
-                reporter.as_ref(),
-                download_client.as_ref(),
-            )
-            .await?;
+        let downloaded_asset = download_release_asset(
+            &config.data_dir,
+            &release,
+            reporter.as_ref(),
+            download_client.as_ref(),
+        )
+        .await?;
 
         report(
             reporter.as_ref(),
@@ -239,10 +238,7 @@ async fn download_release_asset(
             &default_client
         }
     };
-    let response = client
-        .get(release_asset_url(release))
-        .send()
-        .await?;
+    let response = client.get(release_asset_url(release)).send().await?;
     let response = response.error_for_status()?;
     let total_bytes = response.content_length();
 
@@ -334,10 +330,8 @@ rm -rf \"$tmp_dir\"\n",
     // single quotes, double quotes and `$var` expansions — the dollar-sign
     // references get stripped en route to bash, which is why shell variables
     // arrive empty. Materialise the script on disk and execute it by path.
-    let script_host_path = std::env::temp_dir().join(format!(
-        "deeting-boxlite-install-{}.sh",
-        std::process::id()
-    ));
+    let script_host_path =
+        std::env::temp_dir().join(format!("deeting-boxlite-install-{}.sh", std::process::id()));
     fs::write(&script_host_path, script.as_bytes())?;
     let script_wsl_path = windows_path_to_wsl(&script_host_path).inspect_err(|_| {
         let _ = fs::remove_file(&script_host_path);

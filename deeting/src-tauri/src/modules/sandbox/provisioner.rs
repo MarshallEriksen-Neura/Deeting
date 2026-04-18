@@ -312,7 +312,10 @@ mod tests {
             wsl_boxlite_home: "/home/test/.deeting/sandbox/boxlite/home".to_string(),
         };
         let proxy_environment = DesktopNetworkProxyEnvironment {
-            set: vec![("HTTP_PROXY".to_string(), "http://127.0.0.1:7890".to_string())],
+            set: vec![(
+                "HTTP_PROXY".to_string(),
+                "http://127.0.0.1:7890".to_string(),
+            )],
             unset: vec!["NO_PROXY".to_string()],
         };
         let command = build_server_launch_command(&record, 9090, Some(&proxy_environment));
@@ -321,4 +324,3 @@ mod tests {
         assert!(command.contains("serve --host 127.0.0.1 --port 9090"));
     }
 }
-
