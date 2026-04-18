@@ -1009,6 +1009,9 @@ export const ToolCallBlock = memo<{
   );
   const inlineApproval = useMemo(() => {
     if (!messageId || !callId || !resultBlock) return null;
+    // A terminal tool_result can still carry the old approval payload in result.
+    // Only render inline approval actions while the block itself is unresolved.
+    if (!isToolApprovalResultBlock(resultBlock)) return null;
     return buildBridgeToolApprovalFromResult(resultBlock.result, {
       tool_name: resultBlock.toolName ?? name,
       meta: {

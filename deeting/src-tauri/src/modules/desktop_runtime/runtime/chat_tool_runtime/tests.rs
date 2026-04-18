@@ -1,7 +1,7 @@
 use super::classify_local_tool_execution_error_code;
 use super::*;
-use crate::modules::desktop_runtime::runtime::build_local_tool_call_install_gate_error_meta;
 use crate::modules::desktop_runtime::runtime::LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE;
+use crate::modules::desktop_runtime::runtime::build_local_tool_call_install_gate_error_meta;
 
 #[test]
 fn build_execution_contract_from_search_result_requires_capabilities() {
@@ -339,6 +339,38 @@ fn serialize_tool_replay_content_extracts_standard_mcp_text_content_without_stru
         serialize_tool_replay_content(&item),
         "Detailed Results:\n1. Example result body"
     );
+}
+
+#[test]
+fn serialize_tool_replay_content_unwraps_nested_tool_result_envelopes() {
+    let item = serde_json::json!({
+        "id": "call_firecrawl",
+        "name": "firecrawl_scrape",
+        "status": "success",
+        "result": {
+            "type": "tool_result",
+            "callId": "call_firecrawl",
+            "toolName": "firecrawl_scrape",
+            "status": "success",
+            "result": {
+                "type": "tool_result",
+                "callId": "call_firecrawl",
+                "toolName": "firecrawl_scrape",
+                "status": "success",
+                "result": {
+                    "structuredContent": {
+                        "markdown": "# EvoMap"
+                    }
+                }
+            }
+        }
+    });
+
+    let serialized = serialize_tool_replay_content(&item);
+    let reparsed: serde_json::Value =
+        serde_json::from_str(&serialized).expect("nested tool_result replay should stay json");
+
+    assert_eq!(reparsed, serde_json::json!({ "markdown": "# EvoMap" }));
 }
 
 #[test]

@@ -75,6 +75,13 @@ impl NativeBoxrunBackend {
         Ok(())
     }
 
+    pub async fn remove_box(&self, box_id_or_name: &str, force: bool) -> Result<(), SandboxError> {
+        self.runtime
+            .remove(box_id_or_name, force)
+            .await
+            .map_err(map_boxrun_error)
+    }
+
     pub async fn run_python(
         &self,
         box_id_or_name: &str,

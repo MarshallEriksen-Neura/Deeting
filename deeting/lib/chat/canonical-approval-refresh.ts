@@ -8,6 +8,7 @@ import {
 import {
   buildBridgeToolApprovalFromPendingSnapshot,
   findMessageIdForToolCall,
+  findResolvedToolCallIds,
 } from "@/lib/chat/tool-approval"
 import type { Message } from "@/lib/chat/message-types"
 
@@ -81,6 +82,10 @@ export async function refreshBridgePendingApprovalsFromCanonical({
   }
 
   const callIdToMessageId = buildCallIdToMessageIdIndex(messages)
+  // Chat history is the durable replay truth for a completed tool call.
+  // If the message stream already contains a terminal result for the same call_id,
+  // do not resurrect a stale runtime approval snapshot back into the dialog queue.
+  const resolvedCallIds = findResolvedToolCallIds(messages)
   const excludedCallIds = new Set(
     excludeCallIds.map((callId) => normalizeToken(callId)).filter((callId) => callId.length > 0)
   )
@@ -103,6 +108,7 @@ export async function refreshBridgePendingApprovalsFromCanonical({
   for (const snapshot of snapshots) {
     const callId = normalizeToken(snapshot.call_id)
     if (callId && excludedCallIds.has(callId)) continue
+    if (callId && resolvedCallIds.has(callId)) continue
 
     const resolvedMessageId =
       (callId ? callIdToMessageId.get(callId) : undefined) ??

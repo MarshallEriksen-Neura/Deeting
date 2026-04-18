@@ -107,6 +107,15 @@ impl BoxliteRuntime {
             Err(err) => Err(err),
         }
     }
+
+    pub async fn remove(&self, id_or_name: &str, force: bool) -> BoxliteResult<()> {
+        let path = format!("/boxes/{id_or_name}");
+        if force {
+            self.client.delete_with_query(&path, &[("force", "true")]).await
+        } else {
+            self.client.delete(&path).await
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -485,6 +494,14 @@ impl ApiClient {
             builder = builder.header("X-Close-Stdin", "true");
         }
         self.send_no_content(builder).await
+    }
+
+    async fn delete(&self, path: &str) -> BoxliteResult<()> {
+        self.send_no_content(self.http.delete(self.url(path))).await
+    }
+
+    async fn delete_with_query(&self, path: &str, query: &[(&str, &str)]) -> BoxliteResult<()> {
+        self.send_no_content(self.http.delete(self.url(path)).query(query)).await
     }
 
     async fn authorized_get(&self, path: &str) -> BoxliteResult<RequestBuilder> {

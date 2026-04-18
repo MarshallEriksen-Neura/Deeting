@@ -97,6 +97,12 @@ impl SandboxProvider for WslBoxrunBackend {
             .await
     }
 
+    async fn remove_box(&self, box_id_or_name: &str, force: bool) -> Result<(), SandboxError> {
+        self.client
+            .remove_box(&self.connection(), box_id_or_name, force)
+            .await
+    }
+
     async fn run_python(
         &self,
         box_id_or_name: &str,

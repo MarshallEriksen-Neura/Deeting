@@ -107,6 +107,18 @@ async fn dispatch_request(
             }
             Ok(BoxliteSidecarResponsePayload::StopBox { ok: true })
         }
+        BoxliteSidecarRequest::RemoveBox {
+            connection,
+            box_id_or_name,
+            force,
+        } => {
+            let runtime = build_runtime(&connection)?;
+            runtime
+                .remove(box_id_or_name.as_str(), force)
+                .await
+                .map_err(map_boxlite_error)?;
+            Ok(BoxliteSidecarResponsePayload::RemoveBox { ok: true })
+        }
         BoxliteSidecarRequest::Execute {
             connection,
             box_id_or_name,

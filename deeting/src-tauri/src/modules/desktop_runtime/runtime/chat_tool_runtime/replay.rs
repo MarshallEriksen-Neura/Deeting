@@ -128,6 +128,7 @@ pub(super) fn build_structured_tool_replay_messages(
 
 pub(super) fn serialize_tool_replay_content(item: &serde_json::Value) -> String {
     if let Some(result) = item.get("result") {
+        let result = unwrap_nested_tool_result_payload(result);
         if let Some(text) = result.as_str() {
             return text.to_string();
         }
@@ -149,6 +150,27 @@ pub(super) fn serialize_tool_replay_content(item: &serde_json::Value) -> String 
         "error_code": item.get("error_code").cloned().unwrap_or(serde_json::json!(null)),
     }))
     .unwrap_or_else(|_| "{}".to_string())
+}
+
+fn unwrap_nested_tool_result_payload<'a>(value: &'a serde_json::Value) -> &'a serde_json::Value {
+    let mut current = value;
+    for _ in 0..6 {
+        let Some(object) = current.as_object() else {
+            break;
+        };
+        let looks_like_tool_result_envelope =
+            object.get("type").and_then(serde_json::Value::as_str) == Some("tool_result")
+                || object.contains_key("callId")
+                || object.contains_key("toolName");
+        if !looks_like_tool_result_envelope {
+            break;
+        }
+        let Some(next) = object.get("result").filter(|value| !value.is_null()) else {
+            break;
+        };
+        current = next;
+    }
+    current
 }
 
 fn extract_mcp_result_text_content(result: &serde_json::Value) -> Option<String> {

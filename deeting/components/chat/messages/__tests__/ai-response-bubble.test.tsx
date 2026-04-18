@@ -280,6 +280,40 @@ describe("AIResponseBubble debug panel", () => {
     });
   });
 
+  it("does not render inline approval actions for a terminal tool result with stale approval metadata", () => {
+    const parts: MessageBlock[] = [
+      {
+        id: "tool-approval-stale-1",
+        type: "tool_call",
+        callId: "call-approval-stale-1",
+        toolName: "search_notes",
+        status: "success",
+      },
+      {
+        id: "tool-approval-stale-result-1",
+        type: "tool_result",
+        callId: "call-approval-stale-1",
+        toolName: "search_notes",
+        status: "success",
+        result: {
+          status: "REQUIRES_APPROVAL",
+          approval_token: "approval-inline-stale-1",
+          tool_name: "search_notes",
+          ok: true,
+        },
+      },
+    ];
+
+    render(<AIResponseBubble messageId="assistant-stale-approval-1" parts={parts} />);
+
+    expect(
+      screen.queryByText("approvalDialog.actions.approve"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("approvalDialog.actions.reject"),
+    ).not.toBeInTheDocument();
+  });
+
   it("groups active multi-tool calls into one live block", () => {
     const parts: MessageBlock[] = [
       {

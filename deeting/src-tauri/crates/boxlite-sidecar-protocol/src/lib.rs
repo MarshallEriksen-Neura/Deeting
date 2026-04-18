@@ -72,6 +72,11 @@ pub enum BoxliteSidecarRequest {
         connection: BoxliteSidecarConnection,
         box_id_or_name: String,
     },
+    RemoveBox {
+        connection: BoxliteSidecarConnection,
+        box_id_or_name: String,
+        force: bool,
+    },
     Execute {
         connection: BoxliteSidecarConnection,
         box_id_or_name: String,
@@ -108,6 +113,9 @@ pub enum BoxliteSidecarResponsePayload {
         data: BoxliteSidecarIdentity,
     },
     StopBox {
+        ok: bool,
+    },
+    RemoveBox {
         ok: bool,
     },
     Execute {

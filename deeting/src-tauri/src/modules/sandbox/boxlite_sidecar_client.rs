@@ -113,6 +113,31 @@ impl BoxLiteSidecarClient {
         }
     }
 
+    pub async fn remove_box(
+        &self,
+        connection: &BoxliteSidecarConnection,
+        box_id_or_name: &str,
+        force: bool,
+    ) -> Result<(), SandboxError> {
+        let response = self
+            .send(BoxliteSidecarRequest::RemoveBox {
+                connection: connection.clone(),
+                box_id_or_name: box_id_or_name.trim().to_string(),
+                force,
+            })
+            .await?;
+        match response.payload {
+            BoxliteSidecarResponsePayload::RemoveBox { ok } if ok => Ok(()),
+            BoxliteSidecarResponsePayload::Error {
+                error_kind,
+                message,
+            } => Err(map_sidecar_error(error_kind, message)),
+            _ => Err(SandboxError::Internal(
+                "boxlite sidecar returned unexpected remove_box response".to_string(),
+            )),
+        }
+    }
+
     pub async fn execute(
         &self,
         connection: &BoxliteSidecarConnection,

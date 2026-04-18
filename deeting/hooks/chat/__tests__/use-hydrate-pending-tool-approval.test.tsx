@@ -230,4 +230,64 @@ describe("useHydratePendingToolApproval", () => {
       ])
     })
   })
+
+  it("does not rehydrate a stale runtime approval once chat history already shows the call resolved", async () => {
+    mockListPendingMcpApprovals.mockResolvedValueOnce([
+      {
+        status: "REQUIRES_APPROVAL",
+        approval_token: "approval-runtime-stale-history-1",
+        tool_name: "shell_execute",
+        arguments: { command: "dir" },
+        session_id: "session-runtime-stale-history-1",
+        call_id: "call-runtime-stale-history-1",
+      },
+    ] as never)
+
+    render(
+      <Harness
+        sessionId="session-runtime-stale-history-1"
+        messages={[
+          {
+            id: "assistant-runtime-stale-history-1",
+            role: "assistant",
+            content: "",
+            createdAt: 1,
+            fromHistory: true,
+            blocks: [
+              {
+                id: "call-runtime-stale-history-1",
+                type: "tool_call",
+                callId: "call-runtime-stale-history-1",
+                toolName: "shell_execute",
+                status: "success",
+              },
+              {
+                id: "result-runtime-stale-history-1",
+                type: "tool_result",
+                callId: "call-runtime-stale-history-1",
+                toolName: "shell_execute",
+                status: "success",
+                result: {
+                  status: "REQUIRES_APPROVAL",
+                  approval_token: "approval-runtime-stale-history-1",
+                  ok: true,
+                },
+              },
+            ],
+          },
+        ]}
+      />
+    )
+
+    await waitFor(() => {
+      expect(mockListPendingMcpApprovals).toHaveBeenCalledWith(
+        "session-runtime-stale-history-1"
+      )
+    })
+
+    await waitFor(() => {
+      expect(useBridgeApprovalStore.getState().pending).toBeNull()
+      expect(useBridgeApprovalStore.getState().queue).toEqual([])
+    })
+  })
 })

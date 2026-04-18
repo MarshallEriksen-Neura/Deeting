@@ -282,11 +282,35 @@ function isApprovalToolResultBlock(
   return extractToolApprovalPayload(block.result) !== null
 }
 
-export function findUnresolvedToolApprovals(
-  messages: Message[]
-): BridgeToolPendingApproval[] {
+const APPROVAL_METADATA_ONLY_KEYS = new Set([
+  "status",
+  "approval_token",
+  "tool_id",
+  "tool_name",
+  "arguments",
+  "description",
+  "risk_level",
+  "risk_reasons",
+  "recovered",
+  "recovery_reason",
+  "attempts",
+  "expires_in_ms",
+  "execution_graph_execution_id",
+  "execution_graph_gate_node_id",
+  "execution_graph_tool_node_id",
+])
+
+function isBareApprovalReplayPayload(result: unknown) {
+  const payload = toRecord(result)
+  if (!payload) return false
+  if (asTrimmedString(payload.status) !== "REQUIRES_APPROVAL") return false
+  return Object.keys(payload).every((key) => APPROVAL_METADATA_ONLY_KEYS.has(key))
+}
+
+function collectToolApprovalResolution(messages: Message[]) {
   const resolvedCallIds = new Set<string>()
-  const approvals: BridgeToolPendingApproval[] = []
+  const unresolvedCallIds = new Set<string>()
+  const unresolvedApprovals: BridgeToolPendingApproval[] = []
   const seenApprovalTokens = new Set<string>()
 
   for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
@@ -296,27 +320,54 @@ export function findUnresolvedToolApprovals(
     for (let blockIndex = message.blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
       const block = message.blocks[blockIndex]
       if (block.type !== "tool_result") continue
+      const toolResultBlock = block
 
-      const callId = asTrimmedString(block.callId)
+      const callId = asTrimmedString(toolResultBlock.callId)
       if (!callId) continue
 
-      if (isApprovalToolResultBlock(block)) {
+      const isPendingApprovalResult = isApprovalToolResultBlock(toolResultBlock)
+      if (isPendingApprovalResult) {
         if (resolvedCallIds.has(callId)) continue
-        const approval = buildBridgeToolApprovalFromMessageBlock(block, {
+        const approval = buildBridgeToolApprovalFromMessageBlock(toolResultBlock, {
           messageId: message.id,
         })
         if (approval && !seenApprovalTokens.has(approval.approval_token)) {
-          approvals.push(approval)
+          unresolvedApprovals.push(approval)
+          unresolvedCallIds.add(callId)
           seenApprovalTokens.add(approval.approval_token)
         }
         continue
       }
 
-      resolvedCallIds.add(callId)
+      // History replay can contain a terminal-looking block that only mirrors the
+      // original approval snapshot. That placeholder is not proof the tool call
+      // actually finished, so only treat the call as resolved once some real
+      // post-approval payload exists beyond the approval metadata itself.
+      const terminalToolResult = toolResultBlock as ToolResultBlock
+      if (!isBareApprovalReplayPayload(terminalToolResult.result)) {
+        resolvedCallIds.add(callId)
+      }
     }
   }
 
-  return approvals
+  for (const unresolvedCallId of unresolvedCallIds) {
+    resolvedCallIds.delete(unresolvedCallId)
+  }
+
+  return {
+    resolvedCallIds,
+    unresolvedApprovals,
+  }
+}
+
+export function findResolvedToolCallIds(messages: Message[]): Set<string> {
+  return collectToolApprovalResolution(messages).resolvedCallIds
+}
+
+export function findUnresolvedToolApprovals(
+  messages: Message[]
+): BridgeToolPendingApproval[] {
+  return collectToolApprovalResolution(messages).unresolvedApprovals
 }
 
 export function findLatestUnresolvedToolApproval(

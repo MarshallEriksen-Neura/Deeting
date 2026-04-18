@@ -917,9 +917,18 @@ impl SandboxRuntimeManager {
     ) {
         self.remove_lease(normalized_session, &lease.sandbox_id)
             .await;
-        let _ = backend.stop_box(&lease.sandbox_id).await;
+
+        let removed_by_id = backend.remove_box(&lease.sandbox_id, true).await.is_ok();
         if lease.sandbox_name != lease.sandbox_id {
-            let _ = backend.stop_box(&lease.sandbox_name).await;
+            if removed_by_id {
+                let _ = backend.remove_box(&lease.sandbox_name, true).await;
+            } else {
+                let _ = backend.stop_box(&lease.sandbox_name).await;
+            }
+        }
+
+        if !removed_by_id {
+            let _ = backend.stop_box(&lease.sandbox_id).await;
         }
     }
 
@@ -942,10 +951,28 @@ impl SandboxRuntimeManager {
         self.run_locks.write().await.remove(normalized_session);
     }
 
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    async fn restart_managed_runtime_for_probe(&self) -> Result<(), SandboxError> {
+        self.reset_runtime_state(false).await;
+
+        #[cfg(target_os = "windows")]
+        {
+            if let Some(provisioner) = self.provisioner.as_ref() {
+                if provisioner.resolve_binary().is_some() {
+                    let _ = provisioner.ensure_running().await?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     #[allow(dead_code)]
     async fn programmatic_execution_probe(&self) -> SandboxExecutionProbe {
         let checked_at_unix_ms = Some(now_unix_ms());
-        for attempt in 0..EXECUTION_PROBE_RECOVERY_ATTEMPTS {
+        let mut attempt = 0usize;
+        let mut restarted_runtime = false;
+        loop {
             match self
                 .execute_session_code_without_prepare(
                     EXECUTION_PROBE_SESSION_ID,
@@ -993,15 +1020,43 @@ impl SandboxRuntimeManager {
                     if should_retry_execution_probe_after_error(&err)
                         && attempt + 1 < EXECUTION_PROBE_RECOVERY_ATTEMPTS =>
                 {
+                    attempt += 1;
                     log::warn!(
                         "execution probe failed for session {} (attempt {}/{}), recreating probe runtime: code={} detail={}",
                         EXECUTION_PROBE_SESSION_ID,
-                        attempt + 1,
+                        attempt,
                         EXECUTION_PROBE_RECOVERY_ATTEMPTS,
                         err.code(),
                         err
                     );
                     self.reset_session_runtime(EXECUTION_PROBE_SESSION_ID).await;
+                    continue;
+                }
+                Err(err)
+                    if should_restart_execution_probe_runtime_after_error(&err)
+                        && !restarted_runtime
+                        && self.provisioner.is_some() =>
+                {
+                    restarted_runtime = true;
+                    attempt = 0;
+                    log::warn!(
+                        "execution probe failed for session {} after targeted recovery, restarting managed BoxLite runtime: code={} detail={}",
+                        EXECUTION_PROBE_SESSION_ID,
+                        err.code(),
+                        err
+                    );
+                    if let Err(restart_err) = self.restart_managed_runtime_for_probe().await {
+                        return SandboxExecutionProbe {
+                            status: SandboxExecutionProbeStatus::Failed,
+                            detail: Some(format!(
+                                "The BoxLite server is reachable, but a lightweight execution probe failed: {} (runtime restart failed: {})",
+                                err.user_message(),
+                                restart_err.user_message()
+                            )),
+                            checked_at_unix_ms,
+                        };
+                    }
+                    continue;
                 }
                 Err(err) => {
                     return SandboxExecutionProbe {
@@ -1014,15 +1069,6 @@ impl SandboxRuntimeManager {
                     };
                 }
             }
-        }
-
-        SandboxExecutionProbe {
-            status: SandboxExecutionProbeStatus::Failed,
-            detail: Some(
-                "The BoxLite server is reachable, but the lightweight execution probe exhausted its recovery attempts."
-                    .to_string(),
-            ),
-            checked_at_unix_ms,
         }
     }
 
@@ -1939,6 +1985,10 @@ fn should_retry_execution_probe_after_error(err: &SandboxError) -> bool {
         || matches!(err, SandboxError::Network(_))
 }
 
+fn should_restart_execution_probe_runtime_after_error(err: &SandboxError) -> bool {
+    is_stopped_handle_error(err)
+}
+
 fn now_unix_ms() -> i64 {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1962,6 +2012,7 @@ mod tests {
     struct MockProviderState {
         broken_name_removed: bool,
         stop_calls: Vec<String>,
+        remove_calls: Vec<String>,
         run_calls: Vec<String>,
     }
 
@@ -2024,6 +2075,10 @@ mod tests {
             Ok(())
         }
 
+        async fn remove_box(&self, _box_id_or_name: &str, _force: bool) -> Result<(), SandboxError> {
+            Ok(())
+        }
+
         async fn run_python(
             &self,
             _box_id_or_name: &str,
@@ -2064,6 +2119,12 @@ mod tests {
         async fn stop_box(&self, box_id_or_name: &str) -> Result<(), SandboxError> {
             let mut state = self.state.lock().await;
             state.stop_calls.push(box_id_or_name.to_string());
+            Ok(())
+        }
+
+        async fn remove_box(&self, box_id_or_name: &str, _force: bool) -> Result<(), SandboxError> {
+            let mut state = self.state.lock().await;
+            state.remove_calls.push(box_id_or_name.to_string());
             state.broken_name_removed = true;
             Ok(())
         }
@@ -2122,6 +2183,12 @@ mod tests {
         async fn stop_box(&self, box_id_or_name: &str) -> Result<(), SandboxError> {
             let mut state = self.state.lock().await;
             state.stop_calls.push(box_id_or_name.to_string());
+            Ok(())
+        }
+
+        async fn remove_box(&self, box_id_or_name: &str, _force: bool) -> Result<(), SandboxError> {
+            let mut state = self.state.lock().await;
+            state.remove_calls.push(box_id_or_name.to_string());
             if box_id_or_name == self.broken_box_name {
                 state.broken_name_removed = true;
             }
@@ -2237,6 +2304,19 @@ mod tests {
         )));
     }
 
+    #[test]
+    fn stopped_handle_errors_trigger_probe_runtime_restart_policy() {
+        assert!(should_restart_execution_probe_runtime_after_error(
+            &SandboxError::Internal(
+                "stopped: Handle invalidated after stop(). Use runtime.get() to get a new handle."
+                    .to_string(),
+            )
+        ));
+        assert!(!should_restart_execution_probe_runtime_after_error(
+            &SandboxError::Network("bridge dropped".to_string())
+        ));
+    }
+
     #[tokio::test]
     async fn missing_sandbox_retry_recreates_box_when_name_alias_is_stale() {
         let session_id = "chat-session";
@@ -2263,10 +2343,8 @@ mod tests {
             state.run_calls,
             vec!["stale-box".to_string(), "fresh-box".to_string()]
         );
-        assert_eq!(
-            state.stop_calls,
-            vec!["stale-box".to_string(), stale_box_name]
-        );
+        assert_eq!(state.remove_calls, vec!["stale-box".to_string(), stale_box_name]);
+        assert!(state.stop_calls.is_empty());
     }
 
     #[tokio::test]
@@ -2361,10 +2439,8 @@ mod tests {
                 format!("{probe_box_name}-id")
             ]
         );
-        assert_eq!(
-            state.stop_calls,
-            vec![format!("{probe_box_name}-id"), probe_box_name]
-        );
+        assert_eq!(state.remove_calls, vec![format!("{probe_box_name}-id"), probe_box_name]);
+        assert!(state.stop_calls.is_empty());
     }
 
     #[tokio::test]
@@ -2388,10 +2464,8 @@ mod tests {
                 format!("{probe_box_name}-id")
             ]
         );
-        assert_eq!(
-            state.stop_calls,
-            vec![format!("{probe_box_name}-id"), probe_box_name]
-        );
+        assert_eq!(state.remove_calls, vec![format!("{probe_box_name}-id"), probe_box_name]);
+        assert!(state.stop_calls.is_empty());
     }
 
     #[tokio::test]

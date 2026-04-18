@@ -25,6 +25,11 @@ pub trait SandboxProvider: Send + Sync {
     /// Stop a running sandbox.
     async fn stop_box(&self, box_id_or_name: &str) -> Result<(), SandboxError>;
 
+    /// Remove a sandbox so the next get-or-create call cannot reuse stale state.
+    async fn remove_box(&self, box_id_or_name: &str, _force: bool) -> Result<(), SandboxError> {
+        self.stop_box(box_id_or_name).await
+    }
+
     /// Execute a generic command inside the sandbox.
     async fn execute(
         &self,
