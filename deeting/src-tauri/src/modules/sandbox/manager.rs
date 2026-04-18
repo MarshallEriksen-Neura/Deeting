@@ -106,6 +106,12 @@ pub enum SandboxLaunchPolicy {
     AllowHostFallback,
 }
 
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SandboxPrepareConfig {
+    pub proxy_settings: Option<DesktopNetworkProxySettings>,
+    pub image_registries: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 struct SessionLease {
     sandbox_id: String,
@@ -260,22 +266,28 @@ impl SandboxRuntimeManager {
     pub(crate) async fn prepare_with_proxy_settings(
         &self,
         proxy_settings: Option<&DesktopNetworkProxySettings>,
+        image_registries: &[String],
     ) -> Result<SandboxReadinessReport, SandboxError> {
-        self.prepare_with_proxy_settings_and_progress(proxy_settings, None)
+        self.prepare_with_proxy_settings_and_progress(proxy_settings, image_registries, None)
             .await
     }
 
     pub(crate) async fn prepare_with_proxy_settings_and_progress(
         &self,
         proxy_settings: Option<&DesktopNetworkProxySettings>,
+        image_registries: &[String],
         reporter: Option<&PrepareProgressReporter>,
     ) -> Result<SandboxReadinessReport, SandboxError> {
         let proxy_environment = proxy_settings
             .map(build_proxy_environment_for_settings)
             .transpose()
             .map_err(SandboxError::Validation)?;
-        self.prepare_with_proxy_environment(proxy_environment.as_ref(), reporter)
-            .await
+        self.prepare_with_proxy_environment_and_registries(
+            proxy_environment.as_ref(),
+            image_registries,
+            reporter,
+        )
+        .await
     }
 
     async fn prepare_with_proxy_environment(
@@ -283,12 +295,22 @@ impl SandboxRuntimeManager {
         proxy_environment: Option<&DesktopNetworkProxyEnvironment>,
         reporter: Option<&PrepareProgressReporter>,
     ) -> Result<SandboxReadinessReport, SandboxError> {
+        self.prepare_with_proxy_environment_and_registries(proxy_environment, &[], reporter)
+            .await
+    }
+
+    async fn prepare_with_proxy_environment_and_registries(
+        &self,
+        proxy_environment: Option<&DesktopNetworkProxyEnvironment>,
+        image_registries: &[String],
+        reporter: Option<&PrepareProgressReporter>,
+    ) -> Result<SandboxReadinessReport, SandboxError> {
         #[cfg(target_os = "windows")]
         {
             if let Some(provisioner) = self.provisioner.as_ref() {
                 if provisioner.resolve_binary().is_some() {
                     if let Err(err) = provisioner
-                        .ensure_running_with_progress(proxy_environment, reporter)
+                        .ensure_running_with_progress(proxy_environment, image_registries, reporter)
                         .await
                     {
                         log::warn!("prepare sandbox failed: code={} detail={}", err.code(), err);
@@ -301,51 +323,60 @@ impl SandboxRuntimeManager {
 
         #[cfg(not(target_os = "windows"))]
         {
+            let _ = image_registries;
             Ok(self.status_report().await)
         }
     }
 
     pub async fn repair(&self) -> Result<SandboxReadinessReport, SandboxError> {
-        self.repair_with_proxy_settings(None).await
+        self.repair_with_proxy_settings(None, &[]).await
     }
 
     pub(crate) async fn repair_with_proxy_settings(
         &self,
         proxy_settings: Option<&DesktopNetworkProxySettings>,
+        image_registries: &[String],
     ) -> Result<SandboxReadinessReport, SandboxError> {
-        self.repair_with_proxy_settings_and_progress(proxy_settings, None)
+        self.repair_with_proxy_settings_and_progress(proxy_settings, image_registries, None)
             .await
     }
 
     pub(crate) async fn repair_with_proxy_settings_and_progress(
         &self,
         proxy_settings: Option<&DesktopNetworkProxySettings>,
+        image_registries: &[String],
         reporter: Option<&PrepareProgressReporter>,
     ) -> Result<SandboxReadinessReport, SandboxError> {
         self.reset_runtime_state(false).await;
-        self.prepare_with_proxy_settings_and_progress(proxy_settings, reporter)
+        self.prepare_with_proxy_settings_and_progress(proxy_settings, image_registries, reporter)
             .await
     }
 
     pub async fn rebuild_runtime(&self) -> Result<SandboxReadinessReport, SandboxError> {
-        self.rebuild_runtime_with_proxy_settings(None).await
+        self.rebuild_runtime_with_proxy_settings(None, &[]).await
     }
 
     pub(crate) async fn rebuild_runtime_with_proxy_settings(
         &self,
         proxy_settings: Option<&DesktopNetworkProxySettings>,
+        image_registries: &[String],
     ) -> Result<SandboxReadinessReport, SandboxError> {
-        self.rebuild_runtime_with_proxy_settings_and_progress(proxy_settings, None)
-            .await
+        self.rebuild_runtime_with_proxy_settings_and_progress(
+            proxy_settings,
+            image_registries,
+            None,
+        )
+        .await
     }
 
     pub(crate) async fn rebuild_runtime_with_proxy_settings_and_progress(
         &self,
         proxy_settings: Option<&DesktopNetworkProxySettings>,
+        image_registries: &[String],
         reporter: Option<&PrepareProgressReporter>,
     ) -> Result<SandboxReadinessReport, SandboxError> {
         self.reset_runtime_state(true).await;
-        self.prepare_with_proxy_settings_and_progress(proxy_settings, reporter)
+        self.prepare_with_proxy_settings_and_progress(proxy_settings, image_registries, reporter)
             .await
     }
 
@@ -374,7 +405,7 @@ impl SandboxRuntimeManager {
         &self,
         reporter: Option<BoxLiteInstallProgressReporter>,
     ) -> Result<SandboxReadinessReport, SandboxError> {
-        self.install_boxlite_with_proxy_settings(reporter, None)
+        self.install_boxlite_with_proxy_settings(reporter, None, &[])
             .await
     }
 
@@ -382,6 +413,7 @@ impl SandboxRuntimeManager {
         &self,
         reporter: Option<BoxLiteInstallProgressReporter>,
         proxy_settings: Option<&DesktopNetworkProxySettings>,
+        image_registries: &[String],
     ) -> Result<SandboxReadinessReport, SandboxError> {
         #[cfg(target_os = "windows")]
         {
@@ -396,13 +428,16 @@ impl SandboxRuntimeManager {
                 data_dir: self.options.home_dir.join("sandbox"),
             };
             install_boxlite_wsl(&config, reporter, proxy_settings).await?;
-            return self.prepare_with_proxy_settings(proxy_settings).await;
+            return self
+                .prepare_with_proxy_settings(proxy_settings, image_registries)
+                .await;
         }
 
         #[cfg(not(target_os = "windows"))]
         {
             let _ = reporter;
             let _ = proxy_settings;
+            let _ = image_registries;
             Ok(self.status_report().await)
         }
     }
@@ -415,11 +450,20 @@ impl SandboxRuntimeManager {
         &self,
         policy: SandboxLaunchPolicy,
     ) -> Result<SandboxReadinessReport, SandboxError> {
+        self.ensure_launch_policy_with_prepare_config(policy, None)
+            .await
+    }
+
+    pub(crate) async fn ensure_launch_policy_with_prepare_config(
+        &self,
+        policy: SandboxLaunchPolicy,
+        prepare_config: Option<&SandboxPrepareConfig>,
+    ) -> Result<SandboxReadinessReport, SandboxError> {
         let mut report = self.status_report().await;
         if matches!(policy, SandboxLaunchPolicy::StrictSandbox)
             && report.runtime_mode != SandboxRuntimeMode::Sandbox
         {
-            report = self.prepare().await?;
+            report = self.prepare_with_prepare_config(prepare_config).await?;
         }
         Ok(report)
     }
@@ -548,6 +592,26 @@ impl SandboxRuntimeManager {
         execution_timeout_secs: Option<u64>,
         policy: SandboxLaunchPolicy,
     ) -> Result<SandboxRunResult, SandboxError> {
+        self.run_code_with_prepare_config(
+            session_id,
+            code,
+            language,
+            execution_timeout_secs,
+            policy,
+            None,
+        )
+        .await
+    }
+
+    pub(crate) async fn run_code_with_prepare_config(
+        &self,
+        session_id: &str,
+        code: &str,
+        language: Option<&str>,
+        execution_timeout_secs: Option<u64>,
+        policy: SandboxLaunchPolicy,
+        prepare_config: Option<&SandboxPrepareConfig>,
+    ) -> Result<SandboxRunResult, SandboxError> {
         let normalized_session = normalize_session_id(session_id)?;
         if code.trim().is_empty() {
             return Err(SandboxError::Validation("code is required".to_string()));
@@ -575,7 +639,9 @@ impl SandboxRuntimeManager {
                 ))
             })?;
 
-        let report = self.ensure_launch_policy(policy).await?;
+        let report = self
+            .ensure_launch_policy_with_prepare_config(policy, prepare_config)
+            .await?;
         if matches!(policy, SandboxLaunchPolicy::StrictSandbox)
             && report.runtime_mode != SandboxRuntimeMode::Sandbox
         {
@@ -587,7 +653,7 @@ impl SandboxRuntimeManager {
             ));
         }
 
-        self.execute_session_code(&normalized_session, code, timeout_secs)
+        self.execute_session_code(&normalized_session, code, timeout_secs, prepare_config)
             .await
     }
 
@@ -597,6 +663,24 @@ impl SandboxRuntimeManager {
         language: SandboxSnippetLanguage,
         code: &str,
         execution_timeout_secs: Option<u64>,
+    ) -> SandboxSnippetRunResponse {
+        self.run_local_code_snippet_with_prepare_config(
+            session_id,
+            language,
+            code,
+            execution_timeout_secs,
+            None,
+        )
+        .await
+    }
+
+    pub(crate) async fn run_local_code_snippet_with_prepare_config(
+        &self,
+        session_id: &str,
+        language: SandboxSnippetLanguage,
+        code: &str,
+        execution_timeout_secs: Option<u64>,
+        prepare_config: Option<&SandboxPrepareConfig>,
     ) -> SandboxSnippetRunResponse {
         let current_runtime_mode = self.runtime_mode().await;
         let trimmed_code = code.trim();
@@ -622,7 +706,10 @@ impl SandboxRuntimeManager {
         };
 
         let report = match self
-            .ensure_launch_policy(SandboxLaunchPolicy::StrictSandbox)
+            .ensure_launch_policy_with_prepare_config(
+                SandboxLaunchPolicy::StrictSandbox,
+                prepare_config,
+            )
             .await
         {
             Ok(report) => report,
@@ -658,7 +745,7 @@ impl SandboxRuntimeManager {
             };
 
         match self
-            .execute_session_request(&lease_key, &box_spec, request)
+            .execute_session_request(&lease_key, &box_spec, request, prepare_config)
             .await
         {
             Ok(run) => snippet_success_response(&language, report.runtime_mode, run),
@@ -677,6 +764,7 @@ impl SandboxRuntimeManager {
         normalized_session: &str,
         code: &str,
         timeout_secs: u64,
+        prepare_config: Option<&SandboxPrepareConfig>,
     ) -> Result<SandboxRunResult, SandboxError> {
         for attempt in 0..SESSION_BUSY_RETRY_ATTEMPTS {
             let lease = self.get_or_create_sandbox(&normalized_session).await?;
@@ -726,7 +814,7 @@ impl SandboxRuntimeManager {
                     );
                     self.cleanup_missing_sandbox_state(normalized_session, &lease, &backend)
                         .await;
-                    let _ = self.prepare().await;
+                    let _ = self.prepare_with_prepare_config(prepare_config).await;
                     continue;
                 }
                 Err(err)
@@ -839,6 +927,7 @@ impl SandboxRuntimeManager {
         lease_key: &str,
         box_spec: &SandboxBoxSpec,
         request: SandboxExecutionRequest,
+        prepare_config: Option<&SandboxPrepareConfig>,
     ) -> Result<SandboxRunResult, SandboxError> {
         for attempt in 0..SESSION_BUSY_RETRY_ATTEMPTS {
             let lease = self
@@ -885,7 +974,7 @@ impl SandboxRuntimeManager {
                     );
                     self.cleanup_missing_sandbox_state(lease_key, &lease, &backend)
                         .await;
-                    let _ = self.prepare().await;
+                    let _ = self.prepare_with_prepare_config(prepare_config).await;
                     continue;
                 }
                 Err(err)
@@ -949,6 +1038,22 @@ impl SandboxRuntimeManager {
                 .await;
         }
         self.run_locks.write().await.remove(normalized_session);
+    }
+
+    async fn prepare_with_prepare_config(
+        &self,
+        prepare_config: Option<&SandboxPrepareConfig>,
+    ) -> Result<SandboxReadinessReport, SandboxError> {
+        match prepare_config {
+            Some(config) => {
+                self.prepare_with_proxy_settings(
+                    config.proxy_settings.as_ref(),
+                    &config.image_registries,
+                )
+                .await
+            }
+            None => self.prepare().await,
+        }
     }
 
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]

@@ -15,6 +15,14 @@ export const DeferredDesktopSandboxSettingsCard = dynamic(
   { ssr: false }
 )
 
+export const DeferredSandboxImageRegistriesCard = dynamic(
+  () =>
+    import("./sandbox-image-registries-card").then(
+      (mod) => mod.SandboxImageRegistriesCard
+    ),
+  { ssr: false }
+)
+
 export const DeferredDesktopVersionManagementCard = dynamic(
   () =>
     import("./desktop-version-management-card").then(

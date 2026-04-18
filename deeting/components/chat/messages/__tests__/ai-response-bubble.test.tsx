@@ -480,6 +480,32 @@ describe("AIResponseBubble debug panel", () => {
     );
   });
 
+  it("hides run_local_code_snippet tool blocks because the inline fence owns the result UI", () => {
+    const parts: MessageBlock[] = [
+      { id: "text-inline-run-1", type: "text", content: "```python\nprint('hi')\n```" },
+      {
+        id: "tool-inline-run-1",
+        type: "tool_call",
+        callId: "call-inline-run-1",
+        toolName: "run_local_code_snippet",
+        status: "success",
+      },
+      {
+        id: "result-inline-run-1",
+        type: "tool_result",
+        callId: "call-inline-run-1",
+        toolName: "run_local_code_snippet",
+        status: "success",
+        result: { stdout: ["hi"] },
+      },
+    ];
+
+    render(<AIResponseBubble messageId="assistant-inline-run-1" parts={parts} />);
+
+    expect(screen.getByTestId("markdown-viewer")).toBeInTheDocument();
+    expect(screen.queryByText("Local Code Run")).not.toBeInTheDocument();
+  });
+
   it("humanizes unknown mcp tool calls into action language", () => {
     const parts: MessageBlock[] = [
       {

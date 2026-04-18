@@ -176,3 +176,32 @@ export async function runLocalSandboxCodeSnippet(payload: {
   })
   return SandboxSnippetRunResponseSchema.parse(data)
 }
+
+const SandboxImageRegistriesSchema = z.array(z.string())
+
+/**
+ * List custom OCI image registry mirrors that BoxLite should try (in order)
+ * when pulling unqualified images. Returns an empty array if none are set.
+ */
+export async function getLocalSandboxImageRegistries(): Promise<string[]> {
+  if (!isTauriRuntime()) return []
+  const data = await invokeTauri<unknown>("get_local_sandbox_image_registries")
+  return SandboxImageRegistriesSchema.parse(data)
+}
+
+/**
+ * Persist the list of OCI image registry mirrors. Server normalizes the list
+ * (trim + dedupe + preserve order) and returns the canonical form.
+ *
+ * Note: the new list only takes effect after the BoxLite server is restarted,
+ * e.g., via repairLocalSandbox or rebuildLocalSandboxRuntime.
+ */
+export async function setLocalSandboxImageRegistries(
+  registries: string[]
+): Promise<string[]> {
+  const data = await invokeTauri<unknown>(
+    "set_local_sandbox_image_registries",
+    { registries }
+  )
+  return SandboxImageRegistriesSchema.parse(data)
+}

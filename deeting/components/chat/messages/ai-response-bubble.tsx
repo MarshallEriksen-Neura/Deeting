@@ -29,6 +29,13 @@ const ViewBlock = dynamic(() => import("@/components/views/view-block"), {
   ssr: false,
 });
 
+function isInlineSnippetToolBlock(block: MessageBlock): boolean {
+  return (
+    (block.type === "tool_call" || block.type === "tool_result") &&
+    block.toolName === "run_local_code_snippet"
+  )
+}
+
 function getRenderableBlockContent(block: MessageBlock): string | null {
   if ("content" in block && typeof block.content === "string") {
     return block.content;
@@ -126,6 +133,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       const map = new Map<string, MessageToolResultBlock>();
       const paired = new Set<number>();
       parts.forEach((part, index) => {
+        if (isInlineSnippetToolBlock(part)) return;
         if (part.type === "tool_result" && part.callId) {
           map.set(part.callId, part);
           if (parts.some((p) => p.type === "tool_call" && p.callId === part.callId)) {
@@ -143,6 +151,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       let hasLinkedUi = false;
 
       parts.forEach((part) => {
+        if (isInlineSnippetToolBlock(part)) return;
         if (
           part.type === "tool_call" &&
           typeof part.callId === "string" &&
@@ -176,6 +185,9 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
 
       for (let idx = parts.length - 1; idx >= 0; idx -= 1) {
         const part = parts[idx];
+        if (isInlineSnippetToolBlock(part)) {
+          break;
+        }
         if (part.type !== "tool_call") {
           break;
         }
@@ -278,6 +290,9 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                 }
 
                 if (part.type === "tool_call") {
+                  if (isInlineSnippetToolBlock(part)) {
+                    return null;
+                  }
                   if (shouldGroupTools) {
                     if (index < firstToolCallIndex) {
                       return (
@@ -326,6 +341,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                 }
 
                 if (part.type === "tool_result") {
+                  if (isInlineSnippetToolBlock(part)) return null;
                   if (pairedResultIndices.has(index)) return null;
                   return (
                     <AnimatedBlock key={`tool-result-${index}`}>

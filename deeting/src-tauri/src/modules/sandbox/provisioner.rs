@@ -97,20 +97,24 @@ impl BoxLiteProvisioner {
         &self,
         proxy_environment: Option<&DesktopNetworkProxyEnvironment>,
     ) -> Result<String, SandboxError> {
-        self.ensure_running_inner(proxy_environment, None).await
+        self.ensure_running_inner(proxy_environment, &[], None)
+            .await
     }
 
     pub(crate) async fn ensure_running_with_progress(
         &self,
         proxy_environment: Option<&DesktopNetworkProxyEnvironment>,
+        image_registries: &[String],
         reporter: Option<&PrepareProgressReporter>,
     ) -> Result<String, SandboxError> {
-        self.ensure_running_inner(proxy_environment, reporter).await
+        self.ensure_running_inner(proxy_environment, image_registries, reporter)
+            .await
     }
 
     async fn ensure_running_inner(
         &self,
         proxy_environment: Option<&DesktopNetworkProxyEnvironment>,
+        image_registries: &[String],
         reporter: Option<&PrepareProgressReporter>,
     ) -> Result<String, SandboxError> {
         let endpoint = self.config.endpoint();
@@ -147,8 +151,12 @@ impl BoxLiteProvisioner {
         }
 
         report_prepare(reporter, "start_server", 25);
-        let launch_script =
-            build_server_launch_command(&record, self.config.port, proxy_environment);
+        let launch_script = build_server_launch_command(
+            &record,
+            self.config.port,
+            proxy_environment,
+            image_registries,
+        );
         let mut command = tokio::process::Command::new("wsl.exe");
         configure_background_tokio_command(&mut command);
         let child = command
@@ -256,6 +264,7 @@ fn build_server_launch_command(
     record: &BoxLiteInstallationRecord,
     port: u16,
     proxy_environment: Option<&DesktopNetworkProxyEnvironment>,
+    image_registries: &[String],
 ) -> String {
     let mut parts = vec!["set -eu".to_string()];
     if let Some(proxy_environment) = proxy_environment {
@@ -266,12 +275,21 @@ fn build_server_launch_command(
             parts.push(format!("export {key}={}", shell_quote(value)));
         }
     }
-    parts.push(format!(
+    let mut serve_cmd = format!(
         "exec {binary} --home {home} serve --host 127.0.0.1 --port {port}",
         binary = shell_quote(&record.wsl_binary_path),
         home = shell_quote(&record.wsl_boxlite_home),
         port = port,
-    ));
+    );
+    for registry in image_registries {
+        let trimmed = registry.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        serve_cmd.push_str(" --registry ");
+        serve_cmd.push_str(shell_quote(trimmed).as_str());
+    }
+    parts.push(serve_cmd);
     parts.join("; ")
 }
 
@@ -280,6 +298,7 @@ fn build_server_launch_command(
     _record: &BoxLiteInstallationRecord,
     _port: u16,
     _proxy_environment: Option<&DesktopNetworkProxyEnvironment>,
+    _image_registries: &[String],
 ) -> String {
     String::new()
 }
@@ -318,9 +337,38 @@ mod tests {
             )],
             unset: vec!["NO_PROXY".to_string()],
         };
-        let command = build_server_launch_command(&record, 9090, Some(&proxy_environment));
+        let command = build_server_launch_command(&record, 9090, Some(&proxy_environment), &[]);
         assert!(command.contains("unset NO_PROXY"));
         assert!(command.contains("export HTTP_PROXY='http://127.0.0.1:7890'"));
         assert!(command.contains("serve --host 127.0.0.1 --port 9090"));
+        assert!(!command.contains("--registry"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn launch_command_appends_registry_flags_for_each_mirror() {
+        let record = BoxLiteInstallationRecord {
+            version: "0.8.2".to_string(),
+            asset_name: "boxlite.tar.gz".to_string(),
+            asset_url: "https://example.invalid/boxlite.tar.gz".to_string(),
+            asset_sha256: "abc".to_string(),
+            wsl_home: "/home/test".to_string(),
+            wsl_install_dir: "/home/test/.deeting/sandbox/boxlite/cli".to_string(),
+            wsl_binary_path: "/home/test/.deeting/sandbox/boxlite/cli/boxlite".to_string(),
+            wsl_boxlite_home: "/home/test/.deeting/sandbox/boxlite/home".to_string(),
+        };
+        let registries = vec![
+            "docker.m.daocloud.io".to_string(),
+            "docker.mirrors.ustc.edu.cn".to_string(),
+        ];
+        let command = build_server_launch_command(&record, 9090, None, &registries);
+        assert!(command.contains("--registry 'docker.m.daocloud.io'"));
+        assert!(command.contains("--registry 'docker.mirrors.ustc.edu.cn'"));
+        // registries must follow the serve args (single exec line)
+        let serve_idx = command
+            .find("serve --host 127.0.0.1 --port 9090")
+            .expect("serve args present");
+        let first_registry_idx = command.find("--registry").expect("registry arg present");
+        assert!(first_registry_idx > serve_idx);
     }
 }

@@ -3,6 +3,7 @@ import useSWR from "swr"
 import type { ApiError } from "@/lib/http"
 import type { SWRResult } from "@/lib/swr/fetcher"
 import {
+  getLocalSandboxImageRegistries,
   getLocalSandboxInstallGuide,
   getLocalSandboxStatus,
   type SandboxInstallGuide,
@@ -45,6 +46,28 @@ export function useSandboxInstallGuide(
   const { data, error, isLoading, mutate } = useSWR<SandboxInstallGuide, ApiError>(
     key,
     async () => getLocalSandboxInstallGuide(),
+    {
+      revalidateOnFocus: false,
+    }
+  )
+
+  return { data, isLoading, error, mutate }
+}
+
+type SandboxImageRegistriesState = {
+  data: string[] | undefined
+  isLoading: boolean
+  error?: ApiError
+  mutate: SWRResult<string[]>["mutate"]
+}
+
+export function useSandboxImageRegistries(
+  options: { enabled?: boolean } = {}
+): SandboxImageRegistriesState {
+  const key = options.enabled === false ? null : "local-sandbox-image-registries"
+  const { data, error, isLoading, mutate } = useSWR<string[], ApiError>(
+    key,
+    async () => getLocalSandboxImageRegistries(),
     {
       revalidateOnFocus: false,
     }

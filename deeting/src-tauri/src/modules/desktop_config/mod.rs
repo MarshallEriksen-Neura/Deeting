@@ -8,6 +8,7 @@ pub(crate) const DEFAULT_MAX_AGENTIC_ROUNDS: usize = 10;
 pub(crate) const APPROVAL_POLICY_LEVEL_CONFIG_KEY: &str = "chat.approval_policy_level";
 pub(crate) const DESKTOP_NETWORK_PROXY_MODE_CONFIG_KEY: &str = "network.proxy.mode";
 pub(crate) const DESKTOP_NETWORK_PROXY_URL_CONFIG_KEY: &str = "network.proxy.url";
+pub(crate) const DESKTOP_SANDBOX_IMAGE_REGISTRIES_CONFIG_KEY: &str = "sandbox.image_registries";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DesktopNetworkProxyMode {
@@ -59,6 +60,30 @@ pub(crate) fn parse_approval_policy_level(raw: Option<&str>) -> DesktopApprovalP
         Some("low") => DesktopApprovalPolicyLevel::Low,
         _ => DEFAULT_APPROVAL_POLICY_LEVEL,
     }
+}
+
+/// Parse a newline/comma-separated string of image registry hosts.
+///
+/// - Splits on `\n`, `\r`, `,`, `;`, `\t` and ASCII whitespace.
+/// - Trims each entry, drops empties.
+/// - Dedupes case-insensitively while preserving first-seen order.
+pub(crate) fn parse_sandbox_image_registries(raw: Option<&str>) -> Vec<String> {
+    let Some(raw) = raw else {
+        return Vec::new();
+    };
+    let mut out: Vec<String> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for part in raw.split(['\n', '\r', ',', ';', '\t', ' ']) {
+        let trimmed = part.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let key = trimmed.to_ascii_lowercase();
+        if seen.insert(key) {
+            out.push(trimmed.to_string());
+        }
+    }
+    out
 }
 
 #[cfg(test)]

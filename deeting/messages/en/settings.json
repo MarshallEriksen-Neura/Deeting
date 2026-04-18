@@ -265,6 +265,25 @@
           "sandbox": "Sandboxed",
           "host_fallback": "Host fallback",
           "disabled": "Disabled"
+        },
+        "imageRegistries": {
+          "title": "Image Registry Mirrors",
+          "description": "Accelerate BoxLite image pulls by routing unqualified references (e.g. python:slim) through one or more registry mirrors.",
+          "listLabel": "Registry hosts",
+          "listHelp": "One host per line (hostname or hostname:port). No scheme. Unqualified image references are tried against each mirror in order; fully qualified references (e.g. docker.io/library/python) bypass this list.",
+          "placeholder": "docker.m.daocloud.io\ndocker.mirrors.ustc.edu.cn\ndocker.io",
+          "presetsLabel": "Quick add",
+          "restartNotice": "Saving updates the stored config. The BoxLite server only picks up the new list after it restarts — use \"Save & Apply\" to restart automatically.",
+          "footerHint": "Stored locally on this desktop. Empty list falls back to docker.io.",
+          "countLabel": "{count} configured",
+          "noneConfigured": "Not configured",
+          "reset": "Discard changes",
+          "save": "Save",
+          "saving": "Saving...",
+          "saveAndApply": "Save & Apply",
+          "applying": "Restarting sandbox...",
+          "saveSuccess": "Image registry list saved. Restart the sandbox to apply.",
+          "applySuccess": "Image registry list applied. BoxLite restarted."
         }
       }
     },

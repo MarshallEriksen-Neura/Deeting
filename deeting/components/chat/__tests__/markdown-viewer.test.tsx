@@ -1,5 +1,6 @@
 import React from "react"
 import { render, screen } from "@testing-library/react"
+import { MarkdownViewer } from "@/components/chat/markdown-viewer"
 
 jest.mock("@/hooks/use-i18n", () => ({
   useI18n: () => (key: string) => key,
@@ -74,16 +75,15 @@ jest.mock("react-markdown", () => ({
     }
 
     const [, language, code] = fencedMatch
-    const codeElement = components.code({
-      className: `language-${language}`,
-      children: code,
-    })
+    const CodeRenderer = (props: {
+      className?: string
+      children?: React.ReactNode
+    }) => components.code(props)
+    const codeElement = <CodeRenderer className={`language-${language}`}>{code}</CodeRenderer>
 
     return components.pre({ children: codeElement })
   },
 }))
-
-const { MarkdownViewer } = require("@/components/chat/markdown-viewer")
 
 describe("MarkdownViewer", () => {
   it("renders a Sandpack preview for assistant fenced html blocks", () => {

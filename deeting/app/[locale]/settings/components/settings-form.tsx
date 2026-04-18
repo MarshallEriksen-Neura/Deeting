@@ -53,6 +53,7 @@ import {
   DeferredDesktopScoutSettingsCard,
   DeferredDesktopVersionManagementCard,
   DeferredDesktopWindowSettingsCard,
+  DeferredSandboxImageRegistriesCard,
 } from "./settings-lazy";
 
 function findSelectedSecretaryModel(
@@ -766,6 +767,7 @@ export function SettingsForm({
                 }
               />
               <DeferredDesktopSandboxSettingsCard isTauriRuntime={isTauriRuntime} />
+              <DeferredSandboxImageRegistriesCard isTauriRuntime={isTauriRuntime} />
             </div>
           )}
 

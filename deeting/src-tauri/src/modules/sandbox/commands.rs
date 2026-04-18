@@ -2,8 +2,11 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Emitter, State};
 
-use crate::modules::desktop_config::network::resolve_desktop_network_proxy_settings;
+use crate::modules::desktop_config::{
+    parse_sandbox_image_registries, DESKTOP_SANDBOX_IMAGE_REGISTRIES_CONFIG_KEY,
+};
 use crate::modules::sandbox::installer::BoxLiteInstallProgress;
+use crate::modules::sandbox::prepare_config::resolve_sandbox_prepare_config;
 use crate::modules::sandbox::provisioner::PrepareProgress;
 use crate::modules::sandbox::types::{
     SandboxInstallGuide, SandboxReadinessReport, SandboxSnippetRunRequest,
@@ -18,12 +21,14 @@ fn to_command_error(err: crate::modules::sandbox::error::SandboxError) -> String
     err.user_message()
 }
 
-async fn resolve_sandbox_proxy_settings(
-    state: &AppState,
-) -> Result<crate::modules::desktop_config::network::DesktopNetworkProxySettings, String> {
-    resolve_desktop_network_proxy_settings(state.mcp.store.as_ref())
+async fn resolve_sandbox_image_registries(state: &AppState) -> Result<Vec<String>, String> {
+    let raw = state
+        .mcp
+        .store
+        .get_desktop_config(DESKTOP_SANDBOX_IMAGE_REGISTRIES_CONFIG_KEY)
         .await
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string())?;
+    Ok(parse_sandbox_image_registries(raw.as_deref()))
 }
 
 #[tauri::command]
@@ -47,12 +52,16 @@ pub async fn prepare_local_sandbox(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<SandboxReadinessReport, String> {
-    let proxy_settings = resolve_sandbox_proxy_settings(&state).await?;
+    let prepare_config = resolve_sandbox_prepare_config(&state).await?;
     let reporter = build_prepare_reporter(&app);
     state
         .sandbox
         .manager
-        .prepare_with_proxy_settings_and_progress(Some(&proxy_settings), Some(&reporter))
+        .prepare_with_proxy_settings_and_progress(
+            prepare_config.proxy_settings.as_ref(),
+            &prepare_config.image_registries,
+            Some(&reporter),
+        )
         .await
         .map_err(to_command_error)
 }
@@ -62,12 +71,16 @@ pub async fn repair_local_sandbox(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<SandboxReadinessReport, String> {
-    let proxy_settings = resolve_sandbox_proxy_settings(&state).await?;
+    let prepare_config = resolve_sandbox_prepare_config(&state).await?;
     let reporter = build_prepare_reporter(&app);
     state
         .sandbox
         .manager
-        .repair_with_proxy_settings_and_progress(Some(&proxy_settings), Some(&reporter))
+        .repair_with_proxy_settings_and_progress(
+            prepare_config.proxy_settings.as_ref(),
+            &prepare_config.image_registries,
+            Some(&reporter),
+        )
         .await
         .map_err(to_command_error)
 }
@@ -77,12 +90,16 @@ pub async fn rebuild_local_sandbox_runtime(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<SandboxReadinessReport, String> {
-    let proxy_settings = resolve_sandbox_proxy_settings(&state).await?;
+    let prepare_config = resolve_sandbox_prepare_config(&state).await?;
     let reporter = build_prepare_reporter(&app);
     state
         .sandbox
         .manager
-        .rebuild_runtime_with_proxy_settings_and_progress(Some(&proxy_settings), Some(&reporter))
+        .rebuild_runtime_with_proxy_settings_and_progress(
+            prepare_config.proxy_settings.as_ref(),
+            &prepare_config.image_registries,
+            Some(&reporter),
+        )
         .await
         .map_err(to_command_error)
 }
@@ -92,7 +109,7 @@ pub async fn install_local_sandbox_boxlite(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<SandboxReadinessReport, String> {
-    let proxy_settings = resolve_sandbox_proxy_settings(&state).await?;
+    let prepare_config = resolve_sandbox_prepare_config(&state).await?;
     let app_for_reporter = app.clone();
     let reporter: Arc<dyn Fn(BoxLiteInstallProgress) + Send + Sync> =
         Arc::new(move |progress: BoxLiteInstallProgress| {
@@ -103,7 +120,11 @@ pub async fn install_local_sandbox_boxlite(
     state
         .sandbox
         .manager
-        .install_boxlite_with_proxy_settings(Some(reporter), Some(&proxy_settings))
+        .install_boxlite_with_proxy_settings(
+            Some(reporter),
+            prepare_config.proxy_settings.as_ref(),
+            &prepare_config.image_registries,
+        )
         .await
         .map_err(to_command_error)
 }
@@ -120,14 +141,42 @@ pub async fn run_local_sandbox_code_snippet(
     state: State<'_, AppState>,
     payload: SandboxSnippetRunRequest,
 ) -> Result<SandboxSnippetRunResponse, String> {
+    let prepare_config = resolve_sandbox_prepare_config(&state).await?;
     Ok(state
         .sandbox
         .manager
-        .run_local_code_snippet(
+        .run_local_code_snippet_with_prepare_config(
             payload.session_id.as_str(),
             payload.language,
             payload.code.as_str(),
             payload.execution_timeout_secs,
+            Some(&prepare_config),
         )
         .await)
+}
+
+#[tauri::command]
+pub async fn get_local_sandbox_image_registries(
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    resolve_sandbox_image_registries(&state).await
+}
+
+#[tauri::command]
+pub async fn set_local_sandbox_image_registries(
+    state: State<'_, AppState>,
+    registries: Vec<String>,
+) -> Result<Vec<String>, String> {
+    // Normalize incoming list the same way we parse on read:
+    // trim + dedupe (case-insensitive) + preserve order.
+    let joined = registries.join("\n");
+    let normalized = parse_sandbox_image_registries(Some(joined.as_str()));
+    let serialized = normalized.join("\n");
+    state
+        .mcp
+        .store
+        .set_desktop_config(DESKTOP_SANDBOX_IMAGE_REGISTRIES_CONFIG_KEY, &serialized)
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(normalized)
 }

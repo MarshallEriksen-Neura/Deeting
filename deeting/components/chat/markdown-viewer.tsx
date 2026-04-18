@@ -19,6 +19,29 @@ const INLINE_FENCE_REGEX = /```([a-zA-Z0-9_-]+)?\s+([^\n`]+?)```/g
 const FENCE_DELIMITER_REGEX = /```/g
 const MARKDOWN_MARKER_CLASS_REGEX = /\bchat-markdown(?:-(?:assistant|user))?\b/g
 
+function getFencedCodeProps(
+  child: React.ReactNode
+): { className?: string; children?: React.ReactNode } | null {
+  if (!isValidElement(child)) {
+    return null
+  }
+
+  const props =
+    child.props && typeof child.props === "object"
+      ? (child.props as { className?: string; children?: React.ReactNode })
+      : null
+  if (!props) {
+    return null
+  }
+
+  const rawCode = extractTextFromNode(props.children)
+  if (!rawCode.trim()) {
+    return null
+  }
+
+  return props
+}
+
 function normalizeInlineFences(raw: string) {
   return raw.replace(INLINE_FENCE_REGEX, (_match, lang, code) => {
     const language = typeof lang === "string" && lang.length > 0 ? lang : ""
@@ -104,11 +127,8 @@ export function MarkdownViewer({
           },
           pre: ({ children }) => {
             const child = Array.isArray(children) ? children[0] : children
-            if (isValidElement(child) && child.type === "code") {
-              const codeProps = child.props as {
-                className?: string
-                children?: React.ReactNode
-              }
+            const codeProps = getFencedCodeProps(child)
+            if (codeProps) {
               const codeClassName = codeProps.className
               const languageMatch = codeClassName?.match(/language-([\w-]+)/)
               const language = languageMatch?.[1]

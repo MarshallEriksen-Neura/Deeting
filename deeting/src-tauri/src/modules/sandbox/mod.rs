@@ -4,6 +4,7 @@ pub mod commands;
 pub mod error;
 pub mod installer;
 pub mod manager;
+pub(crate) mod prepare_config;
 pub mod provider;
 pub mod provisioner;
 pub mod types;

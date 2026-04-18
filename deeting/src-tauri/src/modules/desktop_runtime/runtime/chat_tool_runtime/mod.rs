@@ -19,6 +19,7 @@ use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUND
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
 use crate::modules::mcp::commands::support::*;
+use crate::modules::sandbox::prepare_config::resolve_sandbox_prepare_config;
 use mcp_session::conversation::CreateConversationMessageRequest;
 
 mod inflight;
@@ -1246,16 +1247,34 @@ async fn process_chat_tool_calls(
                 }
             };
 
+            let prepare_config = match resolve_sandbox_prepare_config(app_state).await {
+                Ok(config) => config,
+                Err(err) => {
+                    synthesized = true;
+                    push_local_tool_call_error_meta(
+                        &mut tool_call_meta,
+                        &mut results,
+                        realtime_emitter,
+                        Some(call_id.as_str()),
+                        &tool_name,
+                        "LOCAL_CODE_SNIPPET_PREPARE_CONFIG_ERROR",
+                        err,
+                    );
+                    continue;
+                }
+            };
+
             let snippet_result = app_state
                 .sandbox
                 .manager
-                .run_local_code_snippet(
+                .run_local_code_snippet_with_prepare_config(
                     session_id,
                     snippet_language,
                     code,
                     call.arguments
                         .get("execution_timeout")
                         .and_then(|v| v.as_u64()),
+                    Some(&prepare_config),
                 )
                 .await;
             synthesized = true;

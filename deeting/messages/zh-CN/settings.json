@@ -265,6 +265,25 @@
           "sandbox": "沙箱执行",
           "host_fallback": "宿主机回退",
           "disabled": "已禁用"
+        },
+        "imageRegistries": {
+          "title": "镜像加速",
+          "description": "为 BoxLite 配置 Docker 镜像加速源。拉取无前缀镜像（如 python:slim）时会按顺序尝试下列 mirror，显著加快国内下载速度。",
+          "listLabel": "加速镜像地址",
+          "listHelp": "一行一个 host（可带端口，无需 http:// 前缀）。仅对无前缀镜像（如 python:slim）生效；带完整前缀的镜像（如 docker.io/library/python）会绕过此列表。",
+          "placeholder": "docker.m.daocloud.io\ndocker.mirrors.ustc.edu.cn\ndocker.io",
+          "presetsLabel": "快速添加",
+          "restartNotice": "保存只会更新配置；BoxLite 服务需重启后才会应用新镜像列表。建议使用「保存并应用」自动重启。",
+          "footerHint": "仅本机存储。列表为空时回退到 docker.io。",
+          "countLabel": "已配置 {count} 个",
+          "noneConfigured": "尚未配置",
+          "reset": "放弃修改",
+          "save": "保存",
+          "saving": "保存中...",
+          "saveAndApply": "保存并应用",
+          "applying": "正在重启沙箱...",
+          "saveSuccess": "镜像列表已保存，重启沙箱后生效。",
+          "applySuccess": "镜像列表已应用，BoxLite 已重启。"
         }
       }
     },

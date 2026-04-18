@@ -23,6 +23,7 @@ use crate::modules::code_mode::types::{
 };
 use crate::modules::desktop_runtime::runtime::CapabilityExecutionContract;
 use crate::modules::sandbox::manager::SandboxLaunchPolicy;
+use crate::modules::sandbox::prepare_config::resolve_sandbox_prepare_config;
 use crate::modules::sandbox::types::{
     SandboxReadinessReport, SandboxReadinessStatus, SandboxRuntimeMode,
 };
@@ -207,10 +208,16 @@ async fn run_execute_local_code_mode(
         return Ok(response);
     }
 
+    let prepare_config = resolve_sandbox_prepare_config(state)
+        .await
+        .map_err(CodemodeToolError::Sandbox)?;
     let sandbox_report = state
         .sandbox
         .manager
-        .ensure_launch_policy(SandboxLaunchPolicy::StrictSandbox)
+        .ensure_launch_policy_with_prepare_config(
+            SandboxLaunchPolicy::StrictSandbox,
+            Some(&prepare_config),
+        )
         .await
         .map_err(|err| CodemodeToolError::Sandbox(err.user_message()))?;
     if sandbox_report.runtime_mode != SandboxRuntimeMode::Sandbox {
@@ -297,12 +304,13 @@ async fn run_execute_local_code_mode(
     let run_result = state
         .sandbox
         .manager
-        .run_code(
+        .run_code_with_prepare_config(
             &session_id,
             &final_code,
             Some("python"),
             payload.execution_timeout,
             SandboxLaunchPolicy::StrictSandbox,
+            Some(&prepare_config),
         )
         .await
         .map_err(|err| CodemodeToolError::Sandbox(err.user_message()))?;
