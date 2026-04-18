@@ -83,6 +83,43 @@ describe("mcp desktop gateway approval helpers", () => {
     expect(result).toEqual(finalPayload)
   })
 
+  it("dedupes concurrent desktop approval streams by approval token", async () => {
+    let resolveFirst!: (value: unknown) => void
+
+    mockOpenSSE.mockImplementation((_url, options) => {
+      queueMicrotask(() => {
+        options.onMessage({ data: { type: "status", code: "approval.executing" } })
+      })
+      resolveFirst = (value) => {
+        options.onMessage({ data: value })
+        options.onMessage({ data: "[DONE]" })
+      }
+      return () => {}
+    })
+
+    const firstPromise = streamDesktopApproveTool({
+      approvalToken: "approval-dedupe-1",
+      approvalMode: "allow_once",
+    })
+    const secondPromise = streamDesktopApproveTool({
+      approvalToken: "approval-dedupe-1",
+      approvalMode: "allow_once",
+    })
+
+    await Promise.resolve()
+    expect(mockOpenSSE).toHaveBeenCalledTimes(1)
+
+    const finalPayload = {
+      status: "LOCAL_CHAT_RESUMED",
+      approved_tool_result: { ok: true },
+    }
+    resolveFirst(finalPayload)
+
+    await expect(firstPromise).resolves.toEqual(finalPayload)
+    await expect(secondPromise).resolves.toEqual(finalPayload)
+    expect(mockOpenSSE).toHaveBeenCalledTimes(1)
+  })
+
   it("rejects the promise when the approval SSE stream emits a typed error event", async () => {
     mockOpenSSE.mockImplementation((_url, options) => {
       options.onMessage({

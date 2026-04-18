@@ -178,4 +178,95 @@ describe("runInlineApproval", () => {
       ])
     })
   })
+
+  it("appends a visible error block when inline approval rejects", async () => {
+    mockApproveTool.mockRejectedValueOnce(new Error("Execution failed: program not found"))
+
+    act(() => {
+      useChatStore.setState({
+        sessionId: "session-inline-error-1",
+        messages: [
+          {
+            id: "assistant-inline-error-1",
+            role: "assistant",
+            content: "",
+            createdAt: 1,
+            blocks: [
+              {
+                id: "call-inline-error-1",
+                type: "tool_call",
+                callId: "call-inline-error-1",
+                toolName: "shell_execute",
+                status: "running",
+              } as MessageBlock,
+              {
+                id: "result-inline-error-1",
+                type: "tool_result",
+                callId: "call-inline-error-1",
+                toolName: "shell_execute",
+                status: "requires_approval",
+                result: {
+                  status: "REQUIRES_APPROVAL",
+                  approval_token: "approval-inline-error-1",
+                },
+              } as MessageBlock,
+            ],
+          },
+        ],
+      })
+      useBridgeApprovalStore.getState().setPending(
+        createBridgeToolApproval({
+          approval_token: "approval-inline-error-1",
+          tool_name: "shell_execute",
+          arguments: { command: "missing-binary" },
+          meta: {
+            call_id: "call-inline-error-1",
+            message_id: "assistant-inline-error-1",
+          },
+        })
+      )
+    })
+
+    const approval = useBridgeApprovalStore.getState().pending
+    expect(approval).not.toBeNull()
+
+    await runInlineApproval({
+      approval: approval!,
+      messageId: "assistant-inline-error-1",
+      sessionId: "session-inline-error-1",
+      resolveMessages: () => useChatStore.getState().messages,
+      applyOptimisticExecutionState: () => {
+        useChatStore.getState().setMessageBlocks("assistant-inline-error-1", [
+          {
+            id: "call-inline-error-1",
+            type: "tool_call",
+            callId: "call-inline-error-1",
+            toolName: "shell_execute",
+            status: "running",
+          },
+        ])
+      },
+      removePendingByToken: useBridgeApprovalStore.getState().removePendingByToken,
+      upsertMessageToolResult: useChatStore.getState().upsertMessageToolResult,
+      appendMessageBlocks: useChatStore.getState().appendMessageBlocks,
+    })
+
+    const blocks = useChatStore.getState().messages[0]?.blocks ?? []
+    expect(blocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool_result",
+          callId: "call-inline-error-1",
+          status: "error",
+          result: expect.objectContaining({
+            error: "Execution failed: program not found",
+          }),
+        }),
+        expect.objectContaining({
+          type: "error",
+          message: "Execution failed: program not found",
+        }),
+      ])
+    )
+  })
 })

@@ -17,13 +17,13 @@ jest.mock("next-intl", () => ({
   useTranslations: (namespace?: string) => {
     const messages: Record<string, string> = {
       "chat.approvalDialog.actions.approveOnce": "actions.approveOnce",
-      "chat.approvalDialog.actions.denyAlways": "actions.denyAlways",
+      "chat.approvalDialog.actions.reject": "actions.reject",
       "chat.approvalDialog.toast.approvedPending": "toast.approvedPending",
       "chat.approvalDialog.toast.approvedAlwaysPending": "toast.approvedAlwaysPending",
       "chat.approvalDialog.toast.approved": "toast.approved",
       "chat.approvalDialog.toast.executionFailed": "toast.executionFailed:{message}",
       "chat.approvalDialog.toast.deniedAlways": "toast.deniedAlways",
-      "chat.approvalDialog.result.userDeniedAlways": "result.userDeniedAlways",
+      "chat.approvalDialog.result.userRejected": "result.userRejected",
       "chat.approvalDialog.queueItemSourceFallback": "queueItemSourceFallback",
       "chat.approvalDialog.queueItemSourceBound": "queueItemSourceBound",
       "chat.approvalDialog.queueItemSource": "queueItemSource:{source}",
@@ -200,7 +200,7 @@ describe("ToolApprovalDialog", () => {
     })
   })
 
-  it("uses the local gateway reject request for deny always", async () => {
+  it("uses the local gateway reject request for reject once", async () => {
     mockRejectTool.mockResolvedValueOnce({
       status: "LOCAL_CHAT_REJECTED",
       execution_graph_execution_id: "graph-exec-deny-1",
@@ -224,14 +224,14 @@ describe("ToolApprovalDialog", () => {
 
     render(<ToolApprovalDialog />)
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "actions.denyAlways" }))
+      fireEvent.click(screen.getByRole("button", { name: "actions.reject" }))
       await Promise.resolve()
     })
 
     await waitFor(() => {
       expect(mockRejectTool).toHaveBeenCalledWith({
         approvalToken: "approval-3",
-        rejectMode: "deny_always",
+        rejectMode: "reject_once",
         executionGraphExecutionId: "graph-exec-deny-1",
       })
     })
@@ -240,7 +240,7 @@ describe("ToolApprovalDialog", () => {
       tool_name: "write_file",
       arguments: {
         call_id: "call-3",
-        result: { error: "result.userDeniedAlways" },
+        result: { error: "result.userRejected" },
         ok: false,
       },
       execution_token: "exec-3",
@@ -453,6 +453,78 @@ describe("ToolApprovalDialog", () => {
         expect.objectContaining({
           type: "error",
           message: "upstream error: do request failed",
+        }),
+      ])
+    )
+  })
+
+  it("appends a visible error block when the approval stream rejects with a typed error", async () => {
+    mockApproveTool.mockRejectedValueOnce(new Error("Execution failed: program not found"))
+
+    act(() => {
+      useChatStore.setState({
+        messages: [
+          {
+            id: "assistant-typed-error-1",
+            role: "assistant",
+            content: "",
+            createdAt: 1,
+            blocks: [
+              {
+                id: "call-typed-error-1",
+                type: "tool_call",
+                callId: "call-typed-error-1",
+                toolName: "shell_execute",
+                status: "running",
+              } as MessageBlock,
+              {
+                id: "result-typed-error-1",
+                type: "tool_result",
+                callId: "call-typed-error-1",
+                toolName: "shell_execute",
+                status: "requires_approval",
+                result: {
+                  status: "REQUIRES_APPROVAL",
+                  approval_token: "approval-typed-error-1",
+                },
+              } as MessageBlock,
+            ],
+          },
+        ],
+      })
+      useBridgeApprovalStore.getState().setPending(
+        createBridgeToolApproval({
+          approval_token: "approval-typed-error-1",
+          tool_name: "shell_execute",
+          arguments: { command: "missing-binary" },
+          meta: {
+            call_id: "call-typed-error-1",
+            message_id: "assistant-typed-error-1",
+          },
+        })
+      )
+    })
+
+    render(<ToolApprovalDialog />)
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "actions.approveOnce" }))
+      await Promise.resolve()
+    })
+
+    const blocks = useChatStore.getState().messages[0]?.blocks ?? []
+    expect(blocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool_result",
+          callId: "call-typed-error-1",
+          status: "error",
+          result: expect.objectContaining({
+            error: "Execution failed: program not found",
+          }),
+        }),
+        expect.objectContaining({
+          type: "error",
+          message: "Execution failed: program not found",
         }),
       ])
     )

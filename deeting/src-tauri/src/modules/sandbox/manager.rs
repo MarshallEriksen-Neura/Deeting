@@ -2075,7 +2075,11 @@ mod tests {
             Ok(())
         }
 
-        async fn remove_box(&self, _box_id_or_name: &str, _force: bool) -> Result<(), SandboxError> {
+        async fn remove_box(
+            &self,
+            _box_id_or_name: &str,
+            _force: bool,
+        ) -> Result<(), SandboxError> {
             Ok(())
         }
 
@@ -2343,7 +2347,10 @@ mod tests {
             state.run_calls,
             vec!["stale-box".to_string(), "fresh-box".to_string()]
         );
-        assert_eq!(state.remove_calls, vec!["stale-box".to_string(), stale_box_name]);
+        assert_eq!(
+            state.remove_calls,
+            vec!["stale-box".to_string(), stale_box_name]
+        );
         assert!(state.stop_calls.is_empty());
     }
 
@@ -2439,7 +2446,10 @@ mod tests {
                 format!("{probe_box_name}-id")
             ]
         );
-        assert_eq!(state.remove_calls, vec![format!("{probe_box_name}-id"), probe_box_name]);
+        assert_eq!(
+            state.remove_calls,
+            vec![format!("{probe_box_name}-id"), probe_box_name]
+        );
         assert!(state.stop_calls.is_empty());
     }
 
@@ -2464,7 +2474,10 @@ mod tests {
                 format!("{probe_box_name}-id")
             ]
         );
-        assert_eq!(state.remove_calls, vec![format!("{probe_box_name}-id"), probe_box_name]);
+        assert_eq!(
+            state.remove_calls,
+            vec![format!("{probe_box_name}-id"), probe_box_name]
+        );
         assert!(state.stop_calls.is_empty());
     }
 

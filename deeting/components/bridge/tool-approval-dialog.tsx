@@ -73,7 +73,7 @@ function ToolApprovalDialogContent({
   const setStatus = useChatRuntimeStore((state) => state.setStatus)
   const clearStatus = useChatRuntimeStore((state) => state.clearStatus)
   const [loadingAction, setLoadingAction] = useState<
-    "allow_once" | "allow_always" | "deny_always" | null
+    "allow_once" | "allow_always" | "reject_once" | null
   >(null)
   const t = useTranslations("chat.approvalDialog")
   const queueLength = queue.length
@@ -247,6 +247,9 @@ function ToolApprovalDialogContent({
           if (errorBlock) {
             upsertMessageToolResult(messageId, errorBlock)
           }
+          appendMessageBlocks(messageId, [
+            createLocalChatResumeErrorBlock(approval, errorMessage),
+          ])
           syncChatStatusForMessage(messageId)
         } else {
           clearStatus()
@@ -280,15 +283,15 @@ function ToolApprovalDialogContent({
     })
   }
 
-  const handleRejectAlways = async () => {
+  const handleReject = async () => {
     const approval = pending
     if (!approval) return
 
     try {
-      setLoadingAction("deny_always")
+      setLoadingAction("reject_once")
       await rejectDesktopTool({
         approvalToken: approval.approval_token,
-        rejectMode: "deny_always",
+        rejectMode: "reject_once",
         executionGraphExecutionId: approval.meta.execution_graph_execution_id,
       })
 
@@ -296,7 +299,7 @@ function ToolApprovalDialogContent({
       if (messageId) {
         const rejectedBlock = createRejectedToolResultBlock(
           approval,
-          t("result.userDeniedAlways")
+          t("result.userRejected")
         )
         if (rejectedBlock) {
           upsertMessageToolResult(messageId, rejectedBlock)
@@ -314,7 +317,7 @@ function ToolApprovalDialogContent({
             tool_name: approval.tool_name,
             arguments: {
               call_id: approval.meta.call_id,
-              result: { error: t("result.userDeniedAlways") },
+              result: { error: t("result.userRejected") },
               ok: false,
             },
             execution_token: approval.meta.execution_token,
@@ -334,7 +337,7 @@ function ToolApprovalDialogContent({
     <AlertDialog open={!!pending}>
       <AlertDialogContent
         className={[
-          "max-h-[85vh] max-w-md overflow-hidden",
+          "flex max-h-[85vh] w-[min(92vw,42rem)] max-w-[42rem] flex-col gap-0 overflow-hidden p-0",
           // Glass foundation
           "bg-[var(--card)]/60 backdrop-blur-2xl",
           "border border-white/10",
@@ -362,16 +365,20 @@ function ToolApprovalDialogContent({
           }}
         />
 
-        <AlertDialogHeader>
+        <AlertDialogHeader className="shrink-0 border-b border-white/[0.06] px-6 pb-4 pt-6">
           <AlertDialogTitle className="flex items-center gap-2.5 text-base font-semibold text-[var(--foreground)]">
             <div className="flex size-8 items-center justify-center rounded-xl bg-gradient-to-b from-red-500/20 to-red-600/10 text-red-400 ring-1 ring-red-500/20">
               <ShieldAlert className="size-4" />
             </div>
             {t("title")}
           </AlertDialogTitle>
-          <AlertDialogDescription asChild>
-            <div className="max-h-[60vh] space-y-3.5 overflow-y-auto pr-1 text-sm text-[var(--muted)]">
-              <p className="leading-relaxed">{t("description")}</p>
+        </AlertDialogHeader>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-4">
+          <div className="space-y-3.5 pr-2 text-sm text-[var(--muted)]">
+            <AlertDialogDescription className="leading-relaxed text-sm text-[var(--muted)]">
+              {t("description")}
+            </AlertDialogDescription>
               {queueLength > 1 ? (
                 <div className="space-y-2 rounded-lg border border-amber-500/15 bg-amber-500/8 px-3 py-2 text-xs text-[var(--foreground)]/80">
                   <div>{t("queueStatus", { current: 1, total: queueLength })}</div>
@@ -622,13 +629,12 @@ function ToolApprovalDialogContent({
                   </div>
                 </details>
               ) : null}
-            </div>
-          </AlertDialogDescription>
-        </AlertDialogHeader>
+          </div>
+        </div>
 
-        <AlertDialogFooter className="gap-2.5 border-t border-white/[0.06] pt-4">
+        <AlertDialogFooter className="shrink-0 gap-2.5 border-t border-white/[0.06] bg-[var(--card)]/75 px-6 py-4 backdrop-blur-xl">
           <AlertDialogCancel
-            onClick={handleRejectAlways}
+            onClick={handleReject}
             disabled={loadingAction !== null}
             className={[
               "h-10 rounded-xl px-5",
@@ -641,9 +647,9 @@ function ToolApprovalDialogContent({
               "active:scale-[0.97]",
             ].join(" ")}
           >
-            {loadingAction === "deny_always"
+            {loadingAction === "reject_once"
               ? t("actions.blocking")
-              : t("actions.denyAlways")}
+              : t("actions.reject")}
           </AlertDialogCancel>
           <AlertDialogAction
             onClick={(e) => {

@@ -905,7 +905,7 @@ export const ToolCallBlock = memo<{
   const t = useI18n("chat");
   const [isOpen, setIsOpen] = useState(false);
   const [approvalAction, setApprovalAction] = useState<
-    "allow_once" | "deny_always" | null
+    "allow_once" | "reject_once" | null
   >(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const recentApprovedExecution = useBridgeApprovalStore(
@@ -1072,12 +1072,12 @@ export const ToolCallBlock = memo<{
 
   const handleReject = useCallback(async () => {
     if (!inlineApproval || !messageId) return;
-    setApprovalAction("deny_always");
+    setApprovalAction("reject_once");
     try {
       await runInlineRejection({
         approval: inlineApproval,
         messageId,
-        rejectLabel: t("approvalDialog.result.userDeniedAlways"),
+        rejectLabel: t("approvalDialog.result.userRejected"),
         removePendingByToken,
         upsertMessageToolResult,
       });
@@ -1169,7 +1169,7 @@ export const ToolCallBlock = memo<{
                     disabled={approvalAction !== null}
                     onClick={() => void handleReject()}
                   >
-                    {approvalAction === "deny_always" ? (
+                    {approvalAction === "reject_once" ? (
                       <Loader2 size={14} className="animate-spin" />
                     ) : null}
                     {t("approvalDialog.actions.reject")}

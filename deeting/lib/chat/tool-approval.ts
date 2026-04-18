@@ -66,6 +66,24 @@ function asStringArray(value: unknown): string[] | undefined {
   return items.length > 0 ? items : undefined
 }
 
+function unwrapNestedToolResultEnvelope(value: unknown): unknown {
+  let current = value
+  for (let index = 0; index < 6; index += 1) {
+    const record = toRecord(current)
+    if (!record) break
+    const type = asTrimmedString(record.type)
+    const looksLikeToolResultEnvelope =
+      type === "tool_result" ||
+      typeof record.callId === "string" ||
+      typeof record.toolName === "string"
+    if (!looksLikeToolResultEnvelope || !("result" in record) || record.result == null) {
+      break
+    }
+    current = record.result
+  }
+  return current
+}
+
 function hasExplicitResolvedToolResultStatus(block: ToolResultBlock) {
   const normalizedStatus =
     typeof block.status === "string" ? block.status.trim().toLowerCase() : ""
@@ -495,7 +513,8 @@ export function createApprovedToolResultBlock(
 ): ToolResultBlock | null {
   const callId = approval.meta.call_id?.trim()
   if (!callId) return null
-  const resultRecord = toRecord(result)
+  const normalizedResult = unwrapNestedToolResultEnvelope(result)
+  const resultRecord = toRecord(normalizedResult)
   return {
     id: `${callId}-approved`,
     type: "tool_result",
@@ -524,7 +543,7 @@ export function createApprovedToolResultBlock(
               }
             : {}),
         }
-      : result,
+      : normalizedResult,
   }
 }
 
@@ -627,6 +646,7 @@ export function extractLocalChatApprovalResume(result: unknown): LocalChatApprov
   const resolvedGateNodeId = asTrimmedString(payload.resolved_gate_node_id) ?? undefined
   const pendingApprovalGateIds = normalizeStringArray(payload.pending_approval_gate_ids)
   const nextPendingApprovalTokens = normalizeStringArray(payload.next_pending_approval_tokens)
+  const approvedToolResult = unwrapNestedToolResultEnvelope(payload.approved_tool_result)
 
   if (status === "LOCAL_CHAT_WAITING_APPROVAL") {
     const resolvedGateStatus = extractNodeStatusById(executionGraph, resolvedGateNodeId)
@@ -636,7 +656,7 @@ export function extractLocalChatApprovalResume(result: unknown): LocalChatApprov
         approval_token: approvalToken,
         resolved_gate_node_id: resolvedGateNodeId,
         resolved_call_id: asTrimmedString(payload.resolved_call_id) ?? undefined,
-        approved_tool_result: payload.approved_tool_result,
+        approved_tool_result: approvedToolResult,
         continuation_blocks: continuationBlocks,
         execution_graph: executionGraph,
         execution_graph_execution_id:
@@ -656,7 +676,7 @@ export function extractLocalChatApprovalResume(result: unknown): LocalChatApprov
         approval_token: approvalToken,
         resolved_gate_node_id: resolvedGateNodeId,
         resolved_call_id: asTrimmedString(payload.resolved_call_id) ?? undefined,
-        approved_tool_result: payload.approved_tool_result,
+        approved_tool_result: approvedToolResult,
         continuation_blocks: continuationBlocks,
         execution_graph: executionGraph,
         execution_graph_execution_id:
@@ -676,7 +696,7 @@ export function extractLocalChatApprovalResume(result: unknown): LocalChatApprov
     approval_token: approvalToken,
     resolved_gate_node_id: resolvedGateNodeId,
     resolved_call_id: asTrimmedString(payload.resolved_call_id) ?? undefined,
-    approved_tool_result: payload.approved_tool_result,
+    approved_tool_result: approvedToolResult,
     continuation_blocks: continuationBlocks,
     execution_graph: executionGraph,
     execution_graph_execution_id:

@@ -266,4 +266,44 @@ describe("createApprovedToolResultBlock", () => {
       },
     })
   })
+
+  it("unwraps nested tool_result envelopes before storing approved results", () => {
+    expect(
+      createApprovedToolResultBlock(
+        {
+          kind: "bridge_mcp",
+          approval_token: "approval-1",
+          tool_name: "firecrawl_scrape",
+          arguments: {},
+          meta: {
+            call_id: "call-1",
+          },
+        },
+        {
+          type: "tool_result",
+          callId: "call-1",
+          toolName: "firecrawl_scrape",
+          status: "success",
+          result: {
+            type: "tool_result",
+            callId: "call-1",
+            toolName: "firecrawl_scrape",
+            status: "success",
+            result: {
+              structuredContent: {
+                markdown: "# EvoMap",
+              },
+            },
+          },
+        }
+      )
+    ).toMatchObject({
+      callId: "call-1",
+      result: {
+        structuredContent: {
+          markdown: "# EvoMap",
+        },
+      },
+    })
+  })
 })

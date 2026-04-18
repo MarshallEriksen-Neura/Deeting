@@ -1,7 +1,7 @@
 use super::classify_local_tool_execution_error_code;
 use super::*;
-use crate::modules::desktop_runtime::runtime::LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE;
 use crate::modules::desktop_runtime::runtime::build_local_tool_call_install_gate_error_meta;
+use crate::modules::desktop_runtime::runtime::LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE;
 
 #[test]
 fn build_execution_contract_from_search_result_requires_capabilities() {
@@ -371,6 +371,54 @@ fn serialize_tool_replay_content_unwraps_nested_tool_result_envelopes() {
         serde_json::from_str(&serialized).expect("nested tool_result replay should stay json");
 
     assert_eq!(reparsed, serde_json::json!({ "markdown": "# EvoMap" }));
+}
+
+#[test]
+fn build_tool_call_meta_from_execution_graph_unwraps_nested_tool_result_envelopes() {
+    let execution_graph = serde_json::json!({
+        "nodes": [
+            {
+                "node_id": "tool_call:call-firecrawl",
+                "node_type": "tool_call",
+                "status": "success",
+                "metadata": {
+                    "call_id": "call-firecrawl",
+                    "tool_name": "firecrawl_scrape"
+                },
+                "output_payload": {
+                    "type": "tool_result",
+                    "callId": "call-firecrawl",
+                    "toolName": "firecrawl_scrape",
+                    "status": "success",
+                    "result": {
+                        "type": "tool_result",
+                        "callId": "call-firecrawl",
+                        "toolName": "firecrawl_scrape",
+                        "status": "success",
+                        "result": {
+                            "structuredContent": {
+                                "markdown": "# EvoMap"
+                            }
+                        }
+                    }
+                }
+            }
+        ]
+    });
+
+    let meta = build_tool_call_meta_from_execution_graph(&execution_graph);
+
+    assert_eq!(meta.len(), 1);
+    assert_eq!(meta[0]["id"], serde_json::json!("call-firecrawl"));
+    assert_eq!(meta[0]["name"], serde_json::json!("firecrawl_scrape"));
+    assert_eq!(
+        meta[0]["result"],
+        serde_json::json!({
+            "structuredContent": {
+                "markdown": "# EvoMap"
+            }
+        })
+    );
 }
 
 #[test]

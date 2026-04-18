@@ -84,6 +84,27 @@ pub(super) async fn record_query_affinity_from_tool_meta(
     }
 }
 
+pub(super) fn unwrap_nested_tool_result_envelope(value: &serde_json::Value) -> serde_json::Value {
+    let mut current = value;
+    for _ in 0..6 {
+        let Some(object) = current.as_object() else {
+            break;
+        };
+        let looks_like_tool_result_envelope =
+            object.get("type").and_then(serde_json::Value::as_str) == Some("tool_result")
+                || object.contains_key("callId")
+                || object.contains_key("toolName");
+        if !looks_like_tool_result_envelope {
+            break;
+        }
+        let Some(next) = object.get("result").filter(|value| !value.is_null()) else {
+            break;
+        };
+        current = next;
+    }
+    current.clone()
+}
+
 pub(super) fn tool_call_meta_matches_call_id(item: &serde_json::Value, call_id: &str) -> bool {
     let expected = call_id.trim();
     if expected.is_empty() {
@@ -211,16 +232,17 @@ pub(super) fn build_tool_call_meta_from_execution_graph(
         object.insert("name".to_string(), serde_json::json!(tool_name));
         object.insert("status".to_string(), serde_json::json!(status));
 
-        if let Some(output_payload) = node.get("output_payload").cloned() {
+        if let Some(output_payload) = node.get("output_payload") {
+            let normalized_output_payload = unwrap_nested_tool_result_envelope(output_payload);
             if status == "error" {
-                if let Some(error) = output_payload.get("error").cloned() {
+                if let Some(error) = normalized_output_payload.get("error").cloned() {
                     object.insert("error".to_string(), error);
                 }
-                if let Some(error_code) = output_payload.get("error_code").cloned() {
+                if let Some(error_code) = normalized_output_payload.get("error_code").cloned() {
                     object.insert("error_code".to_string(), error_code);
                 }
             }
-            object.insert("result".to_string(), output_payload);
+            object.insert("result".to_string(), normalized_output_payload);
         }
 
         items.push(serde_json::Value::Object(object));
@@ -599,6 +621,7 @@ pub(super) fn apply_approved_tool_result_to_execution_graph(
     call_id: Option<&str>,
     tool_result: &serde_json::Value,
 ) {
+    let normalized_tool_result = unwrap_nested_tool_result_envelope(tool_result);
     let resolved_call_id = call_id
         .unwrap_or(suspended.pending_call_id())
         .trim()
@@ -613,13 +636,13 @@ pub(super) fn apply_approved_tool_result_to_execution_graph(
         &mut suspended.execution_graph,
         gate_node_id.as_str(),
         "approved",
-        Some(tool_result.clone()),
+        Some(normalized_tool_result.clone()),
     );
     update_execution_graph_node(
         &mut suspended.execution_graph,
         tool_node_id.as_str(),
         "success",
-        Some(tool_result.clone()),
+        Some(normalized_tool_result.clone()),
     );
     update_finalize_node_status_from_graph(&mut suspended.execution_graph);
     append_execution_graph_event(
@@ -630,14 +653,14 @@ pub(super) fn apply_approved_tool_result_to_execution_graph(
             "call_id": resolved_call_id,
             "execution_graph_gate_node_id": gate_node_id,
             "execution_graph_tool_node_id": tool_node_id,
-            "tool_result": tool_result,
+            "tool_result": normalized_tool_result,
         }),
     );
     append_execution_graph_event(
         &mut suspended.execution_graph,
         tool_node_id.as_str(),
         "tool_call.approved_result_applied",
-        tool_result.clone(),
+        normalized_tool_result,
     );
 }
 

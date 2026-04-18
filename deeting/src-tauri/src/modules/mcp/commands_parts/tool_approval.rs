@@ -76,6 +76,21 @@ fn is_idempotent_post_approval_error(error: &str) -> bool {
     )
 }
 
+fn build_failed_approval_tool_result_payload(
+    pending: Option<&crate::modules::mcp::PendingToolCall>,
+    execution_graph_execution_id: Option<&str>,
+    error: &str,
+) -> Value {
+    serde_json::json!({
+        "error": error,
+        "execution_graph_execution_id": execution_graph_execution_id,
+        "execution_graph_gate_node_id": pending
+            .and_then(|item| item.execution_graph_gate_node_id.clone()),
+        "execution_graph_tool_node_id": pending
+            .and_then(|item| item.execution_graph_tool_node_id.clone()),
+    })
+}
+
 pub(crate) async fn approve_mcp_tool_payload(
     app: &tauri::AppHandle,
     state: &crate::state::AppState,
@@ -169,7 +184,54 @@ pub(crate) async fn approve_mcp_tool_payload(
                     }
                 }
             }
-            return Err(err);
+
+            let failed_tool_result = build_failed_approval_tool_result_payload(
+                pending_before_approval.as_ref(),
+                requested_execution_id.as_deref(),
+                err.as_str(),
+            );
+            if let Some(execution_id) = requested_execution_id.as_deref() {
+                if let Some(mut payload) = project_local_chat_approval_state_payload(
+                    state,
+                    execution_id,
+                    Some(err.as_str()),
+                )
+                .await?
+                {
+                    if let Some(object) = payload.as_object_mut() {
+                        object.insert(
+                            "approved_tool_result".to_string(),
+                            failed_tool_result.clone(),
+                        );
+                        object.insert(
+                            "error_code".to_string(),
+                            serde_json::json!("LOCAL_TOOL_APPROVAL_FAILED"),
+                        );
+                        object.insert("error".to_string(), serde_json::json!(err.as_str()));
+                        object.insert("retryable".to_string(), serde_json::json!(true));
+                    }
+                    return Ok(payload);
+                }
+            }
+
+            return Ok(serde_json::json!({
+                "status": "LOCAL_CHAT_RESUME_FAILED",
+                "approval_token": token,
+                "resolved_gate_node_id": pending_before_approval
+                    .as_ref()
+                    .and_then(|pending| pending.execution_graph_gate_node_id.clone()),
+                "resolved_call_id": pending_before_approval
+                    .as_ref()
+                    .and_then(|pending| pending.call_id.clone()),
+                "approved_tool_result": failed_tool_result,
+                "continuation_blocks": [],
+                "execution_graph_execution_id": requested_execution_id,
+                "pending_approval_gate_ids": [],
+                "next_pending_approval_tokens": [],
+                "error_code": "LOCAL_TOOL_APPROVAL_FAILED",
+                "error": err,
+                "retryable": true,
+            }));
         }
     };
 

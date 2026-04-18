@@ -28,6 +28,7 @@ mod tests {
         tool_execution::{
             approve_mcp_tool_inner, execute_or_queue_mcp_tool_call,
             execute_or_queue_mcp_tool_call_with_context, reject_mcp_tool_inner,
+            reject_mcp_tool_inner_with_mode, RejectPersistMode,
         },
     };
     use crate::modules::mcp::commands::tool_approval_impl::list_pending_mcp_approvals_inner;
@@ -3922,6 +3923,49 @@ for raw_line in sys.stdin:
             Some(2)
         );
         assert!(pending_tool_calls.read().await.is_empty());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test]
+    async fn approval_flow_reject_once_does_not_persist_deny_rule() {
+        let store = create_test_store("approval-flow-reject-once").await;
+        let _tool = upsert_test_tool(&store, "execute_demo_reject_once", "cat").await;
+        let pending_tool_calls =
+            RwLock::new(HashMap::<String, crate::modules::mcp::PendingToolCall>::new());
+
+        let queued = execute_or_queue_mcp_tool_call(
+            &store,
+            &pending_tool_calls,
+            "execute_demo_reject_once".to_string(),
+            serde_json::json!({"x": 1}),
+        )
+        .await
+        .expect("queue pending approval");
+        let token = queued
+            .get("approval_token")
+            .and_then(|value| value.as_str())
+            .expect("approval token")
+            .to_string();
+
+        let removed = reject_mcp_tool_inner_with_mode(
+            Some(&store),
+            &pending_tool_calls,
+            &token,
+            RejectPersistMode::RejectOnce,
+        )
+        .await
+        .expect("reject once");
+
+        assert!(removed);
+        assert!(pending_tool_calls.read().await.is_empty());
+
+        let persisted_rule_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM tool_approval_rules WHERE tool_name = 'execute_demo_reject_once';",
+        )
+        .fetch_one(&store.pool)
+        .await
+        .expect("count persisted approval rules");
+        assert_eq!(persisted_rule_count, 0);
     }
 
     #[cfg(not(target_os = "windows"))]

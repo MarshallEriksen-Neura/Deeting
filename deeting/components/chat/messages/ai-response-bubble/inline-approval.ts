@@ -130,6 +130,9 @@ export async function runInlineApproval({
     if (errorBlock) {
       upsertMessageToolResult(messageId, errorBlock);
     }
+    appendMessageBlocks(messageId, [
+      createLocalChatResumeErrorBlock(approval, errorMessage),
+    ]);
     if (approval.meta.execution_token) {
       try {
         await bridgeCallTool({
@@ -163,7 +166,7 @@ export async function runInlineRejection({
   try {
     await rejectDesktopTool({
       approvalToken: approval.approval_token,
-      rejectMode: "deny_always",
+      rejectMode: "reject_once",
       executionGraphExecutionId: approval.meta.execution_graph_execution_id,
     });
     const rejectedBlock = createRejectedToolResultBlock(approval, rejectLabel);
