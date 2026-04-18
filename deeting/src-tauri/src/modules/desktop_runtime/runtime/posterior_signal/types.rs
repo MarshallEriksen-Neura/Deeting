@@ -83,7 +83,3 @@ impl PosteriorSignalDecision {
         }
     }
 }
-
-pub(crate) trait PosteriorSignalBackend: Send + Sync {
-    fn infer(&self, input: &PosteriorSignalInput) -> PosteriorSignalDecision;
-}

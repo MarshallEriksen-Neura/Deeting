@@ -251,6 +251,7 @@ fn revision_item_from_row(row: TaskLearningRevisionRow) -> LocalTaskLearningRevi
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn infer_followup_user_response_signal(user_text: &str) -> Option<String> {
     let normalized = user_text.trim().to_ascii_lowercase();
     if normalized.is_empty() {

@@ -20,6 +20,7 @@ const RUN_STATUS_RUNNING: &str = "running";
 const RUN_STATUS_COMPLETED: &str = "completed";
 const RUN_KIND_BOOTSTRAP: &str = "bootstrap";
 const RUN_KIND_RECONCILE: &str = "reconcile";
+#[cfg(test)]
 const CHANGE_KIND_UPSERT: &str = "upsert";
 const CHANGE_KIND_DELETE: &str = "delete";
 const SCOPE_MANAGED_WORKSPACE: &str = "managed_workspace";

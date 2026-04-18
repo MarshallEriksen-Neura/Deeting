@@ -1,15 +1,5 @@
 use super::rules::{infer_from_explicit_outcome, infer_from_feedback_score, infer_from_user_text};
-use super::types::{
-    PosteriorSignalBackend, PosteriorSignalDecision, PosteriorSignalInput, PosteriorSignalSource,
-};
-
-pub(crate) struct HeuristicPosteriorSignalBackend;
-
-impl PosteriorSignalBackend for HeuristicPosteriorSignalBackend {
-    fn infer(&self, input: &PosteriorSignalInput) -> PosteriorSignalDecision {
-        resolve_posterior_signal(input)
-    }
-}
+use super::types::{PosteriorSignalDecision, PosteriorSignalInput, PosteriorSignalSource};
 
 pub(crate) fn resolve_posterior_signal(input: &PosteriorSignalInput) -> PosteriorSignalDecision {
     if let Some(decision) = infer_from_explicit_outcome(input) {
@@ -33,9 +23,10 @@ pub(crate) fn should_apply_posterior_signal(decision: &PosteriorSignalDecision) 
 #[cfg(test)]
 mod tests {
     use super::{resolve_posterior_signal, should_apply_posterior_signal};
-    use crate::modules::desktop_runtime::runtime::posterior_signal::{
-        PosteriorSignalInput, PosteriorSignalKind, PosteriorSignalSource,
+    use crate::modules::desktop_runtime::runtime::posterior_signal::types::{
+        PosteriorSignalKind, PosteriorSignalSource,
     };
+    use crate::modules::desktop_runtime::runtime::posterior_signal::PosteriorSignalInput;
 
     #[test]
     fn resolve_posterior_signal_prefers_explicit_outcome() {

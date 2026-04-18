@@ -89,6 +89,7 @@ pub(crate) fn validate_monitor_task_agent_profile(
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) fn build_monitor_task_agent_message(task: &LocalMonitorTask) -> String {
     let snapshot = task
         .last_snapshot

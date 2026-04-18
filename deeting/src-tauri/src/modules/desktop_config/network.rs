@@ -374,7 +374,7 @@ pub(crate) async fn build_proxy_aware_reqwest_client(
 mod tests {
     use super::{
         build_proxy_aware_reqwest_client_for_settings, build_proxy_environment_for_settings,
-        combine_no_proxy, DesktopNetworkProxyEnvironment, DesktopNetworkProxySettings,
+        combine_no_proxy, DesktopNetworkProxySettings,
     };
     use crate::modules::desktop_config::DesktopNetworkProxyMode;
 

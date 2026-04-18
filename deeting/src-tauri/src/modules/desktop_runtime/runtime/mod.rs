@@ -15,7 +15,6 @@ pub mod prompt_assets;
 pub mod prompt_plan;
 pub mod route_selector;
 pub mod search_feedback;
-pub mod search_ranking;
 pub mod semantic_recall;
 pub mod task_learning;
 pub mod tool_catalog;
@@ -68,8 +67,7 @@ pub(crate) use execution_graph_store::{
 };
 pub(crate) use execution_plane::{run_local_execution_plane, LocalExecutionRequest};
 pub(crate) use posterior_signal::{
-    resolve_posterior_signal, should_apply_posterior_signal, PosteriorSignalDecision,
-    PosteriorSignalInput, PosteriorSignalKind, PosteriorSignalSource,
+    resolve_posterior_signal, should_apply_posterior_signal, PosteriorSignalInput,
 };
 pub(crate) use route_selector::{
     render_local_route_prompt, select_local_route_with_evidence, LocalRouteDecision, LocalRouteKind,

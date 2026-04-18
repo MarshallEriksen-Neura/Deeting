@@ -28,8 +28,11 @@ const MEMORY_PROFILE_EPISODIC_FLOOR: f32 = 0.10;
 const MEMORY_PROFILE_GENERAL_HALF_LIFE_DAYS: f32 = 30.0;
 const MEMORY_PROFILE_GENERAL_FLOOR: f32 = 0.25;
 
+#[cfg(test)]
 const WIKI_FRESHNESS_PIVOT_DAYS: f32 = 180.0;
+#[cfg(test)]
 const WIKI_FRESHNESS_EXPONENT: f32 = 0.15;
+#[cfg(test)]
 const WIKI_FRESHNESS_FLOOR: f32 = 0.85;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,6 +101,7 @@ fn exponential_half_life_multiplier(
     (floor + (1.0 - floor) * vitality * decay).clamp(floor, 1.0)
 }
 
+#[cfg(test)]
 fn power_law_freshness_multiplier(
     reference_timestamp: &str,
     now: time::OffsetDateTime,
@@ -214,6 +218,7 @@ pub(crate) fn memory_recency_multiplier(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn wiki_freshness_multiplier(
     vitality: Option<f32>,
     reference_timestamp: &str,

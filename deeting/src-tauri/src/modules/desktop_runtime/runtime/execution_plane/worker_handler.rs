@@ -794,7 +794,7 @@ fn build_delegated_execution_session(
                 "callable_skill_action_refs": result.callable_skill_action_refs,
                 "render_blocks": render_blocks,
             });
-            let mut tool_trace_blocks = build_local_tool_trace_blocks(&[json!({
+            let tool_trace_blocks = build_local_tool_trace_blocks(&[json!({
                 "id": format!("delegated-agent-{}", profile.id),
                 "name": format!("custom_task_agent/{}", profile.name),
                 "status": "success",
