@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::modules::memory::error::MemoryError;
@@ -5,10 +6,12 @@ use crate::modules::memory::snapshot_store::SnapshotStore;
 use crate::modules::memory::store::MemoryStore;
 use crate::modules::memory::types::{
     CreateLocalMemoryRequest, LocalMemoryClearRequest, LocalMemoryItem, LocalMemoryListQuery,
-    LocalMemoryListResponse, LocalMemorySearchQuery, LocalMemorySearchResult, MemorySnapshot,
-    UpdateLocalMemoryRequest, WriteAction, WriteGuardResult,
+    LocalMemoryListResponse, LocalMemorySearchItem, LocalMemorySearchQuery,
+    LocalMemorySearchResult, MemorySnapshot, UpdateLocalMemoryRequest, WriteAction,
+    WriteGuardResult,
 };
 use crate::modules::providers::embedding::EmbeddingService;
+use crate::modules::providers::store::ProviderStore;
 use crate::modules::retrieval_kernel::lifecycle::{
     memory_recency_multiplier, touched_vitality, DEFAULT_VITALITY_RERANK_OVERFETCH_FACTOR,
 };
@@ -26,6 +29,7 @@ pub struct MemoryService {
     store: Arc<MemoryStore>,
     embedding: Option<EmbeddingService>,
     snapshots: Option<Arc<SnapshotStore>>,
+    provider_store: Option<Arc<ProviderStore>>,
 }
 
 fn optional_log_value(value: Option<&str>) -> &str {
@@ -49,6 +53,7 @@ impl MemoryService {
             store,
             embedding: None,
             snapshots: None,
+            provider_store: None,
         }
     }
 
@@ -57,11 +62,16 @@ impl MemoryService {
             store,
             embedding: Some(embedding),
             snapshots: None,
+            provider_store: None,
         }
     }
 
     pub fn set_snapshot_store(&mut self, snapshots: Arc<SnapshotStore>) {
         self.snapshots = Some(snapshots);
+    }
+
+    pub fn set_provider_store(&mut self, provider_store: Arc<ProviderStore>) {
+        self.provider_store = Some(provider_store);
     }
 
     /// Access the underlying store (needed for backfill and migration).
@@ -698,7 +708,32 @@ impl MemoryService {
                 .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        items.truncate(limit);
+
+        // Split into top-K and surplus pool; the surplus feeds the bandit
+        // explore-slot so occasionally a lower-ranked candidate gets a chance.
+        let surplus: Vec<LocalMemorySearchItem> = if items.len() > limit {
+            items.split_off(limit)
+        } else {
+            Vec::new()
+        };
+
+        let mut explore_item_id: Option<String> = None;
+        let mut explore_arm_id: Option<String> = None;
+        if !items.is_empty() {
+            if let Some(provider_store) = self.provider_store.as_ref() {
+                if let Some(pick) =
+                    select_memory_explore_pick(provider_store.as_ref(), &surplus).await
+                {
+                    let pick_id = pick.id.clone();
+                    let arm_id = memory_arm_id(&pick);
+                    if let Some(last) = items.last_mut() {
+                        *last = pick;
+                        explore_item_id = Some(pick_id);
+                        explore_arm_id = Some(arm_id);
+                    }
+                }
+            }
+        }
 
         // Fire-and-forget: update last_accessed_at for returned items
         if !items.is_empty() {
@@ -714,7 +749,11 @@ impl MemoryService {
             });
         }
 
-        Ok(LocalMemorySearchResult { items })
+        Ok(LocalMemorySearchResult {
+            items,
+            explore_item_id,
+            explore_arm_id,
+        })
     }
 
     // --- snapshot & rollback ---
@@ -1216,6 +1255,77 @@ fn apply_vitality_rerank(
         );
         item.score *= supersession_rank_multiplier(item.meta_info.as_ref());
     }
+}
+
+/// Bucket memory items into bandit arms by category/source.
+///
+/// Using a coarse bucket (rather than the per-memory id) keeps the arm count
+/// bounded and mirrors how the route/worker scenes aggregate rewards.
+fn memory_arm_id(item: &LocalMemorySearchItem) -> String {
+    if let Some(cat) = item
+        .category
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return format!("category:{}", cat);
+    }
+    if let Some(src) = item
+        .source
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return format!("source:{}", src);
+    }
+    "uncategorized".to_string()
+}
+
+/// Use the shared bandit selector to pick one exploration candidate from the
+/// surplus pool for the `memory:recall` scene.
+async fn select_memory_explore_pick(
+    provider_store: &ProviderStore,
+    candidates: &[LocalMemorySearchItem],
+) -> Option<LocalMemorySearchItem> {
+    use crate::modules::providers::bandit_selector::{select_arm, BanditConfig, BanditStrategy};
+    use crate::modules::providers::store::utils::now_rfc3339;
+    use crate::modules::providers::store::{BANDIT_DEFAULT_STRATEGY, BANDIT_SCENE_MEMORY_RECALL};
+    use crate::modules::providers::types::BanditArmState;
+
+    if candidates.is_empty() {
+        return None;
+    }
+
+    let arms = provider_store
+        .list_bandit_arm_states(Some(BANDIT_SCENE_MEMORY_RECALL.to_string()))
+        .await
+        .unwrap_or_default();
+    let arm_map: HashMap<String, &BanditArmState> = arms
+        .iter()
+        .filter_map(|arm| arm.arm_id.as_ref().map(|id| (id.clone(), arm)))
+        .collect();
+
+    let default_strategy =
+        BanditStrategy::parse(BANDIT_DEFAULT_STRATEGY).unwrap_or(BanditStrategy::Thompson);
+    let strategy = arms
+        .first()
+        .map(|arm| BanditStrategy::parse_or(&arm.strategy, default_strategy))
+        .unwrap_or(default_strategy);
+    let cfg = BanditConfig {
+        epsilon: arms.first().map(|arm| arm.epsilon).unwrap_or(0.1),
+        ..BanditConfig::default()
+    };
+    let current_time = now_rfc3339().unwrap_or_default();
+
+    select_arm(
+        candidates,
+        memory_arm_id,
+        &arm_map,
+        strategy,
+        &cfg,
+        &current_time,
+    )
+    .cloned()
 }
 
 #[cfg(test)]

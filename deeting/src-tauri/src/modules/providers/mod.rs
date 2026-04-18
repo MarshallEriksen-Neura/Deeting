@@ -1,3 +1,6 @@
+pub mod bandit_selector;
+#[cfg(test)]
+mod bandit_selector_tests;
 pub mod commands;
 pub mod embedding;
 pub mod error;

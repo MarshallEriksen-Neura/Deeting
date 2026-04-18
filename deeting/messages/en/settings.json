@@ -77,7 +77,7 @@
         "title": "Desktop Network Proxy",
         "description": "Control whether desktop-side upstream requests go direct, follow the system proxy, or use a custom proxy endpoint.",
         "modeLabel": "Proxy mode",
-        "modeHelp": "Applies to desktop Rust upstream model requests, provider verification, and model sync. It does not change cloud-side routing.",
+        "modeHelp": "Applies to desktop Rust upstream model requests, provider verification, model sync, BoxLite downloads, and the managed WSL sandbox runtime. It does not change cloud-side routing.",
         "mode": {
           "none": "No proxy",
           "system": "System proxy",
@@ -91,7 +91,7 @@
         "urlLabel": "Custom proxy URL",
         "urlPlaceholder": "http://127.0.0.1:7890",
         "urlHelp": "Supports http://, https://, and socks5://. Leave empty unless Custom proxy is selected.",
-        "footerHint": "Used only by this desktop app and applied when the Rust runtime creates outbound upstream clients."
+        "footerHint": "Used only by this desktop app. It is applied when the Rust runtime creates outbound clients and when the managed BoxLite sandbox downloads assets or pulls images through WSL."
       },
       "scout": {
         "title": "Desktop Scout Service",
@@ -224,7 +224,7 @@
         "external": "External runtime",
         "nextActionsTitle": "Suggested next steps",
         "readyHint": "Sandbox is ready. Code Mode will execute in isolated mode.",
-        "footerHint": "Sandbox setup is checked on demand. Strict Code Mode execution no longer silently falls back to host Python.",
+        "footerHint": "Sandbox setup is checked on demand. Strict Code Mode execution no longer silently falls back to host Python. Managed BoxLite install and WSL runtime network access now reuse Desktop Network Proxy settings.",
         "refresh": "Refresh",
         "install": "Install BoxLite",
         "installing": "Installing...",
@@ -242,6 +242,13 @@
           "verify": "Verifying checksum...",
           "extract": "Extracting and installing into WSL...",
           "done": "Install complete"
+        },
+        "prepareStage": {
+          "check_endpoint": "Checking BoxLite endpoint...",
+          "load_record": "Loading installation record...",
+          "start_server": "Starting BoxLite server...",
+          "health_check": "Waiting for BoxLite to become ready...",
+          "done": "Sandbox ready"
         },
         "prepareSuccess": "Sandbox prepare finished. Status refreshed.",
         "repairSuccess": "Sandbox repair finished. Status refreshed.",
@@ -406,3 +413,4 @@
     }
   }
 }
+

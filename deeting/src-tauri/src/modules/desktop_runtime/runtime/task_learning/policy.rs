@@ -5,9 +5,14 @@ use super::types::{
     DECISION_POINT_ROUTE, DECISION_POINT_VERIFICATION, DECISION_POINT_WORKER_SELECTION,
 };
 use crate::modules::desktop_runtime::runtime::LocalRouteDecision;
+use crate::modules::providers::store::ProviderStore;
 
 const PRIOR_HALF_LIFE_MS: f64 = 21.0 * 24.0 * 60.0 * 60.0 * 1000.0;
 const ROUTE_OVERRIDE_THRESHOLD: f64 = 0.35;
+/// Weight applied to the bandit-derived route scores when nudging the
+/// `direct` vs `worker` decision. Kept small so the bandit acts as a
+/// tie-breaker and cannot override `apply_route_prior` on its own.
+const ROUTE_BANDIT_COEFF: f64 = 0.25;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RoutePriorApplication {
@@ -16,6 +21,16 @@ pub(crate) struct RoutePriorApplication {
     pub(crate) direct_score: f64,
     pub(crate) worker_score: f64,
     pub(crate) override_applied: bool,
+    pub(crate) bandit_direct_score: Option<f64>,
+    pub(crate) bandit_worker_score: Option<f64>,
+}
+
+/// Pre-computed bandit scores for the `direct` / `worker` route arms,
+/// folded into [`apply_route_prior`] as a tie-breaker.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub(crate) struct RouteBanditScores {
+    pub(crate) direct: f64,
+    pub(crate) worker: f64,
 }
 
 pub(crate) fn normalize_decision_point(value: &str) -> String {
@@ -130,6 +145,7 @@ fn decision_has_safety_lock(decision: &LocalRouteDecision) -> bool {
 pub(crate) fn apply_route_prior(
     base_decision: LocalRouteDecision,
     hint: TaskPolicyHint,
+    bandit_scores: Option<RouteBanditScores>,
 ) -> RoutePriorApplication {
     let direct_weight = hint
         .priors
@@ -157,13 +173,23 @@ pub(crate) fn apply_route_prior(
     direct_score += direct_weight;
     worker_score += worker_weight;
 
+    let (bandit_direct_score, bandit_worker_score) = match bandit_scores {
+        Some(scores) => {
+            direct_score += ROUTE_BANDIT_COEFF * scores.direct;
+            worker_score += ROUTE_BANDIT_COEFF * scores.worker;
+            (Some(scores.direct), Some(scores.worker))
+        }
+        None => (None, None),
+    };
+
     let preferred_route = if direct_score > worker_score {
         ACTION_ROUTE_DIRECT
     } else {
         ACTION_ROUTE_WORKER
     };
+    let has_signal = !hint.priors.is_empty() || bandit_scores.is_some();
     let override_applied = !decision_has_safety_lock(&base_decision)
-        && !hint.priors.is_empty()
+        && has_signal
         && preferred_route != base_decision.route.as_str()
         && (direct_score - worker_score).abs() >= ROUTE_OVERRIDE_THRESHOLD;
 
@@ -189,7 +215,47 @@ pub(crate) fn apply_route_prior(
         direct_score,
         worker_score,
         override_applied,
+        bandit_direct_score,
+        bandit_worker_score,
     }
+}
+
+/// Pull the two `direct` / `worker` arm states for the
+/// `task_learning:route` scene and score them via the shared bandit
+/// selector so [`apply_route_prior`] can use them as a tie-breaker.
+pub(crate) async fn compute_route_bandit_scores(
+    provider_store: &ProviderStore,
+) -> Option<RouteBanditScores> {
+    use crate::modules::providers::bandit_selector::{score_arm, BanditConfig, BanditStrategy};
+    use crate::modules::providers::store::{BANDIT_DEFAULT_STRATEGY, BANDIT_SCENE_TASK_ROUTE};
+
+    let arms = provider_store
+        .list_bandit_arm_states(Some(BANDIT_SCENE_TASK_ROUTE.to_string()))
+        .await
+        .ok()?;
+    if arms.is_empty() {
+        return None;
+    }
+
+    let default_strategy =
+        BanditStrategy::parse(BANDIT_DEFAULT_STRATEGY).unwrap_or(BanditStrategy::Thompson);
+    let strategy = arms
+        .first()
+        .map(|arm| BanditStrategy::parse_or(&arm.strategy, default_strategy))
+        .unwrap_or(default_strategy);
+    let cfg = BanditConfig {
+        epsilon: arms.first().map(|arm| arm.epsilon).unwrap_or(0.1),
+        ..BanditConfig::default()
+    };
+
+    let mut rng = rand::thread_rng();
+    let find_state = |key: &str| {
+        arms.iter()
+            .find(|arm| arm.arm_id.as_deref() == Some(key))
+    };
+    let direct = score_arm(find_state(ACTION_ROUTE_DIRECT), strategy, &cfg, &mut rng);
+    let worker = score_arm(find_state(ACTION_ROUTE_WORKER), strategy, &cfg, &mut rng);
+    Some(RouteBanditScores { direct, worker })
 }
 
 pub(crate) async fn apply_policy_delta(
@@ -224,6 +290,8 @@ pub(crate) fn route_hint_status_meta(application: &RoutePriorApplication) -> ser
         "direct_score": application.direct_score,
         "worker_score": application.worker_score,
         "override_applied": application.override_applied,
+        "bandit_direct_score": application.bandit_direct_score,
+        "bandit_worker_score": application.bandit_worker_score,
         "priors": application.hint.priors,
     })
 }
@@ -294,6 +362,7 @@ mod tests {
                 }],
                 guidance: None,
             },
+            None,
         );
 
         assert_eq!(application.decision.route, LocalRouteKind::Direct);
@@ -324,8 +393,36 @@ mod tests {
                 }],
                 guidance: None,
             },
+            None,
         );
 
+        assert_eq!(application.decision.route, LocalRouteKind::Direct);
+        assert!(!application.override_applied);
+    }
+
+    #[test]
+    fn apply_route_prior_bandit_scores_surface_on_application() {
+        let fingerprint = build_task_fingerprint("quick shell check");
+        let application = apply_route_prior(
+            test_decision(LocalRouteKind::Direct),
+            TaskPolicyHint {
+                query: "quick shell check".to_string(),
+                decision_point: "route".to_string(),
+                fingerprint_key: fingerprint.key(),
+                task_fingerprint: fingerprint,
+                recommended_action: None,
+                priors: vec![],
+                guidance: None,
+            },
+            Some(super::RouteBanditScores {
+                direct: 0.8,
+                worker: 0.2,
+            }),
+        );
+
+        assert_eq!(application.bandit_direct_score, Some(0.8));
+        assert_eq!(application.bandit_worker_score, Some(0.2));
+        // 0.25 * 0.6 = 0.15 < ROUTE_OVERRIDE_THRESHOLD so bandit alone cannot flip.
         assert_eq!(application.decision.route, LocalRouteKind::Direct);
         assert!(!application.override_applied);
     }

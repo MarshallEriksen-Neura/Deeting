@@ -10,6 +10,10 @@ use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 
+use crate::modules::desktop_config::network::{
+    build_proxy_environment_for_settings, DesktopNetworkProxyEnvironment,
+    DesktopNetworkProxySettings,
+};
 use crate::modules::sandbox::error::SandboxError;
 use crate::modules::sandbox::provider::SandboxProvider;
 use crate::modules::sandbox::types::{
@@ -28,6 +32,7 @@ use crate::modules::sandbox::backend_wsl::{
 #[cfg(target_os = "windows")]
 use crate::modules::sandbox::installer::{install_boxlite_wsl, BoxLiteInstallerConfig};
 use crate::modules::sandbox::installer::ProgressReporter as BoxLiteInstallProgressReporter;
+use crate::modules::sandbox::provisioner::PrepareProgressReporter;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30 * 60;
 const DEFAULT_MAX_SANDBOXES: usize = 50;
@@ -249,11 +254,43 @@ impl SandboxRuntimeManager {
     }
 
     pub async fn prepare(&self) -> Result<SandboxReadinessReport, SandboxError> {
+        self.prepare_with_proxy_environment(None, None).await
+    }
+
+    pub(crate) async fn prepare_with_proxy_settings(
+        &self,
+        proxy_settings: Option<&DesktopNetworkProxySettings>,
+    ) -> Result<SandboxReadinessReport, SandboxError> {
+        self.prepare_with_proxy_settings_and_progress(proxy_settings, None)
+            .await
+    }
+
+    pub(crate) async fn prepare_with_proxy_settings_and_progress(
+        &self,
+        proxy_settings: Option<&DesktopNetworkProxySettings>,
+        reporter: Option<&PrepareProgressReporter>,
+    ) -> Result<SandboxReadinessReport, SandboxError> {
+        let proxy_environment = proxy_settings
+            .map(build_proxy_environment_for_settings)
+            .transpose()
+            .map_err(SandboxError::Validation)?;
+        self.prepare_with_proxy_environment(proxy_environment.as_ref(), reporter)
+            .await
+    }
+
+    async fn prepare_with_proxy_environment(
+        &self,
+        proxy_environment: Option<&DesktopNetworkProxyEnvironment>,
+        reporter: Option<&PrepareProgressReporter>,
+    ) -> Result<SandboxReadinessReport, SandboxError> {
         #[cfg(target_os = "windows")]
         {
             if let Some(provisioner) = self.provisioner.as_ref() {
                 if provisioner.resolve_binary().is_some() {
-                    if let Err(err) = provisioner.ensure_running().await {
+                    if let Err(err) = provisioner
+                        .ensure_running_with_progress(proxy_environment, reporter)
+                        .await
+                    {
                         log::warn!("prepare sandbox failed: code={} detail={}", err.code(), err);
                     }
                 }
@@ -269,13 +306,47 @@ impl SandboxRuntimeManager {
     }
 
     pub async fn repair(&self) -> Result<SandboxReadinessReport, SandboxError> {
+        self.repair_with_proxy_settings(None).await
+    }
+
+    pub(crate) async fn repair_with_proxy_settings(
+        &self,
+        proxy_settings: Option<&DesktopNetworkProxySettings>,
+    ) -> Result<SandboxReadinessReport, SandboxError> {
+        self.repair_with_proxy_settings_and_progress(proxy_settings, None)
+            .await
+    }
+
+    pub(crate) async fn repair_with_proxy_settings_and_progress(
+        &self,
+        proxy_settings: Option<&DesktopNetworkProxySettings>,
+        reporter: Option<&PrepareProgressReporter>,
+    ) -> Result<SandboxReadinessReport, SandboxError> {
         self.reset_runtime_state(false).await;
-        self.prepare().await
+        self.prepare_with_proxy_settings_and_progress(proxy_settings, reporter)
+            .await
     }
 
     pub async fn rebuild_runtime(&self) -> Result<SandboxReadinessReport, SandboxError> {
+        self.rebuild_runtime_with_proxy_settings(None).await
+    }
+
+    pub(crate) async fn rebuild_runtime_with_proxy_settings(
+        &self,
+        proxy_settings: Option<&DesktopNetworkProxySettings>,
+    ) -> Result<SandboxReadinessReport, SandboxError> {
+        self.rebuild_runtime_with_proxy_settings_and_progress(proxy_settings, None)
+            .await
+    }
+
+    pub(crate) async fn rebuild_runtime_with_proxy_settings_and_progress(
+        &self,
+        proxy_settings: Option<&DesktopNetworkProxySettings>,
+        reporter: Option<&PrepareProgressReporter>,
+    ) -> Result<SandboxReadinessReport, SandboxError> {
         self.reset_runtime_state(true).await;
-        self.prepare().await
+        self.prepare_with_proxy_settings_and_progress(proxy_settings, reporter)
+            .await
     }
 
     async fn reset_runtime_state(&self, stop_active_boxes: bool) {
@@ -303,6 +374,14 @@ impl SandboxRuntimeManager {
         &self,
         reporter: Option<BoxLiteInstallProgressReporter>,
     ) -> Result<SandboxReadinessReport, SandboxError> {
+        self.install_boxlite_with_proxy_settings(reporter, None).await
+    }
+
+    pub(crate) async fn install_boxlite_with_proxy_settings(
+        &self,
+        reporter: Option<BoxLiteInstallProgressReporter>,
+        proxy_settings: Option<&DesktopNetworkProxySettings>,
+    ) -> Result<SandboxReadinessReport, SandboxError> {
         #[cfg(target_os = "windows")]
         {
             let wsl = diagnose_wsl_availability();
@@ -315,13 +394,14 @@ impl SandboxRuntimeManager {
             let config = BoxLiteInstallerConfig {
                 data_dir: self.options.home_dir.join("sandbox"),
             };
-            install_boxlite_wsl(&config, reporter).await?;
-            return self.prepare().await;
+            install_boxlite_wsl(&config, reporter, proxy_settings).await?;
+            return self.prepare_with_proxy_settings(proxy_settings).await;
         }
 
         #[cfg(not(target_os = "windows"))]
         {
             let _ = reporter;
+            let _ = proxy_settings;
             Ok(self.status_report().await)
         }
     }
@@ -2238,3 +2318,4 @@ mod tests {
         assert!(actions.iter().any(|step| step.contains("Rebuild")));
     }
 }
+

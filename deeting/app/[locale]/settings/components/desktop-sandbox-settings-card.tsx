@@ -21,6 +21,7 @@ interface DesktopSandboxSettingsCardProps {
 }
 
 type InstallStage = "download" | "verify" | "extract" | "done"
+type PrepareStage = "check_endpoint" | "load_record" | "start_server" | "health_check" | "done"
 
 interface InstallProgressPayload {
   stage: InstallStage
@@ -29,7 +30,13 @@ interface InstallProgressPayload {
   bytesTotal?: number | null
 }
 
+interface PrepareProgressPayload {
+  stage: PrepareStage
+  percent: number
+}
+
 interface InstallProgressState extends InstallProgressPayload {}
+interface PrepareProgressState extends PrepareProgressPayload {}
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B"
@@ -58,6 +65,9 @@ export function DesktopSandboxSettingsCard({
   const [installProgress, setInstallProgress] = React.useState<InstallProgressState | null>(
     null
   )
+  const [prepareProgress, setPrepareProgress] = React.useState<PrepareProgressState | null>(
+    null
+  )
 
   if (!isTauriRuntime) {
     return null
@@ -77,10 +87,28 @@ export function DesktopSandboxSettingsCard({
     return t("agent.sandbox.actionFailed")
   }
 
+  const withPrepareProgress = async <T,>(action: () => Promise<T>): Promise<T> => {
+    let unlisten: (() => void) | undefined
+    try {
+      setPrepareProgress({ stage: "check_endpoint", percent: 0 })
+      const { listen } = await import("@tauri-apps/api/event")
+      unlisten = await listen<PrepareProgressPayload>(
+        "sandbox://boxlite-prepare",
+        (event) => {
+          setPrepareProgress(event.payload)
+        }
+      )
+      return await action()
+    } finally {
+      if (unlisten) unlisten()
+      setPrepareProgress(null)
+    }
+  }
+
   const handlePrepare = async () => {
     try {
       setIsPreparing(true)
-      await prepareLocalSandbox()
+      await withPrepareProgress(() => prepareLocalSandbox())
       await handleRefresh()
       toast.success(t("agent.sandbox.prepareSuccess"))
     } catch (err) {
@@ -117,7 +145,7 @@ export function DesktopSandboxSettingsCard({
   const handleRepair = async () => {
     try {
       setIsRepairing(true)
-      await repairLocalSandbox()
+      await withPrepareProgress(() => repairLocalSandbox())
       await handleRefresh()
       toast.success(t("agent.sandbox.repairSuccess"))
     } catch (err) {
@@ -130,7 +158,7 @@ export function DesktopSandboxSettingsCard({
   const handleRebuild = async () => {
     try {
       setIsRebuilding(true)
-      await rebuildLocalSandboxRuntime()
+      await withPrepareProgress(() => rebuildLocalSandboxRuntime())
       await handleRefresh()
       toast.success(t("agent.sandbox.rebuildSuccess"))
     } catch (err) {
@@ -284,6 +312,21 @@ export function DesktopSandboxSettingsCard({
                 {formatBytes(installProgress.bytesTotal)}
               </p>
             ) : null}
+          </div>
+        ) : null}
+
+        {/* Prepare / repair / rebuild progress */}
+        {prepareProgress ? (
+          <div className="space-y-2 rounded-xl border border-indigo-500/20 bg-indigo-500/[0.04] p-4 dark:border-indigo-400/15 dark:bg-indigo-400/[0.06]">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-medium text-foreground">
+                {t(`agent.sandbox.prepareStage.${prepareProgress.stage}`)}
+              </p>
+              <p className="font-mono text-[11px] text-muted-foreground">
+                {Math.min(100, Math.max(0, Math.round(prepareProgress.percent)))}%
+              </p>
+            </div>
+            <Progress value={prepareProgress.percent} className="h-1.5" />
           </div>
         ) : null}
 

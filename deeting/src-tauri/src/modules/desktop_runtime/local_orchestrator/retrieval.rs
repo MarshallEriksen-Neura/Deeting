@@ -33,6 +33,7 @@ pub(super) struct PrefetchedRetrievals {
 pub(super) struct SemanticMemoryPrefetchResult {
     sections: Vec<String>,
     total_count: usize,
+    pub(super) explore_arm_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -337,6 +338,7 @@ async fn prefetch_semantic_memory(
         .map(InjectedMemory::from_item)
         .collect::<Vec<_>>();
     let core_memories = collect_core_memories(&global_items, latest_user_query);
+    let mut explore_arm_id: Option<String> = None;
     let semantic_memories = match query_vector {
         Some(vector) => {
             let search_query = build_global_semantic_memory_search_query(latest_user_query);
@@ -347,11 +349,14 @@ async fn prefetch_semantic_memory(
                 .search_with_query_vector(search_query, vector)
                 .await
             {
-                Ok(result) if !result.items.is_empty() => result
-                    .items
-                    .into_iter()
-                    .map(InjectedMemory::from_search_item)
-                    .collect(),
+                Ok(result) if !result.items.is_empty() => {
+                    explore_arm_id = result.explore_arm_id.clone();
+                    result
+                        .items
+                        .into_iter()
+                        .map(InjectedMemory::from_search_item)
+                        .collect()
+                }
                 Ok(_) | Err(_) => fallback_list(ctx, &global_items).await?,
             }
         }
@@ -398,6 +403,7 @@ async fn prefetch_semantic_memory(
     Ok(SemanticMemoryPrefetchResult {
         total_count: core_lines.len() + semantic_lines.len(),
         sections,
+        explore_arm_id,
     })
 }
 

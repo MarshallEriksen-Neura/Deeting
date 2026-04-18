@@ -77,10 +77,10 @@ pub(crate) use route_selector::{
 pub(crate) use semantic_recall::should_run_semantic_recall;
 pub(crate) use task_learning::{
     apply_policy_delta, apply_route_prior, apply_task_learning_revision, build_task_fingerprint,
-    evaluate_task_learning_with_runtime, list_task_learning_runs_for_query,
-    list_task_policy_priors_for_query, load_task_learning_run_detail, query_task_policy_hint,
-    replay_task_learning_run, route_hint_status_meta, TaskFingerprint,
-    TaskLearningDelegatedExecution, TaskPolicyHint,
+    compute_route_bandit_scores, evaluate_task_learning_with_runtime,
+    list_task_learning_runs_for_query, list_task_policy_priors_for_query,
+    load_task_learning_run_detail, query_task_policy_hint, replay_task_learning_run,
+    route_hint_status_meta, TaskFingerprint, TaskLearningDelegatedExecution, TaskPolicyHint,
 };
 #[cfg(test)]
 pub(crate) use tool_catalog::{

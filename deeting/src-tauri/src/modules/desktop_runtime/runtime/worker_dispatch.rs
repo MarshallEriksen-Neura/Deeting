@@ -179,12 +179,96 @@ pub(crate) async fn select_worker_custom_task_agent_with_query_vector(
         }
     }
 
-    Ok(select_custom_task_agent_candidate_with_priors(
+    Ok(select_custom_task_agent_candidate_with_bandit(
+        app_state,
         query,
         &active_profiles,
         &semantic_ranks,
         &profile_prior_scores,
+    )
+    .await)
+}
+
+async fn select_custom_task_agent_candidate_with_bandit(
+    app_state: &AppState,
+    query: &str,
+    profiles: &[CustomTaskAgentProfile],
+    semantic_ranks: &HashMap<String, usize>,
+    profile_prior_scores: &HashMap<String, f32>,
+) -> Option<WorkerTargetSelection> {
+    use crate::modules::providers::bandit_selector::{
+        select_arm, BanditConfig, BanditStrategy,
+    };
+    use crate::modules::providers::store::{
+        utils::now_rfc3339, BANDIT_DEFAULT_STRATEGY, BANDIT_SCENE_WORKER_SELECTION,
+    };
+
+    let mut candidates =
+        build_worker_candidate_cards(query, profiles, semantic_ranks, profile_prior_scores);
+    if candidates.is_empty() {
+        return None;
+    }
+    let candidate_count = candidates.len();
+    let shortlist_len = candidate_count.min(WORKER_CANDIDATE_SHORTLIST_LIMIT);
+    let shortlist: Vec<WorkerCandidateCard> =
+        candidates.drain(..shortlist_len).collect();
+
+    let arms = app_state
+        .providers
+        .store
+        .list_bandit_arm_states(Some(BANDIT_SCENE_WORKER_SELECTION.to_string()))
+        .await
+        .unwrap_or_default();
+    let arm_map: HashMap<String, &crate::modules::providers::types::BanditArmState> = arms
+        .iter()
+        .filter_map(|arm| arm.arm_id.as_ref().map(|id| (id.clone(), arm)))
+        .collect();
+
+    let default_strategy =
+        BanditStrategy::parse(BANDIT_DEFAULT_STRATEGY).unwrap_or(BanditStrategy::Thompson);
+    let strategy = arms
+        .first()
+        .map(|arm| BanditStrategy::parse_or(&arm.strategy, default_strategy))
+        .unwrap_or(default_strategy);
+    let cfg = BanditConfig {
+        epsilon: arms.first().map(|arm| arm.epsilon).unwrap_or(0.1),
+        ..BanditConfig::default()
+    };
+    let current_time = now_rfc3339().unwrap_or_default();
+
+    let picked = select_arm(
+        &shortlist,
+        |card| card.profile.id.to_string(),
+        &arm_map,
+        strategy,
+        &cfg,
+        &current_time,
+    )
+    .cloned();
+    let selected = picked.unwrap_or_else(|| shortlist.into_iter().next().unwrap());
+    Some(card_into_worker_target_selection(
+        selected,
+        candidate_count,
+        shortlist_len,
     ))
+}
+
+fn card_into_worker_target_selection(
+    card: WorkerCandidateCard,
+    candidate_count: usize,
+    selected_from_top_k: usize,
+) -> WorkerTargetSelection {
+    WorkerTargetSelection {
+        profile: card.profile,
+        score: card.final_score,
+        reason: card.reason,
+        reason_codes: card.reason_codes,
+        candidate_count,
+        selected_from_top_k,
+        callable_coverage_score: card.callable_coverage_score,
+        modality_fit_score: card.modality_fit_score,
+        profile_prior_score: card.profile_prior_score,
+    }
 }
 
 pub(crate) async fn select_explicit_worker_custom_task_agent(
@@ -245,17 +329,11 @@ fn select_custom_task_agent_candidate_with_priors(
     let candidate_count = candidates.len();
     let selected_from_top_k = candidate_count.min(WORKER_CANDIDATE_SHORTLIST_LIMIT);
     let selected = candidates.into_iter().next()?;
-    Some(WorkerTargetSelection {
-        profile: selected.profile,
-        score: selected.final_score,
-        reason: selected.reason,
-        reason_codes: selected.reason_codes,
+    Some(card_into_worker_target_selection(
+        selected,
         candidate_count,
         selected_from_top_k,
-        callable_coverage_score: selected.callable_coverage_score,
-        modality_fit_score: selected.modality_fit_score,
-        profile_prior_score: selected.profile_prior_score,
-    })
+    ))
 }
 
 pub(crate) fn build_worker_task_packet(

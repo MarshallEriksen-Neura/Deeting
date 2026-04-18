@@ -8,6 +8,9 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::modules::desktop_config::network::{
+    build_proxy_aware_reqwest_client_for_settings, DesktopNetworkProxySettings,
+};
 #[cfg(target_os = "windows")]
 use crate::modules::sandbox::backend_wsl::{
     decode_wsl_text, detect_wsl_arch, resolve_wsl_home_dir, shell_quote, windows_path_to_wsl,
@@ -62,14 +65,16 @@ fn report(reporter: Option<&ProgressReporter>, progress: BoxLiteInstallProgress)
     }
 }
 
-pub async fn install_boxlite_wsl(
+pub(crate) async fn install_boxlite_wsl(
     config: &BoxLiteInstallerConfig,
     reporter: Option<ProgressReporter>,
+    proxy_settings: Option<&DesktopNetworkProxySettings>,
 ) -> Result<BoxLiteInstallationRecord, SandboxError> {
     #[cfg(not(target_os = "windows"))]
     {
         let _ = config;
         let _ = reporter;
+        let _ = proxy_settings;
         return Err(SandboxError::Unavailable(
             "managed BoxLite installation is only supported on Windows + WSL".to_string(),
         ));
@@ -91,8 +96,18 @@ pub async fn install_boxlite_wsl(
 
         let wsl_arch = detect_wsl_arch()?;
         let release = release_asset_for_wsl_arch(&wsl_arch)?;
+        let download_client = proxy_settings
+            .map(build_proxy_aware_reqwest_client_for_settings)
+            .transpose()
+            .map_err(SandboxError::Validation)?;
         let downloaded_asset =
-            download_release_asset(&config.data_dir, &release, reporter.as_ref()).await?;
+            download_release_asset(
+                &config.data_dir,
+                &release,
+                reporter.as_ref(),
+                download_client.as_ref(),
+            )
+            .await?;
 
         report(
             reporter.as_ref(),
@@ -196,6 +211,7 @@ async fn download_release_asset(
     data_dir: &Path,
     release: &BoxLiteReleaseAsset,
     reporter: Option<&ProgressReporter>,
+    client: Option<&reqwest::Client>,
 ) -> Result<PathBuf, SandboxError> {
     let download_dir = data_dir.join("downloads");
     fs::create_dir_all(&download_dir)?;
@@ -213,9 +229,17 @@ async fn download_release_asset(
         return Ok(download_path);
     }
 
-    let response = reqwest::Client::builder()
-        .build()
-        .map_err(|err| SandboxError::Internal(err.to_string()))?
+    let default_client;
+    let client = match client {
+        Some(client) => client,
+        None => {
+            default_client = reqwest::Client::builder()
+                .build()
+                .map_err(|err| SandboxError::Internal(err.to_string()))?;
+            &default_client
+        }
+    };
+    let response = client
         .get(release_asset_url(release))
         .send()
         .await?;

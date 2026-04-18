@@ -1020,9 +1020,18 @@ impl LocalWorkflowStep<LocalWorkflowContext> for PromptVariantSelectionStep {
         ctx: &'a mut LocalWorkflowContext,
     ) -> BoxFuture<'a, Result<LocalStepResult, String>> {
         Box::pin(async move {
-            let variants = [PROMPT_VARIANT_DETAILED, PROMPT_VARIANT_CONCISE];
+            use crate::modules::providers::bandit_selector::{
+                select_arm, BanditConfig, BanditStrategy,
+            };
+            use crate::modules::providers::store::BANDIT_DEFAULT_STRATEGY;
 
-            // Attempt epsilon-greedy selection from the bandit store
+            let variants: Vec<&'static str> =
+                vec![PROMPT_VARIANT_DETAILED, PROMPT_VARIANT_CONCISE];
+
+            let now_rfc3339 = time::OffsetDateTime::now_utc()
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default();
+
             let selected = match ctx
                 .app_state
                 .providers
@@ -1031,52 +1040,35 @@ impl LocalWorkflowStep<LocalWorkflowContext> for PromptVariantSelectionStep {
                 .await
             {
                 Ok(arms) if !arms.is_empty() => {
-                    let epsilon = arms.first().map(|a| a.epsilon).unwrap_or(0.1);
-                    let roll: f64 = {
-                        use std::collections::hash_map::DefaultHasher;
-                        use std::hash::{Hash, Hasher};
-                        let mut h = DefaultHasher::new();
-                        ctx.trace_id.hash(&mut h);
-                        (h.finish() % 1000) as f64 / 1000.0
+                    let arm_map: std::collections::HashMap<
+                        String,
+                        &crate::modules::providers::types::BanditArmState,
+                    > = arms
+                        .iter()
+                        .filter_map(|a| a.arm_id.as_ref().map(|id| (id.clone(), a)))
+                        .collect();
+                    let default_strategy = BanditStrategy::parse(BANDIT_DEFAULT_STRATEGY)
+                        .unwrap_or(BanditStrategy::Thompson);
+                    let strategy = arms
+                        .first()
+                        .map(|a| BanditStrategy::parse_or(&a.strategy, default_strategy))
+                        .unwrap_or(default_strategy);
+                    let cfg = BanditConfig {
+                        epsilon: arms.first().map(|a| a.epsilon).unwrap_or(0.1),
+                        ..BanditConfig::default()
                     };
-                    if roll < epsilon {
-                        // Explore: pick based on trace_id hash parity
-                        let idx = (roll * 1000.0) as usize % variants.len();
-                        variants[idx]
-                    } else {
-                        // Exploit: pick the variant with the highest success rate
-                        let arm_map: std::collections::HashMap<
-                            String,
-                            &crate::modules::providers::types::BanditArmState,
-                        > = arms
-                            .iter()
-                            .filter_map(|a| a.arm_id.as_ref().map(|id| (id.clone(), a)))
-                            .collect();
-                        let mut best = variants[0];
-                        let mut best_rate = -1.0_f64;
-                        for v in &variants {
-                            let rate = arm_map
-                                .get(*v)
-                                .map(|a| {
-                                    if a.total_trials > 0 {
-                                        a.successes as f64 / a.total_trials as f64
-                                    } else {
-                                        0.0
-                                    }
-                                })
-                                .unwrap_or(0.0);
-                            if rate > best_rate {
-                                best_rate = rate;
-                                best = v;
-                            }
-                        }
-                        best
-                    }
+                    select_arm(
+                        &variants,
+                        |v| v.to_string(),
+                        &arm_map,
+                        strategy,
+                        &cfg,
+                        &now_rfc3339,
+                    )
+                    .copied()
+                    .unwrap_or(PROMPT_VARIANT_DETAILED)
                 }
-                _ => {
-                    // No bandit data yet 鈥?default to "detailed"
-                    PROMPT_VARIANT_DETAILED
-                }
+                _ => PROMPT_VARIANT_DETAILED,
             };
 
             // Inject a style hint system message based on the selected variant
@@ -1134,16 +1126,23 @@ impl LocalWorkflowStep<LocalWorkflowContext> for RouteSelectionStep {
                 select_local_route_with_evidence(&query, discovery_bundle.route_evidence.clone()),
             )
             .await?;
+            let route_hint = crate::modules::desktop_runtime::runtime::query_task_policy_hint(
+                ctx.app_state.mcp.store.as_ref(),
+                &query,
+                "route",
+                4,
+            )
+            .await;
+            let route_bandit_scores =
+                crate::modules::desktop_runtime::runtime::compute_route_bandit_scores(
+                    ctx.app_state.providers.store.as_ref(),
+                )
+                .await;
             let route_prior_application =
                 crate::modules::desktop_runtime::runtime::apply_route_prior(
                     base_decision,
-                    crate::modules::desktop_runtime::runtime::query_task_policy_hint(
-                        ctx.app_state.mcp.store.as_ref(),
-                        &query,
-                        "route",
-                        4,
-                    )
-                    .await,
+                    route_hint,
+                    route_bandit_scores,
                 );
             let decision = route_prior_application.decision.clone();
             let execution_policy = apply_desktop_execution_policy_overrides(

@@ -167,6 +167,10 @@ pub struct LocalMemorySearchItem {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalMemorySearchResult {
     pub items: Vec<LocalMemorySearchItem>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub explore_item_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub explore_arm_id: Option<String>,
 }
 
 // --- Knowledge search types ---

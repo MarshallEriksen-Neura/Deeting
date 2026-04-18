@@ -262,7 +262,10 @@ async fn select_model_by_bandit(
     app_state: &AppState,
     models: &[crate::modules::providers::types::ProviderModel],
 ) -> crate::modules::providers::types::ProviderModel {
-    use crate::modules::providers::store::BANDIT_DEFAULT_SCENE;
+    use crate::modules::providers::bandit_selector::{
+        select_arm, BanditConfig, BanditStrategy,
+    };
+    use crate::modules::providers::store::{BANDIT_DEFAULT_SCENE, BANDIT_DEFAULT_STRATEGY};
 
     let current_time_rfc3339 = now_rfc3339();
     let arms = app_state
@@ -275,67 +278,28 @@ async fn select_model_by_bandit(
         .iter()
         .filter_map(|arm| arm.arm_id.as_ref().map(|id| (id.clone(), arm)))
         .collect();
-    let eligible: Vec<&crate::modules::providers::types::ProviderModel> = models
-        .iter()
-        .filter(|model| {
-            let arm_id = model.id.to_string();
-            match arm_map.get(&arm_id) {
-                Some(arm) => match &arm.cooldown_until {
-                    Some(until) => until.as_str() <= current_time_rfc3339.as_str(),
-                    None => true,
-                },
-                None => true,
-            }
-        })
-        .collect();
-    if eligible.is_empty() {
-        return models[0].clone();
-    }
-    if eligible.len() == 1 {
-        return eligible[0].clone();
-    }
 
-    let epsilon = arm_map
-        .values()
-        .next()
-        .map(|arm| arm.epsilon)
-        .unwrap_or(0.1);
-    let rand_val: f64 = {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        let mut hasher = DefaultHasher::new();
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos()
-            .hash(&mut hasher);
-        (hasher.finish() % 10000) as f64 / 10000.0
+    let default_strategy =
+        BanditStrategy::parse(BANDIT_DEFAULT_STRATEGY).unwrap_or(BanditStrategy::Thompson);
+    let strategy = arms
+        .first()
+        .map(|arm| BanditStrategy::parse_or(&arm.strategy, default_strategy))
+        .unwrap_or(default_strategy);
+    let cfg = BanditConfig {
+        epsilon: arms.first().map(|arm| arm.epsilon).unwrap_or(0.1),
+        ..BanditConfig::default()
     };
-    if rand_val < epsilon {
-        let idx = (rand_val * 10000.0) as usize % eligible.len();
-        return eligible[idx].clone();
-    }
-    eligible
-        .into_iter()
-        .max_by(|a, b| {
-            let rate = |model: &crate::modules::providers::types::ProviderModel| {
-                arm_map
-                    .get(&model.id.to_string())
-                    .map(|arm| {
-                        if arm.total_trials > 0 {
-                            arm.successes as f64 / arm.total_trials as f64
-                        } else {
-                            0.5
-                        }
-                    })
-                    .unwrap_or(0.5)
-            };
-            rate(a)
-                .partial_cmp(&rate(b))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .cloned()
-        .unwrap_or_else(|| models[0].clone())
+
+    select_arm(
+        models,
+        |model| model.id.to_string(),
+        &arm_map,
+        strategy,
+        &cfg,
+        &current_time_rfc3339,
+    )
+    .cloned()
+    .unwrap_or_else(|| models[0].clone())
 }
 
 pub(crate) async fn request_provider_chat_completion(

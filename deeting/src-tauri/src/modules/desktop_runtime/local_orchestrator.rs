@@ -956,6 +956,20 @@ pub async fn execute_local_orchestrated_chat(
                     );
                 }
             }
+            let memory_explore_arm_id = ctx
+                .prefetched_retrievals
+                .semantic_memory
+                .as_ref()
+                .and_then(|r| r.explore_arm_id.clone());
+            record_task_learning_bandit_feedback(
+                app_state,
+                ctx.route_decision.as_ref(),
+                &evaluation.outcome,
+                total_latency_ms,
+                &session_id,
+                memory_explore_arm_id.as_deref(),
+            )
+            .await;
             ctx.emit_status(
                 "remember",
                 Some("task_learning"),
@@ -974,6 +988,138 @@ pub async fn execute_local_orchestrated_chat(
         }
     }
     Ok(response)
+}
+
+async fn record_task_learning_bandit_feedback(
+    app_state: &AppState,
+    route_decision: Option<&crate::modules::desktop_runtime::runtime::LocalRouteDecision>,
+    outcome: &crate::modules::desktop_runtime::runtime::task_learning::EvaluatedOutcome,
+    total_latency_ms: i64,
+    session_id: &str,
+    memory_explore_arm_id: Option<&str>,
+) {
+    use crate::modules::providers::store::{
+        BANDIT_SCENE_MEMORY_RECALL, BANDIT_SCENE_TASK_ROUTE, BANDIT_SCENE_WORKER_SELECTION,
+    };
+    use crate::modules::providers::types::BanditFeedbackRequest;
+
+    let latency_ms_f64 = Some(total_latency_ms as f64);
+
+    if let Some(decision) = route_decision {
+        let judgment = outcome.route_judgment.as_str();
+        if let Some(success) = route_judgment_to_success(judgment) {
+            let feedback = BanditFeedbackRequest {
+                scene: Some(BANDIT_SCENE_TASK_ROUTE.to_string()),
+                arm_id: decision.route.as_str().to_string(),
+                success,
+                latency_ms: latency_ms_f64,
+                cost: None,
+                reward: Some(if success { 1.0 } else { 0.0 }),
+                routing_config: None,
+                reward_metric_type: None,
+            };
+            if let Err(err) = app_state.providers.store.record_bandit_feedback(feedback).await {
+                log::warn!(
+                    "task learning route bandit feedback failed session={} err={}",
+                    session_id,
+                    err
+                );
+            }
+        }
+    }
+
+    if let (Some(delegated), Some(judgment)) = (
+        outcome.delegated_execution.as_ref(),
+        outcome.worker_selection_judgment.as_deref(),
+    ) {
+        if let Some(arm_id) = delegated
+            .selected_profile_id
+            .as_deref()
+            .map(|value: &str| value.trim())
+            .filter(|value: &&str| !value.is_empty())
+        {
+            if let Some(success) = worker_selection_judgment_to_success(judgment) {
+                let feedback = BanditFeedbackRequest {
+                    scene: Some(BANDIT_SCENE_WORKER_SELECTION.to_string()),
+                    arm_id: arm_id.to_string(),
+                    success,
+                    latency_ms: latency_ms_f64,
+                    cost: None,
+                    reward: Some(if success { 1.0 } else { 0.0 }),
+                    routing_config: None,
+                    reward_metric_type: None,
+                };
+                if let Err(err) = app_state
+                    .providers
+                    .store
+                    .record_bandit_feedback(feedback)
+                    .await
+                {
+                    log::warn!(
+                        "task learning worker bandit feedback failed session={} err={}",
+                        session_id,
+                        err
+                    );
+                }
+            }
+        }
+    }
+
+    if let Some(arm_id) = memory_explore_arm_id
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    {
+        if let Some(success) =
+            discovery_judgment_to_success(outcome.discovery_judgment.as_str())
+        {
+            let feedback = BanditFeedbackRequest {
+                scene: Some(BANDIT_SCENE_MEMORY_RECALL.to_string()),
+                arm_id: arm_id.to_string(),
+                success,
+                latency_ms: latency_ms_f64,
+                cost: None,
+                reward: Some(if success { 1.0 } else { 0.0 }),
+                routing_config: None,
+                reward_metric_type: None,
+            };
+            if let Err(err) = app_state
+                .providers
+                .store
+                .record_bandit_feedback(feedback)
+                .await
+            {
+                log::warn!(
+                    "memory recall bandit feedback failed session={} err={}",
+                    session_id,
+                    err
+                );
+            }
+        }
+    }
+}
+
+fn route_judgment_to_success(judgment: &str) -> Option<bool> {
+    match judgment {
+        "good" | "acceptable" => Some(true),
+        "wasteful" | "wrong" => Some(false),
+        _ => None,
+    }
+}
+
+fn worker_selection_judgment_to_success(judgment: &str) -> Option<bool> {
+    match judgment {
+        "success" | "partial" => Some(true),
+        "blocked" | "unstable" | "failed" => Some(false),
+        _ => None,
+    }
+}
+
+fn discovery_judgment_to_success(judgment: &str) -> Option<bool> {
+    match judgment {
+        "sufficient" => Some(true),
+        "shallow" | "skipped_when_needed" => Some(false),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

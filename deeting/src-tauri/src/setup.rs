@@ -220,6 +220,7 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             None,
             Some(provider_state.embedding.clone()),
             Some(global_pool.clone()),
+            Some(provider_state.store.clone()),
         )
         .await
         .map_err(|e| McpError::Storage(e.to_string()))?;

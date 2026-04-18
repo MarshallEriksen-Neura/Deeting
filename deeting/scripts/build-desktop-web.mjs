@@ -13,7 +13,7 @@ const isWindows = process.platform === "win32";
 
 function resolveNextCommand() {
   const localNextCandidates = isWindows
-    ? ["next.cmd", "next.exe"]
+    ? ["next.exe", "next.cmd"]
     : ["next"];
 
   for (const candidate of localNextCandidates) {
@@ -27,14 +27,17 @@ function resolveNextCommand() {
 }
 
 let exitCode = 1;
+const nextCommand = resolveNextCommand();
+const nextUseShell =
+  isWindows && (nextCommand === "next" || nextCommand.endsWith(".cmd"));
 
-const result = spawnSync(resolveNextCommand(), ["build"], {
+const result = spawnSync(nextCommand, ["build"], {
   cwd: projectRoot,
   env: {
     ...process.env,
     DEETING_DESKTOP_EXPORT: "true",
   },
-  shell: false,
+  shell: nextUseShell,
   stdio: "inherit",
 });
 

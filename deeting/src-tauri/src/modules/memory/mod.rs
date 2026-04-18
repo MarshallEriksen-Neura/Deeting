@@ -15,6 +15,7 @@ use crate::modules::memory::service::MemoryService;
 use crate::modules::memory::snapshot_store::SnapshotStore;
 use crate::modules::memory::store::MemoryStore;
 use crate::modules::providers::embedding::EmbeddingService;
+use crate::modules::providers::store::ProviderStore;
 
 #[derive(Clone)]
 pub struct MemoryState {
@@ -24,7 +25,7 @@ pub struct MemoryState {
 
 impl MemoryState {
     pub async fn new(lancedb_uri: &str) -> Result<Self, MemoryError> {
-        Self::with_options(lancedb_uri, None, None, None).await
+        Self::with_options(lancedb_uri, None, None, None, None).await
     }
 
     pub async fn with_options(
@@ -32,6 +33,7 @@ impl MemoryState {
         embedding_dim: Option<i32>,
         embedding_service: Option<EmbeddingService>,
         db_pool: Option<sqlx::sqlite::SqlitePool>,
+        provider_store: Option<Arc<ProviderStore>>,
     ) -> Result<Self, MemoryError> {
         let store = Arc::new(MemoryStore::new(lancedb_uri).await?);
         let dim = embedding_dim.unwrap_or(store::DEFAULT_MEMORY_EMBEDDING_DIM);
@@ -53,6 +55,10 @@ impl MemoryState {
                     log::warn!("memory snapshot store init failed (non-fatal): {}", e);
                 }
             }
+        }
+
+        if let Some(provider_store) = provider_store {
+            service.set_provider_store(provider_store);
         }
 
         Ok(Self {
