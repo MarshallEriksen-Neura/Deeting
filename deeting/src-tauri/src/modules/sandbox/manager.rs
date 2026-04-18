@@ -204,12 +204,18 @@ impl SandboxRuntimeManager {
         let boxlite = self.boxlite_status().await;
         #[cfg(target_os = "windows")]
         {
+            let prepare_config =
+                crate::modules::sandbox::prepare_config::resolve_sandbox_prepare_config_from_global_state(
+                )
+                .await;
             let wsl = diagnose_wsl_availability();
             let boxlite_binary_found = boxlite.binary_found;
             let (mut status, mut blocking_reason, mut next_actions) =
                 derive_windows_readiness(runtime_mode, &wsl, &boxlite);
             let execution_probe = if status == SandboxReadinessStatus::Ready {
-                let execution_probe = self.programmatic_execution_probe().await;
+                let execution_probe = self
+                    .programmatic_execution_probe(prepare_config.as_ref())
+                    .await;
                 (status, blocking_reason, next_actions) = refine_ready_status_with_execution_probe(
                     status,
                     blocking_reason,
@@ -1057,14 +1063,36 @@ impl SandboxRuntimeManager {
     }
 
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-    async fn restart_managed_runtime_for_probe(&self) -> Result<(), SandboxError> {
+    async fn restart_managed_runtime_for_probe(
+        &self,
+        prepare_config: Option<&SandboxPrepareConfig>,
+    ) -> Result<(), SandboxError> {
         self.reset_runtime_state(false).await;
 
         #[cfg(target_os = "windows")]
         {
             if let Some(provisioner) = self.provisioner.as_ref() {
                 if provisioner.resolve_binary().is_some() {
-                    let _ = provisioner.ensure_running().await?;
+                    match prepare_config {
+                        Some(config) => {
+                            let proxy_environment = config
+                                .proxy_settings
+                                .as_ref()
+                                .map(build_proxy_environment_for_settings)
+                                .transpose()
+                                .map_err(SandboxError::Validation)?;
+                            let _ = provisioner
+                                .ensure_running_with_progress(
+                                    proxy_environment.as_ref(),
+                                    &config.image_registries,
+                                    None,
+                                )
+                                .await?;
+                        }
+                        None => {
+                            let _ = provisioner.ensure_running().await?;
+                        }
+                    }
                 }
             }
         }
@@ -1073,7 +1101,10 @@ impl SandboxRuntimeManager {
     }
 
     #[allow(dead_code)]
-    async fn programmatic_execution_probe(&self) -> SandboxExecutionProbe {
+    async fn programmatic_execution_probe(
+        &self,
+        prepare_config: Option<&SandboxPrepareConfig>,
+    ) -> SandboxExecutionProbe {
         let checked_at_unix_ms = Some(now_unix_ms());
         let mut attempt = 0usize;
         let mut restarted_runtime = false;
@@ -1150,7 +1181,9 @@ impl SandboxRuntimeManager {
                         err.code(),
                         err
                     );
-                    if let Err(restart_err) = self.restart_managed_runtime_for_probe().await {
+                    if let Err(restart_err) =
+                        self.restart_managed_runtime_for_probe(prepare_config).await
+                    {
                         return SandboxExecutionProbe {
                             status: SandboxExecutionProbeStatus::Failed,
                             detail: Some(format!(
