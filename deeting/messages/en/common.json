@@ -113,6 +113,7 @@
       "apiKeys": "API Keys",
       "credits": "Credits",
       "monitoring": "Monitoring",
+      "bandit": "Bandit Observatory",
       "taskLearning": "Task Learning",
       "monitors": "Hunters",
       "notificationChannels": "Channels",

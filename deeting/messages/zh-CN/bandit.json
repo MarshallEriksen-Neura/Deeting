@@ -1,0 +1,112 @@
+{
+  "title": "Bandit 观测台",
+  "description": "观察桌面本地 bandit 如何影响路由、worker 选择与记忆召回。",
+  "hero": {
+    "eyebrow": "自适应控制层",
+    "title": "实时看见策略偏置正在往哪边移动。",
+    "description": "这个页面把原始的 bandit arm 状态翻译成可读的运营视角：谁在领先、探索是否还在继续、以及冷却或低置信度正在怎样影响下一次决策。"
+  },
+  "actions": {
+    "refresh": "刷新",
+    "openTaskLearning": "打开任务学习"
+  },
+  "stats": {
+    "scenes": "场景数",
+    "scenesHint": "当前本地 bandit 正在跟踪的决策面。",
+    "arms": "Arm 数",
+    "armsHint": "当前正在被比较的候选动作或模型目标。",
+    "trials": "试验次数",
+    "trialsHint": "已知场景里累计记录下来的选择次数。",
+    "cooling": "冷却中",
+    "coolingHint": "最近表现不佳、暂时被降温的 arm 数量。",
+    "averageSuccess": "加权成功率",
+    "averageSuccessHint": "按选择量加权后的整体成功率。",
+    "exploration": "探索强度",
+    "explorationHint": "当前平均 epsilon，表示系统还保留了多少试错空间。"
+  },
+  "runtime": {
+    "desktopOnlyTitle": "仅桌面运行时可用",
+    "desktopOnlyDescription": "Bandit 观测页读取的是本地 Tauri 状态，因此只在桌面运行时开放。",
+    "emptyTitle": "还没有 bandit 流量",
+    "emptyDescription": "这些已知 scene 还没有生成可读的 arm 状态。先触发几次本地请求，再回到这里刷新看看。",
+    "loadFailedTitle": "加载 bandit 状态失败",
+    "loadFailedDescription": "桌面运行时没有返回可读的 bandit 快照。"
+  },
+  "sceneTabs": {
+    "activity": "活跃度"
+  },
+  "overview": {
+    "title": "Scene 脉冲",
+    "description": "用一组简洁指标判断当前 scene 的学习状态。",
+    "totalTrials": "总试验数",
+    "leaderShare": "领先占比",
+    "exploration": "探索强度",
+    "avgSuccess": "平均成功率",
+    "lastUpdated": "最近更新时间"
+  },
+  "effect": {
+    "title": "观测到的效果",
+    "description": "这里总结当前 scene 正在偏向哪里，以及这种偏向看起来是健康学习还是还在漂移。",
+    "leadingArm": "当前领先 arm",
+    "strategy": "策略",
+    "confidence": "后验均值",
+    "cooldowns": "冷却 arm 数"
+  },
+  "arms": {
+    "title": "Arm 排行",
+    "description": "每个 arm 都会展示证据量、后验置信度、成本、延迟，以及运行时是否正在主动降温。",
+    "trials": "试验次数",
+    "successRate": "成功率",
+    "posteriorMean": "后验均值",
+    "avgLatency": "平均延迟",
+    "lastReward": "最近 reward",
+    "totalCost": "累计成本",
+    "totalCostPerTrial": "单次成本",
+    "cooldown": "冷却到",
+    "rewardMetric": "奖励指标：{value}",
+    "updated": "更新于 {value}",
+    "alphaBeta": "alpha {alpha} / beta {beta}",
+    "version": "v{value}"
+  },
+  "status": {
+    "cooling": "冷却中",
+    "live": "活跃",
+    "idle": "空闲"
+  },
+  "strategy": {
+    "epsilonGreedy": "Epsilon Greedy",
+    "thompson": "Thompson Sampling",
+    "ucb": "置信上界 UCB",
+    "unknown": "未知策略"
+  },
+  "insights": {
+    "noTraffic": "还没有足够可用流量。scene 已经接入，但还没有积累到足以形成明显偏置的选择证据。",
+    "warming": "这个 scene 还在热身阶段，目前只有 {trials} 次试验。证据量起来之前，领先者会比较抖动。",
+    "leader": "已经出现明显领先者：{arm}。运行时正在比其他 arm 更频繁地偏向它。",
+    "exploring": "探索仍然比较积极。策略还在认真比较不同候选，而不是完全收敛到单一 arm。",
+    "cooling": "当前有 {count} 个 arm 正在冷却，说明最近的差结果已经开始主动压制这些选择。",
+    "balanced": "这个 scene 目前比较均衡：虽然已有领先者，但策略仍在给挑战者保留机会。"
+  },
+  "scenes": {
+    "routerLlm": {
+      "name": "LLM 路由",
+      "chip": "模型路由",
+      "description": "这个 scene 追踪日常请求里哪个 provider-model arm 更容易赢。这里若出现明显领先，说明桌面运行时正在对相似请求逐渐收敛到某个模型目标。"
+    },
+    "taskRoute": {
+      "name": "任务路由",
+      "chip": "任务路径",
+      "description": "这个 scene 决定任务级执行路径。它帮助桌面运行时学习直接执行、先规划再执行，或其他 route 选择哪种更有效。"
+    },
+    "workerSelection": {
+      "name": "Worker 选择",
+      "chip": "选择 worker",
+      "description": "这个 scene 比较不同专门 worker 的表现。当某个 worker 持续胜出时，运行时就会越来越倾向把类似任务交给它。"
+    },
+    "memoryRecall": {
+      "name": "记忆召回",
+      "chip": "记忆召回",
+      "description": "这个 scene 追踪本地记忆召回的行为。这里的 bandit 效果，反映的是哪种 recall 模式能在可接受延迟下给出更有用的结果。"
+    }
+  }
+}

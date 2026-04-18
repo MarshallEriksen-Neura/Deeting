@@ -27,6 +27,7 @@ const namespaces = [
   "memory",
   "plugins",
   "task-agents",
+  "bandit",
   "task-learning",
   "llm-wiki",
   "workflow",

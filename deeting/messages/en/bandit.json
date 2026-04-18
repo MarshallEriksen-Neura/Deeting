@@ -1,0 +1,112 @@
+{
+  "title": "Bandit Observatory",
+  "description": "Observe how desktop-local bandit arms are steering routing, worker selection, and recall behavior.",
+  "hero": {
+    "eyebrow": "Adaptive Control Layer",
+    "title": "Watch the policy bias shift in real time.",
+    "description": "This page turns raw bandit arm state into an operator view: which arm is leading, whether exploration is still active, and where cooldown or low-confidence behavior is shaping the next decision."
+  },
+  "actions": {
+    "refresh": "Refresh",
+    "openTaskLearning": "Open Task Learning"
+  },
+  "stats": {
+    "scenes": "Scenes",
+    "scenesHint": "Decision surfaces currently tracked by the local bandit layer.",
+    "arms": "Arms",
+    "armsHint": "Candidate actions or model targets currently being compared.",
+    "trials": "Trials",
+    "trialsHint": "Total observed selections recorded across the known scenes.",
+    "cooling": "Cooling",
+    "coolingHint": "Arms temporarily throttled after bad recent outcomes.",
+    "averageSuccess": "Weighted Success",
+    "averageSuccessHint": "Selection-weighted success rate across active scenes.",
+    "exploration": "Exploration",
+    "explorationHint": "Average epsilon currently keeping the system from over-committing."
+  },
+  "runtime": {
+    "desktopOnlyTitle": "Desktop runtime only",
+    "desktopOnlyDescription": "Bandit observability reads local Tauri state and is only available in the desktop runtime.",
+    "emptyTitle": "No bandit traffic yet",
+    "emptyDescription": "The known scenes do not have any recorded arm state yet. Trigger a few local requests and refresh this page again.",
+    "loadFailedTitle": "Failed to load bandit state",
+    "loadFailedDescription": "The desktop runtime did not return a readable bandit snapshot."
+  },
+  "sceneTabs": {
+    "activity": "Activity"
+  },
+  "overview": {
+    "title": "Scene Pulse",
+    "description": "A compact read on how the currently selected scene is behaving.",
+    "totalTrials": "Total trials",
+    "leaderShare": "Leader share",
+    "exploration": "Exploration",
+    "avgSuccess": "Average success",
+    "lastUpdated": "Last update"
+  },
+  "effect": {
+    "title": "Observed Effect",
+    "description": "The page summarizes where the current scene is leaning, and whether that looks like healthy learning or unresolved drift.",
+    "leadingArm": "Leading arm",
+    "strategy": "Strategy",
+    "confidence": "Posterior mean",
+    "cooldowns": "Cooldown arms"
+  },
+  "arms": {
+    "title": "Arm Leaderboard",
+    "description": "Each arm shows evidence volume, posterior confidence, cost, latency, and whether the runtime is actively backing off.",
+    "trials": "Trials",
+    "successRate": "Success rate",
+    "posteriorMean": "Posterior mean",
+    "avgLatency": "Avg latency",
+    "lastReward": "Last reward",
+    "totalCost": "Total cost",
+    "totalCostPerTrial": "Cost / trial",
+    "cooldown": "Cooldown until",
+    "rewardMetric": "Reward metric: {value}",
+    "updated": "Updated {value}",
+    "alphaBeta": "alpha {alpha} / beta {beta}",
+    "version": "v{value}"
+  },
+  "status": {
+    "cooling": "Cooling",
+    "live": "Live",
+    "idle": "Idle"
+  },
+  "strategy": {
+    "epsilonGreedy": "Epsilon greedy",
+    "thompson": "Thompson sampling",
+    "ucb": "Upper confidence bound",
+    "unknown": "Unknown strategy"
+  },
+  "insights": {
+    "noTraffic": "No usable traffic yet. The scene is installed, but it has not learned from enough selections to produce a visible bias.",
+    "warming": "The scene is still warming up with {trials} recorded trials. Expect noisy winners until the evidence base grows.",
+    "leader": "A clear front-runner has emerged: {arm}. The runtime is already biasing toward it more often than the rest.",
+    "exploring": "Exploration is still meaningfully active. The policy is comparing alternatives rather than settling into one dominant arm.",
+    "cooling": "{count} arm(s) are cooling down right now. Recent poor results are actively suppressing those choices.",
+    "balanced": "The scene looks balanced: one arm has an edge, but the policy is still leaving room for challengers."
+  },
+  "scenes": {
+    "routerLlm": {
+      "name": "LLM Routing",
+      "chip": "Route model",
+      "description": "This scene tracks which provider-model arm is winning in everyday routing. A strong leader here means the runtime is converging on one model target for similar desktop requests."
+    },
+    "taskRoute": {
+      "name": "Task Route",
+      "chip": "Route task",
+      "description": "This scene governs task-level execution shape. It helps the desktop runtime learn whether direct execution, planner-first, or other route choices are paying off."
+    },
+    "workerSelection": {
+      "name": "Worker Selection",
+      "chip": "Pick worker",
+      "description": "This scene compares specialized worker arms. When one worker keeps winning, the runtime will increasingly favor that profile for similar delegated tasks."
+    },
+    "memoryRecall": {
+      "name": "Memory Recall",
+      "chip": "Recall memory",
+      "description": "This scene tracks retrieval behavior for local memory recall. The bandit effect here shows which recall pattern is providing more useful outcomes at acceptable latency."
+    }
+  }
+}

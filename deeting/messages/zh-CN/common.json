@@ -112,6 +112,7 @@
                                "apiKeys":  "API 密钥",
                                "credits":  "积分流水",
                                "monitoring":  "监控",
+                               "bandit":  "Bandit 观测台",
                                "monitors":  "主动寻猎",
                                "notificationChannels":  "通知渠道",
                                "logs":  "日志",

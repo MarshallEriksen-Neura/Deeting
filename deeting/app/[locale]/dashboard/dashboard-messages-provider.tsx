@@ -12,6 +12,7 @@ const DASHBOARD_MESSAGE_NAMESPACES: readonly StaticMessageNamespace[] = [
   "memory",
   "plugins",
   "task-agents",
+  "bandit",
   "providers",
   "models",
   "model-pools",

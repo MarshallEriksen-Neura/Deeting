@@ -121,6 +121,13 @@ export const userNavigation: NavGroup[] = [
         icon: "activity",
       },
       {
+        id: "bandit",
+        label: "nav.bandit",
+        href: "/dashboard/bandit",
+        icon: "activity",
+        desktopOnly: true,
+      },
+      {
         id: "task-learning",
         label: "nav.taskLearning",
         href: "/dashboard/task-learning",

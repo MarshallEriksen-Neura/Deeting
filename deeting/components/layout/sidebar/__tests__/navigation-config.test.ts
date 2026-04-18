@@ -40,6 +40,11 @@ describe("getUserDashboardNavigation", () => {
     expect(flattenNavIds(false)).not.toContain("task-learning")
   })
 
+  it("shows bandit observability only in desktop runtime", () => {
+    expect(flattenNavIds(true)).toContain("bandit")
+    expect(flattenNavIds(false)).not.toContain("bandit")
+  })
+
   it("keeps the dashboard overview item on exact matching so child routes do not double-highlight it", () => {
     const dashboardItem = findNavItem("dashboard")
 
