@@ -360,6 +360,12 @@ pub(crate) async fn materialize_pending_local_approval_from_runtime_context(
     )
     .await?
     else {
+        if execution_graph_execution_id
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty())
+        {
+            return Ok(None);
+        }
         return Ok(app_state
             .mcp
             .approvals
@@ -369,6 +375,29 @@ pub(crate) async fn materialize_pending_local_approval_from_runtime_context(
             .get(normalized_token)
             .cloned());
     };
+
+    // Graph is authoritative. If the gate for this token has already moved past
+    // `waiting_approval` (e.g. the approve is in-flight with status "approving",
+    // or the gate is completed / rejected), DO NOT materialize a fresh entry
+    // into the in-memory map — that would resurrect a zombie the rest of the
+    // system has already expired. Fixes Vector C. Fall back to whatever the
+    // in-memory map already holds.
+    let graph_snapshot =
+        load_execution_graph_snapshot(app_state.mcp.store.as_ref(), matched.execution_id.as_str())
+            .await
+            .map_err(|err| err.to_string())?;
+    let graph_says_waiting = graph_snapshot
+        .as_ref()
+        .map(|graph| collect_waiting_approval_tokens_from_graph(graph).contains(normalized_token))
+        .unwrap_or(false);
+    if !graph_says_waiting {
+        log::warn!(
+            "materialize_skipped_graph_not_waiting approval_token={} execution_id={}",
+            normalized_token,
+            matched.execution_id,
+        );
+        return Ok(None);
+    }
 
     let expires_at_unix_ms = (now_unix_ms_i64() as i128) + app_state.mcp.pending_tool_call_ttl_ms();
     let materialized = pending_tool_call_from_persisted_approval(
@@ -525,6 +554,112 @@ pub(super) async fn persist_running_tool_execution_runtime(
     Ok(execution_id)
 }
 
+/// Collects the set of approval tokens that the execution graph currently reports
+/// as "still waiting for user approval".
+///
+/// The graph is the authoritative source of approval state. A token is considered
+/// still-pending only when an `approval_gate` node carries it in
+/// `metadata.approval_token` AND the node status is `waiting_approval` or
+/// `approval_failed`.
+///
+/// `"approving"` is intentionally EXCLUDED: that status marks an approve that has
+/// started consuming the token but has not finished advancing the runtime. Such a
+/// token is not safe to resurrect as a fresh approval dialog — it must be
+/// resolved through the recovery-notice path, not replayed.
+pub(crate) fn collect_waiting_approval_tokens_from_graph(
+    execution_graph: &serde_json::Value,
+) -> std::collections::HashSet<String> {
+    execution_graph
+        .get("nodes")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|node| {
+            node.get("node_type").and_then(serde_json::Value::as_str) == Some("approval_gate")
+        })
+        .filter(|node| {
+            node.get("status")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|status| matches!(status, "waiting_approval" | "approval_failed"))
+        })
+        .filter_map(|node| {
+            node.get("metadata")
+                .and_then(|value| value.get("approval_token"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        })
+        .collect()
+}
+
+/// Filters `pending_approvals` to retain only entries whose `approval_token` the
+/// execution graph currently reports as waiting. Lower-level variant of
+/// `derive_pending_approvals_from_graph` for code paths that hold the graph and
+/// the list separately (e.g. after loading both from the persisted store).
+pub(super) fn filter_pending_approvals_by_graph(
+    execution_graph: &serde_json::Value,
+    pending_approvals: &[PersistedPendingApproval],
+) -> Vec<PersistedPendingApproval> {
+    let waiting_tokens = collect_waiting_approval_tokens_from_graph(execution_graph);
+    pending_approvals
+        .iter()
+        .filter(|pending| waiting_tokens.contains(pending.approval_token.trim()))
+        .cloned()
+        .collect()
+}
+
+/// Projects the authoritative `pending_approvals` list for `suspended` by keeping
+/// only the entries whose `approval_token` the execution graph currently reports
+/// as waiting. Anything the graph has moved past (completed / approving /
+/// rejected) is dropped.
+///
+/// This is the function callers SHOULD use when persisting an inflight runtime
+/// context — never pass `suspended.pending_approvals()` directly, because that
+/// list can lag behind the graph during the approve critical section.
+pub(crate) fn derive_pending_approvals_from_graph(
+    suspended: &SuspendedChatToolExecution,
+) -> Vec<PersistedPendingApproval> {
+    filter_pending_approvals_by_graph(suspended.execution_graph(), suspended.pending_approvals())
+}
+
+/// Logs a warning when the persisted `pending_approvals` list disagrees with the
+/// authoritative graph projection. Observation-only: does not alter behavior.
+///
+/// - `persisted_extra`: tokens present in `pending_approvals` but NOT reported as
+///   waiting in the graph (likely zombies — already consumed or in-flight).
+/// - `graph_missing`: tokens the graph reports as waiting but that are absent
+///   from `pending_approvals` (list drifted behind the graph).
+fn log_pending_approvals_drift(
+    suspended: &SuspendedChatToolExecution,
+    pending_approvals: &[PersistedPendingApproval],
+    source_kind: &str,
+    stage: &InFlightExecutionStage,
+) {
+    let graph_tokens = collect_waiting_approval_tokens_from_graph(suspended.execution_graph());
+    let persisted_tokens: std::collections::HashSet<String> = pending_approvals
+        .iter()
+        .map(|pending| pending.approval_token.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect();
+
+    let persisted_extra: Vec<&String> = persisted_tokens.difference(&graph_tokens).collect();
+    let graph_missing: Vec<&String> = graph_tokens.difference(&persisted_tokens).collect();
+
+    if persisted_extra.is_empty() && graph_missing.is_empty() {
+        return;
+    }
+
+    log::warn!(
+        "pending_approvals_drift source_kind={} stage={:?} execution_id={:?} persisted_extra={:?} graph_missing={:?}",
+        source_kind,
+        stage,
+        suspended.graph_execution_id(),
+        persisted_extra,
+        graph_missing,
+    );
+}
+
 pub(crate) async fn persist_suspended_execution_graph_runtime(
     store: &crate::modules::mcp::store::McpStore,
     suspended: &SuspendedChatToolExecution,
@@ -534,6 +669,8 @@ pub(crate) async fn persist_suspended_execution_graph_runtime(
     stage: InFlightExecutionStage,
     last_error: Option<&str>,
 ) -> Result<(), String> {
+    log_pending_approvals_drift(suspended, pending_approvals, source_kind, &stage);
+
     persist_execution_graph_snapshot(
         store,
         suspended.execution_graph(),
@@ -668,10 +805,24 @@ pub(crate) async fn load_suspended_chat_tool_execution_for_resume(
                     .map_err(|err| err.to_string())?
             {
                 let persisted_inflight = persistable_inflight_context_from_value(&runtime_context);
-                let persisted_pending_approvals = persisted_inflight
+                let raw_pending_approvals = persisted_inflight
                     .as_ref()
                     .map(|context| context.pending_approvals.clone())
                     .unwrap_or_default();
+                // Graph is authoritative. Drop any persisted entry the graph has already
+                // moved past (completed / approving / rejected). Fixes Vector B: without
+                // this filter, a resume after a crash could resurrect an approval dialog
+                // for a token that was already consumed.
+                let persisted_pending_approvals =
+                    filter_pending_approvals_by_graph(&execution_graph, &raw_pending_approvals);
+                if raw_pending_approvals.len() != persisted_pending_approvals.len() {
+                    log::warn!(
+                        "pending_approvals_drift_on_load execution_id={} dropped={} kept={}",
+                        execution_id,
+                        raw_pending_approvals.len() - persisted_pending_approvals.len(),
+                        persisted_pending_approvals.len(),
+                    );
+                }
                 let persisted_context = persisted_inflight
                     .and_then(|context| context.chat_runtime)
                     .unwrap_or_else(|| {
@@ -770,5 +921,98 @@ pub(super) fn pending_tool_call_from_persisted_approval(
         approval_status: pending.approval_status.clone(),
         created_at_unix_ms: pending.created_at_unix_ms,
         expires_at_unix_ms,
+    }
+}
+
+#[cfg(test)]
+mod graph_projection_tests {
+    use super::collect_waiting_approval_tokens_from_graph;
+
+    fn approval_gate_node(
+        node_id: &str,
+        status: &str,
+        approval_token: Option<&str>,
+    ) -> serde_json::Value {
+        let metadata = match approval_token {
+            Some(token) => serde_json::json!({ "approval_token": token }),
+            None => serde_json::json!({}),
+        };
+        serde_json::json!({
+            "node_id": node_id,
+            "node_type": "approval_gate",
+            "status": status,
+            "metadata": metadata,
+        })
+    }
+
+    fn graph_with_nodes(nodes: Vec<serde_json::Value>) -> serde_json::Value {
+        serde_json::json!({ "nodes": nodes })
+    }
+
+    #[test]
+    fn collects_tokens_only_from_waiting_approval_gates() {
+        let graph = graph_with_nodes(vec![
+            approval_gate_node("gate-1", "waiting_approval", Some("token-1")),
+            approval_gate_node("gate-2", "completed", Some("token-2")),
+            approval_gate_node("gate-3", "approving", Some("token-3")),
+            approval_gate_node("gate-4", "approval_failed", Some("token-4")),
+        ]);
+
+        let tokens = collect_waiting_approval_tokens_from_graph(&graph);
+
+        assert!(
+            tokens.contains("token-1"),
+            "waiting_approval must be collected"
+        );
+        assert!(
+            tokens.contains("token-4"),
+            "approval_failed must be collected"
+        );
+        assert!(
+            !tokens.contains("token-3"),
+            "approving MUST be excluded to prevent replay of an in-flight approve"
+        );
+        assert!(!tokens.contains("token-2"));
+        assert_eq!(tokens.len(), 2);
+    }
+
+    #[test]
+    fn ignores_non_approval_gate_nodes() {
+        let graph = serde_json::json!({
+            "nodes": [
+                {
+                    "node_id": "tool-1",
+                    "node_type": "tool_call",
+                    "status": "waiting_approval",
+                    "metadata": { "approval_token": "ghost-token" }
+                }
+            ]
+        });
+
+        let tokens = collect_waiting_approval_tokens_from_graph(&graph);
+        assert!(tokens.is_empty());
+    }
+
+    #[test]
+    fn skips_gates_missing_or_empty_tokens() {
+        let graph = graph_with_nodes(vec![
+            approval_gate_node("gate-1", "waiting_approval", None),
+            approval_gate_node("gate-2", "waiting_approval", Some("   ")),
+            approval_gate_node("gate-3", "waiting_approval", Some("valid")),
+        ]);
+
+        let tokens = collect_waiting_approval_tokens_from_graph(&graph);
+        assert_eq!(tokens.len(), 1);
+        assert!(tokens.contains("valid"));
+    }
+
+    #[test]
+    fn handles_missing_or_malformed_graph() {
+        assert!(collect_waiting_approval_tokens_from_graph(&serde_json::json!({})).is_empty());
+        assert!(collect_waiting_approval_tokens_from_graph(&serde_json::json!(null)).is_empty());
+        assert!(collect_waiting_approval_tokens_from_graph(
+            &serde_json::json!({ "nodes": "not-an-array" })
+        )
+        .is_empty());
     }
 }

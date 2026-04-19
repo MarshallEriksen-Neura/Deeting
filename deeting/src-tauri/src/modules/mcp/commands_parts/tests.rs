@@ -14,13 +14,6 @@ mod tests {
         build_tool_loop_feedback, extract_chat_tool_calls, normalize_chat_completion_response,
         LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE,
     };
-    use crate::modules::mcp::commands::runtime::{
-        config::{hash_config, read_local_mcp_config},
-        tool_resolution::{
-            build_desktop_mcp_tool_view, build_desktop_mcp_tool_views, DesktopMcpToolIndexStatus,
-            ToolAvailabilityClass,
-        },
-    };
     #[cfg(not(target_os = "windows"))]
     use crate::modules::mcp::commands::runtime::{
         config::apply_config_payload_to_store,
@@ -31,12 +24,19 @@ mod tests {
             reject_mcp_tool_inner_with_mode, RejectPersistMode,
         },
     };
+    use crate::modules::mcp::commands::runtime::{
+        config::{hash_config, read_local_mcp_config},
+        tool_resolution::{
+            build_desktop_mcp_tool_view, build_desktop_mcp_tool_views, DesktopMcpToolIndexStatus,
+            ToolAvailabilityClass,
+        },
+    };
     use crate::modules::mcp::commands::tool_approval_impl::list_pending_mcp_approvals_inner;
+    #[cfg(not(target_os = "windows"))]
+    use crate::modules::mcp::commands::tool_management_impl::start_mcp_tool_inner;
     use crate::modules::mcp::commands::tool_management_impl::{
         build_remote_transport_log_entries, start_remote_transport_tool, stop_remote_transport_tool,
     };
-    #[cfg(not(target_os = "windows"))]
-    use crate::modules::mcp::commands::tool_management_impl::start_mcp_tool_inner;
     use crate::modules::skill_runtime::resolve_local_tool_env;
     use crate::modules::skills::onboarding::{
         derive_skill_name_from_repo_url, parse_skill_onboarding_payload,
@@ -1058,6 +1058,8 @@ for raw_line in sys.stdin:
             &["ok".to_string()],
         );
         assert!(feedback.contains("round 2"));
+        assert!(feedback.contains("answer the user's original request directly"));
+        assert!(feedback.contains("Do not narrate internal tool rounds"));
         assert!(feedback.contains("\"tool_calls\""));
         assert!(feedback.contains("\"results\""));
     }
@@ -4269,11 +4271,14 @@ for raw_line in sys.stdin:
     #[cfg(not(target_os = "windows"))]
     #[tokio::test]
     async fn start_mcp_tool_inner_allows_local_stdio_mcp_start_without_approval_gate() {
-        let store = std::sync::Arc::new(create_test_store("start-stdio-mcp-without-approval").await);
+        let store =
+            std::sync::Arc::new(create_test_store("start-stdio-mcp-without-approval").await);
         let script_path = write_mock_stdio_mcp_server_script("start-stdio-mcp-without-approval");
-        let tool = upsert_test_stdio_mcp_tool(&store, "mock_stdio", "write_file", &script_path).await;
+        let tool =
+            upsert_test_stdio_mcp_tool(&store, "mock_stdio", "write_file", &script_path).await;
         let app = tauri::test::mock_app();
-        let process_manager = crate::modules::mcp::process::ProcessManager::new(store.clone(), app.handle().clone());
+        let process_manager =
+            crate::modules::mcp::process::ProcessManager::new(store.clone(), app.handle().clone());
         let runtime = crate::modules::mcp::McpRuntimeState::new(
             store.clone(),
             process_manager,

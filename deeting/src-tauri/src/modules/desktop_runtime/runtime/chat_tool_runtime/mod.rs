@@ -38,6 +38,7 @@ use inflight::{
     persistable_inflight_context_from_value,
 };
 pub(crate) use inflight::{
+    collect_waiting_approval_tokens_from_graph, derive_pending_approvals_from_graph,
     list_canonical_pending_local_approval_snapshots, load_suspended_chat_tool_execution_for_resume,
     materialize_pending_local_approval_from_runtime_context,
     persist_suspended_execution_graph_runtime, serialize_inflight_runtime_context,
@@ -298,6 +299,48 @@ fn task_policy_action_weight(hint: &TaskPolicyHint, action_key: &str) -> f64 {
         .unwrap_or(0.0)
 }
 
+fn is_explanatory_answer_request(query: &str) -> bool {
+    let normalized = query.trim().to_ascii_lowercase();
+    if normalized.is_empty() {
+        return false;
+    }
+
+    let explanatory_markers = [
+        "why",
+        "what is",
+        "what are",
+        "how does",
+        "how do",
+        "relationship",
+        "difference",
+        "explain",
+        "meaning",
+        "define",
+        "为什么",
+        "是什么",
+        "什么是",
+        "有什么关系",
+        "关系",
+        "区别",
+        "解释",
+        "说明",
+        "讲讲",
+        "介绍",
+    ];
+    let action_markers = [
+        "安装", "创建", "修改", "删除", "运行", "执行", "打开", "抓取", "搜索", "查找", "验证",
+        "保存", "install", "create", "modify", "delete", "run", "execute", "open", "scrape",
+        "search", "find", "verify", "save",
+    ];
+
+    explanatory_markers
+        .iter()
+        .any(|marker| normalized.contains(marker))
+        && !action_markers
+            .iter()
+            .any(|marker| normalized.contains(marker))
+}
+
 fn task_policy_gate_meta(hint: &TaskPolicyHint, action_key: &str) -> serde_json::Value {
     let weight = task_policy_action_weight(hint, action_key);
     let disposition = if weight >= 0.15 {
@@ -528,7 +571,12 @@ async fn continue_local_chat_complete_with_tools(
                 let already_searched = effective_tool_call_meta.iter().any(|item| {
                     item.get("name").and_then(serde_json::Value::as_str) == Some("search_sdk")
                 });
-                if search_sdk_allowed && !already_searched && !state.discovery_gate_forced {
+                let policy_gates_allowed = !is_explanatory_answer_request(query);
+                if policy_gates_allowed
+                    && search_sdk_allowed
+                    && !already_searched
+                    && !state.discovery_gate_forced
+                {
                     let hint = crate::modules::desktop_runtime::runtime::query_task_policy_hint(
                         app_state.mcp.store.as_ref(),
                         query,
@@ -561,7 +609,8 @@ async fn continue_local_chat_complete_with_tools(
                 let has_verification_path = effective_allowed_tool_names.iter().any(|name| {
                     !matches!(name.as_str(), "query_task_policy" | "attach_capability")
                 });
-                if has_verification_path
+                if policy_gates_allowed
+                    && has_verification_path
                     && !has_concrete_verification
                     && !state.verification_gate_forced
                 {

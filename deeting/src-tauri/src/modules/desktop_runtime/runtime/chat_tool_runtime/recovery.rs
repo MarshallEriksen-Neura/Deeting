@@ -459,10 +459,16 @@ async fn advance_local_chat_execution_from_graph_state(
     };
 
     if !remaining_pending_call_ids.is_empty() {
+        // Graph-authoritative: use the graph projection instead of the in-memory list.
+        // `sync_remaining_pending_approvals` already trimmed consumed entries above, but
+        // this second filter guarantees nothing that has drifted past `waiting_approval`
+        // (e.g. a gate the graph already marked "approving" out-of-band) can sneak back
+        // into the persisted snapshot.
+        let persisted_pending_approvals = derive_pending_approvals_from_graph(&suspended);
         if let Err(err) = persist_suspended_execution_graph_runtime(
             app_state.mcp.store.as_ref(),
             &suspended,
-            &suspended.pending_approvals,
+            &persisted_pending_approvals,
             "desktop_local_chat_approval_applied",
             "waiting_approval",
             InFlightExecutionStage::WaitingApproval,
@@ -1034,11 +1040,29 @@ pub(crate) async fn recover_inflight_local_execution_state(
 
         match persisted.stage {
             InFlightExecutionStage::WaitingApproval => {
+                // Graph is authoritative. Load it first and compute which tokens are
+                // STILL waiting; only those are safe to resurrect into the in-memory
+                // map. Anything else in `persisted.pending_approvals` is a zombie left
+                // behind by a prior approve/reject that crashed before the runtime
+                // context could be cleared. Fixes Vector D (cold-start replay).
+                let graph_snapshot = load_execution_graph_snapshot(store, execution_id.as_str())
+                    .await
+                    .map_err(|err| err.to_string())?;
+                let waiting_tokens = graph_snapshot
+                    .as_ref()
+                    .map(collect_waiting_approval_tokens_from_graph)
+                    .unwrap_or_default();
+
                 let extended_expiry =
                     now_unix_ms_i64() as i128 + app_state.mcp.pending_tool_call_ttl_ms();
                 let mut pending_tool_calls =
                     app_state.mcp.approvals.pending_tool_calls.write().await;
+                let mut skipped_stale = 0usize;
                 for pending in &persisted.pending_approvals {
+                    if !waiting_tokens.contains(pending.approval_token.trim()) {
+                        skipped_stale += 1;
+                        continue;
+                    }
                     pending_tool_calls
                         .entry(pending.approval_token.clone())
                         .or_insert_with(|| {
@@ -1050,11 +1074,15 @@ pub(crate) async fn recover_inflight_local_execution_state(
                         });
                 }
                 drop(pending_tool_calls);
-                if let Some(execution_graph) =
-                    load_execution_graph_snapshot(store, execution_id.as_str())
-                        .await
-                        .map_err(|err| err.to_string())?
-                {
+                if skipped_stale > 0 {
+                    log::warn!(
+                        "recovery_skipped_stale_pending_approvals execution_id={} skipped={} total_persisted={}",
+                        execution_id,
+                        skipped_stale,
+                        persisted.pending_approvals.len(),
+                    );
+                }
+                if let Some(execution_graph) = graph_snapshot {
                     append_recovery_assistant_message_if_missing(
                         store,
                         persisted.session_id.as_str(),

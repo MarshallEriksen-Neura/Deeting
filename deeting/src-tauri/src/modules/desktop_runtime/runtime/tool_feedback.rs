@@ -83,7 +83,7 @@ pub(crate) fn build_tool_loop_feedback(
     let serialized = serde_json::to_string_pretty(&payload)
         .unwrap_or_else(|_| serde_json::json!({ "round": round, "results": results }).to_string());
     let content = format!(
-        "Tool execution round {} completed. Continue from these tool results. If the task is done, return the final answer.\n{}",
+        "Tool execution round {} completed. Use these tool results as private context to answer the user's original request directly. Do not narrate internal tool rounds, approval state, verification steps, or runtime capability discovery unless the user explicitly asked for those details. If the task is done, return only the final user-facing answer.\n{}",
         round, serialized
     );
     truncate_text_chars(&content, LOCAL_TOOL_LOOP_RESULTS_MAX_CHARS)

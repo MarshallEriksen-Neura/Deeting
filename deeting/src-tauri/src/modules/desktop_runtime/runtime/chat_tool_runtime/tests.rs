@@ -67,6 +67,23 @@ fn classify_local_tool_execution_error_code_detects_mcp_timeout() {
 }
 
 #[test]
+fn explanatory_answer_requests_skip_policy_gate_forcing() {
+    assert!(is_explanatory_answer_request(
+        "能否详细的给我解释一下 ai 自学习应用和飞轮有什么关系"
+    ));
+    assert!(is_explanatory_answer_request(
+        "Explain the relationship between AI learning apps and flywheels"
+    ));
+
+    assert!(!is_explanatory_answer_request(
+        "搜索并验证 ai 自学习应用和飞轮有什么关系"
+    ));
+    assert!(!is_explanatory_answer_request(
+        "Install a skill and explain whether it worked"
+    ));
+}
+
+#[test]
 fn canonicalize_tool_name_for_allowed_list_accepts_underscore_variant() {
     let canonical = canonicalize_tool_name_for_allowed_list(
         "tavily_search",

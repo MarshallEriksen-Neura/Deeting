@@ -7,6 +7,7 @@ use super::{
 };
 use crate::modules::desktop_runtime::runtime::{
     apply_rejected_tool_result_to_execution_graph_value, delete_execution_graph_runtime_context,
+    derive_pending_approvals_from_graph,
     list_canonical_pending_local_approval_snapshots, load_execution_graph_snapshot,
     load_suspended_chat_tool_execution_for_resume, mark_approval_gate_approving,
     materialize_pending_local_approval_from_runtime_context, persist_execution_graph_snapshot,
@@ -138,10 +139,17 @@ pub(crate) async fn approve_mcp_tool_payload(
                 let resolved_call_id = pending.call_id.as_deref().or(call_id);
                 let _ = mark_approval_gate_approving(&mut suspended, resolved_call_id);
                 let _ = suspended.set_pending_approval_status(token, "approving");
+                // Graph has just been flipped to "approving" for this token; derive the
+                // persisted pending_approvals list from the graph so the token we are
+                // about to consume is NOT recorded as "still waiting". This prevents a
+                // crash between this persist and the actual consume from resurrecting
+                // the token as a fresh approval dialog on next startup (Vector A).
+                let persisted_pending_approvals =
+                    derive_pending_approvals_from_graph(&suspended);
                 if let Err(err) = persist_suspended_execution_graph_runtime(
                     state.mcp.store.as_ref(),
                     &suspended,
-                    suspended.pending_approvals(),
+                    &persisted_pending_approvals,
                     "desktop_local_chat_approval_approving",
                     "active",
                     InFlightExecutionStage::WaitingApproval,
@@ -428,6 +436,9 @@ pub(crate) async fn list_pending_mcp_approvals_with_graph_inner(
     let pending = pending_tool_calls.read().await;
     for (approval_token, pending) in pending.iter() {
         if canonical_tokens.contains(approval_token) {
+            continue;
+        }
+        if store.is_some() && pending.execution_graph_execution_id.is_some() {
             continue;
         }
         if pending.expires_at_unix_ms <= now as i128 {
