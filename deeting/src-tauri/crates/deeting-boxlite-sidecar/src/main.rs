@@ -86,6 +86,8 @@ async fn dispatch_request(
                 .get_or_create(build_box_options(&options), Some(box_name.clone()))
                 .await
                 .map_err(map_boxlite_error)?;
+            litebox.start().await.map_err(map_boxlite_error)?;
+            wait_until_exec_ready(&litebox).await.map_err(map_boxlite_error)?;
             Ok(BoxliteSidecarResponsePayload::GetOrCreateBox {
                 data: BoxliteSidecarIdentity {
                     sandbox_id: litebox.id().to_string(),
@@ -137,30 +139,28 @@ async fn dispatch_request(
                 })?;
 
             let execution_request = validate_execution_request(&request)?;
-            let mut execution = litebox
-                .exec(build_execution_command(&execution_request)?)
-                .await
-                .map_err(map_boxlite_error)?;
-
-            let mut stdout = Vec::new();
-            let mut stderr = Vec::new();
-
-            if let Some(mut stdout_stream) = execution.stdout() {
-                while let Some(chunk) = stdout_stream.next().await {
-                    collect_output_lines(&mut stdout, chunk.as_str());
+            let mut run = match execute_request_with_box(&litebox, &execution_request).await {
+                Ok(run) => run,
+                Err(err) if should_retry_without_working_dir(&execution_request, &err) => {
+                    let mut fallback = execution_request.clone();
+                    fallback.working_dir = None;
+                    execute_request_with_box(&litebox, &fallback)
+                        .await
+                        .map_err(map_boxlite_error)?
                 }
-            }
-            if let Some(mut stderr_stream) = execution.stderr() {
-                while let Some(chunk) = stderr_stream.next().await {
-                    collect_output_lines(&mut stderr, chunk.as_str());
-                }
-            }
+                Err(err) => return Err(map_boxlite_error(err)),
+            };
 
-            let result = execution.wait().await.map_err(map_boxlite_error)?;
+            let result = run.result.take().ok_or_else(|| {
+                (
+                    BoxliteSidecarErrorKind::Internal,
+                    "boxlite execution completed without a result".to_string(),
+                )
+            })?;
             Ok(BoxliteSidecarResponsePayload::Execute {
                 data: BoxliteSidecarExecutionOutput {
-                    stdout,
-                    stderr,
+                    stdout: run.stdout,
+                    stderr: run.stderr,
                     exit_code: result.exit_code,
                     error_message: result.error_message,
                 },
@@ -209,8 +209,11 @@ fn build_box_options(options: &BoxliteSidecarCreateBoxOptions) -> BoxOptions {
         memory_mib: options.memory_mib,
         working_dir: options.working_dir.clone(),
         rootfs: RootfsSpec::Image(options.image.clone()),
+        // Deeting reuses named session boxes across many sidecar requests.
+        // These boxes must outlive the creating request path, so keep them
+        // detached from the request lifecycle while still preserving state.
         auto_remove: false,
-        detach: false,
+        detach: true,
         ..Default::default()
     }
 }
@@ -307,6 +310,102 @@ fn build_staged_execution_script(
     }
     lines.push(format!("exec {command_line}"));
     Ok(lines.join("\n"))
+}
+
+async fn wait_until_exec_ready(litebox: &boxlite::LiteBox) -> Result<(), BoxliteError> {
+    const READY_ATTEMPTS: usize = 10;
+    const READY_DELAY_MS: u64 = 150;
+
+    let mut last_error: Option<BoxliteError> = None;
+    for attempt in 0..READY_ATTEMPTS {
+        let mut execution = match litebox
+            .exec(BoxCommand::new("/bin/true").timeout(Duration::from_secs(1)))
+            .await
+        {
+            Ok(execution) => execution,
+            Err(err) => {
+                last_error = Some(err);
+                if attempt + 1 < READY_ATTEMPTS {
+                    tokio::time::sleep(Duration::from_millis(READY_DELAY_MS)).await;
+                    continue;
+                }
+                break;
+            }
+        };
+
+        match execution.wait().await {
+            Ok(result) if result.exit_code == 0 => return Ok(()),
+            Ok(result) => {
+                last_error = Some(BoxliteError::Internal(format!(
+                    "readiness probe exited with code {}",
+                    result.exit_code
+                )));
+            }
+            Err(err) => last_error = Some(err),
+        }
+
+        if attempt + 1 < READY_ATTEMPTS {
+            tokio::time::sleep(Duration::from_millis(READY_DELAY_MS)).await;
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| {
+        BoxliteError::Internal("box exec readiness probe failed".to_string())
+    }))
+}
+
+struct CapturedExecution {
+    stdout: Vec<String>,
+    stderr: Vec<String>,
+    result: Option<boxlite::ExecResult>,
+}
+
+async fn execute_request_with_box(
+    litebox: &boxlite::LiteBox,
+    request: &BoxliteSidecarExecutionRequest,
+) -> Result<CapturedExecution, BoxliteError> {
+    let command = build_execution_command(request).map_err(|(kind, message)| match kind {
+        BoxliteSidecarErrorKind::Validation => BoxliteError::Validation(message),
+        BoxliteSidecarErrorKind::Unavailable => BoxliteError::Unsupported(message),
+        _ => BoxliteError::Internal(message),
+    })?;
+    let mut execution = litebox.exec(command).await?;
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    if let Some(mut stdout_stream) = execution.stdout() {
+        while let Some(chunk) = stdout_stream.next().await {
+            collect_output_lines(&mut stdout, chunk.as_str());
+        }
+    }
+    if let Some(mut stderr_stream) = execution.stderr() {
+        while let Some(chunk) = stderr_stream.next().await {
+            collect_output_lines(&mut stderr, chunk.as_str());
+        }
+    }
+
+    let result = execution.wait().await?;
+    Ok(CapturedExecution {
+        stdout,
+        stderr,
+        result: Some(result),
+    })
+}
+
+fn should_retry_without_working_dir(
+    request: &BoxliteSidecarExecutionRequest,
+    err: &BoxliteError,
+) -> bool {
+    if request.files.is_empty() && request.working_dir.is_some() {
+        let lowered = err.to_string().to_ascii_lowercase();
+        return lowered.contains("spawn_failed")
+            || lowered.contains("failed to create container")
+            || lowered.contains("exec process failed")
+            || lowered.contains("failed to unix syscall")
+            || lowered.contains("unexpected message: initready");
+    }
+    false
 }
 
 fn normalize_staged_file_path(
@@ -443,5 +542,22 @@ mod tests {
     fn normalize_staged_file_path_rejects_parent_traversal() {
         let error = normalize_staged_file_path("../secret.txt").expect_err("expected rejection");
         assert_eq!(error.0, BoxliteSidecarErrorKind::Validation);
+    }
+
+    #[test]
+    fn build_box_options_uses_detached_persistent_boxes() {
+        let options = build_box_options(&BoxliteSidecarCreateBoxOptions {
+            image: "python:3.11-slim".to_string(),
+            cpus: Some(1),
+            memory_mib: Some(512),
+            working_dir: Some("/workspace".to_string()),
+        });
+
+        assert!(!options.auto_remove);
+        assert!(options.detach);
+        match options.rootfs {
+            RootfsSpec::Image(image) => assert_eq!(image, "python:3.11-slim"),
+            RootfsSpec::RootfsPath(path) => panic!("unexpected rootfs path: {path}"),
+        }
     }
 }

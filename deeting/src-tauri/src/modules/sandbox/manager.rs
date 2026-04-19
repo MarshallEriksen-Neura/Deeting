@@ -544,7 +544,22 @@ impl SandboxRuntimeManager {
 
         let sandbox_name = session_to_box_name(lease_key);
         let backend = self.current_backend().await;
-        let identity = backend.get_or_create_box(&sandbox_name, box_spec).await?;
+        let identity = match backend.get_or_create_box(&sandbox_name, box_spec).await {
+            Ok(identity) => identity,
+            Err(err) if is_exec_spawn_failed_error(&err) => {
+                log::warn!(
+                    "sandbox creation hit exec spawn failure for key {} (name {}), cleaning stale named box and retrying: code={} detail={}",
+                    lease_key,
+                    sandbox_name,
+                    err.code(),
+                    err
+                );
+                self.cleanup_failed_named_sandbox_state(lease_key, &sandbox_name, &backend)
+                    .await;
+                backend.get_or_create_box(&sandbox_name, box_spec).await?
+            }
+            Err(err) => return Err(err),
+        };
         let expires_at = now_ms + self.options.default_timeout.as_millis() as i64;
 
         {
@@ -837,6 +852,22 @@ impl SandboxRuntimeManager {
                         .await;
                     continue;
                 }
+                Err(err)
+                    if is_exec_spawn_failed_error(&err)
+                        && attempt + 1 < SESSION_BUSY_RETRY_ATTEMPTS =>
+                {
+                    log::warn!(
+                        "sandbox exec spawn failed for session {} (attempt {}/{}), recreating sandbox: code={} detail={}",
+                        normalized_session,
+                        attempt + 1,
+                        SESSION_BUSY_RETRY_ATTEMPTS,
+                        err.code(),
+                        err
+                    );
+                    self.cleanup_missing_sandbox_state(normalized_session, &lease, &backend)
+                        .await;
+                    continue;
+                }
                 Err(err) => return Err(err),
             }
         }
@@ -913,6 +944,22 @@ impl SandboxRuntimeManager {
                         normalized_session,
                         attempt + 1,
                         SESSION_BUSY_RETRY_ATTEMPTS
+                    );
+                    self.cleanup_missing_sandbox_state(normalized_session, &lease, &backend)
+                        .await;
+                    continue;
+                }
+                Err(err)
+                    if is_exec_spawn_failed_error(&err)
+                        && attempt + 1 < SESSION_BUSY_RETRY_ATTEMPTS =>
+                {
+                    log::warn!(
+                        "sandbox exec spawn failed for session {} (attempt {}/{}), retrying without auto-prepare: code={} detail={}",
+                        normalized_session,
+                        attempt + 1,
+                        SESSION_BUSY_RETRY_ATTEMPTS,
+                        err.code(),
+                        err
                     );
                     self.cleanup_missing_sandbox_state(normalized_session, &lease, &backend)
                         .await;
@@ -997,6 +1044,22 @@ impl SandboxRuntimeManager {
                         .await;
                     continue;
                 }
+                Err(err)
+                    if is_exec_spawn_failed_error(&err)
+                        && attempt + 1 < SESSION_BUSY_RETRY_ATTEMPTS =>
+                {
+                    log::warn!(
+                        "sandbox exec spawn failed for key {} (attempt {}/{}), recreating sandbox: code={} detail={}",
+                        lease_key,
+                        attempt + 1,
+                        SESSION_BUSY_RETRY_ATTEMPTS,
+                        err.code(),
+                        err
+                    );
+                    self.cleanup_missing_sandbox_state(lease_key, &lease, &backend)
+                        .await;
+                    continue;
+                }
                 Err(err) => return Err(err),
             }
         }
@@ -1024,6 +1087,27 @@ impl SandboxRuntimeManager {
 
         if !removed_by_id {
             let _ = backend.stop_box(&lease.sandbox_id).await;
+        }
+    }
+
+    async fn cleanup_failed_named_sandbox_state(
+        &self,
+        lease_key: &str,
+        sandbox_name: &str,
+        backend: &Arc<dyn SandboxProvider>,
+    ) {
+        let removed_lease = {
+            let mut leases = self.session_leases.write().await;
+            leases.remove(lease_key)
+        };
+
+        if let Some(lease) = removed_lease {
+            let mut active = self.active_ids.write().await;
+            active.remove(&lease.sandbox_id);
+        }
+
+        if backend.remove_box(sandbox_name, true).await.is_err() {
+            let _ = backend.stop_box(sandbox_name).await;
         }
     }
 
@@ -2117,9 +2201,23 @@ fn is_stopped_handle_error(err: &SandboxError) -> bool {
     }
 }
 
+fn is_exec_spawn_failed_error(err: &SandboxError) -> bool {
+    match err {
+        SandboxError::Internal(message) => {
+            let lowered = message.to_ascii_lowercase();
+            lowered.contains("spawn_failed")
+                || lowered.contains("failed to create container")
+                || lowered.contains("exec process failed")
+                || lowered.contains("failed to unix syscall")
+        }
+        _ => false,
+    }
+}
+
 fn should_retry_execution_probe_after_error(err: &SandboxError) -> bool {
     is_missing_sandbox_error(err)
         || is_stopped_handle_error(err)
+        || is_exec_spawn_failed_error(err)
         || matches!(err, SandboxError::Network(_))
 }
 
@@ -2179,11 +2277,27 @@ mod tests {
     enum MockRecoverableProbeFailure {
         Network,
         InvalidatedHandle,
+        ExecSpawnFailed,
     }
 
     #[derive(Clone)]
     struct MockProbeProvider {
         outcome: MockProbeOutcome,
+    }
+
+    #[derive(Clone)]
+    struct MockCreateRecoverableProvider {
+        broken_box_name: String,
+        state: Arc<Mutex<MockProviderState>>,
+    }
+
+    impl MockCreateRecoverableProvider {
+        fn new(broken_box_name: String) -> Self {
+            Self {
+                broken_box_name,
+                state: Arc::new(Mutex::new(MockProviderState::default())),
+            }
+        }
     }
 
     #[derive(Clone)]
@@ -2242,6 +2356,64 @@ mod tests {
     }
 
     #[async_trait]
+    impl SandboxProvider for MockCreateRecoverableProvider {
+        fn provider_name(&self) -> &str {
+            "mock-sandbox"
+        }
+
+        async fn get_or_create_box(
+            &self,
+            box_name: &str,
+            _spec: &SandboxBoxSpec,
+        ) -> Result<SandboxIdentity, SandboxError> {
+            let state = self.state.lock().await;
+            if box_name == self.broken_box_name && !state.broken_name_removed {
+                return Err(SandboxError::Internal(
+                    "internal error: spawn_failed: internal error: build failed: failed to create container: exec process failed with error error in executing process : failed to unix syscall"
+                        .to_string(),
+                ));
+            }
+            Ok(SandboxIdentity {
+                sandbox_id: "fresh-box".to_string(),
+                sandbox_name: box_name.to_string(),
+            })
+        }
+
+        async fn stop_box(&self, box_id_or_name: &str) -> Result<(), SandboxError> {
+            let mut state = self.state.lock().await;
+            state.stop_calls.push(box_id_or_name.to_string());
+            Ok(())
+        }
+
+        async fn remove_box(
+            &self,
+            box_id_or_name: &str,
+            _force: bool,
+        ) -> Result<(), SandboxError> {
+            let mut state = self.state.lock().await;
+            state.remove_calls.push(box_id_or_name.to_string());
+            if box_id_or_name == self.broken_box_name {
+                state.broken_name_removed = true;
+            }
+            Ok(())
+        }
+
+        async fn run_python(
+            &self,
+            _box_id_or_name: &str,
+            _code: &str,
+            _timeout_seconds: u64,
+        ) -> Result<SandboxExecutionOutput, SandboxError> {
+            Ok(SandboxExecutionOutput {
+                stdout: vec!["ok".to_string()],
+                stderr: vec![],
+                exit_code: 0,
+                error_message: None,
+            })
+        }
+    }
+
+    #[async_trait]
     impl SandboxProvider for MockRecoverableProbeProvider {
         fn provider_name(&self) -> &str {
             "mock-sandbox"
@@ -2293,6 +2465,10 @@ mod tests {
                 }
                 MockRecoverableProbeFailure::InvalidatedHandle => SandboxError::Internal(
                     "stopped: Handle invalidated after stop(). Use runtime.get() to get a new handle."
+                        .to_string(),
+                ),
+                MockRecoverableProbeFailure::ExecSpawnFailed => SandboxError::Internal(
+                    "internal error: spawn_failed: internal error: build failed: failed to create container: exec process failed with error error in executing process : failed to unix syscall"
                         .to_string(),
                 ),
             })
@@ -2447,6 +2623,17 @@ mod tests {
     }
 
     #[test]
+    fn exec_spawn_failed_errors_are_detected() {
+        assert!(is_exec_spawn_failed_error(&SandboxError::Internal(
+            "internal error: spawn_failed: internal error: build failed: failed to create container: exec process failed with error error in executing process : failed to unix syscall"
+                .to_string(),
+        )));
+        assert!(!is_exec_spawn_failed_error(&SandboxError::Network(
+            "bridge dropped".to_string()
+        )));
+    }
+
+    #[test]
     fn stopped_handle_errors_trigger_probe_runtime_restart_policy() {
         assert!(should_restart_execution_probe_runtime_after_error(
             &SandboxError::Internal(
@@ -2489,6 +2676,27 @@ mod tests {
             state.remove_calls,
             vec!["stale-box".to_string(), stale_box_name]
         );
+        assert!(state.stop_calls.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_or_create_sandbox_retries_after_spawn_failed_named_box() {
+        let session_id = "chat-session";
+        let stale_box_name = session_to_box_name(session_id);
+        let provider = MockCreateRecoverableProvider::new(stale_box_name.clone());
+        let state = provider.state.clone();
+        let manager = test_manager(Arc::new(provider));
+
+        let lease = manager
+            .get_or_create_sandbox(session_id)
+            .await
+            .expect("spawn-failed named box should be removed and recreated");
+
+        assert_eq!(lease.sandbox_id, "fresh-box");
+        assert_eq!(lease.sandbox_name, stale_box_name);
+
+        let state = state.lock().await;
+        assert_eq!(state.remove_calls, vec![stale_box_name]);
         assert!(state.stop_calls.is_empty());
     }
 
@@ -2559,7 +2767,7 @@ mod tests {
             outcome: MockProbeOutcome::Passed,
         }));
 
-        let probe = manager.programmatic_execution_probe().await;
+        let probe = manager.programmatic_execution_probe(None).await;
         assert_eq!(probe.status, SandboxExecutionProbeStatus::Passed);
     }
 
@@ -2572,7 +2780,7 @@ mod tests {
         let state = provider.state.clone();
         let manager = test_manager(Arc::new(provider));
 
-        let probe = manager.programmatic_execution_probe().await;
+        let probe = manager.programmatic_execution_probe(None).await;
         assert_eq!(probe.status, SandboxExecutionProbeStatus::Passed);
 
         let state = state.lock().await;
@@ -2600,7 +2808,35 @@ mod tests {
         let state = provider.state.clone();
         let manager = test_manager(Arc::new(provider));
 
-        let probe = manager.programmatic_execution_probe().await;
+        let probe = manager.programmatic_execution_probe(None).await;
+        assert_eq!(probe.status, SandboxExecutionProbeStatus::Passed);
+
+        let state = state.lock().await;
+        let probe_box_name = session_to_box_name(EXECUTION_PROBE_SESSION_ID);
+        assert_eq!(
+            state.run_calls,
+            vec![
+                format!("{probe_box_name}-id"),
+                format!("{probe_box_name}-id")
+            ]
+        );
+        assert_eq!(
+            state.remove_calls,
+            vec![format!("{probe_box_name}-id"), probe_box_name]
+        );
+        assert!(state.stop_calls.is_empty());
+    }
+
+    #[tokio::test]
+    async fn execution_probe_retries_after_exec_spawn_failure_and_recovers() {
+        let provider = MockRecoverableProbeProvider {
+            state: Arc::new(Mutex::new(MockProviderState::default())),
+            failure: MockRecoverableProbeFailure::ExecSpawnFailed,
+        };
+        let state = provider.state.clone();
+        let manager = test_manager(Arc::new(provider));
+
+        let probe = manager.programmatic_execution_probe(None).await;
         assert_eq!(probe.status, SandboxExecutionProbeStatus::Passed);
 
         let state = state.lock().await;
@@ -2625,7 +2861,7 @@ mod tests {
             outcome: MockProbeOutcome::FailedNotFound,
         }));
 
-        let probe = manager.programmatic_execution_probe().await;
+        let probe = manager.programmatic_execution_probe(None).await;
         assert_eq!(probe.status, SandboxExecutionProbeStatus::Failed);
         assert!(probe
             .detail

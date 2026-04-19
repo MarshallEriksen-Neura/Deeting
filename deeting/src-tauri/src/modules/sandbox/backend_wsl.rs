@@ -85,7 +85,11 @@ impl SandboxProvider for WslBoxrunBackend {
                     image: spec.image.clone(),
                     cpus: spec.cpus,
                     memory_mib: spec.memory_mib,
-                    working_dir: spec.working_dir.clone(),
+                    // BoxLite does not guarantee a default `/workspace`
+                    // inside base images like `python:3.11-slim`. Session
+                    // boxes should start from the image default cwd unless a
+                    // staged execution script explicitly creates its own dir.
+                    working_dir: None,
                 },
             )
             .await
@@ -117,7 +121,10 @@ impl SandboxProvider for WslBoxrunBackend {
                 files: Vec::new(),
                 stdin: None,
                 timeout_seconds,
-                working_dir: self.options.working_dir.clone(),
+                // Plain inline Python probes and code snippets do not require
+                // an explicit cwd, and forcing `/workspace` can break exec on
+                // minimal images where that path does not exist.
+                working_dir: None,
             },
         )
         .await

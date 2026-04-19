@@ -143,6 +143,12 @@ impl LiteBox {
         self.info.name.as_deref()
     }
 
+    pub async fn start(&self) -> BoxliteResult<()> {
+        let path = format!("/boxes/{}/start", self.info.id);
+        let _: BoxResponse = self.client.post_empty(&path).await?;
+        Ok(())
+    }
+
     pub async fn stop(&self) -> BoxliteResult<()> {
         let path = format!("/boxes/{}/stop", self.info.id);
         let _: BoxResponse = self.client.post_empty(&path).await?;
