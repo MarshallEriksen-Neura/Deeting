@@ -16,6 +16,7 @@ pub mod prompt_plan;
 pub mod route_selector;
 pub mod search_feedback;
 pub mod semantic_recall;
+pub mod sovereign;
 pub mod task_learning;
 pub mod tool_catalog;
 pub mod tool_feedback;
@@ -39,8 +40,7 @@ pub(crate) use chat_completion::{
     resolve_local_model_pool_connection, resolve_provider_model_connection,
 };
 pub(crate) use chat_tool_runtime::{
-    apply_rejected_tool_result_to_execution_graph_value,
-    derive_pending_approvals_from_graph,
+    apply_rejected_tool_result_to_execution_graph_value, derive_pending_approvals_from_graph,
     list_canonical_pending_local_approval_snapshots, load_suspended_chat_tool_execution_for_resume,
     mark_approval_gate_approving, materialize_pending_local_approval_from_runtime_context,
     persist_suspended_execution_graph_runtime, project_local_chat_approval_state_payload,
@@ -68,7 +68,8 @@ pub(crate) use execution_graph_store::{
 };
 pub(crate) use execution_plane::{run_local_execution_plane, LocalExecutionRequest};
 pub(crate) use posterior_signal::{
-    resolve_posterior_signal, should_apply_posterior_signal, PosteriorSignalInput,
+    resolve_posterior_signal, resolve_posterior_signal_ingress, should_apply_posterior_signal,
+    PosteriorSignalInput,
 };
 pub(crate) use route_selector::{
     render_local_route_prompt, select_local_route_with_evidence, LocalRouteDecision, LocalRouteKind,
@@ -79,7 +80,7 @@ pub(crate) use task_learning::{
     compute_route_bandit_scores, evaluate_task_learning_with_runtime,
     list_task_learning_runs_for_query, list_task_policy_priors_for_query,
     load_task_learning_run_detail, query_task_policy_hint, replay_task_learning_run,
-    route_hint_status_meta, TaskFingerprint, TaskLearningDelegatedExecution, TaskPolicyHint,
+    route_hint_status_meta, TaskFingerprint, TaskLearningDelegatedExecution,
 };
 #[cfg(test)]
 pub(crate) use tool_catalog::{

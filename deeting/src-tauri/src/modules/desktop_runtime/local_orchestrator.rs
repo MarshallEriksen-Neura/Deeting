@@ -20,13 +20,16 @@ use crate::modules::desktop_runtime::runtime::prompt_plan::{
 use crate::modules::desktop_runtime::runtime::route_selector::{
     select_local_route, LocalRouteKind,
 };
+use crate::modules::desktop_runtime::runtime::sovereign::{
+    PosteriorSignalIngress, UserActionIngress,
+};
 use crate::modules::desktop_runtime::runtime::{
     apply_policy_delta, apply_task_learning_revision, build_default_local_execution_policy,
     evaluate_task_learning_with_runtime, mark_local_assistant_postprocess_completed,
     persist_local_assistant_turn, project_execution_graph_blocks_from_value,
-    resolve_local_model_pool_connection, resolve_posterior_signal,
+    resolve_local_model_pool_connection, resolve_posterior_signal_ingress,
     resolve_provider_model_connection, run_local_execution_plane, should_apply_posterior_signal,
-    LocalExecutionRequest, PosteriorSignalInput,
+    LocalExecutionRequest,
 };
 #[cfg(test)]
 use crate::modules::desktop_runtime::runtime::{
@@ -210,19 +213,16 @@ pub async fn execute_local_orchestrated_chat(
             .await
             .map_err(|e| e.to_string())?;
         let previous_trace_id = extract_latest_assistant_trace_id(&runtime_window.messages);
-        let posterior_signal = resolve_posterior_signal(&PosteriorSignalInput {
-            session_id: Some(session_id.clone()),
-            trace_id: previous_trace_id.clone(),
-            user_text: Some(user_content.clone()),
-            ..Default::default()
-        });
-        let posterior_signal_input_json = serde_json::to_string(&PosteriorSignalInput {
-            session_id: Some(session_id.clone()),
-            trace_id: previous_trace_id.clone(),
-            user_text: Some(user_content.clone()),
-            ..Default::default()
-        })
-        .ok();
+        let user_action_ingress = UserActionIngress::new(
+            Some(session_id.clone()),
+            previous_trace_id.clone(),
+            user_content.clone(),
+        );
+        let posterior_signal_ingress =
+            PosteriorSignalIngress::new(user_action_ingress.posterior_signal_input());
+        let posterior_signal = resolve_posterior_signal_ingress(&posterior_signal_ingress);
+        let posterior_signal_input_json =
+            serde_json::to_string(posterior_signal_ingress.input()).ok();
         if let Err(err) = store
             .record_posterior_signal_event(
                 None,

@@ -1,4 +1,7 @@
-use super::should_run_semantic_recall;
+use super::{
+    should_run_semantic_recall,
+    sovereign::{DecisionLocus, Self_},
+};
 use crate::modules::custom_task_agents::store::{get_custom_task_agent, list_custom_task_agents};
 use crate::modules::custom_task_agents::types::CustomTaskAgentProfile;
 use crate::state::AppState;
@@ -135,16 +138,17 @@ pub(crate) async fn select_worker_custom_task_agent_with_query_vector(
         return Ok(None);
     }
 
-    let worker_selection_hint = crate::modules::desktop_runtime::runtime::query_task_policy_hint(
+    let worker_selection_hint = Self_::consult(
         app_state.mcp.store.as_ref(),
+        DecisionLocus::WorkerSelection,
         query,
-        "worker_selection",
         active_profiles.len().max(WORKER_CANDIDATE_SHORTLIST_LIMIT),
     )
     .await;
     let profile_prior_scores = worker_selection_hint
+        .as_raw()
         .priors
-        .into_iter()
+        .iter()
         .map(|item| {
             (
                 item.action_key.to_ascii_lowercase(),

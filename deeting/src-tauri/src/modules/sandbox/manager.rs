@@ -2385,11 +2385,7 @@ mod tests {
             Ok(())
         }
 
-        async fn remove_box(
-            &self,
-            box_id_or_name: &str,
-            _force: bool,
-        ) -> Result<(), SandboxError> {
+        async fn remove_box(&self, box_id_or_name: &str, _force: bool) -> Result<(), SandboxError> {
             let mut state = self.state.lock().await;
             state.remove_calls.push(box_id_or_name.to_string());
             if box_id_or_name == self.broken_box_name {

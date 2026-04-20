@@ -1,5 +1,6 @@
 use super::rules::{infer_from_explicit_outcome, infer_from_feedback_score, infer_from_user_text};
 use super::types::{PosteriorSignalDecision, PosteriorSignalInput, PosteriorSignalSource};
+use crate::modules::desktop_runtime::runtime::sovereign::PosteriorSignalIngress;
 
 pub(crate) fn resolve_posterior_signal(input: &PosteriorSignalInput) -> PosteriorSignalDecision {
     if let Some(decision) = infer_from_explicit_outcome(input) {
@@ -14,6 +15,12 @@ pub(crate) fn resolve_posterior_signal(input: &PosteriorSignalInput) -> Posterio
     PosteriorSignalDecision::unknown()
 }
 
+pub(crate) fn resolve_posterior_signal_ingress(
+    ingress: &PosteriorSignalIngress,
+) -> PosteriorSignalDecision {
+    resolve_posterior_signal(ingress.input())
+}
+
 pub(crate) fn should_apply_posterior_signal(decision: &PosteriorSignalDecision) -> bool {
     !matches!(decision.source, PosteriorSignalSource::Unknown)
         && decision.signal.as_str() != "unknown"
@@ -22,11 +29,14 @@ pub(crate) fn should_apply_posterior_signal(decision: &PosteriorSignalDecision) 
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_posterior_signal, should_apply_posterior_signal};
+    use super::{
+        resolve_posterior_signal, resolve_posterior_signal_ingress, should_apply_posterior_signal,
+    };
     use crate::modules::desktop_runtime::runtime::posterior_signal::types::{
         PosteriorSignalKind, PosteriorSignalSource,
     };
     use crate::modules::desktop_runtime::runtime::posterior_signal::PosteriorSignalInput;
+    use crate::modules::desktop_runtime::runtime::sovereign::PosteriorSignalIngress;
 
     #[test]
     fn resolve_posterior_signal_prefers_explicit_outcome() {
@@ -59,5 +69,18 @@ mod tests {
 
         assert_eq!(decision.signal, PosteriorSignalKind::Unknown);
         assert!(!should_apply_posterior_signal(&decision));
+    }
+
+    #[test]
+    fn resolve_posterior_signal_ingress_uses_wrapped_input() {
+        let ingress = PosteriorSignalIngress::new(PosteriorSignalInput {
+            explicit_outcome: Some("accepted".to_string()),
+            ..Default::default()
+        });
+
+        let decision = resolve_posterior_signal_ingress(&ingress);
+
+        assert_eq!(decision.signal, PosteriorSignalKind::Accepted);
+        assert_eq!(decision.source, PosteriorSignalSource::ExplicitOutcome);
     }
 }

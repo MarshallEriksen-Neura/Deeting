@@ -1,3 +1,4 @@
+use super::sovereign::{DecisionLocus, Self_};
 use super::{
     append_streamable_local_tool_result_blocks, build_local_runtime_tools_with_allowlist,
     build_local_sdk_search_result_bundle_with_feedback_runtime, build_local_tool_trace_blocks,
@@ -10,7 +11,7 @@ use super::{
     request_provider_chat_completion, resolve_local_capability_activation_state,
     resolve_provider_tool_name_for_execution, resolve_tool_trace_call_id,
     search_feedback::search_feedback_context_from_tool_call_meta, CapabilityExecutionContract,
-    GraphProjectionInput, LocalCapabilityActivationState, LocalExecutionPolicy, TaskPolicyHint,
+    GraphProjectionInput, LocalCapabilityActivationState, LocalExecutionPolicy,
     LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
 };
 use crate::modules::custom_task_agents::service::create_custom_task_agent_service;
@@ -291,14 +292,6 @@ fn extract_initial_task_query(messages: &[LocalChatInputMessage]) -> Option<Stri
         .filter(|value| !value.is_empty())
 }
 
-fn task_policy_action_weight(hint: &TaskPolicyHint, action_key: &str) -> f64 {
-    hint.priors
-        .iter()
-        .find(|item| item.action_key == action_key)
-        .map(|item| item.effective_weight)
-        .unwrap_or(0.0)
-}
-
 fn is_explanatory_answer_request(query: &str) -> bool {
     let normalized = query.trim().to_ascii_lowercase();
     if normalized.is_empty() {
@@ -339,26 +332,6 @@ fn is_explanatory_answer_request(query: &str) -> bool {
         && !action_markers
             .iter()
             .any(|marker| normalized.contains(marker))
-}
-
-fn task_policy_gate_meta(hint: &TaskPolicyHint, action_key: &str) -> serde_json::Value {
-    let weight = task_policy_action_weight(hint, action_key);
-    let disposition = if weight >= 0.15 {
-        "encourage"
-    } else if weight <= -0.15 {
-        "discourage"
-    } else {
-        "neutral"
-    };
-    serde_json::json!({
-        "decision_point": hint.decision_point,
-        "fingerprint_key": hint.fingerprint_key,
-        "action_key": action_key,
-        "recommended_action": hint.recommended_action,
-        "effective_weight": weight,
-        "disposition": disposition,
-        "guidance": hint.guidance,
-    })
 }
 
 fn response_mentions_pending_check(response: &serde_json::Value) -> bool {
@@ -577,14 +550,14 @@ async fn continue_local_chat_complete_with_tools(
                     && !already_searched
                     && !state.discovery_gate_forced
                 {
-                    let hint = crate::modules::desktop_runtime::runtime::query_task_policy_hint(
+                    let advisory = Self_::consult(
                         app_state.mcp.store.as_ref(),
+                        DecisionLocus::Discovery,
                         query,
-                        "discovery",
                         4,
                     )
                     .await;
-                    if task_policy_action_weight(&hint, "search_sdk_early") >= 0.15 {
+                    if advisory.weight_for("search_sdk_early") >= 0.15 {
                         state.discovery_gate_forced = true;
                         state.last_response = Some(response.clone());
                         append_policy_gate_retry_messages(
@@ -614,14 +587,14 @@ async fn continue_local_chat_complete_with_tools(
                     && !has_concrete_verification
                     && !state.verification_gate_forced
                 {
-                    let hint = crate::modules::desktop_runtime::runtime::query_task_policy_hint(
+                    let advisory = Self_::consult(
                         app_state.mcp.store.as_ref(),
+                        DecisionLocus::Verification,
                         query,
-                        "verification",
                         4,
                     )
                     .await;
-                    if task_policy_action_weight(&hint, "stronger_checks") >= 0.15 {
+                    if advisory.weight_for("stronger_checks") >= 0.15 {
                         state.verification_gate_forced = true;
                         state.last_response = Some(response.clone());
                         append_policy_gate_retry_messages(
@@ -1107,12 +1080,12 @@ async fn process_chat_tool_calls(
         if tool_name == "execute_code_plan" {
             realtime_emitter.emit_execution_section_once();
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
-            let execution_gate_hint = match state.task_query.as_deref() {
+            let execution_gate_advisory = match state.task_query.as_deref() {
                 Some(query) => Some(
-                    crate::modules::desktop_runtime::runtime::query_task_policy_hint(
+                    Self_::consult(
                         app_state.mcp.store.as_ref(),
+                        DecisionLocus::Execution,
                         query,
-                        "execution",
                         4,
                     )
                     .await,
@@ -1151,9 +1124,9 @@ async fn process_chat_tool_calls(
                         "status":"error",
                         "error_code":"CODEMODE_SEARCH_REQUIRED",
                         "error":error,
-                        "task_policy_gate": execution_gate_hint
+                        "task_policy_gate": execution_gate_advisory
                             .as_ref()
-                            .map(|hint| task_policy_gate_meta(hint, "execute_code_plan")),
+                            .map(|advisory| advisory.gate_meta("execute_code_plan")),
                     });
                     let mut streamed_blocks = Vec::new();
                     append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
@@ -1213,9 +1186,9 @@ async fn process_chat_tool_calls(
                         "status":meta_status,
                         "errorCode":res.error_code,
                         "result":res,
-                        "task_policy_gate": execution_gate_hint
+                        "task_policy_gate": execution_gate_advisory
                             .as_ref()
-                            .map(|hint| task_policy_gate_meta(hint, "execute_code_plan")),
+                            .map(|advisory| advisory.gate_meta("execute_code_plan")),
                     });
                     let mut streamed_blocks = Vec::new();
                     append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
@@ -1236,9 +1209,9 @@ async fn process_chat_tool_calls(
                         "name":tool_name,
                         "status":"error",
                         "error":err.to_string(),
-                        "task_policy_gate": execution_gate_hint
+                        "task_policy_gate": execution_gate_advisory
                             .as_ref()
-                            .map(|hint| task_policy_gate_meta(hint, "execute_code_plan")),
+                            .map(|advisory| advisory.gate_meta("execute_code_plan")),
                     });
                     let mut streamed_blocks = Vec::new();
                     append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
@@ -1410,13 +1383,11 @@ async fn process_chat_tool_calls(
                 .and_then(|v| v.as_u64())
                 .map(|v| v as usize)
                 .unwrap_or(4);
-            let policy_hint = crate::modules::desktop_runtime::runtime::query_task_policy_hint(
-                app_state.mcp.store.as_ref(),
-                query,
-                decision_point,
-                limit,
-            )
-            .await;
+            let policy_hint =
+                Self_::consult_named(app_state.mcp.store.as_ref(), decision_point, query, limit)
+                    .await
+                    .as_raw()
+                    .clone();
             let policy_hint_value =
                 serde_json::to_value(&policy_hint).unwrap_or_else(|_| serde_json::json!({}));
             synthesized = true;
@@ -1438,12 +1409,12 @@ async fn process_chat_tool_calls(
             ));
         } else if tool_name == "attach_capability" {
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
-            let attach_gate_hint = match state.task_query.as_deref() {
+            let attach_gate_advisory = match state.task_query.as_deref() {
                 Some(query) => Some(
-                    crate::modules::desktop_runtime::runtime::query_task_policy_hint(
+                    Self_::consult(
                         app_state.mcp.store.as_ref(),
+                        DecisionLocus::CapabilityAttach,
                         query,
-                        "capability_attach",
                         4,
                     )
                     .await,
@@ -1468,9 +1439,9 @@ async fn process_chat_tool_calls(
                         "activation_mode":"attach_capability","capability_id":activated_capability_id,"capability_name":state.capability_name.clone(),
                         "capability_summary":state.capability_summary.clone(),"reason":reason,
                         "capability_transition":{"action":"activated","capability_id":capability_id,"capability_name":state.capability_name.clone(),"reason":reason},
-                        "task_policy_gate": attach_gate_hint
+                        "task_policy_gate": attach_gate_advisory
                             .as_ref()
-                            .map(|hint| task_policy_gate_meta(hint, "attach_capability"))
+                            .map(|advisory| advisory.gate_meta("attach_capability"))
                     });
                     synthesized = true;
                     let meta = serde_json::json!({"id":call_id.as_str(),"name":tool_name,"status":"success","result":result});
@@ -1491,9 +1462,9 @@ async fn process_chat_tool_calls(
                         "status":"error",
                         "error_code":"CAPABILITY_ATTACH_FAILED",
                         "error":err,
-                        "task_policy_gate": attach_gate_hint
+                        "task_policy_gate": attach_gate_advisory
                             .as_ref()
-                            .map(|hint| task_policy_gate_meta(hint, "attach_capability")),
+                            .map(|advisory| advisory.gate_meta("attach_capability")),
                     });
                     let mut streamed_blocks = Vec::new();
                     append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);

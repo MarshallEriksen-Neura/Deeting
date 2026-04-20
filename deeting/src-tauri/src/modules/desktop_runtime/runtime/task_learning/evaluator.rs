@@ -8,6 +8,7 @@ use super::types::{
 };
 use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::modules::desktop_runtime::runtime::request_provider_chat_completion;
+use crate::modules::desktop_runtime::runtime::sovereign::TaskExecutionIngress;
 use crate::modules::desktop_runtime::runtime::{LocalExecutionPolicy, LocalRouteDecision};
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
@@ -880,13 +881,15 @@ pub(crate) async fn evaluate_task_learning_with_runtime(
         outcome.judgment_mode = "constrained_llm".to_string();
     }
 
+    let task_execution_ingress = TaskExecutionIngress::new(fingerprint.clone(), outcome);
+
     rebuild_task_learning_evaluation_from_outcome(
-        fingerprint,
+        task_execution_ingress.fingerprint(),
         route_decision,
         execution_policy,
         finish_reason,
         &signals,
-        outcome,
+        task_execution_ingress.outcome().clone(),
     )
 }
 

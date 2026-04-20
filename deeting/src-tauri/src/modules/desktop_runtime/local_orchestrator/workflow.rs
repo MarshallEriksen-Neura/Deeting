@@ -10,8 +10,10 @@ use crate::modules::desktop_runtime::runtime::{
     build_local_control_plane_status_meta, build_local_execution_policy,
     build_runtime_discovery_bundle_with_runtime_query_vector, build_task_fingerprint,
     maybe_override_route_with_custom_task_agent_query_vector, render_local_route_prompt,
-    route_hint_status_meta, select_local_route_with_evidence, LocalControlPlaneResult,
-    LocalExecutionPolicy, LocalRouteDecision, RuntimeDiscoveryBundle, TaskFingerprint,
+    route_hint_status_meta, select_local_route_with_evidence,
+    sovereign::{DecisionLocus, Self_},
+    LocalControlPlaneResult, LocalExecutionPolicy, LocalRouteDecision, RuntimeDiscoveryBundle,
+    TaskFingerprint,
 };
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
@@ -1125,13 +1127,15 @@ impl LocalWorkflowStep<LocalWorkflowContext> for RouteSelectionStep {
                 select_local_route_with_evidence(&query, discovery_bundle.route_evidence.clone()),
             )
             .await?;
-            let route_hint = crate::modules::desktop_runtime::runtime::query_task_policy_hint(
+            let route_hint = Self_::consult(
                 ctx.app_state.mcp.store.as_ref(),
+                DecisionLocus::Route,
                 &query,
-                "route",
                 4,
             )
-            .await;
+            .await
+            .as_raw()
+            .clone();
             let route_bandit_scores =
                 crate::modules::desktop_runtime::runtime::compute_route_bandit_scores(
                     ctx.app_state.providers.store.as_ref(),
