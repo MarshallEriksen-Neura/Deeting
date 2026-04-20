@@ -1,0 +1,143 @@
+"use client"
+
+import { useState } from "react"
+import { RefreshCw, Terminal } from "lucide-react"
+import { Tabs, TabsList, TabsTrigger } from "@/ui/shadcn/tabs"
+import { Badge } from "@/ui/shadcn/badge"
+import { GlassButton } from "@/ui/common/glass-button"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/ui/shadcn/tooltip"
+import { ServerCard } from "./server-card"
+import { MCPTool } from "@/types/mcp"
+import { useTranslations } from "next-intl"
+
+const isRuntimeTransitioning = (tool: MCPTool) => tool.status === "starting" || tool.status === "updating"
+
+const isRuntimeLive = (tool: MCPTool) => tool.runtimeReady ?? (tool.status === "healthy" || tool.status === "degraded")
+
+const isToolRunningForUi = (tool: MCPTool) => {
+  if (tool.desiredEnabled === false) {
+    return false
+  }
+  return isRuntimeLive(tool) || isRuntimeTransitioning(tool)
+}
+
+const isToolStoppedForUi = (tool: MCPTool) => !isToolRunningForUi(tool)
+
+interface RuntimeGridSectionProps {
+  tools: MCPTool[]
+  conflictCount: number
+  platform?: "desktop" | "cloud"
+  toggleMode?: "runtime" | "desired"
+  onToggleTool?: (tool: MCPTool, enabled: boolean) => void
+  onPrimaryAction?: (tool: MCPTool) => void
+  onResolveConflict?: (tool: MCPTool) => void
+  onEditServer?: (tool: MCPTool) => void
+  onDeleteServer?: (tool: MCPTool) => void
+  onSyncAll?: () => void
+  syncAllLoading?: boolean
+  onSyncTool?: (tool: MCPTool) => void
+  syncingToolIds?: Record<string, boolean>
+}
+
+export function RuntimeGridSection({ 
+  tools, 
+  conflictCount,
+  platform = "cloud",
+  toggleMode = "runtime",
+  onToggleTool, 
+  onPrimaryAction,
+  onResolveConflict,
+  onEditServer,
+  onDeleteServer,
+  onSyncAll,
+  syncAllLoading = false,
+  onSyncTool,
+  syncingToolIds,
+}: RuntimeGridSectionProps) {
+  const t = useTranslations("mcp")
+  const [activeTab, setActiveTab] = useState("all")
+
+  const filteredTools = tools.filter(tool => {
+      if (activeTab === 'all') return true
+      if (activeTab === 'running') return isToolRunningForUi(tool)
+      if (activeTab === 'stopped') return isToolStoppedForUi(tool)
+      if (activeTab === 'conflicts') return tool.conflictStatus !== 'none'
+      return true
+  })
+
+  const runningCount = tools.filter(isToolRunningForUi).length
+
+  return (
+    <section className="space-y-4">
+       <div className="flex items-center justify-between mb-4">
+           <div className="flex items-center gap-2 w-full">
+               <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider whitespace-nowrap">{t("runtime.title")}</h2>
+               <div className="h-px bg-gray-100 flex-1 mx-4" />
+           </div>
+       </div>
+
+       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <div className="flex justify-between items-center mb-6">
+             <TabsList className="bg-gray-100/50 p-1 border border-gray-200">
+                <TabsTrigger value="all" className="text-xs">{t("runtime.tabs.all")}</TabsTrigger>
+                <TabsTrigger value="running" className="text-xs">
+                    {t("runtime.tabs.running")}
+                    {runningCount > 0 && <span className="ml-1.5 bg-green-100 text-green-700 px-1 rounded-full text-[10px] min-w-[16px] text-center">{runningCount}</span>}
+                </TabsTrigger>
+                <TabsTrigger value="stopped" className="text-xs">{t("runtime.tabs.stopped")}</TabsTrigger>
+                <TabsTrigger value="conflicts" className="text-xs data-[state=active]:text-amber-700">
+                    {t("runtime.tabs.conflicts")}
+                    {conflictCount > 0 && <Badge variant="secondary" className="ml-1.5 bg-amber-100 text-amber-700 px-1 text-[10px] h-4 hover:bg-amber-100">{conflictCount}</Badge>}
+                </TabsTrigger>
+             </TabsList>
+             {onSyncAll && (
+               <TooltipProvider>
+                 <Tooltip>
+                   <TooltipTrigger asChild>
+                     <GlassButton
+                       size="sm"
+                       variant="ghost"
+                       className="gap-2 text-xs text-gray-600 hover:text-gray-900"
+                       loading={syncAllLoading}
+                       onClick={() => onSyncAll?.()}
+                     >
+                       <RefreshCw size={14} className={syncAllLoading ? "animate-spin" : ""} />
+                       {syncAllLoading ? t("runtime.syncing") : t("runtime.sync")}
+                     </GlassButton>
+                   </TooltipTrigger>
+                   <TooltipContent>
+                     <p>{t("runtime.sync")}</p>
+                   </TooltipContent>
+                 </Tooltip>
+               </TooltipProvider>
+             )}
+          </div>
+       </Tabs>
+
+       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+          {filteredTools.map(tool => (
+              <ServerCard 
+                  key={tool.id} 
+                  tool={tool} 
+                  platform={platform}
+                  toggleMode={toggleMode}
+                  onToggle={onToggleTool ? (item, enabled) => onToggleTool(item, enabled) : undefined}
+                  onPrimaryAction={onPrimaryAction ? () => onPrimaryAction(tool) : undefined}
+                  onResolveConflict={onResolveConflict ? () => onResolveConflict(tool) : undefined}
+                  onSync={onSyncTool ? () => onSyncTool(tool) : undefined}
+                  syncLoading={Boolean(syncingToolIds?.[tool.sourceId ?? tool.id])}
+                  onEdit={onEditServer ? () => onEditServer(tool) : undefined}
+                  onDelete={onDeleteServer ? () => onDeleteServer(tool) : undefined}
+              />
+          ))}
+          
+          {filteredTools.length === 0 && (
+              <div className="col-span-full py-16 flex flex-col items-center justify-center text-gray-400 border border-dashed border-gray-200 rounded-xl bg-gray-50/30">
+                  <Terminal size={32} className="mb-3 opacity-20" />
+                  <p className="text-sm">{t("runtime.empty")}</p>
+              </div>
+          )}
+       </div>
+    </section>
+  )
+}

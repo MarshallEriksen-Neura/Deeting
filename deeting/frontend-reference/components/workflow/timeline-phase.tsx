@@ -1,0 +1,156 @@
+"use client"
+
+import { Check, X, Pause, Clock, Loader2 } from "lucide-react"
+import { useI18n } from "@/hooks/use-i18n"
+import { Badge } from "@/ui/shadcn/badge"
+import { Button } from "@/ui/shadcn/button"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/ui/shadcn/collapsible"
+import type { WorkflowStepRun } from "@/lib/workflow/types"
+
+interface TimelinePhaseProps {
+  step: WorkflowStepRun
+  isActive: boolean
+  isExpanded: boolean
+  onToggleExpand: () => void
+  onRerun?: () => void
+  onViewContext?: () => void
+}
+
+const statusConfig = {
+  pending: { color: "border-muted-foreground/30", bg: "", icon: null, tone: "secondary" as const },
+  ready: { color: "border-muted-foreground/40", bg: "", icon: null, tone: "secondary" as const },
+  running: { color: "border-primary", bg: "bg-primary", icon: Loader2, tone: "default" as const },
+  succeeded: { color: "border-emerald-500", bg: "bg-emerald-500", icon: Check, tone: "default" as const },
+  failed: { color: "border-rose-500", bg: "bg-rose-500", icon: X, tone: "destructive" as const },
+  waiting_approval: { color: "border-amber-500", bg: "bg-amber-500", icon: Pause, tone: "default" as const },
+  skipped: { color: "border-muted-foreground/20", bg: "bg-muted-foreground/20", icon: null, tone: "secondary" as const },
+  cancelled: { color: "border-muted-foreground/30", bg: "bg-muted-foreground/30", icon: X, tone: "secondary" as const },
+  obsolete: { color: "border-muted-foreground/15", bg: "bg-muted-foreground/15", icon: null, tone: "secondary" as const },
+  invalidated: { color: "border-amber-500/50", bg: "", icon: null, tone: "outline" as const },
+} as const
+
+export function TimelinePhase({
+  step,
+  isActive,
+  isExpanded,
+  onToggleExpand,
+  onRerun,
+  onViewContext,
+}: TimelinePhaseProps) {
+  const t = useI18n("workflow")
+  const config = statusConfig[step.status] ?? statusConfig.pending
+
+  const StatusIcon = config.icon
+  const isRunning = step.status === "running"
+  const isCompleted = step.status === "succeeded"
+  const isFailed = step.status === "failed"
+
+  const duration = computeDuration(step)
+
+  return (
+    <div className="relative flex gap-4 pb-6 last:pb-0">
+      {/* Timeline connector */}
+      <div className="flex flex-col items-center">
+        {/* Status dot */}
+        <div className="relative">
+          <div
+            className={`flex h-4 w-4 items-center justify-center rounded-full border-2 bg-white/90 shadow-[0_8px_20px_-14px_rgba(15,23,42,0.35)] transition-colors dark:bg-slate-950 ${config.color} ${config.bg}`}
+          >
+            {StatusIcon && (
+              <StatusIcon
+                className={`h-2.5 w-2.5 text-white ${isRunning ? "animate-spin" : ""}`}
+              />
+            )}
+          </div>
+          {/* Pulse ring for running */}
+          {isRunning && (
+            <div className="absolute inset-0 rounded-full border-2 border-primary animate-ping opacity-40" />
+          )}
+        </div>
+        {/* Vertical line */}
+        <div className="mt-1 w-px flex-1 bg-border/50" />
+      </div>
+
+      {/* Content */}
+      <div className="min-w-0 flex-1 rounded-[22px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] px-4 py-3 shadow-[0_14px_32px_-28px_rgba(15,23,42,0.36)]">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className={`truncate text-sm font-medium ${isActive ? "text-foreground" : "text-muted-foreground"}`}>
+              {step.title || step.phase_id}
+            </span>
+            <Badge variant={config.tone} className="h-5 shrink-0 rounded-full px-2 text-[10px]">
+              {t(`status.${step.status}`)}
+            </Badge>
+          </div>
+          {duration && (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+              <Clock className="h-3 w-3" />
+              {duration}
+            </span>
+          )}
+        </div>
+
+        {/* Goal */}
+        {step.goal && (
+          <p className="mt-1.5 line-clamp-2 text-xs text-muted-foreground/80">{step.goal}</p>
+        )}
+
+        {/* Error display */}
+        {isFailed && step.error && (
+          <div className="mt-3 rounded-[18px] border border-destructive/20 bg-destructive/5 p-3">
+            <p className="text-xs text-destructive/80">{step.error}</p>
+            {onRerun && (
+              <Button
+                variant="outline"
+                size="xs"
+                className="mt-3"
+                onClick={onRerun}
+              >
+                {t("execution.rerunPhase")}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* Expandable results for completed phases */}
+        {isCompleted && step.worker_trace_summary && (
+          <Collapsible open={isExpanded} onOpenChange={onToggleExpand}>
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="xs" className="mt-2 px-0 text-xs text-muted-foreground">
+                {isExpanded ? t("execution.hideResults") : t("execution.showResults")}
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="mt-3 rounded-[18px] border border-[color:var(--ios-shell-border)] bg-background/40 p-3">
+                <p className="text-xs text-muted-foreground whitespace-pre-wrap line-clamp-10">
+                  {step.worker_trace_summary}
+                </p>
+                {onViewContext && (
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="mt-3 px-0 text-xs text-muted-foreground"
+                    onClick={onViewContext}
+                  >
+                    {t("execution.viewContext")}
+                  </Button>
+                )}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function computeDuration(step: WorkflowStepRun): string | null {
+  if (!step.started_at) return null
+  const start = new Date(step.started_at).getTime()
+  const end = step.completed_at ? new Date(step.completed_at).getTime() : Date.now()
+  const seconds = Math.round((end - start) / 1000)
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${minutes}m ${secs}s`
+}

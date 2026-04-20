@@ -1,0 +1,187 @@
+"use client"
+
+import * as React from "react"
+import { useSidebar } from "./sidebar-context"
+import { cn } from "@/lib/utils"
+import { GlassButton } from "@/ui/common/glass-button"
+import { PanelLeft, PanelLeftClose } from "lucide-react"
+
+// Constants
+const HEADER_HEIGHT = 56
+const HEADER_STACK_OFFSET = "var(--app-header-offset, 5rem)"
+
+interface SidebarProps extends React.ComponentProps<"div"> {
+  side?: "left" | "right"
+  variant?: "sidebar" | "floating" | "inset"
+  collapsible?: "offcanvas" | "icon" | "none"
+}
+
+const Sidebar = React.forwardRef<HTMLDivElement, SidebarProps>(
+  (
+    {
+      side = "left",
+      variant = "sidebar",
+      collapsible = "offcanvas",
+      className,
+      children,
+      ...props
+    },
+    ref
+  ) => {
+    const { isMobile, state } = useSidebar()
+
+    if (collapsible === "none") {
+      return (
+        <div
+          className={cn(
+            "flex h-full w-[--sidebar-width] flex-col bg-[var(--card)] text-[var(--foreground)]",
+            className
+          )}
+          ref={ref}
+          {...props}
+        >
+          {children}
+        </div>
+      )
+    }
+
+    if (isMobile) {
+      // Mobile Horizontal Bar Implementation
+      return (
+        <div
+          className={cn(
+            "sticky z-40 w-full bg-[var(--surface)]/80 backdrop-blur-xl border-b border-[var(--border)]/50 transition-all",
+            className
+          )}
+          style={{
+            top: `calc(var(--desktop-title-bar-height, 0px) + ${HEADER_HEIGHT}px)`,
+          }}
+          ref={ref}
+          {...props}
+        >
+             {children}
+        </div>
+      )
+    }
+
+    // Desktop Implementation (non-fixed, participates in layout grid/flex)
+    return (
+      <div
+        ref={ref}
+        className={cn(
+          "group peer hidden md:block text-[var(--foreground)]",
+          "relative md:sticky",
+          // iOS-style glassmorphism
+          "bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl",
+          // iOS-style border and shadow
+          "border-r border-black/5 dark:border-white/10",
+          "shadow-[4px_0_24px_-8px_rgba(0,0,0,0.08)] dark:shadow-[4px_0_24px_-8px_rgba(0,0,0,0.3)]",
+          // Smooth transitions
+          "transition-[width] duration-300 ease-out",
+          state === "collapsed" ? "w-[--sidebar-width-icon]" : "w-[--sidebar-width]",
+          className
+        )}
+        data-state={state}
+        data-collapsible={state === "collapsed" ? collapsible : ""}
+        data-variant={variant}
+        data-side={side}
+        style={{
+          top: `calc(var(--desktop-title-bar-height, 0px) + ${HEADER_STACK_OFFSET})`,
+          height: `calc(var(--app-viewport-height, 100dvh) - ${HEADER_STACK_OFFSET})`, // Match HeaderShell content offset
+        }}
+      >
+        <div className="flex h-full w-full flex-col">
+            {children}
+        </div>
+      </div>
+    )
+  }
+)
+Sidebar.displayName = "Sidebar"
+
+const SidebarContent = React.forwardRef<
+  HTMLDivElement,
+  React.ComponentProps<"div">
+>(({ className, ...props }, ref) => {
+  const { isMobile } = useSidebar()
+
+  return (
+    <div
+      ref={ref}
+      className={cn(
+        "flex min-h-0 flex-1 gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden",
+        isMobile ? "flex-row items-center px-4 py-2 overflow-x-auto scrollbar-hide" : "flex-col",
+        className
+      )}
+      {...props}
+    />
+  )
+})
+SidebarContent.displayName = "SidebarContent"
+
+const SidebarHeader = React.forwardRef<
+  HTMLDivElement,
+  React.ComponentProps<"div">
+>(({ className, ...props }, ref) => {
+  return (
+    <div
+      ref={ref}
+      className={cn("flex flex-col gap-2 p-4 group-data-[collapsible=icon]:p-2", className)}
+      {...props}
+    />
+  )
+})
+SidebarHeader.displayName = "SidebarHeader"
+
+const SidebarFooter = React.forwardRef<
+  HTMLDivElement,
+  React.ComponentProps<"div">
+>(({ className, ...props }, ref) => {
+  const { isMobile } = useSidebar()
+
+  if (isMobile) {
+    return null
+  }
+
+  return (
+    <div
+      ref={ref}
+      className={cn("flex flex-col gap-2 p-4 group-data-[collapsible=icon]:p-2", className)}
+      {...props}
+    />
+  )
+})
+SidebarFooter.displayName = "SidebarFooter"
+
+const SidebarTrigger = React.forwardRef<
+  HTMLButtonElement,
+  React.ComponentProps<typeof GlassButton>
+>(({ className, onClick, children, ...props }, ref) => {
+  const { toggleSidebar, state } = useSidebar()
+
+  return (
+    <GlassButton
+      ref={ref}
+      data-sidebar="trigger"
+      variant="ghost"
+      size="icon"
+      className={cn("h-8 w-8", className)}
+      onClick={(event) => {
+        onClick?.(event)
+        toggleSidebar()
+      }}
+      {...props}
+    >
+      {state === "expanded" ? (
+         <PanelLeftClose className="size-4 shrink-0" />
+      ) : (
+         <PanelLeft className="size-4 shrink-0" />
+      )}
+      {children && <span className="ml-2">{children}</span>}
+      <span className="sr-only">Toggle Sidebar</span>
+    </GlassButton>
+  )
+})
+SidebarTrigger.displayName = "SidebarTrigger"
+
+export { Sidebar, SidebarContent, SidebarHeader, SidebarFooter, SidebarTrigger }
