@@ -37,8 +37,8 @@ The entire application is assembled from exactly three persistent regions. These
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  ① TITLE BAR  ·  Tauri drag region · unified toolbar        │  32px
-├──────────┬──────────────────────────────────────────────────┤
+│  ① TITLE │  ·  Tauri drag region · unified toolbar          │  32px
+│          │──────────────────────────────────────────────────│
 │          │  ③ WORKSPACE TOOLBAR (breadcrumb · tabs · tray)  │  48px
 │          ├──────────────────────────────────────────────────┤
 │          │                                                  │
@@ -49,9 +49,7 @@ The entire application is assembled from exactly three persistent regions. These
 │  72 /    │                                                  │
 │  264 px  │                                                  │
 │          │                                                  │
-├──────────┴──────────────────────────────────────────────────┤
-│  ④ STATUS BAR  ·  connection · agent · latency · version    │  26px
-└─────────────────────────────────────────────────────────────┘
+
 ```
 
 ### Region roles

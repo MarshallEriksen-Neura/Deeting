@@ -1,5 +1,5 @@
-import { Skeleton } from './skeleton';
-import { Card, CardContent, CardHeader } from './card';
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { Card, CardContent, CardHeader } from "@/ui/shadcn/card";
 
 /**
  * 卡片骨架屏组件

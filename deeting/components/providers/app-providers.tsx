@@ -1,7 +1,7 @@
 "use client";
 
 import type { PropsWithChildren } from "react";
-import { Toaster } from "@/components/ui/sonner";
+import { Toaster } from "@/components/ui/shadcn/sonner";
 
 export function AppProviders({ children }: PropsWithChildren) {
   return (

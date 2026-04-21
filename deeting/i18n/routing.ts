@@ -1,13 +1,16 @@
-import { createNavigation } from "next-intl/navigation";
-import { defineRouting } from "next-intl/routing";
+import {defineRouting} from "next-intl/routing"
+import {createNavigation} from "next-intl/navigation"
 
 export const routing = defineRouting({
+  // 支持的语言列表
   locales: ["zh-CN", "en"],
+  // 默认语言
   defaultLocale: "zh-CN",
+  // 根据需要前缀，首页默认无前缀，其他路由带前缀，便于 SEO
   localePrefix: "as-needed",
-});
+})
 
-export type AppLocale = (typeof routing.locales)[number];
+export type AppLocale = (typeof routing)["locales"][number]
 
-export const { Link, getPathname, redirect, usePathname, useRouter } =
-  createNavigation(routing);
+export const {Link, redirect, usePathname, useRouter, getPathname} =
+  createNavigation(routing)
