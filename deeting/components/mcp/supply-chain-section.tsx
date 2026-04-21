@@ -26,10 +26,10 @@ export function SupplyChainSection({ sources, onSync, onCreateSource }: SupplyCh
   return (
     <section className="space-y-4">
        <div className="flex items-center gap-3 mb-2">
-           <h2 className="text-sm font-semibold text-slate-900 tracking-[-0.02em]">{t("supplyChain.title")}</h2>
-           <div className="h-px bg-slate-200 flex-1" />
+           <h2 className="text-sm font-semibold tracking-[-0.02em] text-[var(--ink)]">{t("supplyChain.title")}</h2>
+           <div className="h-px flex-1 bg-[var(--hairline)]" />
            <AddSourceDialog onCreate={onCreateSource}>
-              <Button variant="ghost" size="sm" className="h-8 rounded-xl px-3 text-xs text-slate-600 hover:text-slate-900 hover:bg-white/80">
+              <Button variant="ghost" size="sm" className="h-8 rounded-xl px-3 text-xs text-[var(--ink-2)] hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)]">
                  + {t("supplyChain.addSource")}
               </Button>
            </AddSourceDialog>
@@ -46,7 +46,7 @@ export function SupplyChainSection({ sources, onSync, onCreateSource }: SupplyCh
             ))}
          </div>
        ) : (
-         <div className="rounded-[1.5rem] border border-dashed border-slate-200 bg-white/60 px-5 py-6 text-sm text-slate-500 backdrop-blur-sm">
+         <div className="rounded-[1.5rem] border border-dashed border-[var(--hairline)] bg-[var(--panel-bg)] px-5 py-6 text-sm text-[var(--ink-3)] backdrop-blur-sm">
            当前仅保留本地与手动添加的来源。
          </div>
        )}

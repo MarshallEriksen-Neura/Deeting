@@ -62,10 +62,10 @@ const NAV_GROUPS: NavGroup[] = [
     id: "models-and-agents",
     titleKey: "nav.modelsAndAgents",
     items: [
-      { id: "providers", labelKey: "nav.providers", icon: Cpu, disabled: true },
-      { id: "provider-market", labelKey: "nav.providerMarket", icon: Cpu, disabled: true },
-      { id: "model-pools", labelKey: "nav.modelPools", icon: Activity, disabled: true },
-      { id: "task-agents", labelKey: "nav.taskAgents", icon: Workflow, disabled: true },
+      { id: "providers", href: "/models/providers", labelKey: "nav.providers", icon: Cpu },
+      { id: "provider-market", href: "/models/market", labelKey: "nav.providerMarket", icon: Cpu },
+      { id: "model-pools", href: "/models/pools", labelKey: "nav.modelPools", icon: Activity },
+      { id: "task-agents", href: "/agents/task-agents", labelKey: "nav.taskAgents", icon: Workflow },
     ],
   },
   {

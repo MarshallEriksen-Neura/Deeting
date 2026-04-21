@@ -31,9 +31,9 @@ const sourceTheme = {
     iconText: "text-emerald-700",
   },
   local: {
-    bar: "from-slate-300 via-slate-400 to-slate-500",
-    iconBg: "bg-white/75 border-slate-200/80",
-    iconText: "text-slate-600",
+    bar: "from-[var(--ink-4)] via-[var(--ink-3)] to-[var(--ink-2)]",
+    iconBg: "bg-[var(--panel-bg-inset)] border-[var(--hairline)]",
+    iconText: "text-[var(--ink-2)]",
   },
 } as const
 
@@ -44,7 +44,7 @@ const TrustBadge = ({ trustLevel }: { trustLevel?: MCPSource["trustLevel"] }) =>
       return (
         <Badge
           variant="secondary"
-          className="h-5 px-1.5 text-[10px] bg-gradient-to-r from-blue-50 to-cyan-50 text-blue-700 hover:bg-blue-100 border-blue-200/50 gap-1 shadow-sm"
+          className="h-5 gap-1 border-[var(--info-border)] bg-[var(--info-soft)] px-1.5 text-[10px] text-[var(--info)] shadow-sm hover:bg-[var(--info-soft)]"
         >
           <ShieldCheck size={10} /> {t("source.trust.official")}
         </Badge>
@@ -53,7 +53,7 @@ const TrustBadge = ({ trustLevel }: { trustLevel?: MCPSource["trustLevel"] }) =>
       return (
         <Badge
           variant="secondary"
-          className="h-5 px-1.5 text-[10px] bg-gradient-to-r from-amber-50 to-yellow-50 text-amber-700 hover:bg-amber-100 border-amber-200/50 gap-1 shadow-sm"
+          className="h-5 gap-1 border-[var(--warn-border)] bg-[var(--warn-soft)] px-1.5 text-[10px] text-[var(--warn)] shadow-sm hover:bg-[var(--warn-soft)]"
         >
           <AlertTriangle size={10} /> {t("source.trust.community")}
         </Badge>
@@ -62,7 +62,7 @@ const TrustBadge = ({ trustLevel }: { trustLevel?: MCPSource["trustLevel"] }) =>
       return (
         <Badge
           variant="secondary"
-          className="h-5 px-1.5 text-[10px] bg-gradient-to-r from-gray-50 to-slate-50 text-gray-600 hover:bg-gray-200 border-gray-200/50 gap-1 shadow-sm"
+          className="h-5 gap-1 border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-1.5 text-[10px] text-[var(--ink-2)] shadow-sm hover:bg-[var(--panel-bg-inset)]"
         >
           <Lock size={10} /> {t("source.trust.private")}
         </Badge>
@@ -97,7 +97,7 @@ export function SyncSourceCard({ source, onSync }: SyncSourceCardProps) {
       hover="lift"
       padding="none"
       className={cn(
-        "group overflow-hidden rounded-[1.6rem] border-white/50 bg-white/78 shadow-[0_20px_40px_-28px_rgba(15,23,42,0.24)] transition-all duration-300",
+        "group overflow-hidden rounded-[1.6rem] border-[var(--hairline)] bg-[var(--panel-bg)] shadow-[0_20px_40px_-28px_rgba(0,0,0,0.38)] transition-all duration-300",
         isModelScope && "ring-1 ring-[var(--primary)]/15"
       )}
     >
@@ -127,11 +127,11 @@ export function SyncSourceCard({ source, onSync }: SyncSourceCardProps) {
 
           {/* Name + URL */}
           <div className="flex-1 min-w-0">
-            <h3 className="flex items-center gap-2 truncate text-[15px] font-semibold tracking-[-0.02em] text-slate-900">
+            <h3 className="flex items-center gap-2 truncate text-[15px] font-semibold tracking-[-0.02em] text-[var(--ink)]">
               {source.name}
             </h3>
             <p
-              className="mt-1 max-w-full truncate font-mono text-[11px] text-slate-400"
+              className="mt-1 max-w-full truncate font-mono text-[11px] text-[var(--ink-3)]"
               title={source.pathOrUrl}
             >
               {source.pathOrUrl}
@@ -142,16 +142,16 @@ export function SyncSourceCard({ source, onSync }: SyncSourceCardProps) {
         </div>
 
         {/* Footer: Status + Sync button */}
-        <div className="flex items-center justify-between rounded-[1rem] border border-slate-200/70 bg-slate-50/70 px-3 py-2.5">
-          <div className="flex items-center gap-1.5 text-xs text-slate-500">
+        <div className="flex items-center justify-between rounded-[1rem] border border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-3 py-2.5">
+          <div className="flex items-center gap-1.5 text-xs text-[var(--ink-2)]">
             {isDraft ? (
-              <span className="flex items-center gap-1.5 text-amber-600/80">
+              <span className="flex items-center gap-1.5 text-[var(--warn)]">
                 <AlertTriangle size={12} />
                 {t("source.status.draft")}
               </span>
             ) : isRemote ? (
               <span className="flex items-center gap-1.5">
-                <Globe size={12} className="text-[var(--muted)]" />
+                <Globe size={12} className="text-[var(--ink-3)]" />
                 <span className={cn(source.status === "syncing" && "animate-pulse")}>
                   {source.status === "syncing"
                     ? t("source.status.syncing")
@@ -173,7 +173,7 @@ export function SyncSourceCard({ source, onSync }: SyncSourceCardProps) {
             size="icon-sm"
             variant="ghost"
             className={cn(
-              "text-slate-400 hover:text-slate-900 transition-all",
+              "text-[var(--ink-3)] transition-all hover:text-[var(--ink)]",
               source.status !== "syncing" && "opacity-0 group-hover:opacity-100"
             )}
             onClick={() => onSync?.()}

@@ -4,6 +4,7 @@ import { useMemo } from "react"
 import useSWR from "swr"
 
 import { fetchChatModels, type ModelInfo, type ModelGroup } from "@/lib/api/models"
+import { isTauriRuntime } from "@/lib/runtime/tauri"
 import { useAuthStore } from "@/store/auth-store"
 
 const MODELS_QUERY_KEY = "/api/v1/internal/models"
@@ -17,7 +18,7 @@ export function useChatModels({
   modelCapability?: string
 }) {
   const { isAuthenticated } = useAuthStore()
-  const isEnabled = enabled && isAuthenticated
+  const isEnabled = enabled && (isTauriRuntime() || isAuthenticated)
 
   const modelQueryKey = isEnabled
     ? [MODELS_QUERY_KEY, modelCapability ?? "all"]

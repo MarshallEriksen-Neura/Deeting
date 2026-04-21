@@ -94,13 +94,13 @@ export function ServerLogsSheet({ tool, logs, open, onOpenChange, onClear }: Ser
 
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
-            <SheetContent side="bottom" className="h-[60vh] flex flex-col p-0 gap-0">
-                <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-white">
+            <SheetContent side="bottom" className="h-[60vh] flex flex-col p-0 gap-0 bg-[var(--panel-bg)] text-[var(--ink)]">
+                <div className="flex items-center justify-between border-b border-[var(--hairline)] bg-[var(--panel-bg)] p-4">
                      <div>
                         <SheetTitle className="flex items-center gap-2 font-mono text-sm">
-                            <Terminal size={16} className="text-gray-500" /> 
+                            <Terminal size={16} className="text-[var(--ink-3)]" />
                             {tool.name}
-                            <Badge variant="outline" className="text-xs font-normal text-gray-500">{t("tool.labels.id")}: {tool.identifier || tool.id}</Badge>
+                            <Badge variant="outline" className="border-[var(--hairline)] bg-[var(--panel-bg-inset)] text-xs font-normal text-[var(--ink-2)]">{t("tool.labels.id")}: {tool.identifier || tool.id}</Badge>
                         </SheetTitle>
                         <SheetDescription className="hidden">{t("logs.title")}</SheetDescription>
                      </div>
@@ -108,20 +108,20 @@ export function ServerLogsSheet({ tool, logs, open, onOpenChange, onClear }: Ser
                          <Button 
                             variant="ghost" 
                             size="sm" 
-                            className={cn("h-7 px-2 text-xs gap-1.5", autoScroll ? "text-green-600 bg-green-50" : "text-gray-500")}
+                            className={cn("h-7 gap-1.5 px-2 text-xs", autoScroll ? "bg-[var(--ok-soft)] text-[var(--ok)]" : "text-[var(--ink-3)]")}
                             onClick={() => setAutoScroll(!autoScroll)}
                          >
                              {autoScroll ? <PlayCircle size={12} /> : <PauseCircle size={12} />}
                              {t("logs.autoScroll")}
                          </Button>
-                         <div className="h-4 w-px bg-gray-200 mx-1" />
-                         <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-400 hover:text-gray-900" onClick={handleCopy}>
+                         <div className="mx-1 h-4 w-px bg-[var(--hairline)]" />
+                         <Button variant="ghost" size="icon" className="h-7 w-7 text-[var(--ink-3)] hover:text-[var(--ink)]" onClick={handleCopy}>
                              <Copy size={14} />
                          </Button>
-                         <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-400 hover:text-gray-900" onClick={handleDownload}>
+                         <Button variant="ghost" size="icon" className="h-7 w-7 text-[var(--ink-3)] hover:text-[var(--ink)]" onClick={handleDownload}>
                              <Download size={14} />
                          </Button>
-                         <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-400 hover:text-red-600" onClick={() => {
+                         <Button variant="ghost" size="icon" className="h-7 w-7 text-[var(--ink-3)] hover:text-[var(--danger)]" onClick={() => {
                            onClear()
                            addNotification({
                              type: "success",
@@ -136,39 +136,39 @@ export function ServerLogsSheet({ tool, logs, open, onOpenChange, onClear }: Ser
                 </div>
 
                 <Tabs defaultValue="stdout" className="flex-1 flex flex-col min-h-0">
-                    <div className="px-4 border-b border-gray-100 bg-gray-50/50">
-                        <TabsList className="bg-transparent h-9 p-0 gap-4">
+                    <div className="border-b border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-4">
+                        <TabsList className="h-9 gap-4 bg-transparent p-0">
                             <TabsTrigger 
                                 value="stdout" 
-                                className="h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-black data-[state=active]:shadow-none px-1 font-mono text-xs"
+                                className="h-9 rounded-none border-b-2 border-transparent px-1 font-mono text-xs text-[var(--ink-3)] data-[state=active]:border-[var(--ink)] data-[state=active]:text-[var(--ink)] data-[state=active]:shadow-none"
                             >
                                 {t("logs.tabs.stdout")}
                             </TabsTrigger>
                             <TabsTrigger 
                                 value="stderr" 
-                                className="h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-red-500 data-[state=active]:text-red-600 data-[state=active]:shadow-none px-1 font-mono text-xs"
+                                className="h-9 rounded-none border-b-2 border-transparent px-1 font-mono text-xs text-[var(--ink-3)] data-[state=active]:border-[var(--danger)] data-[state=active]:text-[var(--danger)] data-[state=active]:shadow-none"
                             >
                                 {t("logs.tabs.stderr")}
                             </TabsTrigger>
                             <TabsTrigger 
                                 value="events" 
-                                className="h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-blue-500 data-[state=active]:text-blue-600 data-[state=active]:shadow-none px-1 font-mono text-xs"
+                                className="h-9 rounded-none border-b-2 border-transparent px-1 font-mono text-xs text-[var(--ink-3)] data-[state=active]:border-[var(--info)] data-[state=active]:text-[var(--info)] data-[state=active]:shadow-none"
                             >
                                 {t("logs.tabs.events")}
                             </TabsTrigger>
                         </TabsList>
                     </div>
                     
-                    <div className="flex-1 bg-black text-gray-300 font-mono text-xs overflow-hidden relative group">
+                    <div className="group relative flex-1 overflow-hidden bg-black font-mono text-xs text-zinc-300">
                         <TabsContent value="stdout" className="h-full m-0 p-0">
                              <ScrollArea className="h-full w-full p-4">
                                 {stdoutLogs.length === 0 ? (
-                                  <div className="text-gray-500 italic p-4 text-center">{t("logs.empty")}</div>
+                                  <div className="p-4 text-center italic text-zinc-500">{t("logs.empty")}</div>
                                 ) : (
                                   <div className="whitespace-pre-wrap">
                                     {stdoutLogs.map((entry, index) => (
                                       <div key={`${entry.timestamp}-${index}`}>
-                                        <span className="text-gray-500 select-none">{formatTimestamp(entry.timestamp)}</span>{" "}
+                                        <span className="select-none text-zinc-500">{formatTimestamp(entry.timestamp)}</span>{" "}
                                         {entry.message}
                                       </div>
                                     ))}
@@ -183,14 +183,14 @@ export function ServerLogsSheet({ tool, logs, open, onOpenChange, onClear }: Ser
                                      <div className="text-red-400 whitespace-pre-wrap">
                                         {stderrLogs.map((entry, index) => (
                                           <div key={`${entry.timestamp}-${index}`}>
-                                            <span className="text-gray-500 select-none">{formatTimestamp(entry.timestamp)}</span>{" "}
+                                            <span className="select-none text-zinc-500">{formatTimestamp(entry.timestamp)}</span>{" "}
                                             {entry.message}
                                           </div>
                                         ))}
                                         <div ref={bottomRef} />
                                      </div>
                                  ) : (
-                                     <div className="text-gray-500 italic p-4 text-center">{t("logs.emptyErrors")}</div>
+                                     <div className="p-4 text-center italic text-zinc-500">{t("logs.emptyErrors")}</div>
                                  )}
                              </ScrollArea>
                         </TabsContent>
@@ -198,14 +198,14 @@ export function ServerLogsSheet({ tool, logs, open, onOpenChange, onClear }: Ser
                              <ScrollArea className="h-full w-full p-4">
                                 <div className="flex flex-col gap-2">
                                     {eventLogs.length === 0 ? (
-                                      <div className="text-gray-500 italic p-4 text-center">{t("logs.empty")}</div>
+                                      <div className="p-4 text-center italic text-zinc-500">{t("logs.empty")}</div>
                                     ) : (
                                       eventLogs.map((entry, index) => (
                                         <div key={`${entry.timestamp}-${index}`} className="flex gap-3 items-start">
-                                          <Activity size={14} className="mt-0.5 text-blue-500" />
+                                          <Activity size={14} className="mt-0.5 text-[var(--info)]" />
                                           <div>
-                                            <span className="text-blue-400 font-bold">{entry.message}</span>
-                                            <span className="text-gray-600 text-[10px] block">{formatTimestamp(entry.timestamp)}</span>
+                                            <span className="font-bold text-[var(--info)]">{entry.message}</span>
+                                            <span className="block text-[10px] text-zinc-600">{formatTimestamp(entry.timestamp)}</span>
                                           </div>
                                         </div>
                                       ))

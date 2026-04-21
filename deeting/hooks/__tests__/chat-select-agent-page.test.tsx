@@ -22,7 +22,7 @@ describe("SelectAgentPage", () => {
 
     SelectAgentPage()
 
-    expect(redirectMock).toHaveBeenCalledWith("/dashboard/user/task-agents")
+    expect(redirectMock).toHaveBeenCalledWith("/agents/task-agents")
   })
 
   it("redirects web users back to chat", () => {

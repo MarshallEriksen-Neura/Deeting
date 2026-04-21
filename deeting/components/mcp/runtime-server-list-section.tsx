@@ -84,23 +84,6 @@ const getGroupToneKey = (group: MCPRuntimeServerGroup): keyof typeof GROUP_TONES
   return "partial"
 }
 
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.06 }
-  }
-}
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 12 },
-  visible: { 
-    opacity: 1, 
-    y: 0, 
-    transition: { type: "spring", stiffness: 240, damping: 28, mass: 1 } 
-  }
-}
-
 export function RuntimeServerListSection({
   groups,
   conflictCount,
@@ -156,7 +139,7 @@ export function RuntimeServerListSection({
         initial={{ opacity: 0, y: 12 }} 
         animate={{ opacity: 1, y: 0 }} 
         transition={{ type: "spring", stiffness: 240, damping: 28, mass: 1 }}
-        className="space-y-5"
+        className="w-full min-w-0 space-y-5"
       >
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-2">
@@ -270,12 +253,7 @@ export function RuntimeServerListSection({
             </h4>
           </div>
 
-          <motion.div 
-            variants={containerVariants}
-            initial="hidden"
-            animate="visible"
-            className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3"
-          >
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">
             <AnimatePresence mode="popLayout">
               {selectedGroup.tools.map((tool) => (
                 <ServerCard
@@ -294,7 +272,7 @@ export function RuntimeServerListSection({
                 />
               ))}
             </AnimatePresence>
-          </motion.div>
+          </div>
         </div>
       </motion.section>
     )
@@ -305,7 +283,7 @@ export function RuntimeServerListSection({
       initial={{ opacity: 0, y: 12 }} 
       animate={{ opacity: 1, y: 0 }} 
       transition={{ type: "spring", stiffness: 240, damping: 28, mass: 1 }}
-      className="space-y-4"
+      className="w-full min-w-0 space-y-4"
     >
       <div className="mb-4 flex items-center justify-between">
         <div className="flex w-full items-center gap-4">
@@ -376,12 +354,7 @@ export function RuntimeServerListSection({
         </div>
       </div>
 
-      <motion.div 
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-        className="grid grid-cols-1 gap-4 xl:grid-cols-2"
-      >
+      <div className="grid w-full min-w-0 grid-cols-1 gap-4 xl:grid-cols-2">
         <AnimatePresence mode="popLayout">
           {filteredGroups.map((group) => {
             const toneKey = getGroupToneKey(group)
@@ -392,7 +365,6 @@ export function RuntimeServerListSection({
             return (
               <motion.div 
                 layout 
-                variants={itemVariants}
                 key={group.id}
                 className="group relative rounded-[18px] p-[6px] bg-[var(--panel-bg-inset)] ring-1 ring-[var(--hairline)] transition-all duration-[220ms] ease-[cubic-bezier(0.32,0.72,0,1)] hover:ring-[var(--hairline-strong)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
               >
@@ -463,14 +435,14 @@ export function RuntimeServerListSection({
         {filteredGroups.length === 0 && (
           <motion.div 
             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            className="col-span-full flex flex-col items-center justify-center rounded-[18px] border border-dashed border-[var(--hairline-strong)] bg-[var(--panel-bg-inset)] py-[56px] text-[var(--ink-3)]"
+            className="col-span-full flex min-w-0 flex-col items-center justify-center rounded-[18px] border border-dashed border-[var(--hairline-strong)] bg-[var(--panel-bg-inset)] py-[56px] text-[var(--ink-3)]"
           >
             <Terminal size={32} className="mb-3 opacity-30" strokeWidth={1} />
             <p className="text-[13px] font-[500]">{t("runtime.empty")}</p>
             <p className="mt-1 text-[11px] text-[var(--ink-4)]">Press ⌘K to search</p>
           </motion.div>
         )}
-      </motion.div>
+      </div>
     </motion.section>
   )
 }

@@ -49,10 +49,10 @@ function inferRequestBase(requestUrl?: string | null, upstreamPath?: string | nu
 function NumberInput({ label, value, onChange, placeholder, suffix }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; suffix?: string }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs text-[var(--muted)]">{label}</Label>
+      <Label className="text-xs text-[var(--ink-3)]">{label}</Label>
       <div className="flex items-center gap-2">
-        <Input type="number" inputMode="decimal" value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="h-9 border-white/10 bg-white/5" />
-        {suffix ? <span className="whitespace-nowrap text-xs text-[var(--muted)]">{suffix}</span> : null}
+        <Input type="number" inputMode="decimal" value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="h-9 border-[var(--hairline)] bg-[var(--panel-bg-inset)]" />
+        {suffix ? <span className="whitespace-nowrap text-xs text-[var(--ink-3)]">{suffix}</span> : null}
       </div>
     </div>
   );
@@ -61,8 +61,8 @@ function NumberInput({ label, value, onChange, placeholder, suffix }: { label: s
 function TextInput({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs text-[var(--muted)]">{label}</Label>
-      <Input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="h-9 border-white/10 bg-white/5" />
+      <Label className="text-xs text-[var(--ink-3)]">{label}</Label>
+      <Input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="h-9 border-[var(--hairline)] bg-[var(--panel-bg-inset)]" />
     </div>
   );
 }
@@ -70,8 +70,8 @@ function TextInput({ label, value, onChange, placeholder }: { label: string; val
 function ReadonlyInput({ label, value, placeholder }: { label: string; value: string; placeholder?: string }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs text-[var(--muted)]">{label}</Label>
-      <Input value={value} placeholder={placeholder} readOnly className="h-9 border-white/10 bg-white/5 font-mono text-xs text-[var(--muted)]" />
+      <Label className="text-xs text-[var(--ink-3)]">{label}</Label>
+      <Input value={value} placeholder={placeholder} readOnly className="h-9 border-[var(--hairline)] bg-[var(--panel-bg-inset)] font-mono text-xs text-[var(--ink-3)]" />
     </div>
   );
 }
@@ -264,7 +264,7 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
   }, [model]);
 
   return (
-    <GlassCard className="border border-white/10 bg-white/5">
+    <GlassCard className="border border-[var(--hairline)] bg-[var(--panel-bg)]">
       <div className="space-y-6">
         <Section title={t("basic.title")} description={t("basic.desc")}>
           <div className="grid gap-4 md:grid-cols-2">
@@ -272,7 +272,7 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
             <TextInput label={t("basic.unifiedId")} value={unifiedModelId} onChange={setUnifiedModelId} placeholder={model.unified_model_id || model.id} />
             {capabilities.includes("chat") ? (
               <div className="space-y-1.5 md:col-span-2">
-                <Label className="text-xs text-[var(--muted)]">{t("basic.requestMode")}</Label>
+                <Label className="text-xs text-[var(--ink-3)]">{t("basic.requestMode")}</Label>
                 <div className="flex flex-wrap gap-2">
                   {[
                     { id: "chat_completions" as const, label: t("basic.requestModes.chatCompletions") },
@@ -281,19 +281,19 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
                   ].map((option) => {
                     const active = requestMode === option.id;
                     return (
-                      <button key={option.id} type="button" onClick={() => applyRequestMode(option.id)} className={cn("h-9 rounded-md border px-3 text-xs transition-colors", active ? "border-[var(--primary)] bg-[var(--primary)]/15 text-[var(--foreground)]" : "border-white/10 bg-white/5 text-[var(--muted)] hover:bg-white/10")}>
+                      <button key={option.id} type="button" onClick={() => applyRequestMode(option.id)} className={cn("h-9 rounded-md border px-3 text-xs transition-colors", active ? "border-[var(--primary)] bg-[var(--primary)]/15 text-[var(--ink)]" : "border-[var(--hairline)] bg-[var(--panel-bg-inset)] text-[var(--ink-3)] hover:bg-[var(--panel-bg)]")}>
                         {option.label}
                       </button>
                     );
                   })}
                 </div>
-                <p className="text-xs text-[var(--muted)]">{t("basic.requestModeHint")}</p>
+                <p className="text-xs text-[var(--ink-3)]">{t("basic.requestModeHint")}</p>
               </div>
             ) : null}
             <TextInput label={t("basic.upstreamPath")} value={upstreamPath} onChange={handleUpstreamPathChange} placeholder={t("basic.upstreamPathPlaceholder")} />
             {showChatContentCompatibility && capabilities.includes("chat") ? (
               <div className="space-y-1.5 md:col-span-2">
-                <Label className="text-xs text-[var(--muted)]">{t("basic.chatContentCompatibility")}</Label>
+                <Label className="text-xs text-[var(--ink-3)]">{t("basic.chatContentCompatibility")}</Label>
                 <div className="flex flex-wrap gap-2">
                   {[
                     { id: "auto" as const, label: t("basic.chatContentCompatibilityModes.auto") },
@@ -302,13 +302,13 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
                   ].map((option) => {
                     const active = chatContentCompatibility === option.id;
                     return (
-                      <button key={option.id} type="button" onClick={() => setChatContentCompatibility(option.id)} className={cn("h-9 rounded-md border px-3 text-xs transition-colors", active ? "border-[var(--primary)] bg-[var(--primary)]/15 text-[var(--foreground)]" : "border-white/10 bg-white/5 text-[var(--muted)] hover:bg-white/10")}>
+                      <button key={option.id} type="button" onClick={() => setChatContentCompatibility(option.id)} className={cn("h-9 rounded-md border px-3 text-xs transition-colors", active ? "border-[var(--primary)] bg-[var(--primary)]/15 text-[var(--ink)]" : "border-[var(--hairline)] bg-[var(--panel-bg-inset)] text-[var(--ink-3)] hover:bg-[var(--panel-bg)]")}>
                         {option.label}
                       </button>
                     );
                   })}
                 </div>
-                <p className="text-xs text-[var(--muted)]">{t("basic.chatContentCompatibilityHint")}</p>
+                <p className="text-xs text-[var(--ink-3)]">{t("basic.chatContentCompatibilityHint")}</p>
               </div>
             ) : null}
             <ReadonlyInput label={t("basic.requestUrl")} value={requestUrlPreview} placeholder={requestUrlPreview ? undefined : "-"} />
@@ -316,19 +316,19 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
             <NumberInput label={t("basic.priority")} value={priority} onChange={setPriority} placeholder="0" />
           </div>
         </Section>
-        <Separator className="border-white/5" />
+        <Separator className="bg-[var(--hairline)]" />
         <Section title={t("capabilities.title")} description={t("capabilities.desc")}>
           <div className="flex flex-wrap gap-2">
             {(["chat", "image_generation", "text_to_speech", "speech_to_text", "video_generation", "embedding"] as ModelCapability[]).map((capability) => {
               const active = capabilities.includes(capability);
               return (
-                <Badge key={capability} variant={active ? "default" : "outline"} className={cn("cursor-pointer select-none", active ? "bg-[var(--primary)] text-white" : "border-white/20 text-[var(--muted)]")} onClick={() => setCapabilities((prev) => prev.includes(capability) ? prev.filter((value) => value !== capability) : [...prev, capability])}>
+                <Badge key={capability} variant={active ? "default" : "outline"} className={cn("cursor-pointer select-none", active ? "bg-[var(--primary)] text-white" : "border-[var(--hairline)] text-[var(--ink-3)]")} onClick={() => setCapabilities((prev) => prev.includes(capability) ? prev.filter((value) => value !== capability) : [...prev, capability])}>
                   {CAPABILITY_META[capability].icon} {tCap(`${capability}.label`)}
                 </Badge>
               );
             })}
           </div>
-          <p className="text-xs text-[var(--muted)]">{t("capabilities.hint")}</p>
+          <p className="text-xs text-[var(--ink-3)]">{t("capabilities.hint")}</p>
         </Section>
         <Section title={t("pricing.title")} description={t("pricing.desc")}>
           <div className="grid gap-4 md:grid-cols-2">
@@ -336,7 +336,7 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
             <NumberInput label={t("pricing.output")} value={outputPrice} onChange={setOutputPrice} placeholder="0.002" suffix="$ / 1k tokens" />
           </div>
         </Section>
-        <Separator className="border-white/5" />
+        <Separator className="bg-[var(--hairline)]" />
         <Section title={t("limits.title")} description={t("limits.desc")}>
           <div className="grid gap-4 md:grid-cols-3">
             <NumberInput label={t("limits.maxOutput")} value={maxOutputTokens} onChange={setMaxOutputTokens} placeholder="4096" suffix="tokens" />
@@ -345,13 +345,13 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
             {capabilities.includes("image_generation") ? <NumberInput label={t("limits.maxInputImages")} value={maxInputImages} onChange={setMaxInputImages} placeholder="1" suffix="images" /> : null}
           </div>
         </Section>
-        <Separator className="border-white/5" />
+        <Separator className="bg-[var(--hairline)]" />
         <Section title={t("tokenizer.title")} description={t("tokenizer.desc")}>
           <div className="grid gap-4 md:grid-cols-2">
             <NumberInput label={t("tokenizer.context")} value={contextWindow} onChange={setContextWindow} placeholder="128000" suffix="tokens" />
           </div>
         </Section>
-        {error ? <div className="text-sm text-red-400">{error}</div> : null}
+        {error ? <div className="text-sm text-[var(--danger)]">{error}</div> : null}
         <div className="flex justify-end gap-3">
           <GlassButton variant="ghost" size="sm" onClick={handleReset} disabled={!hasChanges || saving}>{t("actions.reset")}</GlassButton>
           <GlassButton variant="default" size="sm" onClick={(event) => { event.stopPropagation(); void handleSave(); }} disabled={!hasChanges || saving} loading={saving}>
@@ -367,8 +367,8 @@ function Section({ title, description, className, children }: { title: string; d
   return (
     <div className={cn("space-y-3", className)}>
       <div className="space-y-1">
-        <div className="text-sm font-medium text-[var(--foreground)]">{title}</div>
-        {description ? <p className="text-xs text-[var(--muted)]">{description}</p> : null}
+        <div className="text-sm font-medium text-[var(--ink)]">{title}</div>
+        {description ? <p className="text-xs text-[var(--ink-3)]">{description}</p> : null}
       </div>
       {children}
     </div>

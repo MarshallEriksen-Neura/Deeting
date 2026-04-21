@@ -36,7 +36,7 @@ function CapabilityTag({ capability, isSelected, onClick }: { capability: ModelC
         "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-all duration-200",
         isSelected
           ? "border-[var(--primary)]/50 bg-[var(--primary)]/20 text-[var(--primary)]"
-          : "border-white/10 bg-white/5 text-[var(--muted)] hover:bg-white/10 hover:text-[var(--foreground)]"
+          : "border-[var(--hairline)] bg-[var(--panel-bg-inset)] text-[var(--ink-3)] hover:bg-[var(--panel-bg)] hover:text-[var(--ink)]"
       )}
     >
       <span className="text-xs font-semibold">{meta.icon}</span>
@@ -65,7 +65,7 @@ function ContextWindowFilter({ value, onChange }: { value: number | null; onChan
           <ChevronDown className="size-3" />
         </GlassButton>
       </PopoverTrigger>
-      <PopoverContent className="w-48 border-white/10 bg-[var(--background)]/90 p-2 backdrop-blur-xl" align="start">
+      <PopoverContent className="w-48 border-[var(--hairline)] bg-[var(--panel-bg)] p-2 backdrop-blur-xl" align="start">
         <div className="flex flex-col gap-1">
           {CONTEXT_WINDOW_PRESETS.map((preset) => (
             <button
@@ -76,7 +76,7 @@ function ContextWindowFilter({ value, onChange }: { value: number | null; onChan
               }}
               className={cn(
                 "rounded-lg px-3 py-2 text-left text-sm transition-colors",
-                value === preset.value ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "text-[var(--foreground)] hover:bg-white/5"
+                value === preset.value ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "text-[var(--ink)] hover:bg-[var(--panel-bg-inset)]"
               )}
             >
               {t(`contextPresets.${getPresetKey(preset.value)}`)}
@@ -93,19 +93,19 @@ function AdvancedFilters({ filters, onFiltersChange }: { filters: ModelFilterSta
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <GlassButton variant="ghost" size="icon-sm" className="hover:bg-white/5">
+        <GlassButton variant="ghost" size="icon-sm" className="hover:bg-[var(--panel-bg-inset)]">
           <Filter className="size-4" />
         </GlassButton>
       </PopoverTrigger>
-      <PopoverContent className="w-72 border-white/10 bg-[var(--background)]/90 p-4 backdrop-blur-xl" align="end">
+      <PopoverContent className="w-72 border-[var(--hairline)] bg-[var(--panel-bg)] p-4 backdrop-blur-xl" align="end">
         <div className="space-y-4">
-          <h4 className="font-medium text-[var(--foreground)]">{t("filter.advanced")}</h4>
+          <h4 className="font-medium text-[var(--ink)]">{t("filter.advanced")}</h4>
           <div className="flex items-center justify-between">
-            <Label htmlFor="active-only" className="text-sm text-[var(--muted)]">{t("filter.activeOnly")}</Label>
+            <Label htmlFor="active-only" className="text-sm text-[var(--ink-3)]">{t("filter.activeOnly")}</Label>
             <Switch id="active-only" checked={filters.active_only} onCheckedChange={(checked) => onFiltersChange({ ...filters, active_only: checked })} />
           </div>
           <div className="space-y-2">
-            <Label className="text-sm text-[var(--muted)]">{t("filter.priceTier")}</Label>
+            <Label className="text-sm text-[var(--ink-3)]">{t("filter.priceTier")}</Label>
             <div className="flex flex-wrap gap-1.5">
               {(["cheap", "moderate", "expensive", "premium"] as PriceTier[]).map((tier) => (
                 <button
@@ -115,7 +115,7 @@ function AdvancedFilters({ filters, onFiltersChange }: { filters: ModelFilterSta
                     "rounded-md border px-2 py-1 text-xs capitalize transition-colors",
                     filters.price_tier === tier
                       ? "border-[var(--primary)]/50 bg-[var(--primary)]/20 text-[var(--primary)]"
-                      : "border-white/10 text-[var(--muted)] hover:bg-white/5"
+                      : "border-[var(--hairline)] text-[var(--ink-3)] hover:bg-[var(--panel-bg-inset)]"
                   )}
                 >
                   {tier}
@@ -181,13 +181,13 @@ export function FilterLens({ filters, onFiltersChange, totalModels, filteredCoun
   const showBatchBar = !!onBatchUpdateCapabilities && !!filters.search && filteredCount > 0 && filteredCount < totalModels;
 
   return (
-    <div className={cn("sticky top-4 z-20 rounded-2xl border border-white/10 bg-[var(--background)]/60 p-4 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.2)] backdrop-blur-xl", className)}>
+    <div className={cn("sticky top-4 z-20 rounded-2xl border border-[var(--hairline)] bg-[var(--panel-bg)] p-4 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.2)] backdrop-blur-xl", className)}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
         <div className="relative max-w-md min-w-[200px] flex-1">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--muted)]" />
-          <Input placeholder={t("filter.searchPlaceholder")} value={localSearch} onChange={(event) => setLocalSearch(event.target.value)} className="border-white/10 bg-white/5 pl-10 focus:border-[var(--primary)]/50" />
+          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--ink-3)]" />
+          <Input placeholder={t("filter.searchPlaceholder")} value={localSearch} onChange={(event) => setLocalSearch(event.target.value)} className="border-[var(--hairline)] bg-[var(--panel-bg-inset)] pl-10 focus:border-[var(--primary)]/50" />
           {localSearch ? (
-            <button onClick={() => { setLocalSearch(""); onFiltersChange({ ...filters, search: "" }); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)] hover:text-[var(--foreground)]">
+            <button onClick={() => { setLocalSearch(""); onFiltersChange({ ...filters, search: "" }); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ink-3)] hover:text-[var(--ink)]">
               <X className="size-4" />
             </button>
           ) : null}
@@ -199,20 +199,20 @@ export function FilterLens({ filters, onFiltersChange, totalModels, filteredCoun
         </div>
         <div className="ml-auto flex items-center gap-2">
           <ContextWindowFilter value={filters.min_context_window} onChange={(value) => onFiltersChange({ ...filters, min_context_window: value })} />
-          <div className="h-4 w-px bg-white/10" />
+          <div className="h-4 w-px bg-[var(--hairline)]" />
           <AdvancedFilters filters={filters} onFiltersChange={onFiltersChange} />
           <AnimatePresence>
             {hasActiveFilters ? (
               <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}>
-                <GlassButton variant="ghost" size="sm" onClick={handleClearFilters} className="text-[var(--muted)] hover:text-red-400">
+                <GlassButton variant="ghost" size="sm" onClick={handleClearFilters} className="text-[var(--ink-3)] hover:text-[var(--danger)]">
                   <X className="mr-1 size-3" />
                   {t("filter.clear")}
                 </GlassButton>
               </motion.div>
             ) : null}
           </AnimatePresence>
-          <div className="h-4 w-px bg-white/10" />
-          <span className="whitespace-nowrap text-sm text-[var(--muted)]">
+          <div className="h-4 w-px bg-[var(--hairline)]" />
+          <span className="whitespace-nowrap text-sm text-[var(--ink-3)]">
             {filteredCount === totalModels ? t("filter.modelsCount", { count: totalModels }) : t("filter.filteredCount", { filtered: filteredCount, total: totalModels })}
           </span>
         </div>
@@ -220,10 +220,10 @@ export function FilterLens({ filters, onFiltersChange, totalModels, filteredCoun
       <AnimatePresence>
         {showBatchBar ? (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
-            <div className="mt-3 border-t border-white/10 pt-3">
+            <div className="mt-3 border-t border-[var(--hairline)] pt-3">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <div className="flex-1 space-y-2">
-                  <p className="text-xs text-[var(--muted)]">{t("filter.batchHint", { count: filteredCount })}</p>
+                  <p className="text-xs text-[var(--ink-3)]">{t("filter.batchHint", { count: filteredCount })}</p>
                   <div className="flex flex-wrap gap-1.5">
                     {(Object.keys(CAPABILITY_META) as ModelCapability[]).map((capability) => {
                       const active = batchCaps.includes(capability);
@@ -234,7 +234,7 @@ export function FilterLens({ filters, onFiltersChange, totalModels, filteredCoun
                           disabled={batchLoading}
                           className={cn(
                             "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-all duration-150",
-                            active ? "border-[var(--primary)]/50 bg-[var(--primary)]/20 text-[var(--primary)]" : "border-white/10 bg-white/5 text-[var(--muted)] hover:bg-white/10"
+                            active ? "border-[var(--primary)]/50 bg-[var(--primary)]/20 text-[var(--primary)]" : "border-[var(--hairline)] bg-[var(--panel-bg-inset)] text-[var(--ink-3)] hover:bg-[var(--panel-bg)]"
                           )}
                         >
                           <span>{CAPABILITY_META[capability].icon}</span>

@@ -32,14 +32,14 @@ function ChatBubble({ message }: { message: TestMessage }) {
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className={cn("flex w-full min-w-0 flex-col gap-1", isUser ? "items-end" : "items-start")}>
-      <div className={cn("group relative min-w-0 max-w-[85%] rounded-2xl px-4 py-3", isUser ? "rounded-br-md bg-[var(--primary)] text-white" : "rounded-bl-md border border-white/10 bg-white/5 text-[var(--foreground)]")}>
+      <div className={cn("group relative min-w-0 max-w-[85%] rounded-2xl px-4 py-3", isUser ? "rounded-br-md bg-[var(--primary)] text-white" : "rounded-bl-md border border-[var(--hairline)] bg-[var(--panel-bg-inset)] text-[var(--ink)]")}>
         <p className="max-w-full whitespace-pre-wrap break-words text-sm">{message.content}</p>
-        <button onClick={handleCopy} className={cn("absolute -right-2 top-0 rounded-md p-1 opacity-0 transition-opacity group-hover:opacity-100", isUser ? "bg-white/20 text-white hover:bg-white/30" : "bg-white/10 text-[var(--muted)] hover:bg-white/20")}>
+        <button onClick={handleCopy} className={cn("absolute -right-2 top-0 rounded-md p-1 opacity-0 transition-opacity group-hover:opacity-100", isUser ? "bg-white/20 text-white hover:bg-white/30" : "bg-[var(--panel-bg)] text-[var(--ink-3)] hover:bg-[var(--panel-bg)]")}>
           {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
         </button>
       </div>
       {!isUser && (message.latency || message.tokens) ? (
-        <div className="flex items-center gap-3 px-2 text-[10px] text-[var(--muted)]">
+        <div className="flex items-center gap-3 px-2 text-[10px] text-[var(--ink-3)]">
           {message.latency ? <span className="flex items-center gap-1"><Clock className="size-3" />{message.latency}ms</span> : null}
           {message.tokens ? <span className="flex items-center gap-1"><Zap className="size-3" />{message.tokens} tokens</span> : null}
         </div>
@@ -51,7 +51,7 @@ function ChatBubble({ message }: { message: TestMessage }) {
 function TypingIndicator() {
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="flex items-start">
-      <div className="rounded-2xl rounded-bl-md border border-white/10 bg-white/5 px-4 py-3">
+      <div className="rounded-2xl rounded-bl-md border border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-4 py-3">
         <div className="flex items-center gap-1">
           {[0, 0.2, 0.4].map((delay) => (
             <motion.span key={delay} animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1.2, repeat: Infinity, delay }} className="size-2 rounded-full bg-[var(--primary)]" />
@@ -69,8 +69,8 @@ function EmptyChatState({ modelId }: { modelId: string }) {
       <motion.div animate={{ scale: [1, 1.05, 1], opacity: [0.5, 0.8, 0.5] }} transition={{ duration: 3, repeat: Infinity }} className="mb-4 flex size-16 items-center justify-center rounded-2xl bg-[var(--primary)]/10">
         <Sparkles className="size-8 text-[var(--primary)]" />
       </motion.div>
-      <h3 className="mb-2 text-lg font-medium text-[var(--foreground)]">Test {modelId}</h3>
-      <p className="max-w-[250px] text-sm text-[var(--muted)]">{t("test.send")}</p>
+      <h3 className="mb-2 text-lg font-medium text-[var(--ink)]">Test {modelId}</h3>
+      <p className="max-w-[250px] text-sm text-[var(--ink-3)]">{t("test.send")}</p>
     </div>
   );
 }
@@ -79,14 +79,14 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
   const t = useTranslations("models");
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mx-4 my-2">
-      <GlassCard className="border-red-500/30 bg-red-500/10" padding="sm" hover="none">
+      <GlassCard className="border-[var(--danger-border)] bg-[var(--danger-soft)]" padding="sm" hover="none">
         <div className="flex items-start gap-3">
-          <AlertCircle className="mt-0.5 size-5 shrink-0 text-red-400" />
+          <AlertCircle className="mt-0.5 size-5 shrink-0 text-[var(--danger)]" />
           <div className="flex-1">
-            <p className="text-sm font-medium text-red-400">{t("test.connectionError")}</p>
-            <p className="mt-1 text-xs text-red-400/80">{error}</p>
+            <p className="text-sm font-medium text-[var(--danger)]">{t("test.connectionError")}</p>
+            <p className="mt-1 text-xs text-[var(--danger)] opacity-80">{error}</p>
           </div>
-          <GlassButton variant="ghost" size="sm" onClick={onRetry} className="text-red-400 hover:bg-red-500/10">
+          <GlassButton variant="ghost" size="sm" onClick={onRetry} className="text-[var(--danger)] hover:bg-[var(--danger-soft)]">
             <RotateCcw className="mr-1 size-3" />
             {t("test.retry")}
           </GlassButton>
@@ -150,21 +150,21 @@ export function TestDrawer({ isOpen, onClose, model, instanceName, onSendMessage
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="right" className="flex w-full flex-col border-l border-white/10 bg-[var(--background)]/90 p-0 backdrop-blur-xl sm:max-w-md">
-        <SheetHeader className="shrink-0 border-b border-white/10 px-6 py-4">
+      <SheetContent side="right" className="flex w-full flex-col border-l border-[var(--hairline)] bg-[var(--panel-bg)] p-0 backdrop-blur-xl sm:max-w-md">
+        <SheetHeader className="shrink-0 border-b border-[var(--hairline)] px-6 py-4">
           <div className="flex items-start justify-between">
             <div className="flex-1 pr-8">
               <SheetTitle className="truncate text-lg font-semibold">{model.display_name || model.id}</SheetTitle>
-              <SheetDescription className="mt-0.5 truncate font-mono text-xs text-[var(--muted)]">via {instanceName}</SheetDescription>
+              <SheetDescription className="mt-0.5 truncate font-mono text-xs text-[var(--ink-3)]">via {instanceName}</SheetDescription>
             </div>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {model.capabilities.slice(0, 3).map((capability) => (
-              <Badge key={capability} variant="outline" className="border-white/20 px-2 py-0.5 text-[10px]">
+              <Badge key={capability} variant="outline" className="border-[var(--hairline)] px-2 py-0.5 text-[10px] text-[var(--ink-3)]">
                 {CAPABILITY_META[capability].icon} {t(`capabilities.${capability}.label`)}
               </Badge>
             ))}
-            <Badge variant="outline" className="border-white/20 px-2 py-0.5 text-[10px]">{formatContextWindow(model.context_window)} context</Badge>
+            <Badge variant="outline" className="border-[var(--hairline)] px-2 py-0.5 text-[10px] text-[var(--ink-3)]">{formatContextWindow(model.context_window)} context</Badge>
           </div>
         </SheetHeader>
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -180,17 +180,17 @@ export function TestDrawer({ isOpen, onClose, model, instanceName, onSendMessage
           </div>
           {error ? <ErrorState error={error} onRetry={() => setError(null)} /> : null}
         </div>
-        <div className="shrink-0 border-t border-white/10 bg-[var(--background)]/50 p-4">
+        <div className="shrink-0 border-t border-[var(--hairline)] bg-[var(--panel-bg)] p-4">
           <div className="flex items-end gap-2">
             <div className="relative flex-1">
-              <Textarea ref={textareaRef} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} placeholder={t("test.placeholder")} className="max-h-[120px] min-h-[44px] resize-none border-white/10 bg-white/5 pr-10 focus:border-[var(--primary)]/50" rows={1} />
-              {messages.length > 0 ? <button onClick={() => { setMessages([]); setError(null); }} className="absolute right-2 top-2 p-1 text-[var(--muted)] transition-colors hover:text-[var(--foreground)]" title={t("test.clearChat")}><RotateCcw className="size-4" /></button> : null}
+              <Textarea ref={textareaRef} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} placeholder={t("test.placeholder")} className="max-h-[120px] min-h-[44px] resize-none border-[var(--hairline)] bg-[var(--panel-bg-inset)] pr-10 focus:border-[var(--primary)]/50" rows={1} />
+              {messages.length > 0 ? <button onClick={() => { setMessages([]); setError(null); }} className="absolute right-2 top-2 p-1 text-[var(--ink-3)] transition-colors hover:text-[var(--ink)]" title={t("test.clearChat")}><RotateCcw className="size-4" /></button> : null}
             </div>
             <GlassButton onClick={() => void handleSend()} disabled={!input.trim() || isLoading} size="icon" className="shrink-0">
               {isLoading ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
             </GlassButton>
           </div>
-          <p className="mt-2 text-center text-[10px] text-[var(--muted)]">{t("test.hint")}</p>
+          <p className="mt-2 text-center text-[10px] text-[var(--ink-3)]">{t("test.hint")}</p>
         </div>
       </SheetContent>
     </Sheet>

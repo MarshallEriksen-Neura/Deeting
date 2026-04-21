@@ -23,6 +23,6 @@ describe("AssistantsPage", () => {
     })
 
     expect(setRequestLocaleMock).toHaveBeenCalledWith("en")
-    expect(redirectMock).toHaveBeenCalledWith("/en/dashboard/user/task-agents")
+    expect(redirectMock).toHaveBeenCalledWith("/en/agents/task-agents")
   })
 })

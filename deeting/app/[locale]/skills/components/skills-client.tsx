@@ -165,14 +165,16 @@ export function SkillsClient() {
   return (
     <div className="flex flex-col h-full gap-5">
       {/* Workspace Header Toolbar */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-center gap-4">
-          <h1 className="text-[17px] font-[600] tracking-[-0.2px] text-[var(--ink)] flex items-center gap-2">
-            <Grid2X2 size={18} className="text-[var(--accent)]" />
-            {tCommon("nav.skills")}
-          </h1>
-          <div className="h-4 w-px bg-[var(--hairline)] hidden lg:block" />
-          <div className="flex items-center gap-1.5 bg-[var(--panel-bg-inset)] p-1 rounded-[10px] ring-1 ring-[var(--hairline)] shadow-sm">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="flex min-w-0 flex-1 flex-col gap-3">
+          <div className="flex items-center gap-4">
+            <h1 className="text-[17px] font-[600] tracking-[-0.2px] text-[var(--ink)] flex items-center gap-2">
+              <Grid2X2 size={18} className="text-[var(--accent)]" />
+              {tCommon("nav.skills")}
+            </h1>
+            <div className="h-4 w-px bg-[var(--hairline)] hidden lg:block" />
+          </div>
+          <div className="flex w-full max-w-fit flex-wrap items-center gap-1.5 bg-[var(--panel-bg-inset)] p-1 rounded-[10px] ring-1 ring-[var(--hairline)] shadow-sm">
              {[
                { id: "all", label: t("page.skills.stats.installed"), count: stats.total, icon: Grid2X2 },
                { id: "ready", label: t("page.skills.stats.ready"), count: stats.ready, icon: ShieldCheck, color: "text-[var(--ok)]" },
@@ -196,8 +198,8 @@ export function SkillsClient() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="relative min-w-[240px]">
+        <div className="flex w-full items-center gap-3 xl:w-auto xl:justify-end xl:self-start">
+          <div className="relative min-w-0 flex-1 xl:w-[360px] xl:flex-none">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-[var(--ink-4)]" />
             <input
               value={searchQuery}

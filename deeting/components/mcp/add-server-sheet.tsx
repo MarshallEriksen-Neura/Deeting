@@ -338,7 +338,7 @@ export function AddServerSheet({ children, onCreate, open, onOpenChange }: AddSe
         </Tabs>
 
         {isSubmitting ? (
-          <div className="mx-6 rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-sm text-sky-800 sm:mx-8">
+          <div className="mx-6 rounded-2xl border border-[var(--info-border)] bg-[var(--info-soft)] px-4 py-3 text-sm text-[var(--info)] sm:mx-8">
             <div className="flex items-start gap-2">
               <Loader2 className="mt-0.5 size-4 animate-spin shrink-0" />
               <p>{t("addServer.pendingHint")}</p>

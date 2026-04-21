@@ -235,8 +235,8 @@ export function MCPRegistryClient({
   const visibleSources = sources.filter((source) => source.type !== "cloud");
 
   return (
-    <div className="relative min-h-0">
-      <div className="relative space-y-6">
+    <div className="relative min-h-0 w-full min-w-0">
+      <div className="relative w-full min-w-0 space-y-6">
         <RegistryHeader onCreateManual={handleImportConfig} />
 
         <SupplyChainSection
@@ -245,18 +245,18 @@ export function MCPRegistryClient({
           onCreateSource={handleCreateSource}
         />
 
-        <div className="rounded-[2rem] border border-white/40 bg-[linear-gradient(180deg,rgba(255,255,255,0.66),rgba(248,250,252,0.94))] p-4 shadow-[0_32px_80px_-36px_rgba(15,23,42,0.34)] sm:p-5 lg:p-6">
+        <div className="w-full min-w-0 rounded-[2rem] border border-[var(--hairline)] bg-[var(--panel-bg)] p-4 shadow-[0_32px_80px_-36px_rgba(0,0,0,0.38)] sm:p-5 lg:p-6">
           {indexProgress && indexProgress.total > 0 ? (
-            <div className="mb-4 rounded-xl border border-sky-200/80 bg-sky-50/70 p-3">
-              <div className="mb-1 flex items-center justify-between text-[12px] text-sky-700">
+            <div className="mb-4 rounded-xl border border-[var(--info-border)] bg-[var(--info-soft)] p-3">
+              <div className="mb-1 flex items-center justify-between text-[12px] text-[var(--info)]">
                 <span>{t("actions.reindexingMissing")}</span>
                 <span>
                   {indexProgress.processed}/{indexProgress.total}
                 </span>
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-sky-100">
+              <div className="h-2 overflow-hidden rounded-full bg-[var(--panel-bg-inset)]">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-sky-400 to-cyan-400 transition-all duration-300"
+                  className="h-full rounded-full bg-gradient-to-r from-[var(--info)] to-[var(--accent-strong)] transition-all duration-300"
                   style={{
                     width: `${
                       indexProgress.total > 0
@@ -271,7 +271,7 @@ export function MCPRegistryClient({
                   }}
                 />
               </div>
-              <div className="mt-1 text-[11px] text-sky-700/90">
+              <div className="mt-1 text-[11px] text-[var(--info)] opacity-90">
                 {indexProgress.phase === "completed"
                   ? `${t("tool.labels.index")}: ${indexProgress.indexed}/${indexProgress.total}`
                   : `${t("tool.labels.index")}: ${indexProgress.indexed}/${indexProgress.total}${
@@ -329,12 +329,12 @@ function McpSectionSkeleton({
     <section className="space-y-4">
       <div className="flex items-center gap-2">
         <Skeleton className="h-4 w-32" />
-        <div className="h-px flex-1 bg-gray-100" />
+        <div className="h-px flex-1 bg-[var(--hairline)]" />
       </div>
 
       <div className={`grid grid-cols-1 gap-4 ${columnsClassName}`}>
         {Array.from({ length: cardCount }).map((_, index) => (
-          <div key={index} className="rounded-3xl border border-border/60 bg-card/80 p-6">
+          <div key={index} className="rounded-3xl border border-[var(--hairline)] bg-[var(--panel-bg)] p-6">
             <div className="space-y-4">
               <Skeleton className="h-6 w-32" />
               <Skeleton className="h-4 w-full" />
