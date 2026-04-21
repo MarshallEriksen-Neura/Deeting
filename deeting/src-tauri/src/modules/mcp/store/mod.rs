@@ -24,7 +24,6 @@ use mcp_core::types::{
 };
 
 const DEFAULT_LOCAL_SOURCE_PATH: &str = "~/.config/deeting/mcp.json";
-const DEFAULT_CLOUD_SOURCE_NAME: &str = "Deeting Cloud";
 const QUERY_AFFINITY_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 const QUERY_AFFINITY_MAX_ROWS_PER_TARGET: i64 = 12;
 

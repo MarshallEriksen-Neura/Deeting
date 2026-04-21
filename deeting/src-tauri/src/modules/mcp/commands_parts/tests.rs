@@ -84,10 +84,6 @@ mod tests {
             .expect("create test mcp store");
         store.init().await.expect("init test mcp store");
         let _ = store
-            .ensure_cloud_source("http://127.0.0.1:8000")
-            .await
-            .expect("ensure cloud source");
-        let _ = store
             .ensure_local_source()
             .await
             .expect("ensure local source");

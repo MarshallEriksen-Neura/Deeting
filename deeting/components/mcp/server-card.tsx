@@ -1,10 +1,10 @@
 "use client"
 
 import { useState } from "react"
+import { motion, AnimatePresence } from "framer-motion"
 import { Terminal, AlertCircle, RefreshCw, MoreHorizontal, Pencil, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/shadcn/badge"
-import { GlassButton } from "@/components/ui/common/glass-button"
-import { GlassCard } from "@/components/ui/common/glass-card"
+import { Card } from "@/components/ui/shadcn/card"
 import { Switch } from "@/components/ui/shadcn/switch"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/shadcn/alert-dialog"
 import { GlassDropdownMenu, GlassDropdownMenuContent, GlassDropdownMenuItem, GlassDropdownMenuTrigger } from "@/components/ui/common/glass-dropdown"
@@ -41,7 +41,6 @@ interface ServerCardProps {
   onDelete?: () => void
 }
 
-// Status-driven visual theme for accent bar, dot, and icon
 const statusTheme: Record<MCPToolStatus, {
   bar: string
   dot: string
@@ -51,83 +50,92 @@ const statusTheme: Record<MCPToolStatus, {
   label: string
 }> = {
   healthy: {
-    bar: "from-emerald-400 via-emerald-500 to-teal-500",
-    dot: "bg-emerald-500 shadow-sm shadow-emerald-500/50",
-    dotPing: "bg-emerald-400",
-    iconBg: "bg-gradient-to-br from-emerald-500/12 to-teal-500/8 border-emerald-400/25",
-    iconText: "text-emerald-600",
-    label: "text-emerald-600",
+    bar: "from-[var(--ok)] to-[#5BDFA0]",
+    dot: "bg-[var(--ok)] shadow-[0_0_8px_rgba(31,149,102,0.6)]",
+    dotPing: "bg-[var(--ok)]",
+    iconBg: "bg-[var(--ok-soft)] border-[var(--ok-border)]",
+    iconText: "text-[var(--ok)]",
+    label: "text-[var(--ok)]",
   },
   degraded: {
-    bar: "from-amber-400 via-orange-400 to-orange-500",
-    dot: "bg-orange-400 shadow-sm shadow-orange-400/50",
-    iconBg: "bg-gradient-to-br from-amber-500/12 to-orange-500/8 border-amber-400/25",
-    iconText: "text-amber-600",
-    label: "text-amber-600",
+    bar: "from-[var(--warn)] to-[#F1B85A]",
+    dot: "bg-[var(--warn)] shadow-[0_0_8px_rgba(196,131,18,0.6)]",
+    iconBg: "bg-[var(--warn-soft)] border-[var(--warn-border)]",
+    iconText: "text-[var(--warn)]",
+    label: "text-[var(--warn)]",
   },
   crashed: {
-    bar: "from-red-400 via-red-500 to-rose-500",
-    dot: "bg-red-500 shadow-sm shadow-red-500/50",
-    iconBg: "bg-gradient-to-br from-red-500/12 to-rose-500/8 border-red-400/25",
-    iconText: "text-red-600",
-    label: "text-red-600",
+    bar: "from-[var(--danger)] to-[#FF7A9A]",
+    dot: "bg-[var(--danger)] shadow-[0_0_8px_rgba(212,71,106,0.6)]",
+    iconBg: "bg-[var(--danger-soft)] border-[var(--danger-border)]",
+    iconText: "text-[var(--danger)]",
+    label: "text-[var(--danger)]",
   },
   starting: {
-    bar: "from-yellow-400 via-amber-400 to-amber-500",
-    dot: "bg-yellow-400 shadow-sm shadow-yellow-400/50 animate-pulse",
-    iconBg: "bg-gradient-to-br from-yellow-500/12 to-amber-500/8 border-yellow-400/25",
-    iconText: "text-yellow-600",
-    label: "text-yellow-600",
+    bar: "from-[var(--info)] to-[#6FB0FF]",
+    dot: "bg-[var(--info)] shadow-[0_0_8px_rgba(42,127,255,0.6)] animate-pulse",
+    iconBg: "bg-[var(--info-soft)] border-transparent",
+    iconText: "text-[var(--info)]",
+    label: "text-[var(--info)]",
   },
   updating: {
-    bar: "from-blue-400 via-blue-500 to-indigo-500",
-    dot: "bg-blue-500 shadow-sm shadow-blue-500/50 animate-pulse",
-    iconBg: "bg-gradient-to-br from-blue-500/12 to-indigo-500/8 border-blue-400/25",
-    iconText: "text-blue-600",
-    label: "text-blue-600",
+    bar: "from-[var(--accent)] to-[#A6B0FF]",
+    dot: "bg-[var(--accent)] shadow-[0_0_8px_rgba(109,92,255,0.6)] animate-pulse",
+    iconBg: "bg-[var(--accent-soft)] border-[var(--accent-border)]",
+    iconText: "text-[var(--accent-ink)]",
+    label: "text-[var(--accent-ink)]",
   },
   pending: {
-    bar: "from-gray-300 via-gray-400 to-slate-400",
-    dot: "bg-gray-300 shadow-sm shadow-gray-300/30",
-    iconBg: "bg-gradient-to-br from-gray-500/8 to-slate-500/5 border-gray-300/30",
-    iconText: "text-gray-500",
-    label: "text-gray-500",
+    bar: "from-slate-400 to-slate-500",
+    dot: "bg-[var(--ink-3)]",
+    iconBg: "bg-[var(--panel-bg-inset)] border-[var(--hairline)]",
+    iconText: "text-[var(--ink-3)]",
+    label: "text-[var(--ink-3)]",
   },
   orphaned: {
-    bar: "from-gray-300 via-gray-400 to-slate-400",
-    dot: "bg-gray-400 shadow-sm shadow-gray-400/30",
-    iconBg: "bg-gradient-to-br from-gray-500/8 to-slate-500/5 border-gray-300/30",
-    iconText: "text-gray-500",
-    label: "text-gray-500",
+    bar: "from-slate-400 to-slate-500",
+    dot: "bg-[var(--ink-3)]",
+    iconBg: "bg-[var(--panel-bg-inset)] border-[var(--hairline)]",
+    iconText: "text-[var(--ink-3)]",
+    label: "text-[var(--ink-3)]",
   },
   error: {
-    bar: "from-red-400 via-red-500 to-rose-500",
-    dot: "bg-red-400 shadow-sm shadow-red-400/50",
-    iconBg: "bg-gradient-to-br from-red-500/12 to-rose-500/8 border-red-400/25",
-    iconText: "text-red-500",
-    label: "text-red-500",
+    bar: "from-[var(--danger)] to-[#FF7A9A]",
+    dot: "bg-[var(--danger)]",
+    iconBg: "bg-[var(--danger-soft)] border-[var(--danger-border)]",
+    iconText: "text-[var(--danger)]",
+    label: "text-[var(--danger)]",
   },
   stopped: {
-    bar: "from-gray-200 via-gray-300 to-slate-300",
-    dot: "border-[1.5px] border-gray-300 bg-transparent",
-    iconBg: "bg-white/40 border-white/20",
-    iconText: "text-gray-400",
-    label: "text-gray-400",
+    bar: "from-[var(--chrome-bg)] to-[var(--panel-bg-inset)]",
+    dot: "border border-[var(--hairline-strong)] bg-transparent",
+    iconBg: "bg-[var(--panel-bg-inset)] border-[var(--hairline)]",
+    iconText: "text-[var(--ink-4)]",
+    label: "text-[var(--ink-3)]",
   },
 }
 
 const StatusDot = ({ status }: { status: MCPToolStatus }) => {
   const theme = statusTheme[status]
-  const showPing = status === "healthy"
+  const showPing = status === "healthy" || status === "starting" || status === "updating"
 
   return (
-    <span className="relative flex h-2 w-2 shrink-0">
+    <span className="relative flex h-[6px] w-[6px] shrink-0 items-center justify-center">
       {showPing && (
-        <span className={cn("animate-ping absolute inline-flex h-full w-full rounded-full opacity-75", theme.dotPing)} />
+        <span className={cn("animate-ping absolute inline-flex h-[12px] w-[12px] rounded-full opacity-40", theme.dotPing || theme.dot)} />
       )}
-      <span className={cn("relative inline-flex rounded-full h-2 w-2", theme.dot)} />
+      <span className={cn("relative inline-flex rounded-full h-[6px] w-[6px]", theme.dot)} />
     </span>
   )
+}
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 12 },
+  visible: { 
+    opacity: 1, 
+    y: 0, 
+    transition: { type: "spring", stiffness: 240, damping: 28, mass: 1 } 
+  }
 }
 
 export function ServerCard({
@@ -169,320 +177,294 @@ export function ServerCard({
   const isCompact = density === "compact"
 
   return (
-    <GlassCard
-      blur="lg"
-      theme={showConflict || showUpdate ? "primary" : "default"}
-      hover={isCompact ? "none" : "lift"}
-      padding="none"
+    <motion.div
+      layout
+      variants={itemVariants}
       className={cn(
-        "group cursor-pointer transition-all duration-300",
-        isCompact
-          ? "rounded-[1.35rem] border-white/35 bg-white/75 shadow-[0_14px_36px_-28px_rgba(15,23,42,0.28)]"
-          : "",
-        (showConflict || showUpdate) && "ring-2 ring-amber-400/30"
+        "group relative rounded-[18px] p-[6px] transition-all duration-[220ms] ease-[cubic-bezier(0.32,0.72,0,1)]",
+        "bg-[var(--panel-bg-inset)] ring-1 ring-[var(--hairline)] hover:ring-[var(--hairline-strong)]",
+        "shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
+        (showConflict || showUpdate) && "ring-[var(--warn-border)] bg-[var(--warn-soft)]"
       )}
     >
-      {/* Status accent bar - top gradient line for instant visual scanning */}
-      <div
-        className={cn(
-          "h-[2px] rounded-t-2xl bg-gradient-to-r transition-all duration-500",
-          theme.bar,
-          !isActive && "opacity-30"
-        )}
-      />
+      <Card className={cn(
+        "relative flex flex-col gap-0 overflow-hidden border-0 py-0",
+        "rounded-[12px] bg-[var(--panel-bg)] ring-1 ring-[var(--hairline)]",
+        "shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
+        isCompact ? "h-full" : "min-h-[160px]"
+      )}>
+        {/* Top Status Gradient */}
+        <div
+          className={cn(
+            "absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r transition-all duration-500",
+            theme.bar,
+            !isActive && "opacity-30 grayscale-[50%]"
+          )}
+        />
 
-      <div className={cn("flex flex-col", isCompact ? "gap-2 p-4" : "gap-3 p-5")}>
-        {/* Header: Icon + Info + Actions */}
-        <div className="flex items-start gap-3">
-          {/* Icon - tinted by status when running, or by source type */}
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div
-                  className={cn(
-                    "relative shrink-0 border backdrop-blur-sm transition-all duration-300",
-                    isCompact ? "rounded-lg p-2" : "rounded-xl p-2.5",
-                    isActive
-                      ? theme.iconBg
-                      : isSynced
-                        ? "bg-gradient-to-br from-purple-500/10 to-purple-600/5 border-purple-400/20"
-                        : "bg-white/40 border-white/20"
-                  )}
-                >
-                  <Terminal
-                    size={18}
-                    strokeWidth={2}
-                    className={cn(
-                      "transition-colors duration-300",
-                      isActive ? theme.iconText : isSynced ? "text-purple-600" : "text-gray-600"
+        <div className={cn("flex flex-1 flex-col", isCompact ? "gap-2.5 p-3.5" : "gap-3 p-4")}>
+          {/* Header Row */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              {/* Double-Bezel Icon */}
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div
+                      className={cn(
+                        "relative shrink-0 transition-all duration-[320ms]",
+                        "rounded-[10px] border shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]",
+                        isCompact ? "p-2" : "p-2.5",
+                        isActive ? theme.iconBg : isSynced ? "bg-[var(--accent-soft)] border-[var(--accent-border)]" : "bg-[var(--panel-bg-inset)] border-[var(--hairline)]"
+                      )}
+                    >
+                      <Terminal
+                        size={16}
+                        strokeWidth={1.5}
+                        className={cn(
+                          "transition-colors duration-300",
+                          isActive ? theme.iconText : isSynced ? "text-[var(--accent)]" : "text-[var(--ink-2)]"
+                        )}
+                      />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" align="start" className="rounded-[8px] bg-[var(--panel-bg)] text-[11px] font-[500] text-[var(--ink)] shadow-xl ring-1 ring-[var(--hairline-strong)]">
+                    <p className="font-mono tabular-nums tracking-wide">
+                      {tool.identifier || tool.id}
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+
+              {/* Title & Metadata */}
+              <div className="flex flex-1 min-w-0 flex-col gap-1 mt-0.5">
+                <div className="flex items-center gap-2">
+                  <h3 className={cn(
+                    "truncate font-[600] text-[var(--ink)] tracking-[-0.1px]",
+                    isCompact ? "text-[13px]" : "text-[14px]"
+                  )}>
+                    {tool.name}
+                  </h3>
+                  
+                  {/* Status Pills */}
+                  <AnimatePresence>
+                    {showConflict && (
+                      <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
+                        <Badge variant="outline" className="h-[20px] rounded-full border-[var(--warn-border)] bg-[var(--warn-soft)] px-2 text-[10px] font-[600] uppercase tracking-[0.04em] text-[var(--warn)] shadow-none" onClick={(e) => { e.stopPropagation(); onResolveConflict?.(); }}>
+                          <AlertCircle size={10} className="mr-1" /> {t("tool.badges.conflict")}
+                        </Badge>
+                      </motion.div>
                     )}
+                    {showUpdate && !showConflict && (
+                      <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
+                        <Badge variant="outline" className="h-[20px] rounded-full border-[var(--warn-border)] bg-[var(--warn-soft)] px-2 text-[10px] font-[600] uppercase tracking-[0.04em] text-[var(--warn)] shadow-none" onClick={(e) => { e.stopPropagation(); onResolveConflict?.(); }}>
+                          <AlertCircle size={10} className="mr-1" /> {t("tool.badges.update")}
+                        </Badge>
+                      </motion.div>
+                    )}
+                    {showNew && (
+                      <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
+                        <Badge variant="outline" className="h-[20px] rounded-full border-[var(--ok-border)] bg-[var(--ok-soft)] px-2 text-[10px] font-[600] uppercase tracking-[0.04em] text-[var(--ok)] shadow-none">
+                          {t("tool.badges.new")}
+                        </Badge>
+                      </motion.div>
+                    )}
+                    {!showConflict && !showUpdate && runtimeHintKey && (
+                      <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
+                        <Badge variant="outline" className="h-[20px] rounded-full border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-2 text-[10px] font-[600] uppercase tracking-[0.04em] text-[var(--ink-2)] shadow-none">
+                          {t(runtimeLabelKey)}
+                        </Badge>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                <div className="flex items-center flex-wrap gap-1.5 text-[11px] font-[500] uppercase tracking-[0.02em]">
+                  <div className="flex items-center gap-1.5 rounded-[4px] bg-[var(--panel-bg-inset)] px-1.5 py-[2px] ring-1 ring-[var(--hairline)]">
+                    <StatusDot status={tool.status} />
+                    <span className={theme.label}>{t(`tool.status.${tool.status}`)}</span>
+                  </div>
+                  
+                  {tool.ping !== "-" && isRunning && (
+                    <span className="font-mono tabular-nums text-[var(--ink-3)] tracking-[0] flex items-center gap-1">
+                      <span className="h-[3px] w-[3px] rounded-full bg-[var(--hairline-strong)]" />
+                      {tool.ping}
+                    </span>
+                  )}
+                  
+                  <span className="flex items-center gap-1 text-[var(--ink-3)]">
+                    <span className="h-[3px] w-[3px] rounded-full bg-[var(--hairline-strong)]" />
+                    {isSynced ? t("tool.badges.synced") : t("tool.badges.local")}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions Block */}
+            <div className="flex shrink-0 items-center gap-1.5" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+              {showPrimaryAction && primaryActionLabelKey && (
+                <button
+                  type="button"
+                  className={cn(
+                    "flex h-[28px] items-center justify-center rounded-[8px] px-3 text-[12px] font-[500] shadow-[0_1px_0_var(--hairline)_inset] transition-all duration-150 active:translate-y-[1px]",
+                    tool.recommendedAction === "review" 
+                      ? "bg-[var(--panel-bg)] text-[var(--ink)] ring-1 ring-[var(--hairline)] hover:bg-[var(--panel-bg-inset)] hover:ring-[var(--hairline-strong)]" 
+                      : "bg-[var(--accent)] text-white hover:brightness-110"
+                  )}
+                  onClick={(e) => { e.stopPropagation(); onPrimaryAction?.(); }}
+                >
+                  {t(primaryActionLabelKey)}
+                </button>
+              )}
+              
+              {showInlineToggle && (
+                <div className="flex h-[28px] items-center rounded-[8px] bg-[var(--panel-bg-inset)] px-2 ring-1 ring-[var(--hairline)] transition-all focus-within:ring-[var(--hairline-strong)]">
+                  <Switch
+                    checked={toggleChecked}
+                    onCheckedChange={(checked) => onToggle?.(tool, checked)}
+                    disabled={toggleDisabled}
+                    className="scale-[0.8] data-[state=checked]:bg-[var(--accent)]"
                   />
                 </div>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                <p className="font-mono text-xs">
-                  {t("tool.labels.id")}: {tool.identifier || tool.id}
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+              )}
+              
+              {isSynced && onSync && (
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex h-[28px] w-[28px] items-center justify-center rounded-[8px] bg-transparent text-[var(--ink-3)] transition-colors hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)]"
+                        onClick={(e) => { e.stopPropagation(); onSync?.(); }}
+                      >
+                        <RefreshCw size={14} className={syncLoading ? "animate-spin text-[var(--accent)]" : ""} />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="rounded-[8px] bg-[var(--panel-bg)] text-[11px] font-[500] text-[var(--ink)] ring-1 ring-[var(--hairline-strong)]">
+                      Sync
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
 
-          {/* Name + Compact meta line */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <h3 className={cn("truncate font-semibold text-[var(--foreground)]", isCompact ? "text-[15px]" : "")}>{tool.name}</h3>
-              {/* Alert badges - only the most important one */}
-              {showConflict && (
-                <Badge
-                  variant="outline"
-                  className="text-[10px] h-5 px-1.5 border-amber-400/50 bg-gradient-to-r from-amber-50 to-orange-50 text-amber-700 gap-1 animate-pulse cursor-pointer hover:bg-amber-100 transition-all shrink-0 shadow-sm shadow-amber-500/10"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onResolveConflict?.()
-                  }}
-                >
-                  <AlertCircle size={10} /> {t("tool.badges.conflict")}
-                </Badge>
-              )}
-              {showUpdate && !showConflict && (
-                <Badge
-                  variant="outline"
-                  className="text-[10px] h-5 px-1.5 border-amber-300/70 bg-gradient-to-r from-amber-50 to-yellow-50 text-amber-700 gap-1 cursor-pointer hover:bg-amber-100 transition-all shrink-0 shadow-sm shadow-amber-500/10"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onResolveConflict?.()
-                  }}
-                >
-                  <AlertCircle size={10} /> {t("tool.badges.update")}
-                </Badge>
-              )}
-              {showNew && (
-                <Badge
-                  variant="outline"
-                  className="text-[10px] h-5 px-1.5 text-emerald-600 border-emerald-200/70 bg-emerald-50/80 shrink-0"
-                >
-                  {t("tool.badges.new")}
-                </Badge>
-              )}
-              {!showConflict && !showUpdate && runtimeHintKey && (
-                <Badge
-                  variant="outline"
-                  className="text-[10px] h-5 px-1.5 border-slate-200/80 bg-slate-50/80 text-slate-600 shrink-0"
-                >
-                  {t(runtimeLabelKey)}
-                </Badge>
-              )}
-              {!showConflict && !showUpdate && !runtimeHintKey && showIndexMissing && (
-                <Badge
-                  variant="outline"
-                  className="text-[10px] h-5 px-1.5 border-purple-200/80 bg-purple-50/80 text-purple-700 shrink-0"
-                >
-                  {t(indexLabelKey)}
-                </Badge>
-              )}
-            </div>
-
-            {/* Meta line: status dot + status text + latency + source */}
-            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-              <StatusDot status={tool.status} />
-              <span className={cn("text-[11px] font-medium", theme.label)}>
-                {t(`tool.status.${tool.status}`)}
-              </span>
-              {tool.ping !== "-" && isRunning && (
-                <>
-                  <span className="text-[var(--border)]">·</span>
-                  <span className="text-[11px] font-mono text-[var(--muted)]">{tool.ping}</span>
-                </>
-              )}
-              <span className="text-[var(--border)]">·</span>
-              <span
-                className={cn(
-                  "text-[11px] font-medium",
-                  isSynced ? "text-purple-600/70" : "text-[var(--muted)]"
-                )}
-              >
-                {isSynced ? t("tool.badges.synced") : t("tool.badges.local")}
-              </span>
-              {isCompact && tool.capabilities.length > 0 && (
-                <>
-                  <span className="text-[var(--border)]">·</span>
-                  <span className="truncate text-[11px] text-[var(--muted)]">{tool.capabilities.slice(0, 2).join(" · ")}</span>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Actions - switch always visible, others on hover */}
-          <div
-            className={cn("shrink-0 flex items-center", isCompact ? "gap-1.5" : "gap-2")}
-            data-mcp-action
-            onClick={(event) => {
-              event.stopPropagation()
-              event.preventDefault()
-            }}
-            onPointerDown={(event) => {
-              event.stopPropagation()
-              event.preventDefault()
-            }}
-          >
-            {showPrimaryAction && primaryActionLabelKey && (
-              <GlassButton
-                size="sm"
-                variant={tool.recommendedAction === "review" ? "secondary" : "outline"}
-                className={cn(isCompact ? "h-7 rounded-lg px-2.5 text-[11px]" : "")}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  onPrimaryAction?.()
-                }}
-              >
-                {t(primaryActionLabelKey)}
-              </GlassButton>
-            )}
-            {showInlineToggle && (
-              <Switch
-                checked={toggleChecked}
-                onCheckedChange={(checked) => {
-                  onToggle?.(tool, checked)
-                }}
-                disabled={toggleDisabled}
-                className={cn(
-                  "data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-purple-600 data-[state=checked]:to-purple-500",
-                  isCompact ? "scale-90" : ""
-                )}
-              />
-            )}
-            {isSynced && onSync && (
-              <GlassButton
-                size="icon-sm"
-                variant="ghost"
-                className={cn(
-                  "text-gray-400 hover:text-gray-900 transition-all",
-                  !syncLoading && "opacity-0 group-hover:opacity-100"
-                )}
-                loading={syncLoading}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  onSync?.()
-                }}
-              >
-                <RefreshCw size={14} className={syncLoading ? "animate-spin" : ""} />
-              </GlassButton>
-            )}
-            {showMenu && (
-              <GlassDropdownMenu>
-                <GlassDropdownMenuTrigger asChild>
-                  <GlassButton
-                    size="icon-sm"
-                    variant="ghost"
-                    className="text-gray-400 hover:text-gray-900 opacity-0 group-hover:opacity-100 transition-all"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <MoreHorizontal size={14} />
-                  </GlassButton>
-                </GlassDropdownMenuTrigger>
-                <GlassDropdownMenuContent align="end" className="w-[180px]">
-                  {showDesktopToggleAction && (
-                    <GlassDropdownMenuItem
-                      disabled={toggleDisabled}
-                      onSelect={(event) => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        onToggle?.(tool, !toggleChecked)
-                      }}
+              {showMenu && (
+                <GlassDropdownMenu>
+                  <GlassDropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex h-[28px] w-[28px] items-center justify-center rounded-[8px] bg-transparent text-[var(--ink-3)] transition-colors hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-[var(--window-bg)]"
                     >
-                      {t(toggleActionLabelKey)}
-                    </GlassDropdownMenuItem>
-                  )}
-                  {onEdit && (
-                    <GlassDropdownMenuItem
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        onEdit?.()
-                      }}
-                    >
-                      <Pencil size={14} />
-                      {t("server.actions.edit")}
-                    </GlassDropdownMenuItem>
-                  )}
-                  {onDelete && (
-                    <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-                      <AlertDialogTrigger asChild>
-                        <GlassDropdownMenuItem
-                          variant="destructive"
-                          onSelect={(event) => {
-                            event.preventDefault()
-                            event.stopPropagation()
-                            setConfirmOpen(true)
-                          }}
-                        >
-                          <Trash2 size={14} />
-                          {t(deleteActionLabelKey)}
-                        </GlassDropdownMenuItem>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>{t(`${deleteDialogKeyPrefix}.title`)}</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            {t(`${deleteDialogKeyPrefix}.description`, { name: tool.name })}
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>{t(`${deleteDialogKeyPrefix}.cancel`)}</AlertDialogCancel>
-                          <AlertDialogAction
-                            className="bg-red-600 hover:bg-red-500 text-white"
-                            onClick={() => {
-                              onDelete?.()
-                              setConfirmOpen(false)
-                            }}
+                      <MoreHorizontal size={14} />
+                    </button>
+                  </GlassDropdownMenuTrigger>
+                  <GlassDropdownMenuContent align="end" className="w-[180px] rounded-[12px] bg-[var(--panel-bg)] p-1 text-[12px] shadow-[0_20px_48px_-24px_rgba(0,0,0,0.22)] ring-1 ring-[var(--hairline-strong)]">
+                    {showDesktopToggleAction && (
+                      <GlassDropdownMenuItem
+                        disabled={toggleDisabled}
+                        className="rounded-[6px] px-2.5 py-1.5 focus:bg-[var(--accent-soft)] focus:text-[var(--accent-ink)] cursor-pointer"
+                        onSelect={(e) => { e.preventDefault(); e.stopPropagation(); onToggle?.(tool, !toggleChecked); }}
+                      >
+                        {t(toggleActionLabelKey)}
+                      </GlassDropdownMenuItem>
+                    )}
+                    {onEdit && (
+                      <GlassDropdownMenuItem
+                        className="flex items-center gap-2 rounded-[6px] px-2.5 py-1.5 focus:bg-[var(--panel-bg-inset)] cursor-pointer"
+                        onClick={(e) => { e.stopPropagation(); onEdit?.(); }}
+                      >
+                        <Pencil size={13} className="text-[var(--ink-3)]" />
+                        {t("server.actions.edit")}
+                      </GlassDropdownMenuItem>
+                    )}
+                    {onDelete && (
+                      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+                        <AlertDialogTrigger asChild>
+                          <GlassDropdownMenuItem
+                            className="flex items-center gap-2 rounded-[6px] px-2.5 py-1.5 text-[var(--danger)] focus:bg-[var(--danger-soft)] focus:text-[var(--danger)] cursor-pointer"
+                            onSelect={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmOpen(true); }}
                           >
-                            {t(`${deleteDialogKeyPrefix}.confirm`)}
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  )}
-                </GlassDropdownMenuContent>
-              </GlassDropdownMenu>
-            )}
+                            <Trash2 size={13} />
+                            {t(deleteActionLabelKey)}
+                          </GlassDropdownMenuItem>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent className="rounded-[18px] bg-[var(--panel-bg)] p-[6px] ring-1 ring-[var(--hairline)] sm:max-w-[420px]">
+                          <div className="rounded-[12px] bg-[var(--panel-bg)] ring-1 ring-[var(--hairline)] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                            <AlertDialogHeader>
+                              <AlertDialogTitle className="text-[17px] font-[600] tracking-[-0.2px] text-[var(--ink)]">
+                                {t(`${deleteDialogKeyPrefix}.title`)}
+                              </AlertDialogTitle>
+                              <AlertDialogDescription className="text-[13px] leading-[1.5] text-[var(--ink-2)]">
+                                {t(`${deleteDialogKeyPrefix}.description`, { name: tool.name })}
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter className="mt-6 gap-2 sm:space-x-0">
+                              <AlertDialogCancel className="h-[32px] rounded-[8px] bg-[var(--panel-bg)] px-3.5 text-[12px] font-[500] text-[var(--ink)] ring-1 ring-[var(--hairline)] hover:bg-[var(--panel-bg-inset)]">
+                                {t(`${deleteDialogKeyPrefix}.cancel`)}
+                              </AlertDialogCancel>
+                              <AlertDialogAction
+                                className="h-[32px] rounded-[8px] bg-[var(--danger)] px-3.5 text-[12px] font-[500] text-white shadow-[0_1px_0_rgba(255,255,255,0.2)_inset] hover:brightness-110 border border-[var(--danger-border)]"
+                                onClick={() => { onDelete?.(); setConfirmOpen(false); }}
+                              >
+                                {t(`${deleteDialogKeyPrefix}.confirm`)}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </div>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
+                  </GlassDropdownMenuContent>
+                </GlassDropdownMenu>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Description */}
-        <div className={cn(isCompact ? "min-h-[1.5rem]" : "min-h-[2em]")}>
-          <p className={cn("text-[var(--muted)] leading-relaxed", isCompact ? "line-clamp-1 text-[13px]" : "line-clamp-2 text-sm")}>
-            {tool.description}
-          </p>
-          {tool.runtimeStatusReason && runtimeHintKey && (
-            <div className={cn("mt-2 text-slate-600 bg-slate-50/80 backdrop-blur-sm border border-slate-200/60 shadow-sm", isCompact ? "rounded-md px-2.5 py-1 text-[11px]" : "rounded-lg px-3 py-1.5 text-xs")}>
-              <span className="font-semibold">{t("tool.labels.runtime")}:</span> {t(runtimeLabelKey)}
-            </div>
-          )}
-          {tool.indexStatus === "missing" && (
-            <div className={cn("mt-2 text-purple-700 bg-purple-50/80 backdrop-blur-sm border border-purple-200/60 shadow-sm", isCompact ? "rounded-md px-2.5 py-1 text-[11px]" : "rounded-lg px-3 py-1.5 text-xs")}>
-              <span className="font-semibold">{t("tool.labels.index")}:</span> {t(indexLabelKey)}
-            </div>
-          )}
-          {(tool.status === "crashed" || tool.status === "error") && tool.error && (
-            <div className={cn("mt-2 text-red-600 font-mono bg-red-50/80 backdrop-blur-sm border border-red-200/50 shadow-sm", isCompact ? "rounded-md px-2.5 py-1 text-[11px]" : "rounded-lg px-3 py-1.5 text-xs")}>
-              <span className="font-semibold">{t("tool.labels.error")}:</span> {tool.error}
-            </div>
-          )}
-        </div>
-
-        {/* Footer: Capability chips */}
-        {tool.capabilities.length > 0 && !isCompact && (
-          <div className="flex items-center gap-1.5 pt-2.5 border-t border-[var(--border)]/20">
-            {tool.capabilities.map((cap) => (
-              <span
-                key={cap}
-                className="text-[10px] bg-[var(--surface)]/60 text-[var(--muted)] px-2 py-0.5 rounded-md border border-[var(--border)]/30 font-mono tracking-tight"
-              >
-                {cap}
-              </span>
-            ))}
+          {/* Description */}
+          <div className="flex-1 mt-1">
+            <p className={cn(
+              "text-[var(--ink-2)] font-[400] leading-[1.5] tracking-[0]",
+              isCompact ? "line-clamp-1 text-[12px]" : "line-clamp-2 text-[13px]"
+            )}>
+              {tool.description}
+            </p>
+            
+            {/* Contextual Errors / Messages */}
+            <AnimatePresence>
+              {(tool.status === "crashed" || tool.status === "error") && tool.error && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                  <div className="mt-2 rounded-[6px] bg-[var(--danger-soft)] px-2.5 py-1.5 border border-[var(--danger-border)]">
+                    <span className="text-[11px] font-mono text-[var(--danger)] line-clamp-2">
+                      <strong className="font-[600]">{t("tool.labels.error")}:</strong> {tool.error}
+                    </span>
+                  </div>
+                </motion.div>
+              )}
+              {tool.indexStatus === "missing" && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                  <div className="mt-2 rounded-[6px] bg-[var(--accent-soft)] px-2.5 py-1.5 border border-[var(--accent-border)]">
+                    <span className="text-[11px] text-[var(--accent-ink)]">
+                      <strong className="font-[600]">{t("tool.labels.index")}:</strong> {t(indexLabelKey)}
+                    </span>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
-        )}
-      </div>
-    </GlassCard>
+
+          {/* Capabilities Footer */}
+          {tool.capabilities.length > 0 && !isCompact && (
+            <div className="mt-auto flex flex-wrap items-center gap-1.5 border-t border-[var(--hairline)] pt-3">
+              {tool.capabilities.map((cap) => (
+                <span
+                  key={cap}
+                  className="rounded-[4px] border border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-1.5 py-[2px] font-mono text-[10px] tracking-[0.2px] text-[var(--ink-3)] uppercase"
+                >
+                  {cap}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </Card>
+    </motion.div>
   )
 }

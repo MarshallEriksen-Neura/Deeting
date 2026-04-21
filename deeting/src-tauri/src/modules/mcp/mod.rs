@@ -1,6 +1,5 @@
 pub mod bridge;
 pub mod commands;
-pub(crate) mod compat;
 pub mod error;
 pub mod policy;
 pub mod process;

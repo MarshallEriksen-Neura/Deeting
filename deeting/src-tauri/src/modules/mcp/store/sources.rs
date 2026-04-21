@@ -45,39 +45,6 @@ impl McpStore {
             .ok_or_else(|| McpError::NotFound("local source missing after insert".to_string()))
     }
 
-    pub async fn ensure_cloud_source(&self, base_url: &str) -> Result<McpSource, McpError> {
-        if let Some(source) = self.find_source_by_type(McpSourceType::Cloud).await? {
-            return Ok(source);
-        }
-
-        let now = now_rfc3339()?;
-        let id = Uuid::new_v4().to_string();
-        sqlx::query(
-            r#"
-            INSERT INTO mcp_sources
-              (id, name, source_type, path_or_url, trust_level, status, last_synced_at, is_read_only, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-            "#,
-        )
-        .bind(&id)
-        .bind(DEFAULT_CLOUD_SOURCE_NAME)
-        .bind(McpSourceType::Cloud.as_str())
-        .bind(base_url)
-        .bind(McpTrustLevel::Official.as_str())
-        .bind(McpSourceStatus::Active.as_str())
-        .bind::<Option<String>>(None)
-        .bind(1)
-        .bind(&now)
-        .bind(&now)
-        .execute(&self.write_pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
-
-        self.get_source(&id)
-            .await?
-            .ok_or_else(|| McpError::NotFound("cloud source missing after insert".to_string()))
-    }
-
     pub async fn list_sources(&self) -> Result<Vec<McpSource>, McpError> {
         let rows = sqlx::query(
             r#"
