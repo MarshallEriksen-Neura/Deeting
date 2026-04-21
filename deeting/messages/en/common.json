@@ -21,7 +21,10 @@
     },
     "loading": {
       "theme": "Switching theme...",
-      "workspace": "Synchronizing workspace..."
+      "themeDetail": "Applying the refreshed interface palette.",
+      "workspace": "Synchronizing workspace...",
+      "language": "Switching language...",
+      "languageDetail": "Reloading the current interface copy."
     },
     "desktopClose": {
       "title": "Close Window",
@@ -82,7 +85,10 @@
       "apiKeys": "API Keys",
       "docs": "Documentation",
       "logout": "Log out",
-      "guest": "Guest"
+      "guest": "Guest",
+      "notifications": "Notifications",
+      "backgroundDark": "Switch to dark background",
+      "backgroundLight": "Switch to light background"
     },
     "headerNav": {
       "home": "Home",
@@ -152,6 +158,7 @@
       "adminNotifications": "Notification Management",
       "gatewayLogs": "Gateway Logs",
       "routingMab": "Routing & MAB",
+      "mcp": "MCP",
       "skills": "Skill Management",
       "scanReviews": "Scan Reviews",
       "adminMemory": "System Knowledge",

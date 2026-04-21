@@ -8,7 +8,6 @@ export const DESKTOP_MCP_COMMANDS = {
   listSources: "list_mcp_sources",
   createSource: "create_mcp_source",
   syncSource: "sync_mcp_source",
-  syncCloudSubscriptions: "sync_cloud_subscriptions",
   listTools: "list_mcp_tools",
   reindexTool: "reindex_mcp_tool",
   deleteLocalTool: "delete_local_mcp_tool",

@@ -180,9 +180,6 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         store.ensure_local_source().await?;
         log_startup_phase("ensure_local_source", phase_started_at);
         let phase_started_at = Instant::now();
-        store.ensure_cloud_source(&cloud_base_url).await?;
-        log_startup_phase("ensure_cloud_source", phase_started_at);
-        let phase_started_at = Instant::now();
         crate::modules::code_mode::core_tool_contracts::sync_core_tool_registry_entries(
             store.as_ref(),
         )

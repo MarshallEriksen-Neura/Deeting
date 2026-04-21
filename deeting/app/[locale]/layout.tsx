@@ -3,6 +3,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { getMessages, setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
+import { InterfaceTransitionOverlay } from "@/components/common/interface-transition-overlay";
 import { routing } from "@/i18n/routing";
 
 export const dynamicParams = false;
@@ -30,7 +31,8 @@ export default async function LocaleLayout({
 
   return (
     <NextIntlClientProvider locale={locale} messages={messages}>
-      <AppShell locale={locale}>{children}</AppShell>
+      <AppShell>{children}</AppShell>
+      <InterfaceTransitionOverlay />
     </NextIntlClientProvider>
   );
 }

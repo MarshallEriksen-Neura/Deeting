@@ -5,6 +5,23 @@
         "title": "我的插件",
         "description": "管理当前桌面端已安装的插件。"
       },
+      "skills": {
+        "eyebrow": "本地桌面运行时",
+        "description": "只展示当前桌面端已经注册的本地技能、运行状态和运行配置，不再接入云端市场。",
+        "searchPlaceholder": "搜索技能名称、ID 或执行语义...",
+        "refresh": "刷新技能状态",
+        "desktopOnlyTitle": "仅桌面端可用",
+        "desktopOnlyDescription": "技能管理依赖 Tauri 本地运行时。请在桌面应用内打开此页面。",
+        "summaryTitle": "技能概况",
+        "surfaceLabel": "执行语义",
+        "versionLabel": "版本",
+        "stats": {
+          "installed": "已注册技能",
+          "ready": "可直接运行",
+          "actionRequired": "待补齐条件"
+        },
+        "noSearchResults": "没有匹配当前搜索条件的技能。"
+      },
       "market": {
         "title": "插件市场",
         "description": "浏览社区插件；安装行为仅发生在桌面本地。"

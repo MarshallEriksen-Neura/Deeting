@@ -111,6 +111,7 @@
   --window-bg: #f7f7f8;
   --sidebar-bg: rgba(246, 247, 250, 0.78);
   --chrome-bg: #efeff3;
+  --shell-chrome-bg: var(--sidebar-bg);
   --panel-bg: #ffffff;
   --panel-bg-inset: #f2f2f5;
   --panel-raised: #ffffff;
@@ -149,7 +150,7 @@
 
   /* shell dimensions */
   --shell-titlebar-h: 32px;
-  --shell-toolbar-h: 48px;
+  --shell-toolbar-h: 40px;
   --shell-statusbar-h: 26px;
   --shell-sidebar-w: 264px;
   --shell-sidebar-w-collapsed: 68px;
@@ -306,6 +307,7 @@ html.dark {
   --window-bg: #0b0c10;
   --sidebar-bg: rgba(12, 13, 18, 0.72);
   --chrome-bg: #141520;
+  --shell-chrome-bg: var(--sidebar-bg);
   --panel-bg: #141520;
   --panel-bg-inset: #0e0f15;
   --panel-raised: #1a1c28;
@@ -641,13 +643,13 @@ html.dark {
 }
 
 html.dark [data-tauri-drag-region] {
-  background: var(--chrome-bg);
-  box-shadow: 0 1px 0 0 var(--hairline);
+  background: var(--shell-chrome-bg);
+  box-shadow: none;
 }
 
 html:not(.dark) [data-tauri-drag-region] {
-  background: var(--chrome-bg);
-  box-shadow: 0 1px 0 0 var(--hairline);
+  background: var(--shell-chrome-bg);
+  box-shadow: none;
 }
 
 

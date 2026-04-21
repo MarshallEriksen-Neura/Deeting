@@ -3,7 +3,7 @@
 import { create } from "zustand"
 import { devtools, subscribeWithSelector } from "zustand/middleware"
 import { useShallow } from "zustand/react/shallow"
-import { NotificationItem } from "@/components/notifications/notification-center"
+import { type NotificationItem } from "@/components/notifications/types"
 import { normalizeNotificationTimestamp, type NotificationTimestamp } from "@/components/notifications/notification-utils"
 
 type NotificationInput = Omit<NotificationItem, "id" | "read" | "timestamp"> & {
@@ -45,7 +45,7 @@ interface NotificationState {
 
 export const useNotificationStore = create<NotificationState>()(
   devtools(
-    subscribeWithSelector((set, get) => ({
+    subscribeWithSelector((set) => ({
       // 初始状态
       isNotificationSheetOpen: false,
       notifications: [],

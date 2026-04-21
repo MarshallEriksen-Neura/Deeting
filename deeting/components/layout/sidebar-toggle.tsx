@@ -1,28 +1,25 @@
 "use client";
 
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { IconButton } from "@/components/ui/common/icon-button";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "@/components/ui/shadcn/sidebar";
 
 export function SidebarToggle() {
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
+  const label = isCollapsed ? "展开侧边栏" : "收起侧边栏";
 
   return (
-    <button
-      type="button"
+    <IconButton
+      variant="surface"
+      size="md"
+      label={label}
       onClick={toggleSidebar}
-      className={cn(
-        "inline-flex h-9 items-center gap-2 rounded-full border border-[var(--hairline)] bg-[var(--panel-bg)] px-3 text-sm text-[var(--ink-2)] transition-[border-color,transform,color] duration-[var(--dur-fast)] ease-[var(--ease-standard)] hover:border-[var(--hairline-strong)] hover:text-[var(--ink)] hover:-translate-y-px"
-      )}
-      aria-label="Toggle sidebar"
-      title="Toggle sidebar"
+      active={isCollapsed}
+      className={cn("shrink-0")}
     >
       {isCollapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
-      <span className="hidden md:inline">{isCollapsed ? "Expand" : "Collapse"}</span>
-      <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--ink-3)]">
-        ⌘\
-      </span>
-    </button>
+    </IconButton>
   );
 }

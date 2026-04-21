@@ -56,16 +56,12 @@ export function TitleBar() {
   return (
     <div
       data-tauri-drag-region
-      className="fixed top-0 left-0 right-0 z-[60] flex h-[var(--desktop-title-bar-height,2rem)] items-center justify-between px-3 select-none"
+      className="fixed top-0 left-0 right-0 z-[60] flex h-[var(--desktop-title-bar-height,2rem)] items-center justify-between bg-[var(--shell-chrome-bg)] px-3 select-none"
     >
       <div
         data-tauri-drag-region
-        className="flex min-w-0 flex-1 items-center justify-center"
-      >
-        <span className="truncate text-[11px] font-medium tracking-[0.28em] text-[var(--ink-2)] uppercase">
-          Deeting Workstation
-        </span>
-      </div>
+        className="flex min-w-0 flex-1"
+      />
 
       <div className="absolute top-0 right-0 flex h-full items-center">
         <button

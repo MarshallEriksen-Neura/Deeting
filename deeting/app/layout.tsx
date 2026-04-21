@@ -7,7 +7,7 @@ import { PlatformProvider } from "@/lib/platform/provider";
 import "./globals.css";
 
 const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true";
-const desktopTitleBarHeight = isTauri ? "2.25rem" : "0px";
+const desktopTitleBarHeight = isTauri ? "2rem" : "0px";
 const appHeaderTopInset = isTauri ? "0.5rem" : "1rem";
 const appHeaderOffset = `calc(4rem + ${appHeaderTopInset})`;
 const appViewportHeight = isTauri
@@ -27,7 +27,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className="bg-[var(--window-bg)] pt-[var(--desktop-title-bar-height,0px)] font-[family:var(--font-text)] text-[var(--ink)] antialiased"
+        className="overflow-hidden bg-[var(--window-bg)] pt-[var(--desktop-title-bar-height,0px)] font-[family:var(--font-text)] text-[var(--ink)] antialiased"
         style={
           {
             "--desktop-title-bar-height": desktopTitleBarHeight,

@@ -1,22 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { motion, useReducedMotion } from "framer-motion";
-import {
-  Blocks,
-  BrainCircuit,
-  ChevronDown,
-  Gauge,
-  HelpCircle,
-  LayoutDashboard,
-  PanelLeftClose,
-  PanelLeftOpen,
-  PanelRight,
-  Search,
-  Settings2,
-} from "lucide-react";
+import Image from "next/image";
+import { motion } from "framer-motion";
+import { ChevronDown, LayoutDashboard, Terminal, Workflow } from "lucide-react";
+import { useTranslations } from "next-intl";
+import { Link, usePathname } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
-import { IconButton } from "@/components/ui/common/icon-button";
 import {
   SidebarContent,
   SidebarFooter,
@@ -29,141 +19,72 @@ import {
   useSidebar,
 } from "@/components/ui/shadcn/sidebar";
 
-type SidebarItem = {
+type NavItem = {
   id: string;
-  label: string;
+  href: "/" | "/mcp" | "/skills";
+  labelKey: "nav.dashboard" | "nav.mcp" | "nav.skills";
   icon: React.ComponentType<{ className?: string }>;
-  badge?: string;
 };
 
-type SidebarGroupConfig = {
-  title: string;
-  items: SidebarItem[];
+type NavGroup = {
+  id: string;
+  titleKey: "nav.main";
+  items: NavItem[];
 };
 
-const NAV_GROUPS: SidebarGroupConfig[] = [
+const NAV_GROUPS: NavGroup[] = [
   {
-    title: "Workspace",
+    id: "main",
+    titleKey: "nav.main",
     items: [
-      { id: "overview", label: "总览", icon: LayoutDashboard, badge: "3" },
-      { id: "assembly", label: "上下文编排", icon: Blocks, badge: "live" },
-      { id: "memory", label: "记忆原语", icon: BrainCircuit, badge: "1.4k" },
-      { id: "pipeline", label: "片段管线", icon: Gauge, badge: "6" },
-    ],
-  },
-  {
-    title: "Surface",
-    items: [
-      { id: "surface", label: "工作区视图", icon: Search },
-      { id: "inspector", label: "检查器", icon: PanelRight, badge: "pin" },
+      { id: "overview", href: "/", labelKey: "nav.dashboard", icon: LayoutDashboard },
+      { id: "mcp", href: "/mcp", labelKey: "nav.mcp", icon: Terminal },
+      { id: "skills", href: "/skills", labelKey: "nav.skills", icon: Workflow },
     ],
   },
 ];
 
-const SECTION_IDS = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.id));
+function isNavItemActive(pathname: string, href: NavItem["href"]) {
+  if (href === "/") {
+    return pathname === "/";
+  }
 
-function useActiveSection(sectionIds: string[]) {
-  const [activeSection, setActiveSection] = React.useState(sectionIds[0] ?? "");
-
-  React.useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const updateFromHash = () => {
-      const hash = window.location.hash.replace(/^#/, "");
-      if (hash && sectionIds.includes(hash)) {
-        setActiveSection(hash);
-      }
-    };
-
-    updateFromHash();
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0];
-
-        if (visible?.target.id) {
-          setActiveSection(visible.target.id);
-        }
-      },
-      {
-        rootMargin: "-18% 0px -52% 0px",
-        threshold: [0.18, 0.36, 0.6],
-      }
-    );
-
-    sectionIds.forEach((sectionId) => {
-      const element = document.getElementById(sectionId);
-      if (element) {
-        observer.observe(element);
-      }
-    });
-
-    window.addEventListener("hashchange", updateFromHash);
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("hashchange", updateFromHash);
-    };
-  }, [sectionIds]);
-
-  return [activeSection, setActiveSection] as const;
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 function WorkstationSidebarItem({
   item,
   isActive,
   isCollapsed,
-  onSelect,
+  label,
 }: {
-  item: SidebarItem;
+  item: NavItem;
   isActive: boolean;
   isCollapsed: boolean;
-  onSelect: (id: string) => void;
+  label: string;
 }) {
-  const shouldReduceMotion = useReducedMotion();
   const Icon = item.icon;
 
   return (
     <SidebarMenuItem className="relative list-none">
-      <motion.a
-        href={`#${item.id}`}
+      <Link
+        href={item.href}
         data-active={isActive}
         className={cn(
-          "group/nav relative flex w-full items-center overflow-hidden rounded-[12px] border border-transparent text-[13px] font-medium text-[var(--ink-2)] outline-none focus-visible:shadow-[var(--focus-ring)]",
-          "h-8 gap-3 px-3 py-0",
-          "transition-[background-color,border-color,color] duration-[var(--dur-fast)] ease-[var(--ease-decel)]",
-          "hover:bg-[color-mix(in_srgb,var(--ink)_4%,transparent)] hover:text-[var(--ink)]",
+          "group/nav relative flex w-full items-center overflow-hidden rounded-[12px] border border-transparent text-[13px] font-medium text-[var(--ink-2)] outline-none",
+          "h-8 gap-3 px-3 py-0 transition-[background-color,border-color,color] duration-[var(--dur-fast)] ease-[var(--ease-decel)]",
+          "hover:bg-[color-mix(in_srgb,var(--ink)_4%,transparent)] hover:text-[var(--ink)] focus-visible:shadow-[var(--focus-ring)]",
           "data-[active=true]:text-[var(--accent-ink)]",
           isCollapsed && "h-10 justify-center gap-0 px-0"
         )}
-        onClick={(event) => {
-          event.preventDefault();
-          onSelect(item.id);
-        }}
-        whileHover={shouldReduceMotion ? undefined : { x: isCollapsed ? 0 : 2 }}
-        whileTap={shouldReduceMotion ? undefined : { scale: 0.985 }}
-        transition={
-          shouldReduceMotion
-            ? { duration: 0 }
-            : { type: "spring", stiffness: 320, damping: 26, mass: 0.8 }
-        }
-        title={isCollapsed ? item.label : undefined}
+        title={isCollapsed ? label : undefined}
         aria-current={isActive ? "page" : undefined}
       >
         {isActive ? (
           <motion.span
             layoutId="workstation-sidebar-active"
             className="absolute inset-0 rounded-[12px] border border-[var(--accent-border)] bg-[var(--accent-soft)]"
-            transition={{
-              type: "spring",
-              stiffness: 280,
-              damping: 30,
-              mass: 0.9,
-            }}
+            transition={{ type: "spring", stiffness: 280, damping: 30, mass: 0.9 }}
             aria-hidden
           />
         ) : null}
@@ -172,17 +93,12 @@ function WorkstationSidebarItem({
           <motion.span
             layoutId="workstation-sidebar-rail"
             className="absolute left-0 top-1/2 h-[18px] w-[3px] -translate-y-1/2 rounded-r-full bg-[var(--accent-strong)]"
-            transition={{
-              type: "spring",
-              stiffness: 280,
-              damping: 32,
-              mass: 0.8,
-            }}
+            transition={{ type: "spring", stiffness: 280, damping: 32, mass: 0.8 }}
             aria-hidden
           />
         ) : null}
 
-        <motion.span
+        <span
           className={cn(
             "relative z-[1] flex size-8 shrink-0 items-center justify-center rounded-[10px] transition-colors",
             isCollapsed && "size-10 rounded-[12px]",
@@ -190,34 +106,12 @@ function WorkstationSidebarItem({
               ? "bg-[color-mix(in_srgb,var(--accent-soft)_70%,white_24%)] text-[var(--accent-strong)]"
               : "text-[var(--ink-3)] group-hover/nav:text-[var(--ink)]"
           )}
-          whileHover={shouldReduceMotion ? undefined : { scale: 1.045, rotate: -3 }}
-          transition={
-            shouldReduceMotion
-              ? { duration: 0 }
-              : { type: "spring", stiffness: 360, damping: 24 }
-          }
         >
           <Icon className={cn(isCollapsed ? "size-5" : "size-[18px]")} />
-        </motion.span>
+        </span>
 
-        {!isCollapsed ? (
-          <>
-            <span className="relative z-[1] flex-1 truncate">{item.label}</span>
-            {item.badge ? (
-              <span
-                className={cn(
-                  "relative z-[1] inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 font-mono text-[10px] tabular-nums",
-                  isActive
-                    ? "bg-[var(--accent-strong)] text-[var(--accent-contrast)]"
-                    : "border border-[var(--hairline)] bg-[var(--panel-bg)] text-[var(--ink-3)]"
-                )}
-              >
-                {item.badge}
-              </span>
-            ) : null}
-          </>
-        ) : null}
-      </motion.a>
+        {!isCollapsed ? <span className="relative z-[1] flex-1 truncate">{label}</span> : null}
+      </Link>
     </SidebarMenuItem>
   );
 }
@@ -227,7 +121,7 @@ function SidebarFooterCluster({ isCollapsed }: { isCollapsed: boolean }) {
     <div
       className={cn(
         "flex items-center gap-2 rounded-[14px] border border-[var(--hairline)] bg-[color-mix(in_srgb,var(--panel-bg)_92%,transparent)] p-2",
-        isCollapsed && "flex-col"
+        isCollapsed && "justify-center"
       )}
     >
       <div className="flex size-9 shrink-0 items-center justify-center rounded-[12px] border border-[var(--hairline)] bg-[var(--panel-bg-inset)] font-semibold tracking-[-0.04em] text-[var(--ink)]">
@@ -236,63 +130,25 @@ function SidebarFooterCluster({ isCollapsed }: { isCollapsed: boolean }) {
 
       {!isCollapsed ? (
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-medium text-[var(--ink)]">
-            Deeting Shell
-          </div>
+          <div className="truncate text-[13px] font-medium text-[var(--ink)]">Desktop Runtime</div>
           <div className="mt-0.5 flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-[var(--ink-3)]">
             <span className="inline-flex h-2 w-2 rounded-full bg-[var(--ok)]" />
-            Ready
+            Local only
           </div>
         </div>
       ) : null}
-
-      <div className={cn("flex items-center gap-1", isCollapsed && "flex-col")}>
-        <IconButton variant="ghost" size="sm" label="设置">
-          <Settings2 />
-        </IconButton>
-        <IconButton variant="ghost" size="sm" label="帮助">
-          <HelpCircle />
-        </IconButton>
-      </div>
     </div>
   );
 }
 
 export function WorkstationSidebar() {
-  const { state, toggleSidebar } = useSidebar();
+  const tCommon = useTranslations("common");
+  const pathname = usePathname();
+  const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
-  const [expandedGroups, setExpandedGroups] = React.useState<Record<string, boolean>>(
-    () =>
-      Object.fromEntries(NAV_GROUPS.map((group) => [group.title, true])) as Record<
-        string,
-        boolean
-      >
-  );
-  const [activeSection, setActiveSection] = useActiveSection(SECTION_IDS);
-
-  const handleSelect = React.useCallback(
-    (sectionId: string) => {
-      setActiveSection(sectionId);
-
-      if (typeof document !== "undefined") {
-        const target = document.getElementById(sectionId);
-        target?.scrollIntoView({
-          behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-            ? "auto"
-            : "smooth",
-          block: "start",
-        });
-      }
-
-      if (typeof history !== "undefined") {
-        history.replaceState(null, "", `#${sectionId}`);
-      }
-    },
-    [setActiveSection]
-  );
-
-  const CollapseIcon = isCollapsed ? PanelLeftOpen : PanelLeftClose;
-  const collapseLabel = isCollapsed ? "展开侧栏" : "收起侧栏";
+  const [expandedGroups, setExpandedGroups] = React.useState<Record<string, boolean>>({
+    main: true,
+  });
 
   return (
     <aside
@@ -300,8 +156,10 @@ export function WorkstationSidebar() {
       data-state={state}
       data-collapsible={isCollapsed ? "icon" : "expanded"}
       className={cn(
-        "group/sidebar group relative flex h-full min-h-0 flex-col border-r border-[var(--hairline)]",
+        "group/sidebar group relative flex h-full min-h-0 flex-col",
         "bg-[linear-gradient(177deg,color-mix(in_srgb,var(--sidebar-bg)_96%,white_4%)_0%,color-mix(in_srgb,var(--sidebar-bg)_90%,transparent)_78%,color-mix(in_srgb,var(--sidebar-bg)_82%,var(--window-bg)_18%)_100%)]",
+        "shadow-[2px_0_10px_-8px_color-mix(in_srgb,var(--ink)_22%,transparent)]",
+        "after:pointer-events-none after:absolute after:inset-y-0 after:-right-2 after:w-2 after:content-[''] after:bg-[linear-gradient(90deg,color-mix(in_srgb,var(--ink)_4%,transparent),transparent)]",
         "backdrop-blur-[32px] transition-[width] duration-[var(--dur-slow)] ease-[var(--ease-emphasized)]",
         isCollapsed ? "w-[68px]" : "w-[264px]"
       )}
@@ -309,59 +167,41 @@ export function WorkstationSidebar() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.38),transparent_24%)] opacity-70 dark:opacity-40" />
 
       <SidebarHeader className={cn("relative z-[1] gap-3 p-3", isCollapsed && "px-2 py-3")}>
-        <div
+        <Link
+          href="/"
           className={cn(
-            "flex items-center gap-2",
-            isCollapsed ? "flex-col" : "flex-row"
+            "group/brand relative flex min-w-0 items-center gap-3 overflow-hidden rounded-[16px] px-2.5 py-2 text-left transition-transform duration-[var(--dur-medium)] ease-[var(--ease-standard)] hover:-translate-y-px",
+            isCollapsed && "w-full justify-center rounded-[14px] px-1.5 py-1.5"
           )}
+          aria-label={tCommon("brand")}
         >
-          <button
-            type="button"
-            onClick={() => handleSelect("overview")}
+          <div
             className={cn(
-              "flex min-w-0 flex-1 items-center gap-3 rounded-[14px] border border-[var(--hairline)] bg-[color-mix(in_srgb,var(--panel-bg)_92%,transparent)] p-2 text-left transition-[border-color,transform] duration-[var(--dur-medium)] ease-[var(--ease-standard)] hover:border-[var(--hairline-strong)] hover:-translate-y-px",
-              isCollapsed && "w-full flex-none justify-center p-1.5"
+              "relative z-[1] flex size-10 shrink-0 items-center justify-center rounded-[13px] bg-white/92 p-1 shadow-[0_2px_8px_-6px_rgba(0,0,0,0.55)]",
+              isCollapsed && "size-9 rounded-[12px] p-0.5"
             )}
-            aria-label="Go to workspace overview"
           >
-            <div
-              className={cn(
-                "flex size-9 shrink-0 items-center justify-center rounded-[11px] border border-[var(--hairline)] bg-[var(--panel-bg-inset)]",
-                isCollapsed && "size-10 rounded-[12px]"
-              )}
-            >
-              <div className="grid grid-cols-2 gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-[var(--ink)]" />
-                <span className="h-1.5 w-1.5 rounded-full bg-[var(--ink-3)]" />
-                <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent-strong)]" />
-                <span className="h-1.5 w-1.5 rounded-full bg-[var(--ink-3)]" />
+            <Image
+              src="/web-app-manifest-192x192.png"
+              alt=""
+              width={36}
+              height={36}
+              className="size-full rounded-[10px] object-cover"
+            />
+          </div>
+          {!isCollapsed ? (
+            <div className="relative z-[1] min-w-0 flex-1">
+              <div className="relative inline-flex max-w-full">
+                <div className="truncate text-[18px] font-semibold leading-none tracking-[-0.025em] text-[var(--ink)]">
+                  {tCommon("brand")}
+                </div>
+                <span className="pointer-events-none absolute -right-5 -top-1 shrink-0 text-[9px] font-semibold uppercase tracking-[0.16em] text-[var(--ink-3)]">
+                  TM
+                </span>
               </div>
             </div>
-            {!isCollapsed ? (
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[14px] font-semibold tracking-[-0.02em] text-[var(--ink)]">
-                  Deeting
-                </div>
-                <div className="mt-0.5 truncate text-[10px] uppercase tracking-[0.2em] text-[var(--ink-3)]">
-                  Workstation
-                </div>
-              </div>
-            ) : null}
-            {!isCollapsed ? (
-              <ChevronDown className="size-3.5 shrink-0 text-[var(--ink-3)]" />
-            ) : null}
-          </button>
-
-          <IconButton
-            variant="surface"
-            size="md"
-            label={collapseLabel}
-            onClick={toggleSidebar}
-            className={cn("shrink-0", isCollapsed && "w-full")}
-          >
-            <CollapseIcon />
-          </IconButton>
-        </div>
+          ) : null}
+        </Link>
       </SidebarHeader>
 
       <SidebarContent
@@ -371,10 +211,11 @@ export function WorkstationSidebar() {
         )}
       >
         {NAV_GROUPS.map((group) => {
-          const isExpanded = expandedGroups[group.title] ?? true;
+          const isExpanded = expandedGroups[group.id] ?? true;
+
           return (
             <SidebarGroup
-              key={group.title}
+              key={group.id}
               className={cn("gap-1 px-1 py-1.5", isCollapsed && "px-0 py-1")}
             >
               {!isCollapsed ? (
@@ -383,7 +224,7 @@ export function WorkstationSidebar() {
                   onClick={() =>
                     setExpandedGroups((current) => ({
                       ...current,
-                      [group.title]: !isExpanded,
+                      [group.id]: !isExpanded,
                     }))
                   }
                   className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--ink-3)] transition-colors duration-[var(--dur-fast)] ease-[var(--ease-standard)] hover:text-[var(--ink-2)]"
@@ -395,7 +236,7 @@ export function WorkstationSidebar() {
                     )}
                   />
                   <SidebarGroupLabel className="h-auto p-0 text-inherit">
-                    {group.title}
+                    {tCommon(group.titleKey)}
                   </SidebarGroupLabel>
                 </button>
               ) : (
@@ -409,9 +250,9 @@ export function WorkstationSidebar() {
                       <WorkstationSidebarItem
                         key={item.id}
                         item={item}
+                        isActive={isNavItemActive(pathname, item.href)}
                         isCollapsed={isCollapsed}
-                        isActive={activeSection === item.id}
-                        onSelect={handleSelect}
+                        label={tCommon(item.labelKey)}
                       />
                     ))}
                   </SidebarMenu>
@@ -422,7 +263,7 @@ export function WorkstationSidebar() {
         })}
       </SidebarContent>
 
-      <SidebarFooter className={cn("relative z-[1] p-3 pt-2", isCollapsed && "p-2")}>
+      <SidebarFooter className={cn("relative z-[1] p-3 pt-2", isCollapsed && "px-2")}>
         <SidebarFooterCluster isCollapsed={isCollapsed} />
       </SidebarFooter>
     </aside>

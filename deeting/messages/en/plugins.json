@@ -5,6 +5,23 @@
         "title": "My Plugins",
         "description": "Manage plugins currently installed on this desktop."
       },
+      "skills": {
+        "eyebrow": "Local desktop runtime",
+        "description": "Show only locally registered desktop skills, their runtime state, and required configuration. No cloud market is involved here.",
+        "searchPlaceholder": "Search by skill name, ID, or execution surface...",
+        "refresh": "Refresh runtime status",
+        "desktopOnlyTitle": "Desktop only",
+        "desktopOnlyDescription": "Skill management depends on the local Tauri runtime. Open this page inside the desktop app.",
+        "summaryTitle": "Skill overview",
+        "surfaceLabel": "Execution surface",
+        "versionLabel": "Version",
+        "stats": {
+          "installed": "Registered skills",
+          "ready": "Runnable now",
+          "actionRequired": "Needs attention"
+        },
+        "noSearchResults": "No skills matched the current search."
+      },
       "market": {
         "title": "Plugin Market",
         "description": "Discover community plugins for the desktop app. Installation is desktop-local."
