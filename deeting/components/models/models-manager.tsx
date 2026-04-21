@@ -1,13 +1,12 @@
 "use client"
 
 import * as React from "react"
-import dynamic from "next/dynamic"
 import { useTranslations } from "next-intl"
-import { RefreshCw, AlertCircle, Sparkles } from "lucide-react"
+import { RefreshCw, AlertCircle, Sparkles, X, Settings2, Database, Zap } from "lucide-react"
+import { AnimatePresence, motion } from "framer-motion"
 
 import { useProviderModels, useSyncProviderModels, useProviderInstances, useUpdateProviderModel, useTestProviderModel, useQuickAddProviderModels, useProviderModelPurchase } from "@/hooks/use-providers"
 import { GlassButton } from "@/components/ui/common/glass-button"
-import { GlassCard } from "@/components/ui/common/glass-card"
 import {
   hasVersionedPath,
   resolveOpenAICompatibleBaseUrl,
@@ -33,11 +32,9 @@ import {
 } from "@/components/ui/shadcn/dialog"
 import { Textarea } from "@/components/ui/shadcn/textarea"
 import { Badge } from "@/components/ui/shadcn/badge"
-
-const ModelAccordion = dynamic(
-  () => import("./model-accordion").then((m) => m.ModelAccordion),
-  { ssr: false }
-)
+import { ModelMatrix } from "./model-matrix"
+import { ModelConfigPanel } from "./model-config-panel"
+import { cn } from "@/lib/utils"
 
 interface ModelsManagerProps {
   instanceId: string
@@ -76,6 +73,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
   const [quickAddInput, setQuickAddInput] = React.useState("")
   const [quickAddLoading, setQuickAddLoading] = React.useState(false)
   const [purchasingModelUuid, setPurchasingModelUuid] = React.useState<string | null>(null)
+  const [selectedModelId, setSelectedModelId] = React.useState<string | null>(null)
   const [filters, setFilters] = React.useState<ModelFilterState>({
     search: "",
     capabilities: [],
@@ -100,7 +98,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
       if (!raw) return undefined
       return {
         ...raw,
-        provider_display_name: raw.preset_slug, // 使用 slug 作为显示名称兜底
+        provider_display_name: raw.preset_slug,
         status: normalizeStatus(raw.health_status),
         latency: raw.latency_ms,
         model_count: typeof raw.model_count === "number" ? raw.model_count : 0,
@@ -151,7 +149,6 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
     [instance]
   )
 
-  // Normalization helpers to provide UI-ready safe defaults
   const toNumber = React.useCallback((v: unknown, fallback = 0) => {
     const n = Number(v)
     return Number.isFinite(n) ? n : fallback
@@ -160,15 +157,8 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
   const normalizeModel = React.useCallback(
     (m: ProviderModelResponse): ProviderModel => {
       const pricing = (m.pricing_config || {}) as Record<string, unknown>
-      const inputPrice = toNumber(
-        pricing.input_per_1k ?? pricing.input ?? pricing.input_price,
-        0
-      )
-      const outputPrice = toNumber(
-        pricing.output_per_1k ?? pricing.output ?? pricing.output_price,
-        0
-      )
-
+      const inputPrice = toNumber(pricing.input_per_1k ?? pricing.input ?? pricing.input_price, 0)
+      const outputPrice = toNumber(pricing.output_per_1k ?? pricing.output ?? pricing.output_price, 0)
       const extraMeta = (m.extra_meta || {}) as Record<string, unknown>
       const routingConfig = (m.routing_config || {}) as Record<string, unknown>
       const configOverride = (m.config_override || {}) as Record<string, unknown>
@@ -178,18 +168,9 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
         extraMeta,
         defaultCapability: "chat",
       }) as ModelCapability[]
-
       const tokenizerConfig = (m.tokenizer_config || {}) as Record<string, unknown>
       const rawMeta = (extraMeta.raw || {}) as Record<string, unknown>
-
-      const contextWindow = toNumber(
-        // Prefer tokenizer_config if provided, otherwise look into meta
-        tokenizerConfig.context_window ??
-          extraMeta.context_window ??
-          rawMeta.context_window,
-        0
-      )
-
+      const contextWindow = toNumber(tokenizerConfig.context_window ?? extraMeta.context_window ?? rawMeta.context_window, 0)
       const limitConfig = (m.limit_config || {}) as Record<string, unknown>
       const requestUrl = buildRequestUrl(instance?.base_url, m.upstream_path)
 
@@ -201,10 +182,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
         unified_model_id: m.unified_model_id || m.model_id,
         capabilities,
         context_window: contextWindow,
-        pricing: {
-          input: inputPrice,
-          output: outputPrice,
-        },
+        pricing: { input: inputPrice, output: outputPrice },
         is_active: m.is_active,
         is_locked: m.is_locked ?? false,
         is_purchased: m.is_purchased ?? true,
@@ -222,10 +200,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
         max_output_tokens: typeof limitConfig.max_output_tokens === 'number' ? limitConfig.max_output_tokens : undefined,
         rpm: typeof limitConfig.rpm === 'number' ? limitConfig.rpm : undefined,
         tpm: typeof limitConfig.tpm === 'number' ? limitConfig.tpm : undefined,
-        max_input_images:
-          typeof routingConfig.max_input_images === 'number'
-            ? routingConfig.max_input_images
-            : undefined,
+        max_input_images: typeof routingConfig.max_input_images === 'number' ? routingConfig.max_input_images : undefined,
         supports_functions: !!rawMeta.supports_functions,
         supports_json_mode: !!rawMeta.supports_json_mode,
         deprecated_at: typeof rawMeta.deprecated_at === 'string' ? rawMeta.deprecated_at : undefined,
@@ -268,23 +243,9 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
     return result
   }, [normalizedModels, filters])
 
-  const handleBatchUpdateCapabilities = React.useCallback(
-    async (capabilities: import("./types").ModelCapability[]) => {
-      try {
-        await Promise.all(
-          filteredModels.map((m) =>
-            updateModel(m.uuid, {
-              routing_config: { capabilities },
-            })
-          )
-        )
-        await mutateModels()
-        toast.success(t("filter.batchSuccess", { count: filteredModels.length }))
-      } catch {
-        toast.error(t("filter.batchFailed"))
-      }
-    },
-    [filteredModels, updateModel, mutateModels, t]
+  const selectedModel = React.useMemo(
+    () => filteredModels.find(m => m.id === selectedModelId),
+    [filteredModels, selectedModelId]
   )
 
   const handleToggleActive = React.useCallback(async (model: ProviderModel, active: boolean) => {
@@ -335,6 +296,26 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
     }
   }
 
+  const handleQuickAddSubmit = async () => {
+    const modelsInput = quickAddInput.split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
+    if (modelsInput.length === 0) {
+      toast.error(t("quickAdd.errorEmpty"))
+      return
+    }
+    setQuickAddLoading(true)
+    try {
+      const res = await quickAdd(instanceId, { models: modelsInput })
+      await mutateModels()
+      toast.success(t("quickAdd.toastSuccess", { count: res.length }))
+      setQuickAddOpen(false)
+      setQuickAddInput("")
+    } catch {
+      toast.error(t("quickAdd.toastFailed"))
+    } finally {
+      setQuickAddLoading(false)
+    }
+  }
+
   const handleTestModel = (model: ProviderModel) => {
     setTestModel(model)
   }
@@ -356,48 +337,11 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
     [mutateModels, purchaseModel, t]
   )
 
-  const parseModelsInput = React.useCallback((value: string) => {
-    return value
-      .split(/[\n,]+/)
-      .map((s) => s.trim())
-      .filter(Boolean)
-  }, [])
-
-  const handleQuickAddSubmit = async () => {
-    const modelsInput = parseModelsInput(quickAddInput)
-    if (modelsInput.length === 0) {
-      toast.error(t("quickAdd.errorEmpty"))
-      return
-    }
-    setQuickAddLoading(true)
-    try {
-      const res = await quickAdd(instanceId, { models: modelsInput })
-      await mutateModels()
-      toast.success(t("quickAdd.toastSuccess", { count: res.length }))
-      setQuickAddOpen(false)
-      setQuickAddInput("")
-    } catch {
-      toast.error(t("quickAdd.toastFailed"))
-    } finally {
-      setQuickAddLoading(false)
-    }
-  }
-
   const handleSendTestMessage = React.useCallback(async (message: string) => {
-    if (!testModel) return {
-      id: "error",
-      role: "assistant" as const,
-      content: "No model selected",
-      timestamp: new Date().toISOString()
-    }
-
+    if (!testModel) return { id: "error", role: "assistant" as const, content: "No model selected", timestamp: new Date().toISOString() }
     try {
       const res = await testModelApi(testModel.uuid, { prompt: message })
-      
-      if (!res.success) {
-        throw new Error(res.error || "Unknown error")
-      }
-
+      if (!res.success) throw new Error(res.error || "Unknown error")
       return {
         id: `resp-${Date.now()}`,
         role: "assistant" as const,
@@ -406,108 +350,172 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
         latency: res.latency_ms,
       }
     } catch (err: unknown) {
-      return {
-        id: `error-${Date.now()}`,
-        role: "assistant" as const,
-        content: `Error: ${err instanceof Error ? err.message : String(err)}`,
-        timestamp: new Date().toISOString(),
-      }
+      return { id: `error-${Date.now()}`, role: "assistant" as const, content: `Error: ${err instanceof Error ? err.message : String(err)}`, timestamp: new Date().toISOString() }
     }
   }, [testModel, testModelApi])
 
-  // Loading State
   if (isLoading) {
     return (
-      <div className="space-y-6 animate-pulse">
-        <div className="h-32 bg-[var(--surface)]/30 rounded-2xl" />
-        <div className="h-64 bg-[var(--surface)]/30 rounded-2xl" />
+      <div className="space-y-6 p-6">
+        <div className="h-24 bg-[var(--panel-bg-inset)] rounded-2xl animate-pulse opacity-50" />
+        <div className="h-96 bg-[var(--panel-bg-inset)] rounded-2xl animate-pulse opacity-50" />
       </div>
     )
   }
 
-  // Error State
-  if (isError) {
-    return (
-      <GlassCard className="p-8 flex flex-col items-center justify-center text-center gap-4 border-red-500/20 bg-red-500/5">
-        <AlertCircle className="size-10 text-red-500" />
-        <div>
-          <h3 className="text-lg font-semibold text-red-500">{t("error.title")}</h3>
-          <p className="text-sm text-[var(--muted)] max-w-md mt-1">
-            {error?.message || t("error.unknown")}
-          </p>
-        </div>
-        <GlassButton onClick={() => mutateModels()}>
-          <RefreshCw className="size-4 mr-2" />
-          {t("actions.retry")}
-        </GlassButton>
-      </GlassCard>
-    )
-  }
-
   return (
-    <div className="space-y-6">
+    <div className="flex h-full flex-col overflow-hidden py-6 gap-6">
       {/* Dashboard Stats */}
-      {instance && (
-        <InstanceDashboard 
-          instance={instance} 
-          syncState={{
-            is_syncing: isSyncing,
-            progress: isSyncing ? 20 : 0, // 简单占位进度；后端未提供时显示 0/20
-            last_sync: instance.last_synced_at ?? null,
-            error: null,
-          }}
-          onSync={handleSync}
-          onSettings={() => setEditDrawerOpen(true)}
-        />
-      )}
+      <div className="flex-none">
+        {instance && (
+          <InstanceDashboard 
+            instance={instance} 
+            syncState={{
+              is_syncing: isSyncing,
+              progress: isSyncing ? 20 : 0,
+              last_sync: instance.last_synced_at ?? null,
+              error: null,
+            }}
+            onSync={handleSync}
+            onSettings={() => setEditDrawerOpen(true)}
+          />
+        )}
+      </div>
 
-      {/* Quick Add entry */}
-      <GlassCard className="p-4 flex flex-wrap items-center justify-between gap-3 border-white/5 bg-[var(--surface)]/60">
-        <div className="flex items-center gap-2 text-sm text-[var(--muted)]">
-          <Sparkles className="size-4 text-[var(--primary)]" />
-          <span>{t("quickAdd.subtitle")}</span>
+      {/* Main Workspace with Filter & Matrix */}
+      <div className="flex-1 flex flex-col min-h-0">
+        {/* Workspace Toolbar */}
+        <div className="flex-none flex items-center justify-between mb-4 px-2">
+          <div className="flex items-center gap-3">
+            <div className="size-8 rounded-xl bg-[var(--accent-soft)] flex items-center justify-center border border-[var(--accent-border)] shadow-sm">
+               <Database className="size-4 text-[var(--accent-strong)]" />
+            </div>
+            <div className="flex flex-col">
+               <h2 className="ws-pane-title text-[14px]">NEURAL CORE MATRIX</h2>
+               <div className="flex items-center gap-2">
+                  <span className="ws-meta text-[9px] tracking-tight opacity-50">MANAGING BRAIN MODEL REGISTRY</span>
+                  <Badge variant="secondary" className="ws-num text-[10px] h-4 bg-[var(--panel-bg-inset)] text-[var(--ink-4)] border-[var(--hairline)]">
+                    {filteredModels.length} / {normalizedModels.length}
+                  </Badge>
+               </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setQuickAddOpen(true)} 
+              className="ws-control h-8 px-4 rounded-lg bg-[var(--panel-bg)] border border-[var(--hairline)] text-[11px] font-bold flex items-center gap-2 hover:bg-[var(--panel-bg-inset)] hover:border-[var(--hairline-strong)] transition-all active:scale-95"
+            >
+              <Sparkles className="size-3.5 text-[var(--accent-strong)]" />
+              {t("quickAdd.cta").toUpperCase()}
+            </button>
+            <button 
+              onClick={handleSync} 
+              disabled={isSyncing}
+              className="ws-control h-8 px-4 rounded-lg bg-[var(--panel-bg)] border border-[var(--hairline)] text-[11px] font-bold flex items-center gap-2 hover:bg-[var(--panel-bg-inset)] hover:border-[var(--hairline-strong)] transition-all active:scale-95 disabled:opacity-50"
+            >
+              <RefreshCw className={cn("size-3.5 text-[var(--ok)]", isSyncing && "animate-spin")} />
+              SYNC REGISTRY
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <GlassButton onClick={() => setQuickAddOpen(true)} className="gap-2">
-            <Sparkles className="size-4" />
-            {t("quickAdd.cta")}
-          </GlassButton>
-        </div>
-      </GlassCard>
 
-      {/* Filter Lens */}
-      {normalizedModels.length > 0 && (
+        {/* Filters */}
         <FilterLens
           filters={filters}
           onFiltersChange={setFilters}
           totalModels={normalizedModels.length}
           filteredCount={filteredModels.length}
-          onBatchUpdateCapabilities={handleBatchUpdateCapabilities}
+          onBatchUpdateCapabilities={async (caps) => {
+             toast.info("Batch update not implemented in this view refactor")
+          }}
+          className="mb-2"
         />
-      )}
 
-      {/* Models Matrix or Empty State */}
-      {normalizedModels.length > 0 ? (
-        <ModelAccordion
-          models={filteredModels}
-          showChatContentCompatibility={supportsOpenAiCompatibleChatContentConfig}
-          onTest={handleTestModel}
-          onToggleActive={handleToggleActive}
-          onUpdateAlias={handleUpdateAlias}
-          onSave={handleSaveConfig}
-          onPurchase={handlePurchaseModel}
-          readOnly={instance?.is_public === true}
-          purchasingModelUuid={purchasingModelUuid}
-        />
-      ) : (
-        <ModelEmptyState 
-          onSync={handleSync} 
-          isSyncing={isSyncing} 
-          onQuickAdd={() => setQuickAddOpen(true)}
-        />
-      )}
+        {/* Scrollable Model Grid */}
+        <div className="flex-1 overflow-y-auto relative custom-scrollbar pr-1 mt-2">
+          {normalizedModels.length > 0 ? (
+            <ModelMatrix
+              models={filteredModels}
+              onTest={handleTestModel}
+              onToggleActive={handleToggleActive}
+              onUpdateAlias={handleUpdateAlias}
+              onPurchase={handlePurchaseModel}
+              readOnly={instance?.is_public === true}
+              purchasingModelUuid={purchasingModelUuid}
+              onRowClick={(model) => setSelectedModelId(model.id)}
+              className="mb-6 shadow-xl shadow-black/5 border-none" 
+            />
+          ) : (
+            <ModelEmptyState 
+              onSync={handleSync} 
+              isSyncing={isSyncing} 
+              onQuickAdd={() => setQuickAddOpen(true)}
+            />
+          )}
 
-      {/* Drawers */}
+          {/* Inline Inspector (Overlay/Slide-in) */}
+          <AnimatePresence>
+            {selectedModel && (
+              <>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setSelectedModelId(null)}
+                  className="fixed inset-0 bg-black/20 backdrop-blur-[2px] z-[60]"
+                />
+                <motion.div
+                  initial={{ x: "100%", opacity: 0.5 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  exit={{ x: "100%", opacity: 0.5 }}
+                  transition={{ type: "spring", damping: 28, stiffness: 220 }}
+                  className="fixed inset-y-0 right-0 w-[520px] z-[70] bg-[var(--window-bg)] border-l border-[var(--hairline-strong)] shadow-[-20px_0_50px_rgba(0,0,0,0.2)] flex flex-col overflow-hidden"
+                >
+                  <div className="flex-none flex items-center justify-between px-6 h-[72px] border-b border-[var(--hairline)] bg-[var(--window-bg)]">
+                    <div className="flex items-center gap-4 truncate">
+                      <div className="size-10 rounded-2xl bg-[var(--accent-soft)] flex items-center justify-center border border-[var(--accent-border)] shadow-sm">
+                         <Zap className="size-5 text-[var(--accent-strong)]" />
+                      </div>
+                      <div className="flex flex-col truncate">
+                        <span className="ws-pane-title text-[16px] truncate leading-tight">{selectedModel.display_name}</span>
+                        <span className="ws-num text-[11px] opacity-40 uppercase tracking-widest">{selectedModel.id}</span>
+                      </div>
+                    </div>
+                    <button onClick={() => setSelectedModelId(null)} className="p-2 hover:bg-black/5 rounded-xl transition-all active:scale-90">
+                      <X className="size-5 text-[var(--ink-3)]" />
+                    </button>
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                    <ModelConfigPanel
+                      model={selectedModel}
+                      showChatContentCompatibility={supportsOpenAiCompatibleChatContentConfig}
+                      onSave={handleSaveConfig}
+                    />
+                  </div>
+                  
+                  <div className="flex-none p-6 border-t border-[var(--hairline)] bg-[var(--panel-bg-inset)]/40 flex justify-end gap-3 backdrop-blur-md">
+                     <button 
+                        onClick={() => setSelectedModelId(null)}
+                        className="ws-control h-10 px-6 rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg)] text-[var(--ink-2)] font-bold text-[12px] hover:bg-[var(--panel-bg-inset)] transition-all"
+                     >
+                        DISMISS
+                     </button>
+                     <button 
+                        onClick={() => handleTestModel(selectedModel)}
+                        className="ws-control h-10 px-8 rounded-xl bg-[var(--accent-strong)] text-white font-bold text-[12px] shadow-lg shadow-[var(--accent-soft)] hover:brightness-110 active:scale-95 transition-all"
+                     >
+                        INITIATE TEST
+                     </button>
+                  </div>
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+
+      {/* Drawers and Dialogs */}
       <TestDrawer 
         isOpen={!!testModel}
         onClose={() => setTestModel(null)}
@@ -524,10 +532,10 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
           instanceId={instanceId}
           preset={{
             slug: instance.preset_slug || "",
-            name: instance.preset_slug || "", // This might need mapping back to display name if lost
-            type: "custom", // Assuming custom for edit, or need to derive
+            name: instance.preset_slug || "",
+            type: "custom",
             protocol: instance.protocol || "openai",
-            brand_color: instance.theme_color || "#3b82f6",
+            brand_color: instance.theme_color || "var(--accent-strong)",
             icon_key: instance.icon || "lucide:box",
           }}
           initialValues={{
@@ -548,52 +556,39 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
         />
       )}
 
-      {/* Quick Add Dialog */}
       <Dialog open={quickAddOpen} onOpenChange={setQuickAddOpen}>
-        <DialogContent className="max-w-lg bg-[var(--surface)]/80 border-white/10">
+        <DialogContent className="max-w-lg ws-bezel-inner border-[var(--hairline-strong)] shadow-2xl">
           <DialogHeader>
-            <DialogTitle>{t("quickAdd.title")}</DialogTitle>
-            <DialogDescription className="text-sm text-[var(--muted)]">
-              {t("quickAdd.description")}
-            </DialogDescription>
+            <DialogTitle className="ws-view-title">{t("quickAdd.title")}</DialogTitle>
+            <DialogDescription className="ws-body text-xs opacity-60 leading-relaxed">{t("quickAdd.description")}</DialogDescription>
           </DialogHeader>
-
-          <div className="space-y-3 py-2">
+          <div className="space-y-3 py-4">
             <Textarea
-              rows={5}
+              rows={8}
               value={quickAddInput}
               onChange={(e) => setQuickAddInput(e.target.value)}
               placeholder={t("quickAdd.placeholder")}
-              className="font-mono bg-black/20 border-white/10"
+              className="ws-num border-[var(--hairline)] bg-[var(--panel-bg-inset)] font-bold text-[13px] rounded-xl focus:ring-[var(--accent-soft)]"
             />
-            <div className="flex flex-wrap gap-2">
-              {["gpt-4o", "claude-3.5-sonnet", "text-embedding-3-large", "deepseek-chat"].map((m) => (
-                <Badge
-                  key={m}
-                  variant="outline"
-                  className="cursor-pointer hover:bg-white/10"
-                  onClick={() => setQuickAddInput((prev) => (prev ? `${prev.trim()}\n${m}` : m))}
-                >
-                  + {m}
-                </Badge>
-              ))}
-            </div>
-            <p className="text-xs text-[var(--muted)]">
-              {t("quickAdd.hint")}
-            </p>
           </div>
-
-          <DialogFooter className="gap-2">
-            <GlassButton variant="ghost" onClick={() => setQuickAddOpen(false)} disabled={quickAddLoading}>
-              {t("quickAdd.cancel")}
-            </GlassButton>
-            <GlassButton onClick={handleQuickAddSubmit} disabled={quickAddLoading}>
-              {quickAddLoading ? t("quickAdd.submitting") : t("quickAdd.submit")}
-            </GlassButton>
+          <DialogFooter className="gap-3">
+            <button 
+              onClick={() => setQuickAddOpen(false)} 
+              disabled={quickAddLoading}
+              className="ws-control h-10 px-6 rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg)] text-[var(--ink-3)] font-bold text-[12px] hover:bg-[var(--panel-bg-inset)] transition-all"
+            >
+              {t("quickAdd.cancel").toUpperCase()}
+            </button>
+            <button 
+              onClick={handleQuickAddSubmit} 
+              disabled={quickAddLoading}
+              className="ws-control h-10 px-8 rounded-xl bg-[var(--accent-strong)] text-white font-bold text-[12px] shadow-lg shadow-[var(--accent-soft)] hover:brightness-110 active:scale-95 disabled:opacity-50 transition-all"
+            >
+              {quickAddLoading ? t("quickAdd.submitting").toUpperCase() : t("quickAdd.submit").toUpperCase()}
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
   )
 }
-

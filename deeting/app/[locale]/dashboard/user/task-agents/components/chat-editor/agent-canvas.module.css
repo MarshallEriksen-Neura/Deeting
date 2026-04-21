@@ -1,0 +1,435 @@
+/* =========================================================================
+   AgentCanvas — editorial layout for the task-agent editor.
+   All colors, radii, and timings reference globals.css design tokens.
+   ========================================================================= */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+/* ── Identity ─────────────────────────────────────────────────────────── */
+.identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.avatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--r-14);
+  border: 1px solid var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.avatar svg {
+  width: 22px;
+  height: 22px;
+}
+
+.identityBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nameRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.nameWrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.nameInput {
+  width: 100%;
+  margin: 0;
+  padding: 2px 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  outline: none;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  line-height: 1.2;
+  color: var(--ink);
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+
+.nameInput::placeholder {
+  color: var(--ink-4);
+}
+
+.nameWrap:hover .nameInput {
+  border-bottom-color: var(--hairline-strong);
+}
+
+.nameInput:focus {
+  border-bottom-color: var(--accent-strong);
+}
+
+.requiredHint {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  margin-top: 2px;
+  font-family: var(--font-text);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--danger);
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.toggleGroup {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.togglePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--ink-4);
+  font-family: var(--font-text);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+
+.togglePill:hover {
+  color: var(--ink-2);
+}
+
+.togglePill[data-checked="true"][data-tone="ok"] {
+  color: var(--ok);
+  background: var(--ok-soft);
+  border-color: var(--ok-border);
+}
+
+.togglePill[data-checked="true"][data-tone="accent"] {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+
+.toggleDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--ink-4);
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+
+.togglePill[data-checked="true"][data-tone="ok"] .toggleDot {
+  background: var(--ok);
+}
+
+.togglePill[data-checked="true"][data-tone="accent"] .toggleDot {
+  background: var(--accent-strong);
+}
+
+.toggleIcon {
+  width: 12px;
+  height: 12px;
+}
+
+/* ── Description strip ────────────────────────────────────────────────── */
+.description {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  font-family: var(--font-text);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--ink-3);
+  text-align: left;
+  cursor: text;
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+
+.description:hover {
+  color: var(--ink);
+}
+
+.descriptionEmpty {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-4);
+  font-size: 11px;
+}
+
+.descriptionEmpty:hover {
+  color: var(--accent-strong);
+}
+
+.descriptionEmptyIcon {
+  width: 12px;
+  height: 12px;
+}
+
+.descriptionTextarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-10);
+  background: var(--panel-bg-inset);
+  outline: none;
+  resize: none;
+  font-family: var(--font-text);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ink);
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+
+.descriptionTextarea::placeholder {
+  color: var(--ink-4);
+}
+
+.descriptionTextarea:focus {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* ── Meta rail — label-above-value property inspector ─────────────────── */
+.meta {
+  display: grid;
+  grid-template-columns: minmax(220px, auto) minmax(120px, auto) minmax(0, 1fr);
+  gap: 12px 32px;
+  align-items: start;
+  padding: 20px 0;
+  border-top: 1px solid var(--hairline-subtle);
+  border-bottom: 1px solid var(--hairline-subtle);
+}
+
+.metaCell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.metaLabel {
+  font-family: var(--font-text);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.metaValue {
+  min-width: 0;
+}
+
+.typePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: var(--panel-bg-inset);
+  color: var(--ink);
+  font-family: var(--font-text);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.typePill svg {
+  width: 12px;
+  height: 12px;
+  color: var(--ink-3);
+}
+
+/* ── Tag chips ────────────────────────────────────────────────────────── */
+.tagList {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.tagChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 6px 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: var(--panel-bg-inset);
+  color: var(--ink-2);
+  font-family: var(--font-text);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.tagRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-4);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard);
+}
+
+.tagRemove svg {
+  width: 10px;
+  height: 10px;
+}
+
+.tagRemove:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.tagInput {
+  flex: 1;
+  min-width: 80px;
+  height: 24px;
+  padding: 0 4px;
+  background: transparent;
+  border: 0;
+  outline: none;
+  font-family: var(--font-text);
+  font-size: 11px;
+  color: var(--ink);
+}
+
+.tagInput::placeholder {
+  color: var(--ink-4);
+}
+
+/* ── Prompt hero ──────────────────────────────────────────────────────── */
+.prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.promptHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.promptLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-text);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.promptLabelIcon {
+  width: 14px;
+  height: 14px;
+  color: var(--accent-strong);
+}
+
+.promptRequired {
+  color: var(--danger);
+  font-size: 11px;
+  margin-left: 2px;
+}
+
+.promptCount {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.promptCountEmpty {
+  color: var(--danger);
+  opacity: 0.7;
+}
+
+.promptTextarea {
+  width: 100%;
+  min-height: 360px;
+  padding: 18px 20px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-12);
+  background: var(--panel-bg-inset);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.65;
+  outline: none;
+  resize: vertical;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+
+.promptTextarea::placeholder {
+  color: var(--ink-4);
+}
+
+.promptTextarea:focus {
+  border-color: var(--accent-border);
+  background: var(--panel-bg);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.promptTextareaEmpty {
+  border-color: var(--danger-border);
+}

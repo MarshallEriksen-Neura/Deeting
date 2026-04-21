@@ -151,11 +151,11 @@ export const CONTEXT_WINDOW_PRESETS = [
 ] as const;
 
 export const PRICE_TIER_THRESHOLDS: Record<PriceTier, { max: number; color: string }> = {
-  free: { max: 0, color: "text-emerald-400" },
-  cheap: { max: 1, color: "text-emerald-500" },
-  moderate: { max: 5, color: "text-yellow-500" },
-  expensive: { max: 15, color: "text-orange-500" },
-  premium: { max: Infinity, color: "text-red-500" },
+  free: { max: 0, color: "text-[var(--ok)]" },
+  cheap: { max: 1, color: "text-[var(--ok)]" },
+  moderate: { max: 5, color: "text-[var(--warn)]" },
+  expensive: { max: 15, color: "text-[var(--warn)]" },
+  premium: { max: Infinity, color: "text-[var(--danger)]" },
 };
 
 export function getPriceTier(inputPrice: number): PriceTier {

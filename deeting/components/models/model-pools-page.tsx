@@ -88,7 +88,7 @@ export function ModelPoolsPage() {
   }, [pools]);
 
   return (
-    <Container as="main" size="full" gutter="md" className="py-6">
+    <Container as="main" size="full" className="py-6 md:py-8 px-0">
       <PageHeader title={t("title")} description={t("subtitle")} icon={Activity} />
 
       {desktopReady === null || isLoading ? (

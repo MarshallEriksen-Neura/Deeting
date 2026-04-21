@@ -16,7 +16,7 @@ export function DesktopModelsPageClient() {
   const t = useTranslations("models")
 
   return (
-    <Container as="main" className="py-6 md:py-8" gutter="md">
+    <Container as="main" className="py-6 md:py-8 !mx-0 !max-w-none" gutter="md" size="full">
       <div className="mb-4">
         <BackButton />
       </div>

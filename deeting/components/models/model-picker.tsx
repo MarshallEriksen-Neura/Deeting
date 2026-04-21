@@ -103,7 +103,7 @@ export function ModelPicker({
   return (
     <div
       className={cn(
-        "flex flex-col gap-3 rounded-[1.75rem] bg-white/80 dark:bg-white/5 border border-black/5 dark:border-white/10 p-4 shadow-[0_10px_24px_-16px_rgba(15,23,42,0.3)]",
+        "flex flex-col gap-3 rounded-[1.75rem] border border-[var(--hairline)] bg-[var(--panel-bg)] p-4 shadow-[0_10px_24px_-16px_rgba(15,23,42,0.3)]",
         disabled && "opacity-70",
         className
       )}
@@ -112,51 +112,51 @@ export function ModelPicker({
         <div className="flex items-center justify-between px-1">
           <div className="flex flex-col gap-1">
             {title ? (
-              <span className="text-[10px] font-black text-black/55 dark:text-white/60 uppercase tracking-[0.2em]">
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--ink-3)]">
                 {title}
               </span>
             ) : null}
             {subtitle ? (
-              <span className="text-[11px] text-black/40 dark:text-white/40">
+              <span className="text-[11px] text-[var(--ink-3)]">
                 {subtitle}
               </span>
             ) : null}
           </div>
-          <span className="rounded-full bg-black/5 dark:bg-white/10 px-2.5 py-0.5 text-[10px] font-mono text-black/40 dark:text-white/40">
+          <span className="rounded-full bg-[var(--panel-bg-inset)] px-2.5 py-0.5 text-[10px] font-mono text-[var(--ink-3)]">
             {filteredCount}
           </span>
         </div>
       ) : null}
 
       <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-black/30 dark:text-white/30" />
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--ink-3)]" />
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder={searchPlaceholder}
           disabled={disabled}
-          className="h-10 rounded-full border-0 bg-white/90 dark:bg-black/40 pl-9 text-[12px] font-medium text-black/80 dark:text-white/80 placeholder:text-black/30 dark:placeholder:text-white/30 shadow-[0_6px_16px_-12px_rgba(15,23,42,0.25)] focus-visible:ring-2 focus-visible:ring-blue-500/30"
+          className="h-10 rounded-full border border-[var(--hairline)] bg-[var(--panel-bg-inset)] pl-9 text-[12px] font-medium text-[var(--ink)] placeholder:text-[var(--ink-3)] shadow-[0_6px_16px_-12px_rgba(15,23,42,0.25)] focus-visible:ring-2 focus-visible:ring-[var(--info-border)]"
         />
       </div>
 
       {modelGroups.length === 0 ? (
-        <div className="text-[11px] text-black/40 dark:text-white/40 px-1">
+        <div className="px-1 text-[11px] text-[var(--ink-3)]">
           {emptyText}
         </div>
       ) : (
         <ScrollArea className={cn("h-72 pr-1", scrollAreaClassName)}>
           <div className="space-y-3">
             {filteredModelGroups.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-black/10 dark:border-white/10 bg-white/70 dark:bg-white/5 px-4 py-6 text-center text-[11px] text-black/40 dark:text-white/40">
+              <div className="rounded-2xl border border-dashed border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-4 py-6 text-center text-[11px] text-[var(--ink-3)]">
                 {noResultsText}
               </div>
             ) : (
               filteredModelGroups.map((group) => (
                 <div
                   key={group.instance_id}
-                  className="rounded-2xl bg-white/80 dark:bg-black/30 border border-black/5 dark:border-white/10 shadow-[0_10px_24px_-16px_rgba(15,23,42,0.25)]"
+                  className="rounded-2xl border border-[var(--hairline)] bg-[var(--panel-bg-inset)] shadow-[0_10px_24px_-16px_rgba(15,23,42,0.25)]"
                 >
-                  <div className="flex items-center justify-between px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-black/40 dark:text-white/40">
+                  <div className="flex items-center justify-between px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-[var(--ink-3)]">
                     <span className="flex items-center gap-1.5 font-black">
                       {group.is_platform && (
                         <Coins className="h-3 w-3 text-amber-500" />
@@ -164,7 +164,7 @@ export function ModelPicker({
                       {group.instance_name}
                     </span>
                     {group.provider ? (
-                      <span className="text-[9px] font-semibold text-black/35 dark:text-white/35">
+                      <span className="text-[9px] font-semibold text-[var(--ink-4)]">
                         {group.provider}
                       </span>
                     ) : null}
@@ -191,15 +191,15 @@ export function ModelPicker({
                           className={cn(
                             "h-11 justify-between rounded-xl px-3 text-[11px] font-semibold transition-colors",
                             isActive
-                              ? "bg-black/10 text-black dark:bg-white/10 dark:text-white ring-1 ring-blue-500/25"
-                              : "text-black/70 dark:text-white/70 hover:bg-black/5 dark:hover:bg-white/5"
+                              ? "bg-[var(--accent-soft)] text-[var(--ink)] ring-1 ring-[var(--info-border)]"
+                              : "text-[var(--ink-2)] hover:bg-[var(--panel-bg)]"
                           )}
                         >
                           <span className="flex items-center gap-2 min-w-0">
                             <span
                               className={cn(
-                                "flex h-7 w-7 items-center justify-center rounded-full bg-black/5 dark:bg-white/10",
-                                isActive && "bg-white/80 dark:bg-black/60"
+                                "flex h-7 w-7 items-center justify-center rounded-full bg-[var(--panel-bg)]",
+                                isActive && "bg-[var(--panel-bg)]"
                               )}
                             >
                               <Icon className={`h-3.5 w-3.5 ${visual.color}`} />
@@ -209,10 +209,10 @@ export function ModelPicker({
                               {model.is_platform && model.pricing ? (
                                 <span className="truncate text-[9px] text-amber-600 dark:text-amber-400">
                                   {model.pricing.input_per_1k != null ? `in ${model.pricing.input_per_1k}` : ""}{model.pricing.input_per_1k != null && model.pricing.output_per_1k != null ? " / " : ""}{model.pricing.output_per_1k != null ? `out ${model.pricing.output_per_1k}` : ""}
-                                  <span className="text-black/25 dark:text-white/25 ml-0.5">/1K</span>
+                                  <span className="ml-0.5 text-[var(--ink-4)]">/1K</span>
                                 </span>
                               ) : model.owned_by ? (
-                                <span className="truncate text-[9px] text-black/35 dark:text-white/35">
+                                <span className="truncate text-[9px] text-[var(--ink-4)]">
                                   {model.owned_by}
                                 </span>
                               ) : null}
@@ -221,7 +221,7 @@ export function ModelPicker({
                           {isActive ? (
                             <Check className="h-3.5 w-3.5 text-emerald-500" />
                           ) : (
-                            <span className="h-2 w-2 rounded-full bg-black/10 dark:bg-white/10" />
+                            <span className="h-2 w-2 rounded-full bg-[var(--hairline-strong)]" />
                           )}
                         </Button>
                       )

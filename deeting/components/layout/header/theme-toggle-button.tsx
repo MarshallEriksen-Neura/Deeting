@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useTheme } from "next-themes";
@@ -15,10 +16,15 @@ function wait(ms: number) {
 export function ThemeToggleButton() {
   const t = useTranslations("common.header");
   const { resolvedTheme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
   const isTransitioning = useThemeStore((state) => state.isTransitioning);
   const startTransition = useThemeStore((state) => state.startTransition);
   const endTransition = useThemeStore((state) => state.endTransition);
   const setMode = useThemeStore((state) => state.setMode);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleToggle = async () => {
     if (!resolvedTheme || isTransitioning) {
@@ -35,6 +41,19 @@ export function ThemeToggleButton() {
   };
 
   const isDark = resolvedTheme === "dark";
+
+  if (!mounted) {
+    return (
+      <IconButton
+        variant="surface"
+        size="md"
+        label={t("backgroundDark")}
+        disabled={true}
+      >
+        <Moon className="size-4" />
+      </IconButton>
+    );
+  }
 
   return (
     <IconButton

@@ -1,237 +1,140 @@
 "use client"
 
-import { Bot, Search } from "lucide-react"
-import { Input } from "@/components/ui/shadcn/input"
-import { ScrollArea } from "@/components/ui/shadcn/scroll-area"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/shadcn/select"
+import * as React from "react"
+import { Search, Plus, Filter, LayoutGrid, BrainCircuit, Activity, Clock, Trash2, Copy, MoreHorizontal } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/shadcn/skeleton"
-import {
-  GlassCard,
-  GlassCardContent,
-  GlassCardDescription,
-  GlassCardHeader,
-  GlassCardTitle,
-} from "@/components/ui/common/glass-card"
-import type { CustomTaskAgentProfile } from "@/lib/api/custom-task-agents"
-import { AgentListItem } from "./agent-list-item"
-import { NEW_AGENT_ID } from "./task-agents-helpers"
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuTrigger 
+} from "@/components/ui/shadcn/dropdown-menu"
 
-type Translation = (key: string, values?: Record<string, string | number>) => string
-
-type GroupedAgents = {
-  chat: CustomTaskAgentProfile[]
-  image: CustomTaskAgentProfile[]
-  voice: CustomTaskAgentProfile[]
-}
-
-type AgentListSidebarProps = {
-  t: Translation
+interface AgentListSidebarProps {
+  t: any
   searchQuery: string
   kindFilter: string
   statusFilter: string
   selectedAgentId: string | null
   isStarterState: boolean
   agentsLoading: boolean
-  agentsError: Error | undefined
-  filteredAgents: CustomTaskAgentProfile[]
-  groupedAgents: GroupedAgents
+  agentsError: any
+  filteredAgents: any[]
+  groupedAgents: Record<string, any[]>
   dateFormatter: Intl.DateTimeFormat
-  onSearchChange: (value: string) => void
-  onKindFilterChange: (value: string) => void
-  onStatusFilterChange: (value: string) => void
-  onSelectAgent: (agentId: string) => void
+  onSearchChange: (q: string) => void
+  onKindFilterChange: (k: string) => void
+  onStatusFilterChange: (s: string) => void
+  onSelectAgent: (id: string) => void
 }
 
 export function AgentListSidebar({
   t,
-  searchQuery,
-  kindFilter,
-  statusFilter,
   selectedAgentId,
   isStarterState,
   agentsLoading,
-  agentsError,
   filteredAgents,
-  groupedAgents,
-  dateFormatter,
-  onSearchChange,
-  onKindFilterChange,
-  onStatusFilterChange,
   onSelectAgent,
 }: AgentListSidebarProps) {
+  if (agentsLoading) {
+    return (
+      <div className="space-y-3 px-3 mt-4">
+        <Skeleton className="h-16 rounded-xl bg-[var(--panel-bg-inset)]/50" />
+        <Skeleton className="h-16 rounded-xl bg-[var(--panel-bg-inset)]/50" />
+        <Skeleton className="h-16 rounded-xl bg-[var(--panel-bg-inset)]/50" />
+      </div>
+    )
+  }
+
+  if (!filteredAgents.length) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center p-8 text-center opacity-30">
+        <LayoutGrid className="size-10 mb-4" />
+        <p className="ws-caption text-xs leading-relaxed">{t("library.empty")}</p>
+      </div>
+    )
+  }
+
   return (
-    <GlassCard hover="none" className="overflow-hidden border-white/6">
-      <GlassCardHeader className="space-y-3.5 pb-0">
-        <div className="space-y-0.5">
-          <GlassCardTitle className="text-[15px] font-semibold">
-            {t("library.title")}
-          </GlassCardTitle>
-          <GlassCardDescription className="text-[12px]">
-            {t("library.description")}
-          </GlassCardDescription>
-        </div>
-
-        {/* Search */}
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--muted)]/50" />
-          <Input
-            value={searchQuery}
-            onChange={(event) => onSearchChange(event.target.value)}
-            placeholder={t("library.searchPlaceholder")}
-            className="h-8 rounded-lg border-white/8 bg-white/[0.03] pl-8 text-[13px] placeholder:text-[var(--muted)]/40"
-          />
-        </div>
-
-        {/* Filters */}
-        <div className="grid grid-cols-2 gap-2">
-          <Select value={kindFilter} onValueChange={onKindFilterChange}>
-            <SelectTrigger className="h-7 rounded-lg border-white/8 bg-white/[0.03] text-[12px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("filters.allKinds")}</SelectItem>
-              <SelectItem value="chat">{t("badges.chat")}</SelectItem>
-              <SelectItem value="image_generation">{t("badges.imageGeneration")}</SelectItem>
-              <SelectItem value="text_to_speech">{t("badges.textToSpeech")}</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={statusFilter} onValueChange={onStatusFilterChange}>
-            <SelectTrigger className="h-7 rounded-lg border-white/8 bg-white/[0.03] text-[12px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("filters.allStatuses")}</SelectItem>
-              <SelectItem value="enabled">{t("badges.enabled")}</SelectItem>
-              <SelectItem value="disabled">{t("badges.disabled")}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </GlassCardHeader>
-
-      <GlassCardContent className="pt-3">
-        <ScrollArea className="h-[680px] pr-3">
-          <div className="space-y-2">
-            {/* New agent draft indicator */}
-            {selectedAgentId === NEW_AGENT_ID ? (
-              <div className="rounded-xl border border-dashed border-[var(--primary)]/25 bg-[var(--primary)]/6 p-3">
-                <p className="text-[13px] font-medium text-[var(--foreground)]">
-                  {isStarterState ? t("starter.title") : t("library.draftTitle")}
-                </p>
-                <p className="mt-0.5 text-[12px] text-[var(--muted)]">
-                  {isStarterState ? t("starter.description") : t("library.draftDescription")}
-                </p>
-              </div>
-            ) : null}
-
-            {/* Loading */}
-            {agentsLoading ? (
-              Array.from({ length: 4 }).map((_, index) => (
-                <div
-                  key={`skeleton-${index}`}
-                  className="space-y-2.5 rounded-xl border border-white/6 p-3.5"
-                >
-                  <Skeleton className="h-4 w-2/3" />
-                  <Skeleton className="h-3.5 w-full" />
-                  <Skeleton className="h-3 w-5/6" />
+    <div className="flex flex-col h-full">
+      <div className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5 custom-scrollbar">
+        {filteredAgents.map((agent) => {
+          const selected = agent.id === selectedAgentId && !isStarterState;
+          const kindLabel = agent.kind === "image" ? "VISION" : agent.kind === "voice" ? "AUDIO" : "CORE";
+          
+          return (
+            <button
+              key={agent.id}
+              onClick={() => onSelectAgent(agent.id)}
+              className={cn(
+                "ws-rail group relative flex w-full flex-col gap-1 rounded-xl px-4 py-3 text-left transition-all",
+                selected ? "bg-[var(--accent-soft)]/50 shadow-[inset_0_0_0_1px_var(--accent-border)]" : "hover:bg-[var(--panel-bg-inset)]/60"
+              )}
+              data-active={selected}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={cn(
+                    "size-8 rounded-lg flex items-center justify-center border transition-all",
+                    selected ? "bg-[var(--panel-bg)] border-[var(--accent-border)] shadow-sm" : "bg-[var(--panel-bg-inset)] border-[var(--hairline)]"
+                  )}>
+                    <BrainCircuit className={cn("size-4", selected ? "text-[var(--accent-strong)]" : "text-[var(--ink-4)]")} />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className={cn(
+                      "ws-control truncate text-[13px] font-bold transition-colors",
+                      selected ? "text-[var(--ink)]" : "text-[var(--ink-2)]"
+                    )}>{agent.name || "Unnamed Agent"}</span>
+                    <div className="flex items-center gap-2">
+                       <span className="ws-meta text-[8px] tracking-widest opacity-40">{kindLabel}</span>
+                       <div className="size-1 rounded-full bg-[var(--hairline-strong)]" />
+                       <span className="ws-num text-[9px] opacity-40 truncate">
+                          v{agent.version || "1.0"}
+                       </span>
+                    </div>
+                  </div>
                 </div>
-              ))
-            ) : filteredAgents.length === 0 ? (
-              /* Empty */
-              <div className="rounded-xl border border-dashed border-white/8 p-8 text-center">
-                <Bot className="mx-auto size-8 text-[var(--muted)]/40" />
-                <p className="mt-3 text-[13px] font-medium text-[var(--foreground)]">
-                  {t("library.emptyTitle")}
-                </p>
-                <p className="mt-1 text-[12px] text-[var(--muted)]">
-                  {agentsError ? agentsError.message : t("library.emptyDescription")}
-                </p>
+                <div className={cn("ws-dot", agent.is_enabled ? "bg-[var(--ok)]" : "bg-[var(--ink-4)]")} data-live={agent.is_enabled && selected} />
               </div>
-            ) : (
-              /* Grouped agent list */
-              <>
-                <AgentGroup
-                  agents={groupedAgents.chat}
-                  label={t("library.sections.chat")}
-                  selectedAgentId={selectedAgentId}
-                  dateFormatter={dateFormatter}
-                  invocationLabel={t("badges.chat")}
-                  t={t}
-                  onSelect={onSelectAgent}
-                />
-                <AgentGroup
-                  agents={groupedAgents.image}
-                  label={t("library.sections.image")}
-                  selectedAgentId={selectedAgentId}
-                  dateFormatter={dateFormatter}
-                  invocationLabel={t("badges.imageGeneration")}
-                  t={t}
-                  onSelect={onSelectAgent}
-                />
-                <AgentGroup
-                  agents={groupedAgents.voice}
-                  label={t("library.sections.voice")}
-                  selectedAgentId={selectedAgentId}
-                  dateFormatter={dateFormatter}
-                  invocationLabel={t("badges.textToSpeech")}
-                  t={t}
-                  onSelect={onSelectAgent}
-                />
-              </>
-            )}
-          </div>
-        </ScrollArea>
-      </GlassCardContent>
-    </GlassCard>
-  )
-}
+              
+              <div className="flex items-center justify-between pl-11 mt-0.5">
+                 <div className="flex items-center gap-1.5 opacity-40">
+                    <Clock className="size-2.5" />
+                    <span className="ws-num text-[9px] font-medium uppercase tracking-tight">
+                       {new Date(agent.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    </span>
+                 </div>
+                 
+                 <div className="flex items-center gap-1">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                         <button className="opacity-0 group-hover:opacity-100 p-1 hover:bg-black/5 rounded-md transition-all">
+                            <MoreHorizontal className="size-3.5 text-[var(--ink-3)]" />
+                         </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="ws-bezel-inner min-w-[140px] shadow-xl border-[var(--hairline-strong)]">
+                         <DropdownMenuItem className="ws-control text-xs py-2 cursor-pointer focus:bg-[var(--accent-soft)] focus:text-[var(--accent-ink)]">
+                            <Copy className="size-3.5 mr-2" />
+                            Clone
+                         </DropdownMenuItem>
+                         <DropdownMenuItem className="ws-control text-xs py-2 cursor-pointer text-[var(--danger)] focus:bg-[var(--danger-soft)] focus:text-[var(--danger)]">
+                            <Trash2 className="size-3.5 mr-2" />
+                            Delete
+                         </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                 </div>
+              </div>
 
-function AgentGroup({
-  agents,
-  label,
-  selectedAgentId,
-  dateFormatter,
-  invocationLabel,
-  t,
-  onSelect,
-}: {
-  agents: CustomTaskAgentProfile[]
-  label: string
-  selectedAgentId: string | null
-  dateFormatter: Intl.DateTimeFormat
-  invocationLabel: string
-  t: Translation
-  onSelect: (agentId: string) => void
-}) {
-  if (agents.length === 0) return null
-
-  return (
-    <div className="space-y-1.5">
-      <p className="px-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]/50">
-        {label}
-      </p>
-      {agents.map((agent) => (
-        <AgentListItem
-          key={agent.id}
-          agent={agent}
-          isSelected={selectedAgentId === agent.id}
-          updatedLabel={t("library.updatedAt", {
-            value: dateFormatter.format(new Date(agent.updated_at)),
-          })}
-          invocationLabel={invocationLabel}
-          preferredImageLabel={t("badges.imagePreferred")}
-          enabledLabel={t("badges.enabled")}
-          disabledLabel={t("badges.disabled")}
-          discoverableLabel={t("badges.discoverable")}
-          hiddenLabel={t("badges.hidden")}
-          onSelect={onSelect}
-        />
-      ))}
+              {/* Indicator Rail for Active Agent */}
+              {selected && (
+                <div className="absolute left-0 top-3 bottom-3 w-1 bg-[var(--accent-strong)] rounded-r-full shadow-[0_0_8px_var(--accent-strong)]" />
+              )}
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }

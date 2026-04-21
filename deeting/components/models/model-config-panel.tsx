@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import type { ProviderModel, ModelCapability } from "./types";
 import { CAPABILITY_META } from "./types";
 import type { ProviderModelUpdate } from "@/lib/api/providers";
+import { Check } from "lucide-react";
 
 const CHAT_COMPLETIONS_PATH = "chat/completions";
 const RESPONSES_PATH = "responses";
@@ -49,10 +50,17 @@ function inferRequestBase(requestUrl?: string | null, upstreamPath?: string | nu
 function NumberInput({ label, value, onChange, placeholder, suffix }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; suffix?: string }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs text-[var(--ink-3)]">{label}</Label>
-      <div className="flex items-center gap-2">
-        <Input type="number" inputMode="decimal" value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="h-9 border-[var(--hairline)] bg-[var(--panel-bg-inset)]" />
-        {suffix ? <span className="whitespace-nowrap text-xs text-[var(--ink-3)]">{suffix}</span> : null}
+      <Label className="ws-meta text-[10px] tracking-wider mb-1 block">{label}</Label>
+      <div className="flex items-center gap-2 group">
+        <Input 
+          type="number" 
+          inputMode="decimal" 
+          value={value} 
+          onChange={(event) => onChange(event.target.value)} 
+          placeholder={placeholder} 
+          className="ws-control h-10 border-[var(--hairline)] bg-[var(--panel-bg-inset)] focus:border-[var(--accent-border)] focus:ring-1 focus:ring-[var(--accent-soft)] transition-all" 
+        />
+        {suffix ? <span className="ws-num whitespace-nowrap text-[10px] font-bold text-[var(--ink-4)] uppercase">{suffix}</span> : null}
       </div>
     </div>
   );
@@ -61,8 +69,13 @@ function NumberInput({ label, value, onChange, placeholder, suffix }: { label: s
 function TextInput({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs text-[var(--ink-3)]">{label}</Label>
-      <Input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="h-9 border-[var(--hairline)] bg-[var(--panel-bg-inset)]" />
+      <Label className="ws-meta text-[10px] tracking-wider mb-1 block">{label}</Label>
+      <Input 
+        value={value} 
+        onChange={(event) => onChange(event.target.value)} 
+        placeholder={placeholder} 
+        className="ws-control h-10 border-[var(--hairline)] bg-[var(--panel-bg-inset)] focus:border-[var(--accent-border)] focus:ring-1 focus:ring-[var(--accent-soft)] transition-all" 
+      />
     </div>
   );
 }
@@ -70,8 +83,13 @@ function TextInput({ label, value, onChange, placeholder }: { label: string; val
 function ReadonlyInput({ label, value, placeholder }: { label: string; value: string; placeholder?: string }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs text-[var(--ink-3)]">{label}</Label>
-      <Input value={value} placeholder={placeholder} readOnly className="h-9 border-[var(--hairline)] bg-[var(--panel-bg-inset)] font-mono text-xs text-[var(--ink-3)]" />
+      <Label className="ws-meta text-[10px] tracking-wider mb-1 block">{label}</Label>
+      <Input 
+        value={value} 
+        placeholder={placeholder} 
+        readOnly 
+        className="ws-num h-10 border-[var(--hairline-subtle)] bg-[var(--panel-bg-inset)]/50 text-[11px] text-[var(--ink-4)] select-all cursor-default" 
+      />
     </div>
   );
 }
@@ -264,15 +282,15 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
   }, [model]);
 
   return (
-    <GlassCard className="border border-[var(--hairline)] bg-[var(--panel-bg)]">
-      <div className="space-y-6">
+    <div className="space-y-8">
         <Section title={t("basic.title")} description={t("basic.desc")}>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-6 md:grid-cols-2 mt-4">
             <TextInput label={t("basic.displayName")} value={displayName} onChange={setDisplayName} placeholder={model.id} />
             <TextInput label={t("basic.unifiedId")} value={unifiedModelId} onChange={setUnifiedModelId} placeholder={model.unified_model_id || model.id} />
-            {capabilities.includes("chat") ? (
-              <div className="space-y-1.5 md:col-span-2">
-                <Label className="text-xs text-[var(--ink-3)]">{t("basic.requestMode")}</Label>
+            
+            {capabilities.includes("chat") && (
+              <div className="space-y-3 md:col-span-2">
+                <Label className="ws-meta text-[10px] tracking-wider mb-2 block">{t("basic.requestMode")}</Label>
                 <div className="flex flex-wrap gap-2">
                   {[
                     { id: "chat_completions" as const, label: t("basic.requestModes.chatCompletions") },
@@ -281,19 +299,32 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
                   ].map((option) => {
                     const active = requestMode === option.id;
                     return (
-                      <button key={option.id} type="button" onClick={() => applyRequestMode(option.id)} className={cn("h-9 rounded-md border px-3 text-xs transition-colors", active ? "border-[var(--primary)] bg-[var(--primary)]/15 text-[var(--ink)]" : "border-[var(--hairline)] bg-[var(--panel-bg-inset)] text-[var(--ink-3)] hover:bg-[var(--panel-bg)]")}>
+                      <button 
+                        key={option.id} 
+                        type="button" 
+                        onClick={() => applyRequestMode(option.id)} 
+                        className={cn(
+                          "ws-control h-10 rounded-xl border px-4 text-[12px] font-bold transition-all flex items-center gap-2", 
+                          active 
+                            ? "border-[var(--accent-strong)] bg-[var(--accent-soft)] text-[var(--accent-ink)] shadow-sm" 
+                            : "border-[var(--hairline)] bg-[var(--panel-bg-inset)]/50 text-[var(--ink-3)] hover:bg-[var(--panel-bg)]"
+                        )}
+                      >
                         {option.label}
+                        {active && <Check className="size-3.5" />}
                       </button>
                     );
                   })}
                 </div>
-                <p className="text-xs text-[var(--ink-3)]">{t("basic.requestModeHint")}</p>
+                <p className="ws-caption text-[11px] opacity-60 italic">{t("basic.requestModeHint")}</p>
               </div>
-            ) : null}
+            )}
+            
             <TextInput label={t("basic.upstreamPath")} value={upstreamPath} onChange={handleUpstreamPathChange} placeholder={t("basic.upstreamPathPlaceholder")} />
-            {showChatContentCompatibility && capabilities.includes("chat") ? (
-              <div className="space-y-1.5 md:col-span-2">
-                <Label className="text-xs text-[var(--ink-3)]">{t("basic.chatContentCompatibility")}</Label>
+            
+            {showChatContentCompatibility && capabilities.includes("chat") && (
+              <div className="space-y-3 md:col-span-2">
+                <Label className="ws-meta text-[10px] tracking-wider mb-2 block">{t("basic.chatContentCompatibility")}</Label>
                 <div className="flex flex-wrap gap-2">
                   {[
                     { id: "auto" as const, label: t("basic.chatContentCompatibilityModes.auto") },
@@ -302,73 +333,124 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
                   ].map((option) => {
                     const active = chatContentCompatibility === option.id;
                     return (
-                      <button key={option.id} type="button" onClick={() => setChatContentCompatibility(option.id)} className={cn("h-9 rounded-md border px-3 text-xs transition-colors", active ? "border-[var(--primary)] bg-[var(--primary)]/15 text-[var(--ink)]" : "border-[var(--hairline)] bg-[var(--panel-bg-inset)] text-[var(--ink-3)] hover:bg-[var(--panel-bg)]")}>
+                      <button 
+                        key={option.id} 
+                        type="button" 
+                        onClick={() => setChatContentCompatibility(option.id)} 
+                        className={cn(
+                          "ws-control h-10 rounded-xl border px-4 text-[12px] font-bold transition-all flex items-center gap-2", 
+                          active 
+                            ? "border-[var(--accent-strong)] bg-[var(--accent-soft)] text-[var(--accent-ink)] shadow-sm" 
+                            : "border-[var(--hairline)] bg-[var(--panel-bg-inset)]/50 text-[var(--ink-3)] hover:bg-[var(--panel-bg)]"
+                        )}
+                      >
                         {option.label}
+                        {active && <Check className="size-3.5" />}
                       </button>
                     );
                   })}
                 </div>
-                <p className="text-xs text-[var(--ink-3)]">{t("basic.chatContentCompatibilityHint")}</p>
+                <p className="ws-caption text-[11px] opacity-60 italic">{t("basic.chatContentCompatibilityHint")}</p>
               </div>
-            ) : null}
+            )}
+            
             <ReadonlyInput label={t("basic.requestUrl")} value={requestUrlPreview} placeholder={requestUrlPreview ? undefined : "-"} />
             <NumberInput label={t("basic.weight")} value={weight} onChange={setWeight} placeholder="0" />
             <NumberInput label={t("basic.priority")} value={priority} onChange={setPriority} placeholder="0" />
           </div>
         </Section>
+        
         <Separator className="bg-[var(--hairline)]" />
+        
         <Section title={t("capabilities.title")} description={t("capabilities.desc")}>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 mt-4">
             {(["chat", "image_generation", "text_to_speech", "speech_to_text", "video_generation", "embedding"] as ModelCapability[]).map((capability) => {
               const active = capabilities.includes(capability);
               return (
-                <Badge key={capability} variant={active ? "default" : "outline"} className={cn("cursor-pointer select-none", active ? "bg-[var(--primary)] text-white" : "border-[var(--hairline)] text-[var(--ink-3)]")} onClick={() => setCapabilities((prev) => prev.includes(capability) ? prev.filter((value) => value !== capability) : [...prev, capability])}>
-                  {CAPABILITY_META[capability].icon} {tCap(`${capability}.label`)}
-                </Badge>
+                <button 
+                   key={capability}
+                   onClick={() => setCapabilities((prev) => prev.includes(capability) ? prev.filter((value) => value !== capability) : [...prev, capability])}
+                   className={cn(
+                     "ws-control h-9 px-4 rounded-full border text-[11px] font-bold uppercase tracking-wider flex items-center gap-2 transition-all",
+                     active 
+                       ? "bg-[var(--accent-strong)] border-[var(--accent-strong)] text-white shadow-lg shadow-[var(--accent-soft)]" 
+                       : "border-[var(--hairline)] bg-[var(--panel-bg-inset)] text-[var(--ink-3)] hover:bg-[var(--panel-bg)] hover:border-[var(--hairline-strong)]"
+                   )}
+                >
+                  <span className="text-xs">{CAPABILITY_META[capability].icon}</span>
+                  {tCap(`${capability}.label`)}
+                </button>
               );
             })}
           </div>
-          <p className="text-xs text-[var(--ink-3)]">{t("capabilities.hint")}</p>
         </Section>
+
+        <Separator className="bg-[var(--hairline)]" />
+
         <Section title={t("pricing.title")} description={t("pricing.desc")}>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-6 md:grid-cols-2 mt-4">
             <NumberInput label={t("pricing.input")} value={inputPrice} onChange={setInputPrice} placeholder="0.0015" suffix="$ / 1k tokens" />
             <NumberInput label={t("pricing.output")} value={outputPrice} onChange={setOutputPrice} placeholder="0.002" suffix="$ / 1k tokens" />
           </div>
         </Section>
+
         <Separator className="bg-[var(--hairline)]" />
+
         <Section title={t("limits.title")} description={t("limits.desc")}>
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-6 md:grid-cols-3 mt-4">
             <NumberInput label={t("limits.maxOutput")} value={maxOutputTokens} onChange={setMaxOutputTokens} placeholder="4096" suffix="tokens" />
             <NumberInput label={t("limits.rpm")} value={rpm} onChange={setRpm} placeholder="60" suffix="req/min" />
             <NumberInput label={t("limits.tpm")} value={tpm} onChange={setTpm} placeholder="90000" suffix="tokens/min" />
-            {capabilities.includes("image_generation") ? <NumberInput label={t("limits.maxInputImages")} value={maxInputImages} onChange={setMaxInputImages} placeholder="1" suffix="images" /> : null}
+            {capabilities.includes("image_generation") && <NumberInput label={t("limits.maxInputImages")} value={maxInputImages} onChange={setMaxInputImages} placeholder="1" suffix="images" />}
           </div>
         </Section>
+
         <Separator className="bg-[var(--hairline)]" />
+
         <Section title={t("tokenizer.title")} description={t("tokenizer.desc")}>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-6 md:grid-cols-2 mt-4">
             <NumberInput label={t("tokenizer.context")} value={contextWindow} onChange={setContextWindow} placeholder="128000" suffix="tokens" />
           </div>
         </Section>
-        {error ? <div className="text-sm text-[var(--danger)]">{error}</div> : null}
-        <div className="flex justify-end gap-3">
-          <GlassButton variant="ghost" size="sm" onClick={handleReset} disabled={!hasChanges || saving}>{t("actions.reset")}</GlassButton>
-          <GlassButton variant="default" size="sm" onClick={(event) => { event.stopPropagation(); void handleSave(); }} disabled={!hasChanges || saving} loading={saving}>
-            {saving ? t("actions.saving") : t("actions.save")}
+
+        {error && (
+          <div className="p-4 rounded-xl bg-[var(--danger-soft)] border border-[var(--danger-border)] flex items-start gap-3">
+             <div className="ws-dot mt-1.5" data-tone="danger" />
+             <div className="ws-body text-[12px] text-[var(--danger)] font-medium leading-relaxed">{error}</div>
+          </div>
+        )}
+
+        <div className="flex justify-end gap-3 pt-6 border-t border-[var(--hairline)]">
+          <GlassButton 
+            variant="ghost" 
+            size="sm" 
+            onClick={handleReset} 
+            disabled={!hasChanges || saving}
+            className="rounded-xl px-6 h-10 ws-control font-bold opacity-60 hover:opacity-100"
+          >
+            {t("actions.reset").toUpperCase()}
           </GlassButton>
+          <button 
+            onClick={(event) => { event.stopPropagation(); void handleSave(); }} 
+            disabled={!hasChanges || saving}
+            className={cn(
+              "ws-control h-10 px-8 rounded-xl bg-[var(--accent-strong)] text-white font-bold text-[12px] shadow-lg shadow-[var(--accent-soft)] hover:brightness-110 active:scale-95 disabled:opacity-50 transition-all",
+              saving && "animate-pulse"
+            )}
+          >
+            {saving ? t("actions.saving").toUpperCase() : t("actions.save").toUpperCase()}
+          </button>
         </div>
-      </div>
-    </GlassCard>
+    </div>
   );
 }
 
 function Section({ title, description, className, children }: { title: string; description?: string; className?: string; children: React.ReactNode }) {
   return (
-    <div className={cn("space-y-3", className)}>
+    <div className={cn("space-y-1.5", className)}>
       <div className="space-y-1">
-        <div className="text-sm font-medium text-[var(--ink)]">{title}</div>
-        {description ? <p className="text-xs text-[var(--ink-3)]">{description}</p> : null}
+        <h3 className="ws-pane-title text-[15px] tracking-tight">{title}</h3>
+        {description ? <p className="ws-body text-xs opacity-60 leading-relaxed max-w-2xl">{description}</p> : null}
       </div>
       {children}
     </div>

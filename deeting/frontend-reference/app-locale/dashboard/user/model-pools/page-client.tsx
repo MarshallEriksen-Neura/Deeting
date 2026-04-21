@@ -610,7 +610,7 @@ export function ModelPoolsPageClient() {
   }, [pools])
 
   return (
-    <Container as="main" className="py-6 md:py-8" gutter="md" size="full">
+    <Container as="main" className="py-6 md:py-8 !mx-0 !max-w-none" gutter="md" size="full">
       <PageHeader title={t("title")} description={t("subtitle")} icon={Activity} />
 
       {/* ── Desktop-only gate ── */}

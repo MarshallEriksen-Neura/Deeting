@@ -37,9 +37,9 @@ const resolveHealthTone = (
   healthStatus?: string | null
 ): Pick<ModelVisual, "color" | "indicator"> | null => {
   const normalized = normalizeHealthStatus(healthStatus)
-  if (normalized === "healthy") return { color: "text-emerald-500", indicator: "bg-emerald-500" }
-  if (normalized === "degraded") return { color: "text-amber-500", indicator: "bg-amber-500" }
-  if (normalized === "down") return { color: "text-rose-500", indicator: "bg-rose-500" }
+  if (normalized === "healthy") return { color: "text-[var(--ok)]", indicator: "bg-[var(--ok)]" }
+  if (normalized === "degraded") return { color: "text-[var(--warn)]", indicator: "bg-[var(--warn)]" }
+  if (normalized === "down") return { color: "text-[var(--danger)]", indicator: "bg-[var(--danger)]" }
   return null
 }
 
@@ -48,7 +48,7 @@ const resolveRuntimeTone = (
 ): Pick<ModelVisual, "color" | "indicator"> | null => {
   const statusCode = context?.statusCode?.trim().toLowerCase() ?? ""
   if (context?.hasError || statusCode.includes("error")) {
-    return { color: "text-rose-500", indicator: "bg-rose-500" }
+    return { color: "text-[var(--danger)]", indicator: "bg-[var(--danger)]" }
   }
   if (!context?.isLoading) return null
   if (
@@ -57,7 +57,7 @@ const resolveRuntimeTone = (
     statusCode === "upstream.response" ||
     statusCode === "tool.call"
   ) {
-    return { color: "text-blue-500", indicator: "bg-blue-500" }
+    return { color: "text-[var(--info)]", indicator: "bg-[var(--info)]" }
   }
   return null
 }
@@ -65,18 +65,18 @@ const resolveRuntimeTone = (
 const resolveProviderVisual = (model?: ModelPickerModel): ModelVisual => {
   const ownedBy = model?.owned_by?.toLowerCase() ?? ""
   if (ownedBy.includes("openai")) {
-    return { icon: Zap, color: "text-emerald-500", indicator: "bg-emerald-500" }
+    return { icon: Zap, color: "text-[var(--ok)]", indicator: "bg-[var(--ok)]" }
   }
   if (ownedBy.includes("anthropic") || ownedBy.includes("claude")) {
-    return { icon: Cpu, color: "text-orange-500", indicator: "bg-orange-500" }
+    return { icon: Cpu, color: "text-[var(--warn)]", indicator: "bg-[var(--warn)]" }
   }
   if (ownedBy.includes("deepseek")) {
-    return { icon: Cpu, color: "text-blue-500", indicator: "bg-blue-500" }
+    return { icon: Cpu, color: "text-[var(--info)]", indicator: "bg-[var(--info)]" }
   }
   return {
     icon: Cpu,
-    color: "text-black/40 dark:text-white/40",
-    indicator: "bg-black/30 dark:bg-white/30",
+    color: "text-[var(--ink-3)]",
+    indicator: "bg-[var(--hairline-strong)]",
   }
 }
 
@@ -89,5 +89,5 @@ export function resolveModelVisual(
   if (healthTone) return { ...baseVisual, ...healthTone }
   const runtimeTone = resolveRuntimeTone(context)
   if (runtimeTone) return { ...baseVisual, ...runtimeTone }
-  return { ...baseVisual, indicator: "bg-black/30 dark:bg-white/30" }
+  return { ...baseVisual, indicator: "bg-[var(--hairline-strong)]" }
 }

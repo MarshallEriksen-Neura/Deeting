@@ -5,7 +5,6 @@ import { ThemeToggleButton } from "@/components/layout/header/theme-toggle-butto
 import { UserMenu } from "@/components/layout/header/user-menu";
 import {
   NotificationBell,
-  NotificationCenter,
 } from "@/components/notifications/notification-center";
 import { Separator } from "@/components/ui/shadcn/separator";
 
@@ -21,7 +20,6 @@ export function HeaderActions() {
         <Separator orientation="vertical" className="h-6 bg-border/70" />
         <UserMenu />
       </div>
-      <NotificationCenter />
     </>
   );
 }

@@ -85,9 +85,9 @@ const NAV_GROUPS: NavGroup[] = [
     id: "knowledge-and-storage",
     titleKey: "nav.knowledgeAndStorage",
     items: [
-      { id: "knowledge", labelKey: "nav.knowledge", icon: FolderOpen, disabled: true },
+      { id: "knowledge", href: "/knowledge", labelKey: "nav.knowledge", icon: FolderOpen },
       { id: "llm-wiki", labelKey: "nav.llmWiki", icon: FolderOpen, disabled: true },
-      { id: "memory", labelKey: "nav.memory", icon: FolderOpen, disabled: true },
+      { id: "memory", href: "/memory", labelKey: "nav.memory", icon: FolderOpen },
     ],
   },
 ];
@@ -290,7 +290,7 @@ export function WorkstationSidebar() {
         >
           <div
             className={cn(
-              "relative z-[1] flex size-10 shrink-0 items-center justify-center rounded-[13px] bg-white/92 p-1 shadow-[0_2px_8px_-6px_rgba(0,0,0,0.55)]",
+              "relative z-[1] flex size-10 shrink-0 items-center justify-center rounded-[13px] border border-[var(--hairline)] bg-[var(--panel-bg)] p-1 shadow-[0_2px_8px_-6px_rgba(0,0,0,0.55)]",
               isCollapsed && "size-9 rounded-[12px] p-0.5"
             )}
           >
