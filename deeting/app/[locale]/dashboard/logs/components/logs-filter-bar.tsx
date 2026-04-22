@@ -1,6 +1,5 @@
 "use client"
 
-import { type ReactNode } from "react"
 import { RefreshCw, RotateCcw, Search } from "lucide-react"
 
 import { Button } from "@/components/ui/shadcn/button"
@@ -32,10 +31,9 @@ interface LogsFilterBarProps {
   refreshing: boolean
 }
 
-const PAGE_SIZE_OPTIONS = ["20", "50", "100"] as const
 const STATUS_OPTIONS = ["all", "200", "400", "401", "403", "404", "429", "500", "502", "503", "504"] as const
-const CONTROL_CLASS =
-  "h-10 rounded-[14px] border-[var(--hairline)] bg-[var(--panel-bg-inset)] text-[var(--ink)] shadow-none placeholder:text-[var(--ink-3)]"
+
+const BRUTAL_INPUT = "h-8 rounded-none border border-[var(--hairline)] bg-transparent px-2 text-[11px] font-mono text-[var(--ink)] placeholder:text-[var(--ink-4)] focus-visible:border-[var(--accent-strong)] focus-visible:ring-0 shadow-none"
 
 export function LogsFilterBar({
   value,
@@ -46,157 +44,98 @@ export function LogsFilterBar({
   refreshing,
 }: LogsFilterBarProps) {
   return (
-    <div className="border-b border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-4 py-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <div className="ws-meta">查询视图</div>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <div className="ws-pane-title text-[var(--ink)]">筛选与时间窗口</div>
-            <span
-              className={
-                activeCount > 0
-                  ? "inline-flex items-center rounded-full border border-[var(--accent-border)] bg-[var(--accent-soft)] px-2.5 py-1 text-[11px] text-[var(--accent-ink)]"
-                  : "inline-flex items-center rounded-full border border-[var(--hairline)] bg-[var(--panel-bg)] px-2.5 py-1 text-[11px] text-[var(--ink-3)]"
-              }
-            >
-              {activeCount > 0 ? `已启用 ${activeCount} 个条件` : "当前为全部流量"}
-            </span>
-          </div>
+    <div className="border-b border-[var(--hairline)] bg-[var(--background)] p-2">
+      <div className="flex flex-wrap items-center gap-4">
+        {/* Compact Search */}
+        <div className="relative w-48">
+          <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-[var(--ink-4)]" />
+          <Input
+            value={value.model}
+            onChange={(event) => onChange({ ...value, model: event.target.value })}
+            placeholder="FILTER_MODEL"
+            className={`${BRUTAL_INPUT} pl-8`}
+          />
         </div>
 
+        {/* Status Select */}
         <div className="flex items-center gap-2">
+          <span className="text-[10px] font-bold text-[var(--ink-3)] uppercase tracking-tight">Status:</span>
+          <Select value={value.statusCode} onValueChange={(statusCode) => onChange({ ...value, statusCode })}>
+            <SelectTrigger className={`${BRUTAL_INPUT} w-[80px]`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="rounded-none border-[var(--hairline)] bg-[var(--popover)] font-mono text-[var(--ink-2)]">
+              {STATUS_OPTIONS.map((code) => (
+                <SelectItem key={code} value={code} className="focus:bg-[var(--accent)] focus:text-[var(--accent-foreground)]">
+                  {code.toUpperCase()}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Cache Select */}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-bold text-[var(--ink-3)] uppercase tracking-tight">Cache:</span>
+          <Select
+            value={value.cache}
+            onValueChange={(cache) => onChange({ ...value, cache: cache as LogsFilters["cache"] })}
+          >
+            <SelectTrigger className={`${BRUTAL_INPUT} w-[100px]`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="rounded-none border-[var(--hairline)] bg-[var(--popover)] font-mono text-[var(--ink-2)]">
+              <SelectItem value="all" className="focus:bg-[var(--accent)] focus:text-[var(--accent-foreground)]">ALL</SelectItem>
+              <SelectItem value="hit" className="focus:bg-[var(--accent)] focus:text-[var(--accent-foreground)]">HIT</SelectItem>
+              <SelectItem value="miss" className="focus:bg-[var(--accent)] focus:text-[var(--accent-foreground)]">MISS</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Time Inputs */}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-bold text-[var(--ink-3)] uppercase tracking-tight">Window:</span>
+          <Input
+            type="datetime-local"
+            value={value.start}
+            onChange={(event) => onChange({ ...value, start: event.target.value })}
+            className={`${BRUTAL_INPUT} w-[180px]`}
+          />
+          <span className="text-[var(--ink-4)]">{"->"}</span>
+          <Input
+            type="datetime-local"
+            value={value.end}
+            onChange={(event) => onChange({ ...value, end: event.target.value })}
+            className={`${BRUTAL_INPUT} w-[180px]`}
+          />
+        </div>
+
+        {/* Action Buttons */}
+        <div className="ml-auto flex items-center gap-1">
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
-            className="h-9 rounded-[12px] border-[var(--hairline)] bg-[var(--panel-bg)] text-[var(--ink-2)] shadow-none"
+            className="h-8 rounded-none border border-[var(--hairline)] bg-transparent px-3 text-[10px] font-bold text-[var(--ink-3)] hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)] uppercase shadow-none"
             disabled={activeCount === 0}
             onClick={onReset}
           >
-            <RotateCcw className="size-4" />
-            重置
+            <RotateCcw className="mr-1 size-3" />
+            Reset
           </Button>
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
-            className="h-9 rounded-[12px] border-[var(--hairline)] bg-[var(--panel-bg)] text-[var(--ink-2)] shadow-none"
+            className="h-8 rounded-none border border-[var(--ok-border)] bg-[var(--ok-soft)] px-3 text-[10px] font-bold text-[var(--ok)] hover:bg-[var(--ok)] hover:text-white uppercase shadow-none"
             disabled={refreshing}
             onClick={onRefresh}
           >
-            <RefreshCw className={refreshing ? "size-4 animate-spin" : "size-4"} />
-            刷新
+            <RefreshCw className={refreshing ? "mr-1 size-3 animate-spin" : "mr-1 size-3"} />
+            Refresh
           </Button>
         </div>
       </div>
-
-      <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">
-        <section className="rounded-[22px] border border-[var(--hairline)] bg-[var(--panel-bg)] p-3">
-          <div className="ws-meta mb-3">请求筛选</div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <FilterField label="模型 / 搜索">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--ink-3)]" />
-                <Input
-                  value={value.model}
-                  onChange={(event) => onChange({ ...value, model: event.target.value })}
-                  placeholder="按模型名筛选"
-                  className={`${CONTROL_CLASS} pl-9`}
-                />
-              </div>
-            </FilterField>
-
-            <FilterField label="状态码">
-              <Select value={value.statusCode} onValueChange={(statusCode) => onChange({ ...value, statusCode })}>
-                <SelectTrigger className={CONTROL_CLASS}>
-                  <SelectValue placeholder="状态码" />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_OPTIONS.map((code) => (
-                    <SelectItem key={code} value={code}>
-                      {code === "all" ? "全部状态码" : code}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </FilterField>
-
-            <FilterField label="缓存">
-              <Select
-                value={value.cache}
-                onValueChange={(cache) => onChange({ ...value, cache: cache as LogsFilters["cache"] })}
-              >
-                <SelectTrigger className={CONTROL_CLASS}>
-                  <SelectValue placeholder="缓存" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">全部缓存状态</SelectItem>
-                  <SelectItem value="hit">命中</SelectItem>
-                  <SelectItem value="miss">未命中</SelectItem>
-                </SelectContent>
-              </Select>
-            </FilterField>
-
-            <FilterField label="错误码">
-              <Input
-                value={value.errorCode}
-                onChange={(event) => onChange({ ...value, errorCode: event.target.value })}
-                placeholder="如 rate_limit"
-                className={CONTROL_CLASS}
-              />
-            </FilterField>
-          </div>
-        </section>
-
-        <section className="rounded-[22px] border border-[var(--hairline)] bg-[var(--panel-bg)] p-3">
-          <div className="ws-meta mb-3">时间与分页</div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <FilterField label="开始时间">
-              <Input
-                type="datetime-local"
-                value={value.start}
-                onChange={(event) => onChange({ ...value, start: event.target.value })}
-                className={CONTROL_CLASS}
-              />
-            </FilterField>
-
-            <FilterField label="结束时间">
-              <Input
-                type="datetime-local"
-                value={value.end}
-                onChange={(event) => onChange({ ...value, end: event.target.value })}
-                className={CONTROL_CLASS}
-              />
-            </FilterField>
-
-            <div className="md:col-span-2">
-              <FilterField label="分页">
-                <Select value={value.pageSize} onValueChange={(pageSize) => onChange({ ...value, pageSize })}>
-                  <SelectTrigger className={CONTROL_CLASS}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PAGE_SIZE_OPTIONS.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        每页 {option} 条
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FilterField>
-            </div>
-          </div>
-        </section>
-      </div>
-    </div>
-  )
-}
-
-function FilterField({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="space-y-2">
-      <span className="ws-meta">{label}</span>
-      {children}
     </div>
   )
 }
