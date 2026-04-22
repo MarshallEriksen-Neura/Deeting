@@ -1,39 +1,37 @@
-"use client"
+"use client";
 
-import * as React from "react"
-
-import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri"
-import { useAuthStore } from "@/store/auth-store"
-import { useDesktopAuthBootstrapStore } from "@/store/desktop-auth-bootstrap-store"
-import { ChatRouteFallback } from "./chat-route-fallback"
+import * as React from "react";
+import { useAuthWorldModel } from "@/hooks/use-auth-world-model";
+import { buildLoginHostRoute } from "@/lib/auth/world-model";
+import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri";
+import { useAuthStore } from "@/store/auth-store";
+import { useDesktopAuthBootstrapStore } from "@/store/desktop-auth-bootstrap-store";
+import { ChatRouteFallback } from "./chat-route-fallback";
 
 type AuthPersistApi = {
-  hasHydrated: () => boolean
-  onHydrate: (listener: () => void) => () => void
-  onFinishHydration: (listener: () => void) => () => void
-}
+  hasHydrated: () => boolean;
+  onHydrate: (listener: () => void) => () => void;
+  onFinishHydration: (listener: () => void) => () => void;
+};
 
-const CHAT_AUTH_DIAGNOSTIC_TIMEOUT_MS = 4000
+const CHAT_AUTH_DIAGNOSTIC_TIMEOUT_MS = 4000;
 
 export function buildChatLoginTarget(pathname?: string, search?: string) {
-  const safePathname = pathname?.trim() || "/chat"
+  const safePathname = pathname?.trim() || "/chat";
   const normalizedSearch =
-    typeof search === "string" && search.trim() && search !== "?"
-      ? search
-      : ""
-  return `/login?callbackUrl=${encodeURIComponent(`${safePathname}${normalizedSearch}`)}`
+    typeof search === "string" && search.trim() && search !== "?" ? search : "";
+  return buildLoginHostRoute(`${safePathname}${normalizedSearch}`);
 }
 
-function getCurrentChatLoginTarget() {
+function getCurrentChatCallbackUrl() {
   if (typeof window === "undefined") {
-    return buildChatLoginTarget("/chat")
+    return "/chat";
   }
-  return buildChatLoginTarget(window.location.pathname, window.location.search)
+  return `${window.location.pathname}${window.location.search || ""}`;
 }
 
 function getAuthPersistApi(): AuthPersistApi | null {
-  const persistApi = (useAuthStore as typeof useAuthStore & { persist?: AuthPersistApi })
-    .persist
+  const persistApi = (useAuthStore as typeof useAuthStore & { persist?: AuthPersistApi }).persist;
 
   if (
     persistApi &&
@@ -41,53 +39,52 @@ function getAuthPersistApi(): AuthPersistApi | null {
     typeof persistApi.onHydrate === "function" &&
     typeof persistApi.onFinishHydration === "function"
   ) {
-    return persistApi
+    return persistApi;
   }
 
-  return null
+  return null;
 }
 
 export function ChatAuthGuard({ children }: { children: React.ReactNode }) {
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
-  const isDesktopAuthBootstrapReady = useDesktopAuthBootstrapStore((state) => state.isReady)
-  const redirectedRef = React.useRef(false)
-  const isDesktopRuntime = detectTauriRuntime()
-  const [isHydrated, setIsHydrated] = React.useState(false)
-  const isRestoringDesktopSession = isDesktopRuntime && !isDesktopAuthBootstrapReady
-  const hasUsableSession = isAuthenticated
-  const isAuthStateReady = isHydrated || hasUsableSession
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const isDesktopAuthBootstrapReady = useDesktopAuthBootstrapStore((state) => state.isReady);
+  const redirectedRef = React.useRef(false);
+  const isDesktopRuntime = detectTauriRuntime();
+  const [isHydrated, setIsHydrated] = React.useState(false);
+  const isRestoringDesktopSession = isDesktopRuntime && !isDesktopAuthBootstrapReady;
+  const hasUsableSession = isAuthenticated;
+  const isAuthStateReady = isHydrated || hasUsableSession;
   const pendingReason = !isAuthStateReady
     ? "auth_store_hydration"
     : isRestoringDesktopSession
       ? "desktop_auth_bootstrap"
-      : null
+      : null;
+  const { launchLogin, loginTarget } = useAuthWorldModel({ callbackUrl: getCurrentChatCallbackUrl() });
 
   React.useEffect(() => {
-    const persistApi = getAuthPersistApi()
+    const persistApi = getAuthPersistApi();
     if (!persistApi) {
-      setIsHydrated(true)
-      return
+      setIsHydrated(true);
+      return;
     }
 
-    const onHydrate = () => setIsHydrated(false)
-    const onFinishHydration = () => setIsHydrated(true)
+    const onHydrate = () => setIsHydrated(false);
+    const onFinishHydration = () => setIsHydrated(true);
 
-    const unsubscribeHydrate = persistApi.onHydrate(onHydrate)
-    const unsubscribeFinish = persistApi.onFinishHydration(onFinishHydration)
+    const unsubscribeHydrate = persistApi.onHydrate(onHydrate);
+    const unsubscribeFinish = persistApi.onFinishHydration(onFinishHydration);
 
-    setIsHydrated(persistApi.hasHydrated())
+    setIsHydrated(persistApi.hasHydrated());
 
     return () => {
-      unsubscribeHydrate()
-      unsubscribeFinish()
-    }
-  }, [])
-
-  const loginTarget = getCurrentChatLoginTarget()
+      unsubscribeHydrate();
+      unsubscribeFinish();
+    };
+  }, []);
 
   React.useEffect(() => {
     if (!pendingReason) {
-      return
+      return;
     }
 
     const timer = window.setTimeout(() => {
@@ -97,42 +94,55 @@ export function ChatAuthGuard({ children }: { children: React.ReactNode }) {
         isDesktopAuthBootstrapReady,
         isAuthenticated,
         isDesktopRuntime,
-      })
-    }, CHAT_AUTH_DIAGNOSTIC_TIMEOUT_MS)
+      });
+    }, CHAT_AUTH_DIAGNOSTIC_TIMEOUT_MS);
 
     return () => {
-      window.clearTimeout(timer)
-    }
+      window.clearTimeout(timer);
+    };
   }, [
     isAuthenticated,
     isDesktopAuthBootstrapReady,
     isDesktopRuntime,
     isHydrated,
     pendingReason,
-  ])
+  ]);
 
   React.useEffect(() => {
     if (!isAuthStateReady || isRestoringDesktopSession || isAuthenticated) {
-      redirectedRef.current = false
-      return
+      redirectedRef.current = false;
+      return;
     }
 
-    if (redirectedRef.current) return
-    redirectedRef.current = true
+    if (redirectedRef.current) return;
+    redirectedRef.current = true;
 
-    window.location.replace(loginTarget)
-  }, [isAuthenticated, isAuthStateReady, isRestoringDesktopSession, loginTarget])
+    if (!isDesktopRuntime) {
+      window.location.replace(loginTarget);
+      return;
+    }
+
+    void launchLogin().catch((error) => {
+      redirectedRef.current = false;
+      console.error("chat auth guard failed to start desktop login", error);
+    });
+  }, [
+    isAuthenticated,
+    isAuthStateReady,
+    isDesktopRuntime,
+    isRestoringDesktopSession,
+    launchLogin,
+    loginTarget,
+  ]);
 
   if (!isAuthStateReady || !isAuthenticated) {
     if (!isAuthStateReady || isRestoringDesktopSession) {
       const fallbackBadge =
-        pendingReason === "auth_store_hydration"
-          ? "Auth Store"
-          : "Desktop Bootstrap"
+        pendingReason === "auth_store_hydration" ? "Auth Store" : "Desktop Bootstrap";
       const fallbackDetail =
         pendingReason === "auth_store_hydration"
           ? "Waiting for the persisted auth store to finish hydration before restoring the chat session"
-          : "Waiting for desktop authentication bootstrap to complete before entering the chat workspace"
+          : "Waiting for desktop authentication bootstrap to complete before entering the chat workspace";
 
       return (
         <ChatRouteFallback
@@ -140,7 +150,7 @@ export function ChatAuthGuard({ children }: { children: React.ReactNode }) {
           detail={fallbackDetail}
           badge={fallbackBadge}
         />
-      )
+      );
     }
 
     if (!isDesktopRuntime) {
@@ -149,7 +159,7 @@ export function ChatAuthGuard({ children }: { children: React.ReactNode }) {
           label="Redirecting to sign in"
           detail="Preparing the authentication handoff for this chat route"
         />
-      )
+      );
     }
 
     return (
@@ -158,23 +168,25 @@ export function ChatAuthGuard({ children }: { children: React.ReactNode }) {
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-xl font-semibold text-slate-700">
             D
           </div>
-          <h2 className="mt-5 text-xl font-semibold text-slate-900">
-            Sign in to continue
-          </h2>
+          <h2 className="mt-5 text-xl font-semibold text-slate-900">Sign in to continue</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">
             The desktop app opens your browser for authentication. If you closed it, you can start the login flow again here.
           </p>
           <button
             type="button"
             className="mt-6 inline-flex h-11 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-medium text-white transition-colors hover:bg-slate-800"
-            onClick={() => window.location.replace(loginTarget)}
+            onClick={() => {
+              void launchLogin().catch((error) => {
+                console.error("chat auth guard retry failed", error);
+              });
+            }}
           >
             Continue login
           </button>
         </div>
       </div>
-    )
+    );
   }
 
-  return <>{children}</>
+  return <>{children}</>;
 }

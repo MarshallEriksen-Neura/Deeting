@@ -1,6 +1,7 @@
-"use client"
+﻿"use client"
 
 import { useCallback, useEffect, useState } from "react"
+import { useLocale, useTranslations } from "next-intl"
 import {
   ChevronDown,
   ChevronUp,
@@ -23,7 +24,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/shadcn/alert-dialog"
-import { Badge } from "@/components/ui/shadcn/badge"
 import { Button } from "@/components/ui/shadcn/button"
 import { Input } from "@/components/ui/shadcn/input"
 import { Switch } from "@/components/ui/shadcn/switch"
@@ -82,6 +82,8 @@ export function ChannelCard({
   desktopImSnapshot?: DesktopImSettingsSnapshot | null
   onRefresh: () => void | Promise<unknown>
 }) {
+  const t = useTranslations("monitoring")
+  const locale = useLocale()
   const fields = FIELD_DEFS[channel.channel]
   const [expanded, setExpanded] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -113,7 +115,10 @@ export function ChannelCard({
         return { state: "connected", accountLabel: channel.config.account_label }
       }
       if (channel.config?.connection_state === "error") {
-        return { state: "error", error: "微信连接状态异常" }
+        return {
+          state: "error",
+          error: t("notificationChannels.channelCard.feedback.wechatConnectionError"),
+        }
       }
       return { state: "disconnected" }
     })
@@ -132,15 +137,19 @@ export function ChannelCard({
     ? getPrimaryDesktopImResolution(desktopImSnapshot, desktopImChannel)
     : null
   const runtimeLabel = runtimeProfile?.effective_state
-    ? `IM ${runtimeProfile.effective_state}`
+    ? t("notificationChannels.channelCard.runtime.imState", {
+        state: runtimeProfile.effective_state,
+      })
     : runtimeResolution?.enabled
-      ? `IM ${runtimeResolution.resolution.effective}`
-      : "未接入 IM"
+      ? t("notificationChannels.channelCard.runtime.imState", {
+          state: runtimeResolution.resolution.effective,
+        })
+      : t("notificationChannels.channelCard.runtime.notConnected")
   const channelTypeLabel = CHANNEL_META[channel.channel]?.label ?? channel.channel
   const channelTitle = channel.display_name?.trim() || channelTypeLabel
   const lastUsedLabel = channel.last_used_at
-    ? new Date(channel.last_used_at).toLocaleDateString("zh-CN")
-    : "尚未使用"
+    ? new Date(channel.last_used_at).toLocaleDateString(locale)
+    : t("notificationChannels.channelCard.lastUsed.never")
   const configReady = validateChannelConfig(channel.channel, values)
   const selectedWechatNotifyContacts = splitStringList(
     typeof values.notify_contact_ids === "string" ? values.notify_contact_ids : "",
@@ -196,7 +205,10 @@ export function ChannelCard({
             : state.state === "connecting"
               ? { state: "connecting" }
               : state.state === "error"
-                ? { state: "error", error: state.last_error || "微信连接异常" }
+                ? {
+                    state: "error",
+                    error: state.last_error || t("notificationChannels.channelCard.feedback.wechatConnectionError"),
+                  }
                 : { state: "disconnected" },
         )
         setWechatStats({
@@ -216,7 +228,7 @@ export function ChannelCard({
     return () => {
       active = false
     }
-  }, [channel.channel, channel.id])
+  }, [channel.channel, channel.id, t])
 
   useEffect(() => {
     if (
@@ -253,7 +265,7 @@ export function ChannelCard({
         } else if (status.state === "expired") {
           setWechatConnectionState({
             state: "error",
-            error: "二维码已过期，请重新生成",
+            error: t("notificationChannels.channelCard.feedback.qrExpired"),
           })
           setWechatPairingId(null)
         } else if (status.state === "cancelled") {
@@ -262,7 +274,7 @@ export function ChannelCard({
         } else if (status.state === "error") {
           setWechatConnectionState({
             state: "error",
-            error: status.error || "连接失败",
+            error: status.error || t("notificationChannels.channelCard.feedback.connectFailed"),
           })
           setWechatPairingId(null)
         }
@@ -270,7 +282,7 @@ export function ChannelCard({
         if (!active) return
         setWechatConnectionState({
           state: "error",
-          error: error instanceof Error ? error.message : "连接失败",
+          error: error instanceof Error ? error.message : t("notificationChannels.channelCard.feedback.connectFailed"),
         })
         setWechatPairingId(null)
       }
@@ -280,7 +292,7 @@ export function ChannelCard({
       active = false
       window.clearInterval(intervalId)
     }
-  }, [channel.channel, wechatDialogOpen, wechatPairingId])
+  }, [channel.channel, t, wechatDialogOpen, wechatPairingId])
 
   const handleToggle = useCallback(async () => {
     setToggling(true)
@@ -325,7 +337,7 @@ export function ChannelCard({
         }),
         display_name: displayName.trim() || undefined,
       })
-      setFeedback("已保存")
+      setFeedback(t("notificationChannels.channelCard.feedback.saved"))
       await onRefresh()
       setExpanded(false)
     } finally {
@@ -338,6 +350,7 @@ export function ChannelCard({
     displayName,
     fields,
     onRefresh,
+    t,
     values,
     wechatConnectionState,
   ])
@@ -362,13 +375,21 @@ export function ChannelCard({
               : undefined,
         }),
       })
-      setFeedback(result.success ? "测试发送成功" : result.message || "测试发送失败")
+      setFeedback(
+        result.success
+          ? t("notificationChannels.channelCard.feedback.testSuccess")
+          : result.message || t("notificationChannels.channelCard.feedback.testFailed"),
+      )
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "测试发送失败")
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : t("notificationChannels.channelCard.feedback.testFailed"),
+      )
     } finally {
       setTesting(false)
     }
-  }, [channel.channel, configReady, fields, values, wechatConnectionState])
+  }, [channel.channel, configReady, fields, t, values, wechatConnectionState])
 
   async function handleWechatConnect() {
     setWechatDialogOpen(true)
@@ -399,7 +420,7 @@ export function ChannelCard({
     } catch (error) {
       setWechatConnectionState({
         state: "error",
-        error: error instanceof Error ? error.message : "连接失败",
+        error: error instanceof Error ? error.message : t("notificationChannels.channelCard.feedback.connectFailed"),
       })
       setWechatPairingId(null)
     }
@@ -423,7 +444,7 @@ export function ChannelCard({
     } catch (error) {
       setWechatConnectionState({
         state: "error",
-        error: error instanceof Error ? error.message : "断开失败",
+        error: error instanceof Error ? error.message : t("notificationChannels.channelCard.feedback.disconnectFailed"),
       })
       return
     }
@@ -443,8 +464,10 @@ export function ChannelCard({
       )
       setWechatPairingFeedback(
         result.success
-          ? `已批准 ${result.contact_id ?? wechatPairingCode.trim()}`
-          : "批准失败",
+          ? t("notificationChannels.channelCard.feedback.approved", {
+              contactId: result.contact_id ?? wechatPairingCode.trim(),
+            })
+          : t("notificationChannels.channelCard.feedback.approveFailed"),
       )
       setWechatPairingCode("")
       const state = await getLocalWechatConnectionState(channel.id)
@@ -455,7 +478,11 @@ export function ChannelCard({
         contextContacts: state.context_contacts ?? [],
       })
     } catch (error) {
-      setWechatPairingFeedback(error instanceof Error ? error.message : "批准失败")
+      setWechatPairingFeedback(
+        error instanceof Error
+          ? error.message
+          : t("notificationChannels.channelCard.feedback.approveFailed"),
+      )
     } finally {
       setWechatPairingBusy(false)
     }
@@ -467,7 +494,7 @@ export function ChannelCard({
     setWechatPairingFeedback(null)
     try {
       await rejectLocalWechatPairing(channel.id, wechatPairingCode.trim())
-      setWechatPairingFeedback("已拒绝该 pairing code")
+      setWechatPairingFeedback(t("notificationChannels.channelCard.feedback.rejectedPairingCode"))
       setWechatPairingCode("")
       const state = await getLocalWechatConnectionState(channel.id)
       setWechatStats({
@@ -477,7 +504,11 @@ export function ChannelCard({
         contextContacts: state.context_contacts ?? [],
       })
     } catch (error) {
-      setWechatPairingFeedback(error instanceof Error ? error.message : "拒绝失败")
+      setWechatPairingFeedback(
+        error instanceof Error
+          ? error.message
+          : t("notificationChannels.channelCard.feedback.rejectFailed"),
+      )
     } finally {
       setWechatPairingBusy(false)
     }
@@ -487,12 +518,18 @@ export function ChannelCard({
     try {
       if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(contactId)
-        setWechatPairingFeedback(`已复制 ${contactId}`)
+        setWechatPairingFeedback(
+          t("notificationChannels.channelCard.feedback.copied", { contactId }),
+        )
       } else {
-        setWechatPairingFeedback("当前环境不支持复制")
+        setWechatPairingFeedback(t("notificationChannels.channelCard.feedback.copyUnsupported"))
       }
     } catch (error) {
-      setWechatPairingFeedback(error instanceof Error ? error.message : "复制失败")
+      setWechatPairingFeedback(
+        error instanceof Error
+          ? error.message
+          : t("notificationChannels.channelCard.feedback.copyFailed"),
+      )
     }
   }
 
@@ -510,13 +547,13 @@ export function ChannelCard({
       >
         <ChannelFormField
           id={`${channel.channel}-${field.key}`}
-          label={field.label}
-          placeholder={field.placeholder}
+          label={t(field.labelKey)}
+          placeholder={t(field.placeholderKey)}
           type={field.type}
           value={values[field.key] ?? (field.valueKind === "boolean" ? false : "")}
           onChange={(nextValue) => setValue(field.key, nextValue)}
-          description={field.description}
-          options={field.options}
+          description={field.descriptionKey ? t(field.descriptionKey) : undefined}
+          options={field.options?.map((option) => ({ value: option.value, label: t(option.labelKey) }))}
           disabled={disabled}
         />
       </div>
@@ -556,7 +593,7 @@ export function ChannelCard({
 
             <div className="flex items-center gap-3">
               <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                System Active
+                {t("notificationChannels.channelCard.systemActive")}
               </span>
               <Switch
                 checked={channel.is_active}
@@ -568,14 +605,14 @@ export function ChannelCard({
           </div>
 
           <div className="grid gap-px overflow-hidden rounded-md border border-[color:var(--border)] bg-[color:var(--border)] sm:grid-cols-3">
-            <MetaCell label="Protocol" value={channelTypeLabel} icon={Settings2} />
+            <MetaCell label={t("notificationChannels.channelCard.meta.protocol")} value={channelTypeLabel} icon={Settings2} />
             <MetaCell
-              label="Config Integrity"
-              value={configReady ? "Passed" : "Action Required"}
+              label={t("notificationChannels.channelCard.meta.configIntegrity")}
+              value={configReady ? t("notificationChannels.channelCard.meta.passed") : t("notificationChannels.channelCard.meta.actionRequired")}
               tone={configReady ? "ok" : "warn"}
               icon={Zap}
             />
-            <MetaCell label="Last Active" value={lastUsedLabel} icon={Activity} />
+            <MetaCell label={t("notificationChannels.channelCard.meta.lastActive")} value={lastUsedLabel} icon={Activity} />
           </div>
         </div>
 
@@ -587,7 +624,7 @@ export function ChannelCard({
             className="h-8 border-[color:var(--border)] px-3 text-[11px] font-medium"
           >
             {expanded ? <ChevronUp className="mr-1.5 size-3" /> : <ChevronDown className="mr-1.5 size-3" />}
-            {expanded ? "CLOSE EDITOR" : "CONFIGURE EXIT"}
+            {expanded ? t("notificationChannels.channelCard.actions.closeEditor") : t("notificationChannels.channelCard.actions.configure")}
           </Button>
 
           {channel.channel === "wechat" && isDesktopRuntime() && (
@@ -604,14 +641,14 @@ export function ChannelCard({
                 }}
               >
                 <MessageCircleMore className="mr-2 size-3" />
-                WECHAT LINK
+                {t("notificationChannels.channelCard.actions.wechatLink")}
               </Button>
               {wechatConnectionState.state === "connected" && (
                 <button
-                  onClick={() => void handleDisconnectWechat()}
+                  onClick={() => void handleWechatDisconnect()}
                   className="px-2 text-[10px] font-bold text-destructive uppercase transition-opacity hover:opacity-80"
                 >
-                  DISCONNECT
+                  {t("notificationChannels.channelCard.actions.disconnect")}
                 </button>
               )}
             </div>
@@ -627,7 +664,7 @@ export function ChannelCard({
                 className="h-8 text-[11px] font-medium"
               >
                 <Send className={cn("mr-1.5 size-3", testing && "animate-spin")} />
-                TESTING
+                {t("notificationChannels.channelCard.actions.testing")}
               </Button>
             )}
             <Button
@@ -647,7 +684,7 @@ export function ChannelCard({
             <div className="space-y-6">
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                  Instance Alias
+                  {t("notificationChannels.channelCard.instanceAlias")}
                 </label>
                 <Input
                   value={displayName}
@@ -662,7 +699,7 @@ export function ChannelCard({
                   <div className="grid grid-cols-2 gap-4 rounded-md border border-[color:var(--border)] bg-muted/20 p-4">
                     <div className="space-y-1">
                       <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                        Handshake State
+                        {t("notificationChannels.channelCard.wechat.handshakeState")}
                       </span>
                       <div className="flex items-center gap-2">
                         <div
@@ -673,19 +710,19 @@ export function ChannelCard({
                         />
                         <span className="text-xs font-medium uppercase tracking-tight">
                           {wechatConnectionState.state === "connected"
-                            ? wechatConnectionState.accountLabel || "ESTABLISHED"
+                            ? wechatConnectionState.accountLabel || t("notificationChannels.channelCard.wechat.established")
                             : wechatConnectionState.state === "connecting"
-                              ? "HANDSHAKING..."
-                              : "IDLE"}
+                              ? t("notificationChannels.channelCard.wechat.handshaking")
+                              : t("notificationChannels.channelCard.wechat.idle")}
                         </span>
                       </div>
                     </div>
                     <div className="space-y-1">
                       <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                        Pairing Metadata
+                        {t("notificationChannels.channelCard.wechat.pairingMetadata")}
                       </span>
                       <div className="flex items-center gap-2 text-xs font-medium">
-                        <span className="text-primary">{wechatStats.allowlistSize} NODE(S) ALLOWED</span>
+                        <span className="text-primary">{t("notificationChannels.channelCard.wechat.allowedNodes", { count: wechatStats.allowlistSize })}</span>
                       </div>
                     </div>
                   </div>
@@ -720,7 +757,7 @@ export function ChannelCard({
                   {selectedWechatNotifyContacts.length > 0 && (
                     <div className="space-y-2">
                       <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                        Delivery Nodes
+                        {t("notificationChannels.channelCard.wechat.deliveryNodes")}
                       </label>
                       <div className="flex flex-wrap gap-2">
                         {selectedWechatNotifyContacts.map((contactId) => (
@@ -744,12 +781,12 @@ export function ChannelCard({
               ) : channel.channel === "feishu" ? (
                 <div className="space-y-6">
                   {FEISHU_FIELD_GROUPS.map((group) => (
-                    <div key={group.title} className="space-y-4">
+                    <div key={group.titleKey} className="space-y-4">
                       <div className="space-y-1">
                         <div className="text-[11px] font-bold uppercase tracking-widest text-primary">
-                          {group.title}
+                          {t(group.titleKey)}
                         </div>
-                        <div className="text-[11px] text-muted-foreground">{group.description}</div>
+                        <div className="text-[11px] text-muted-foreground">{t(group.descriptionKey)}</div>
                       </div>
                       <div className="grid gap-6 md:grid-cols-2">
                         {group.keys.map((key) => {
@@ -773,7 +810,7 @@ export function ChannelCard({
                   className="h-9 px-6 font-medium shadow-none"
                 >
                   {saving && <RadioTower className="mr-2 size-4 animate-spin" />}
-                  SYNC CHANGES
+                  {t("notificationChannels.channelCard.actions.syncChanges")}
                 </Button>
               </div>
               {feedback && (
@@ -807,18 +844,18 @@ export function ChannelCard({
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>确认删除此通知渠道？</AlertDialogTitle>
+            <AlertDialogTitle>{t("notificationChannels.channelCard.deleteDialog.title")}</AlertDialogTitle>
             <AlertDialogDescription>
-              删除后，绑定此渠道的主动寻猎任务将不再继续向其投递消息。此操作无法撤销。
+              {t("notificationChannels.channelCard.deleteDialog.description")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t("notificationChannels.channelCard.deleteDialog.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => void handleDelete()}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              确认删除
+              {t("notificationChannels.channelCard.deleteDialog.confirm")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import * as React from "react"
 import { useTranslations } from "next-intl"
@@ -6,19 +6,12 @@ import { toast } from "sonner"
 import {
   AlertTriangle,
   BrainCircuit,
-  ChevronRight,
   Filter,
-  History,
-  Info,
   Loader2,
-  Lock,
-  MoreHorizontal,
-  Plus,
-  Search,
   ShieldCheck,
+  ShieldOff,
   Sparkles,
   Trash2,
-  Zap,
 } from "lucide-react"
 
 import {
@@ -30,7 +23,6 @@ import {
   type ToolApprovalLearningSummaryRow,
   type ToolApprovalRule,
 } from "@/lib/api/approval-rules"
-import { Container } from "@/components/ui/common/container"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,88 +33,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/shadcn/alert-dialog"
-import { Badge } from "@/components/ui/shadcn/badge"
 import { Button } from "@/components/ui/shadcn/button"
 import { Input } from "@/components/ui/shadcn/input"
-import { cn } from "@/lib/utils"
-
-/* ─── 原子组件 (Swiss Style) ────────────────────────────────────────────── */
-
-/**
- * 刚性标签：用于展示分类、元数据
- */
-function RigidTag({ 
-  children, 
-  variant = "default",
-  className 
-}: { 
-  children: React.ReactNode, 
-  variant?: "default" | "ok" | "warn" | "danger" | "info" | "mono",
-  className?: string
-}) {
-  const variants = {
-    default: "bg-[color:var(--secondary)] text-[color:var(--ink-2)]",
-    ok: "bg-[color:var(--ok-soft)] text-[color:var(--ok)] border-[color:var(--ok-border)]",
-    warn: "bg-[color:var(--warn-soft)] text-[color:var(--warn)] border-[color:var(--warn-border)]",
-    danger: "bg-[color:var(--danger-soft)] text-[color:var(--danger)] border-[color:var(--danger-border)]",
-    info: "bg-[color:var(--info-soft)] text-[color:var(--info)] border-[color:var(--info-border)]",
-    mono: "font-mono bg-[color:var(--hairline-subtle)] text-[color:var(--ink-3)] uppercase tracking-wider"
-  }
-
-  return (
-    <span className={cn(
-      "inline-flex items-center px-2 py-0.5 text-[10px] font-bold border leading-none uppercase tracking-[0.08em] rounded-sm",
-      variants[variant],
-      className
-    )}>
-      {children}
-    </span>
-  )
-}
-
-/**
- * 机械网格容器
- */
-function GridPanel({ children, className, title, action }: { children: React.ReactNode, className?: string, title?: string, action?: React.ReactNode }) {
-  return (
-    <div className={cn("border border-[color:var(--hairline)] bg-[color:var(--panel-bg)]", className)}>
-      {title && (
-        <div className="flex h-10 items-center justify-between border-b border-[color:var(--hairline)] px-4">
-          <h3 className="text-[11px] font-bold uppercase tracking-[0.2em] text-[color:var(--ink-3)]">
-            {title}
-          </h3>
-          {action}
-        </div>
-      )}
-      <div className="p-4">{children}</div>
-    </div>
-  )
-}
-
-/**
- * 指标卡片 (Swiss Data Block)
- */
-function MetricBlock({ label, value, subValue }: { label: string, value: string | number, subValue?: string }) {
-  return (
-    <div className="flex flex-col border-r border-[color:var(--hairline)] px-6 py-4 last:border-r-0">
-      <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-[color:var(--ink-4)]">
-        {label}
-      </span>
-      <div className="mt-1 flex items-baseline gap-2">
-        <span className="font-mono text-3xl font-light tracking-tight text-[color:var(--ink)]">
-          {value}
-        </span>
-        {subValue && (
-          <span className="text-xs font-medium text-[color:var(--ink-3)]">
-            {subValue}
-          </span>
-        )}
-      </div>
-    </div>
-  )
-}
-
-/* ─── 业务逻辑 ──────────────────────────────────────────────────────────── */
+import { Container } from "@/components/ui/common/container"
 
 type RuleFilter = "all" | "allow" | "deny"
 type ConfirmAction = null | "clear-all" | "clear-allow" | "reset-learning"
@@ -130,37 +43,98 @@ type ApprovalClassLabels = Record<string, string>
 
 function formatDate(value?: number | null) {
   if (!value) return "-"
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(value))
+  return new Date(value).toLocaleString()
+}
+
+function classifyRuleSource(rule: ToolApprovalRule) {
+  if (rule.action === "deny_always") return "explicitDeny"
+  if (rule.action === "allow_always" && rule.auto_promoted) return "autoPromoted"
+  if (rule.action === "allow_always") return "explicitAllow"
+  return "observed"
 }
 
 function toApprovalClassLabels(value: unknown): ApprovalClassLabels {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {}
   return Object.fromEntries(
     Object.entries(value).filter(
-      (entry): entry is [string, string] => typeof entry[1] === "string",
-    ),
+      (entry): entry is [string, string] => typeof entry[1] === "string"
+    )
   )
+}
+
+function humanizeApprovalClassValue(value: string, fallback: string) {
+  const normalized = value.trim()
+  if (!normalized) return fallback
+  if (!/^[A-Za-z0-9_-]+$/.test(normalized)) return normalized
+
+  const words = normalized
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[_-\s]+/)
+    .filter(Boolean)
+    .map((word) => {
+      const lower = word.toLowerCase()
+      return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`
+    })
+
+  return words.length > 0 ? words.join(" ") : fallback
 }
 
 function resolveApprovalClassLabel(
   labels: ApprovalClassLabels,
   value: string,
-  fallback: string,
+  fallback: string
 ) {
   const normalized = value.trim()
   if (!normalized) return fallback
-  return labels[normalized] ?? normalized.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+  return labels[normalized] ?? humanizeApprovalClassValue(normalized, fallback)
+}
+
+function getLearningStatus(row: ToolApprovalLearningSummaryRow) {
+  if (row.auto_promoted_rules > 0) return "autoPromoted"
+  if (row.explicit_allow_rules > 0 || row.explicit_deny_rules > 0) return "stable"
+  if (row.observed_approvals > 0) return "learning"
+  return "normal"
+}
+
+function RuleChip({
+  tone,
+  children,
+}: {
+  tone: "allow" | "deny" | "info" | "learning"
+  children: React.ReactNode
+}) {
+  const toneClass =
+    tone === "allow"
+      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+      : tone === "deny"
+      ? "border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-300"
+      : tone === "learning"
+      ? "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+      : "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300"
+
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium ${toneClass}`}
+    >
+      {children}
+    </span>
+  )
 }
 
 export function ApprovalRulesClient() {
   const t = useTranslations("approval-rules")
-  const opLabels = React.useMemo(() => toApprovalClassLabels(t.raw("classes.operation")), [t])
-  const targetLabels = React.useMemo(() => toApprovalClassLabels(t.raw("classes.target")), [t])
-  const boundaryLabels = React.useMemo(() => toApprovalClassLabels(t.raw("classes.boundary")), [t])
-
+  const operationLabels = React.useMemo(
+    () => toApprovalClassLabels(t.raw("classes.operation")),
+    [t]
+  )
+  const targetLabels = React.useMemo(
+    () => toApprovalClassLabels(t.raw("classes.target")),
+    [t]
+  )
+  const boundaryLabels = React.useMemo(
+    () => toApprovalClassLabels(t.raw("classes.boundary")),
+    [t]
+  )
   const [rules, setRules] = React.useState<ToolApprovalRule[]>([])
   const [summaryRows, setSummaryRows] = React.useState<ToolApprovalLearningSummaryRow[]>([])
   const [filter, setFilter] = React.useState<RuleFilter>("all")
@@ -179,24 +153,40 @@ export function ApprovalRulesClient() {
       setRules(nextRules)
       setSummaryRows(nextSummary)
     } catch (error) {
+      console.error("[approval-rules] load failed", error)
       toast.error(t("toast.loadFailed"))
     } finally {
       setLoading(false)
     }
   }, [t])
 
-  React.useEffect(() => { reload() }, [reload])
+  React.useEffect(() => {
+    void reload()
+  }, [reload])
 
   const filteredRules = React.useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase()
     return rules.filter((rule) => {
-      if (rule.action === "allow_once") return false
       if (filter === "allow" && rule.action === "deny_always") return false
       if (filter === "deny" && rule.action !== "deny_always") return false
-      if (!query) return true
-      const haystack = [rule.display_label, rule.tool_name].join(" ").toLowerCase()
-      return haystack.includes(query.toLowerCase())
+      if (!normalizedQuery) return true
+
+      const haystack = [
+        rule.display_label,
+        rule.tool_name,
+        rule.operation_class,
+        rule.target_class,
+        rule.boundary_class,
+        rule.risk_level ?? "",
+      ]
+        .join(" ")
+        .toLowerCase()
+
+      return haystack.includes(normalizedQuery)
     })
   }, [filter, query, rules])
+
+  const explicitRules = filteredRules.filter((rule) => rule.action !== "allow_once")
 
   const handleRemoveRule = async (key: string) => {
     setBusyKey(key)
@@ -204,6 +194,9 @@ export function ApprovalRulesClient() {
       await deleteToolApprovalRule(key)
       toast.success(t("toast.ruleRemoved"))
       await reload()
+    } catch (error) {
+      console.error("[approval-rules] remove failed", error)
+      toast.error(t("toast.actionFailed"))
     } finally {
       setBusyKey(null)
     }
@@ -213,169 +206,218 @@ export function ApprovalRulesClient() {
     if (!confirmAction) return
     setBusyKey(confirmAction)
     try {
-      if (confirmAction === "clear-all") await clearToolApprovalRules("all")
-      else if (confirmAction === "clear-allow") await clearToolApprovalRules("allow")
-      else await resetToolApprovalLearning()
+      if (confirmAction === "clear-all") {
+        await clearToolApprovalRules("all")
+        toast.success(t("toast.clearAll"))
+      } else if (confirmAction === "clear-allow") {
+        await clearToolApprovalRules("allow")
+        toast.success(t("toast.clearAllows"))
+      } else {
+        await resetToolApprovalLearning()
+        toast.success(t("toast.resetLearning"))
+      }
       setConfirmAction(null)
       await reload()
-      toast.success(t("toast.actionSuccess"))
+    } catch (error) {
+      console.error("[approval-rules] danger action failed", error)
+      toast.error(t("toast.actionFailed"))
     } finally {
       setBusyKey(null)
     }
   }
 
-  const stats = React.useMemo(() => ({
-    active: rules.filter(r => r.action !== "allow_once").length,
+  const summaryStats = {
+    active: explicitRules.length,
+    allow: explicitRules.filter((rule) => rule.action !== "deny_always").length,
+    deny: explicitRules.filter((rule) => rule.action === "deny_always").length,
     learning: summaryRows.length,
-    denied: rules.filter(r => r.action === "deny_always").length
-  }), [rules, summaryRows])
+  }
+  const operationFallback = operationLabels.unknown ?? t("classes.operation.unknown")
+  const targetFallback = targetLabels.unknown ?? t("classes.target.unknown")
+  const boundaryFallback = boundaryLabels.none ?? boundaryLabels.unknown ?? t("classes.boundary.none")
+  const getOperationLabel = (value: string) =>
+    resolveApprovalClassLabel(operationLabels, value, operationFallback)
+  const getTargetLabel = (value: string) =>
+    resolveApprovalClassLabel(targetLabels, value, targetFallback)
+  const getBoundaryLabel = (value: string) =>
+    resolveApprovalClassLabel(boundaryLabels, value, boundaryFallback)
 
-  return (
-    <Container as="main" size="full" className="min-h-screen bg-[color:var(--window-bg)] p-0 font-text text-[color:var(--ink)]">
-      {/* ─── 顶层导航与标题 ─── */}
-      <header className="border-b border-[color:var(--hairline-strong)] bg-[color:var(--panel-bg)]">
-        <div className="flex h-16 items-center justify-between px-8">
-          <div className="flex items-center gap-6">
-            <div className="flex size-10 items-center justify-center bg-[color:var(--ink)] text-[color:var(--panel-bg)]">
-              <ShieldCheck className="size-6" />
-            </div>
-            <div>
-              <h1 className="font-display text-2xl font-bold tracking-tighter uppercase">
-                Security Policy <span className="text-[color:var(--ink-4)] ml-1 font-light italic">Rules & Intelligence</span>
-              </h1>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <RigidTag variant="info">Desktop Shell Only</RigidTag>
-            <RigidTag variant="mono">V2.4</RigidTag>
-          </div>
-        </div>
-        
-        {/* ─── 指标概览区 ─── */}
-        <div className="flex border-t border-[color:var(--hairline)]">
-          <MetricBlock label="Active Rules" value={stats.active} subValue="Explicitly Defined" />
-          <MetricBlock label="Learned Objects" value={stats.learning} subValue="AI Synthesized" />
-          <MetricBlock label="Block List" value={stats.denied} subValue="Security Threats" />
-          <div className="flex flex-1 items-center justify-end px-8">
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--ink-4)]">System Status</div>
-                <div className="text-xs font-semibold text-[color:var(--ok)] flex items-center gap-1.5 justify-end">
-                  <span className="size-1.5 rounded-full bg-[color:var(--ok)] animate-pulse" />
-                  Protection Active
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
+  const content = (
+    <>
+      <div className="relative overflow-hidden rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.12),transparent_34%),radial-gradient(circle_at_80%_20%,rgba(14,165,233,0.12),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.92),rgba(249,250,251,0.88))] p-6 shadow-[0_30px_80px_-32px_rgba(15,23,42,0.35)] dark:bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.14),transparent_34%),radial-gradient(circle_at_80%_20%,rgba(14,165,233,0.14),transparent_30%),linear-gradient(180deg,rgba(10,10,15,0.96),rgba(8,8,12,0.96))]">
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,transparent_0%,rgba(255,255,255,0.08)_48%,transparent_100%)] dark:bg-[linear-gradient(135deg,transparent_0%,rgba(255,255,255,0.04)_48%,transparent_100%)]" />
 
-      <div className="grid grid-cols-12 gap-px bg-[color:var(--hairline-strong)]">
-        {/* ─── 左侧控制面板 (Rule Explorer) ─── */}
-        <section className="col-span-8 bg-[color:var(--window-bg)]">
-          <div className="sticky top-0 z-10 border-b border-[color:var(--hairline)] bg-[color:var(--window-bg)]/80 p-6 backdrop-blur-md">
-            <div className="flex items-end justify-between gap-8">
-              <div className="flex-1 space-y-4">
+        <div className="relative flex flex-col gap-8">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl space-y-4">
+              <div className="space-y-3">
                 <div className="flex items-center gap-3">
-                  <RigidTag variant="mono">Filter // Explorer</RigidTag>
-                  <div className="h-px flex-1 bg-[color:var(--hairline-subtle)]" />
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,rgba(245,158,11,0.16),rgba(14,165,233,0.18))] text-amber-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] dark:text-amber-300">
+                    <ShieldCheck className="h-6 w-6" />
+                  </div>
+                  <RuleChip tone="info">{t("desktopOnly")}</RuleChip>
                 </div>
-                <div className="relative group">
-                  <Search className="absolute left-0 top-1/2 size-5 -translate-y-1/2 text-[color:var(--ink-4)] transition-colors group-focus-within:text-[color:var(--primary)]" />
-                  <input 
-                    className="w-full bg-transparent pl-8 pr-4 text-3xl font-light tracking-tight placeholder:text-[color:var(--ink-4)] focus:outline-none"
-                    placeholder="Search security rules..."
-                    value={query}
-                    onChange={e => setQuery(e.target.value)}
-                  />
+                <div>
+                  <h1 className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-white md:text-4xl">
+                    {t("title")}
+                  </h1>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+                    {t("subtitle")}
+                  </p>
                 </div>
               </div>
-              <div className="flex shrink-0 gap-px border border-[color:var(--hairline)] bg-[color:var(--hairline)]">
-                {(["all", "allow", "deny"] as const).map(f => (
-                  <button
-                    key={f}
-                    onClick={() => setFilter(f)}
-                    className={cn(
-                      "px-6 py-2 text-[11px] font-bold uppercase tracking-[0.2em] transition-all",
-                      filter === f ? "bg-[color:var(--ink)] text-[color:var(--panel-bg)]" : "bg-[color:var(--panel-bg)] text-[color:var(--ink-3)] hover:text-[color:var(--ink)]"
-                    )}
-                  >
-                    {t(`filters.${f}`)}
-                  </button>
-                ))}
-              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              {([
+                ["active", summaryStats.active],
+                ["allow", summaryStats.allow],
+                ["deny", summaryStats.deny],
+                ["learning", summaryStats.learning],
+              ] as const).map(([key, value]) => (
+                <div
+                  key={key}
+                  className="rounded-2xl border border-white/20 bg-white/75 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur dark:border-white/10 dark:bg-white/5 dark:shadow-none"
+                >
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                    {t(`summary.${key}`)}
+                  </div>
+                  <div className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
+                    {value}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
-          <div className="p-8">
-            {loading ? (
-              <div className="flex flex-col items-center justify-center py-32 text-[color:var(--ink-4)]">
-                <Loader2 className="size-10 animate-spin" />
-                <span className="mt-4 text-[10px] font-bold uppercase tracking-[0.4em]">Deciphering Policies...</span>
+          <section className="rounded-[28px] border border-white/10 bg-white/80 p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.28)] backdrop-blur dark:bg-white/5">
+            <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-medium text-slate-900 dark:text-white">
+                  <Filter className="h-4 w-4 text-amber-500" />
+                  {t("sections.rules")}
+                </div>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  {t("subtitle")}
+                </p>
               </div>
-            ) : filteredRules.length === 0 ? (
-              <div className="border border-dashed border-[color:var(--hairline)] p-20 text-center">
-                <Info className="mx-auto size-8 text-[color:var(--ink-4)]" />
-                <div className="mt-4 text-xs font-medium text-[color:var(--ink-3)]">No rules matching your filter criteria.</div>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <div className="inline-flex rounded-2xl border border-white/20 bg-slate-100/80 p-1 dark:bg-white/5">
+                  {(["all", "allow", "deny"] as const).map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => setFilter(item)}
+                      className={`rounded-2xl px-3 py-2 text-xs font-medium transition ${
+                        filter === item
+                          ? "bg-white text-slate-900 shadow-sm dark:bg-white/10 dark:text-white"
+                          : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+                      }`}
+                    >
+                      {t(`filters.${item}`)}
+                    </button>
+                  ))}
+                </div>
+                <Input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder={t("filters.searchPlaceholder")}
+                  className="w-full min-w-[240px] rounded-2xl border-white/20 bg-white/70 dark:bg-white/5"
+                />
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="flex items-center gap-3 rounded-2xl border border-dashed border-white/15 p-6 text-sm text-slate-500 dark:text-slate-400">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {t("status.loading")}
+              </div>
+            ) : explicitRules.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-white/15 p-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                {t("empty.rules")}
               </div>
             ) : (
-              <div className="grid gap-6">
-                {filteredRules.map((rule) => {
+              <div className="grid gap-4 xl:grid-cols-2">
+                {explicitRules.map((rule) => {
+                  const sourceKey = classifyRuleSource(rule)
                   const isDeny = rule.action === "deny_always"
                   return (
-                    <div key={rule.key} className="group relative border border-[color:var(--hairline)] bg-[color:var(--panel-bg)] transition-all hover:border-[color:var(--hairline-strong)] hover:shadow-xl">
-                      <div className="flex">
-                        <div className={cn("w-1.5 shrink-0", isDeny ? "bg-[color:var(--danger)]" : "bg-[color:var(--ok)]")} />
-                        <div className="flex-1 p-6">
-                          <div className="flex items-start justify-between">
-                            <div className="space-y-3">
-                              <div className="flex items-center gap-3">
-                                <RigidTag variant={isDeny ? "danger" : "ok"}>
-                                  {isDeny ? "Strict Block" : "Explicit Allow"}
-                                </RigidTag>
-                                <span className="font-mono text-[10px] text-[color:var(--ink-4)]">ID: {rule.key.slice(0,8)}</span>
-                              </div>
-                              <h2 className="text-xl font-bold tracking-tight">{rule.display_label}</h2>
-                              <div className="flex items-center gap-2 text-xs font-medium text-[color:var(--ink-3)]">
-                                <Zap className="size-3.5" />
-                                {rule.tool_name}
-                              </div>
-                            </div>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="size-10 rounded-none border border-transparent hover:border-[color:var(--hairline)] hover:bg-[color:var(--danger-soft)] hover:text-[color:var(--danger)]"
-                              onClick={() => handleRemoveRule(rule.key)}
-                              disabled={busyKey === rule.key}
-                            >
-                              {busyKey === rule.key ? <Loader2 className="animate-spin" /> : <Trash2 className="size-4" />}
-                            </Button>
+                    <div
+                      key={rule.key}
+                      className="group rounded-[26px] border border-white/15 bg-[linear-gradient(180deg,rgba(255,255,255,0.85),rgba(248,250,252,0.82))] p-5 shadow-[0_24px_60px_-36px_rgba(15,23,42,0.35)] transition hover:-translate-y-0.5 hover:shadow-[0_28px_70px_-36px_rgba(15,23,42,0.4)] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.03))]"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2">
+                            <RuleChip tone={isDeny ? "deny" : "allow"}>
+                              {t(`source.${sourceKey}`)}
+                            </RuleChip>
+                            <RuleChip tone={rule.auto_promoted ? "learning" : "info"}>
+                              {rule.risk_level ?? t("status.unknownRisk")}
+                            </RuleChip>
                           </div>
+                          <div>
+                            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+                              {rule.display_label}
+                            </h2>
+                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                              {rule.tool_name}
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={busyKey === rule.key}
+                          onClick={() => void handleRemoveRule(rule.key)}
+                        >
+                          {busyKey === rule.key ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="mr-2 h-4 w-4" />
+                          )}
+                          {t("actions.removeRule")}
+                        </Button>
+                      </div>
 
-                          <div className="mt-8 grid grid-cols-3 gap-8 border-t border-[color:var(--hairline-subtle)] pt-6">
-                            <div>
-                              <div className="text-[9px] font-black uppercase tracking-[0.2em] text-[color:var(--ink-4)]">Capability Scope</div>
-                              <div className="mt-2 text-xs font-bold">{resolveApprovalClassLabel(opLabels, rule.operation_class, "Standard")}</div>
-                              <div className="mt-1 font-mono text-[10px] text-[color:var(--ink-3)]">{rule.target_class}</div>
-                            </div>
-                            <div>
-                              <div className="text-[9px] font-black uppercase tracking-[0.2em] text-[color:var(--ink-4)]">Audit Trail</div>
-                              <div className="mt-2 flex items-center gap-4">
-                                <div className="text-xs">
-                                  <span className="text-[color:var(--ink-4)]">Passed:</span> <span className="font-mono font-bold text-[color:var(--ok)]">{rule.approve_count}</span>
-                                </div>
-                                <div className="text-xs">
-                                  <span className="text-[color:var(--ink-4)]">Blocked:</span> <span className="font-mono font-bold text-[color:var(--danger)]">{rule.reject_count}</span>
-                                </div>
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-[9px] font-black uppercase tracking-[0.2em] text-[color:var(--ink-4)]">Expiration</div>
-                              <div className="mt-2 font-mono text-xs font-bold text-[color:var(--ink-2)]">
-                                {rule.expires_at_unix_ms ? formatDate(rule.expires_at_unix_ms) : "PERPETUAL"}
-                              </div>
-                            </div>
+                      <div className="mt-5 grid gap-3 md:grid-cols-2">
+                        <div className="rounded-2xl border border-white/10 bg-white/60 p-3 dark:bg-white/5">
+                          <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">
+                            {getOperationLabel(rule.operation_class)}
                           </div>
+                          <div className="mt-2 text-sm text-slate-700 dark:text-slate-300">
+                            {getTargetLabel(rule.target_class)} ·{" "}
+                            {getBoundaryLabel(rule.boundary_class)}
+                          </div>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-white/60 p-3 dark:bg-white/5">
+                          <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">
+                            {t("meta.expires")}
+                          </div>
+                          <div className="mt-2 text-sm text-slate-700 dark:text-slate-300">
+                            {rule.expires_at_unix_ms
+                              ? formatDate(rule.expires_at_unix_ms)
+                              : t("meta.never")}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid gap-2 text-xs text-slate-500 dark:text-slate-400 md:grid-cols-2">
+                        <div>
+                          {t("meta.created")}: {formatDate(rule.created_at_unix_ms)}
+                        </div>
+                        <div>
+                          {t("meta.updated")}: {formatDate(rule.updated_at_unix_ms)}
+                        </div>
+                        <div>
+                          {t("meta.approvals")}: {rule.approve_count}
+                        </div>
+                        <div>
+                          {t("meta.rejections")}: {rule.reject_count}
+                        </div>
+                        <div>
+                          {t("meta.halfLife", { days: rule.half_life_days })}
                         </div>
                       </div>
                     </div>
@@ -383,109 +425,207 @@ export function ApprovalRulesClient() {
                 })}
               </div>
             )}
-          </div>
-        </section>
+          </section>
 
-        {/* ─── 右侧边栏 (AI Intelligence & Danger Zone) ─── */}
-        <aside className="col-span-4 flex flex-col gap-px bg-[color:var(--hairline-strong)]">
-          <section className="bg-[color:var(--panel-bg)] p-8">
-            <div className="flex items-center gap-3">
-              <BrainCircuit className="size-5 text-[color:var(--info)]" />
-              <h3 className="text-[11px] font-black uppercase tracking-[0.2em]">AI Learning Abstract</h3>
-            </div>
-            <p className="mt-4 text-xs leading-relaxed text-[color:var(--ink-3)]">
-              Synthetic rules generated by observing interactive behavior patterns. These are pending promotion to static rules.
-            </p>
+          <section className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+            <div className="rounded-[28px] border border-white/10 bg-white/80 p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.28)] backdrop-blur dark:bg-white/5">
+              <div className="mb-5 flex items-center gap-2 text-sm font-medium text-slate-900 dark:text-white">
+                <BrainCircuit className="h-4 w-4 text-sky-500" />
+                {t("sections.learning")}
+              </div>
+              <p className="mb-5 text-sm text-slate-500 dark:text-slate-400">
+                {t("learning.description")}
+              </p>
 
-            <div className="mt-8 space-y-4">
               {summaryRows.length === 0 ? (
-                <div className="border border-dashed border-[color:var(--hairline)] py-12 text-center text-[10px] font-bold uppercase tracking-widest text-[color:var(--ink-4)]">
-                  Zero Observations
+                <div className="rounded-2xl border border-dashed border-white/15 p-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                  {t("empty.learning")}
                 </div>
               ) : (
-                summaryRows.map((row, idx) => (
-                  <div key={idx} className="border border-[color:var(--hairline)] p-4 transition-colors hover:bg-[color:var(--window-bg)]">
-                    <div className="flex items-start justify-between">
-                      <div className="text-xs font-bold">{resolveApprovalClassLabel(opLabels, row.operation_class, "Behavior")}</div>
-                      <RigidTag variant="mono" className="text-[9px]">Learned</RigidTag>
-                    </div>
-                    <div className="mt-1 font-mono text-[10px] text-[color:var(--ink-3)]">{row.target_class}</div>
-                    <div className="mt-4 flex items-center justify-between border-t border-[color:var(--hairline-subtle)] pt-3">
-                      <div className="font-mono text-[9px] text-[color:var(--ink-4)]">
-                        Confidence: <span className="text-[color:var(--ink)]">88%</span>
+                <div className="space-y-3">
+                  {summaryRows.map((row) => {
+                    const status = getLearningStatus(row)
+                    return (
+                      <div
+                        key={`${row.operation_class}-${row.target_class}-${row.boundary_class}`}
+                        className="rounded-2xl border border-white/10 bg-white/60 p-4 dark:bg-white/5"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                              {getOperationLabel(row.operation_class)} ·{" "}
+                              {getTargetLabel(row.target_class)}
+                            </div>
+                            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                              {getBoundaryLabel(row.boundary_class)}
+                            </div>
+                          </div>
+                          <RuleChip
+                            tone={
+                              status === "autoPromoted"
+                                ? "learning"
+                                : status === "stable"
+                                ? "info"
+                                : status === "learning"
+                                ? "allow"
+                                : "deny"
+                            }
+                          >
+                            {t(`learning.status.${status}`)}
+                          </RuleChip>
+                        </div>
+                        <div className="mt-4 grid gap-2 text-xs text-slate-500 dark:text-slate-400 sm:grid-cols-2">
+                          <div>
+                            {t("meta.approvals")}: {row.observed_approvals}
+                          </div>
+                          <div>
+                            {t("meta.rejections")}: {row.observed_rejections}
+                          </div>
+                          <div>
+                            {t("source.autoPromoted")}: {row.auto_promoted_rules}
+                          </div>
+                          <div>
+                            {t("source.explicitAllow")}: {row.explicit_allow_rules}
+                          </div>
+                          <div>
+                            {t("source.explicitDeny")}: {row.explicit_deny_rules}
+                          </div>
+                          <div>
+                            {t("meta.updated")}:{" "}
+                            {formatDate(
+                              row.last_approved_at_unix_ms ?? row.last_rejected_at_unix_ms
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex gap-2">
-                         <div className="size-1 bg-[color:var(--info)]" />
-                         <div className="size-1 bg-[color:var(--info)]" />
-                         <div className="size-1 bg-[color:var(--info)] opacity-30" />
-                      </div>
-                    </div>
-                  </div>
-                ))
+                    )
+                  })}
+                </div>
               )}
             </div>
-          </section>
 
-          <section className="bg-[color:var(--panel-bg)] p-8">
-            <div className="flex items-center gap-3">
-              <History className="size-5 text-[color:var(--warn)]" />
-              <h3 className="text-[11px] font-black uppercase tracking-[0.2em]">Compliance Log</h3>
-            </div>
-            <div className="mt-6 space-y-4">
-              <div className="flex items-center gap-3 border-l-2 border-[color:var(--hairline)] pl-4">
-                <div className="text-[9px] font-mono text-[color:var(--ink-4)]">14:22:01</div>
-                <div className="text-[10px] font-medium text-[color:var(--ink-3)]">System integrity scan completed.</div>
+            <div className="rounded-[28px] border border-red-500/15 bg-[linear-gradient(180deg,rgba(255,248,240,0.9),rgba(255,245,245,0.92))] p-5 shadow-[0_20px_60px_-34px_rgba(185,28,28,0.3)] dark:bg-[linear-gradient(180deg,rgba(127,29,29,0.16),rgba(28,25,23,0.12))]">
+              <div className="mb-4 flex items-center gap-2 text-sm font-medium text-slate-900 dark:text-white">
+                <AlertTriangle className="h-4 w-4 text-red-500" />
+                {t("sections.danger")}
               </div>
-              <div className="flex items-center gap-3 border-l-2 border-[color:var(--ok)] pl-4">
-                <div className="text-[9px] font-mono text-[color:var(--ink-4)]">12:05:48</div>
-                <div className="text-[10px] font-medium text-[color:var(--ink-3)]">New rule promoted: <span className="text-[color:var(--ink)]">FileSystem.Read</span></div>
-              </div>
-            </div>
-          </section>
+              <p className="mb-5 text-sm text-slate-600 dark:text-slate-300">
+                {t("danger.description")}
+              </p>
 
-          <section className="mt-auto bg-[color:var(--panel-bg)] p-8">
-            <div className="border border-[color:var(--danger)] p-6">
-              <div className="flex items-center gap-3">
-                <AlertTriangle className="size-5 text-[color:var(--danger)]" />
-                <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-[color:var(--danger)]">Danger Operations</h3>
-              </div>
-              <div className="mt-6 grid gap-2">
-                <Button 
-                  variant="outline" 
-                  className="h-12 w-full rounded-none border-[color:var(--danger-border)] bg-[color:var(--danger-soft)] text-[color:var(--danger)] hover:bg-[color:var(--danger)] hover:text-white"
-                  onClick={() => setConfirmAction("clear-all")}
-                  disabled={!!busyKey}
-                >
-                  PURGE ALL RULES
-                </Button>
-                <div className="mt-2 text-[9px] leading-relaxed text-[color:var(--ink-4)] uppercase tracking-wider text-center">
-                  Irreversible action. Proceed with extreme caution.
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-white/10 bg-white/70 p-4 dark:bg-white/5">
+                  <div className="flex items-start gap-3">
+                    <Sparkles className="mt-0.5 h-4 w-4 text-amber-500" />
+                    <div className="space-y-3">
+                      <div>
+                        <div className="text-sm font-medium text-slate-900 dark:text-white">
+                          {t("actions.resetLearning")}
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                          {t("danger.resetLearningHelp")}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setConfirmAction("reset-learning")}
+                      >
+                        {t("actions.resetLearning")}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-white/70 p-4 dark:bg-white/5">
+                  <div className="flex items-start gap-3">
+                    <ShieldCheck className="mt-0.5 h-4 w-4 text-emerald-500" />
+                    <div className="space-y-3">
+                      <div>
+                        <div className="text-sm font-medium text-slate-900 dark:text-white">
+                          {t("actions.clearAllows")}
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                          {t("danger.clearAllowsHelp")}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setConfirmAction("clear-allow")}
+                      >
+                        {t("actions.clearAllows")}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-red-500/15 bg-red-500/[0.08] p-4">
+                  <div className="flex items-start gap-3">
+                    <ShieldOff className="mt-0.5 h-4 w-4 text-red-500" />
+                    <div className="space-y-3">
+                      <div>
+                        <div className="text-sm font-medium text-slate-900 dark:text-white">
+                          {t("actions.clearAll")}
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-300">
+                          {t("danger.clearAllHelp")}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => setConfirmAction("clear-all")}
+                      >
+                        {t("actions.clearAll")}
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           </section>
-        </aside>
+        </div>
       </div>
 
       <AlertDialog open={confirmAction !== null} onOpenChange={(open) => !open && setConfirmAction(null)}>
-        <AlertDialogContent className="rounded-none border-2 border-[color:var(--ink)]">
+        <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="font-display text-2xl font-bold uppercase tracking-tighter">Confirmation Required</AlertDialogTitle>
-            <AlertDialogDescription className="text-sm leading-relaxed">
-              You are about to execute a high-privilege administrative command. This action will modify the security posture of the entire workstation.
+            <AlertDialogTitle>
+              {confirmAction === "clear-all"
+                ? t("confirm.clearAllTitle")
+                : confirmAction === "clear-allow"
+                ? t("confirm.clearAllowsTitle")
+                : t("confirm.resetLearningTitle")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmAction === "clear-all"
+                ? t("confirm.clearAllBody")
+                : confirmAction === "clear-allow"
+                ? t("confirm.clearAllowsBody")
+                : t("confirm.resetLearningBody")}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter className="mt-8 flex gap-2">
-            <AlertDialogCancel className="rounded-none border-[color:var(--hairline-strong)] px-8 uppercase tracking-widest text-[10px] font-bold">Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={() => void handleDangerAction()}
-              className="rounded-none bg-[color:var(--danger)] px-8 uppercase tracking-widest text-[10px] font-bold hover:bg-[color:var(--ink)]"
-            >
-              Execute Command
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("confirm.cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void handleDangerAction()}>
+              {busyKey === confirmAction ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              {t("confirm.confirm")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </>
+  )
+
+  return (
+    <Container as="main" gutter="md" size="full" className="py-6 md:py-8 !mx-0 !max-w-none">
+      {content}
     </Container>
   )
 }
+

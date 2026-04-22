@@ -100,6 +100,10 @@
       "resetLearning": "学习数据已重置",
       "loadFailed": "加载审批控制失败",
       "actionFailed": "操作失败"
+    },
+    "status": {
+      "loading": "正在加载审批控制...",
+      "unknownRisk": "未知风险"
     }
   }
 }

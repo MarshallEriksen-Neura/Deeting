@@ -33,6 +33,8 @@ function formatDate(value: string | null | undefined, locale: string) {
 }
 
 function PoolNode({ pool, selected, onClick }: { pool: LocalModelPoolStatus, selected: boolean, onClick: () => void }) {
+  const t = useTranslations("model-pools");
+
   return (
     <button
       onClick={onClick}
@@ -60,7 +62,7 @@ function PoolNode({ pool, selected, onClick }: { pool: LocalModelPoolStatus, sel
               {pool.display_name}
             </h4>
             <span className="mt-1 block font-mono text-[9px] font-black text-[var(--ink-4)] opacity-50 tracking-[0.2em] uppercase">
-              {pool.provider_count} NODES_ATTACHED
+              {t("labels.nodesAttached", { count: pool.provider_count })}
             </span>
           </div>
         </div>
@@ -74,6 +76,7 @@ function PoolNode({ pool, selected, onClick }: { pool: LocalModelPoolStatus, sel
 }
 
 function MemberGridNode({ member }: { member: LocalModelPoolStatus['members'][0] }) {
+  const t = useTranslations("model-pools");
   const isHealthy = member.status.toLowerCase() === 'active' || member.status.toLowerCase() === 'online';
   return (
     <div className="group relative">
@@ -98,11 +101,11 @@ function MemberGridNode({ member }: { member: LocalModelPoolStatus['members'][0]
 
           <div className="mt-auto grid grid-cols-2 gap-2 border-t border-white/[0.03] pt-3">
             <div>
-              <span className="block text-[8px] font-black text-[var(--ink-4)] uppercase tracking-tighter mb-0.5">Success</span>
+              <span className="block text-[8px] font-black text-[var(--ink-4)] uppercase tracking-tighter mb-0.5">{t("labels.success")}</span>
               <span className="ws-num text-[11px] font-bold">{formatPercent(member.success_rate)}</span>
             </div>
             <div className="text-right">
-              <span className="block text-[8px] font-black text-[var(--ink-4)] uppercase tracking-tighter mb-0.5">Latency</span>
+              <span className="block text-[8px] font-black text-[var(--ink-4)] uppercase tracking-tighter mb-0.5">{t("labels.latency")}</span>
               <span className="ws-num text-[11px] font-bold">{formatLatency(member.avg_latency_ms)}</span>
             </div>
           </div>
@@ -176,14 +179,14 @@ export function ModelPoolsPage() {
 
           <div className="hidden xl:flex items-center gap-6">
             <div className="flex items-center gap-3">
-              <span className="ws-meta text-[9px] opacity-40 font-black tracking-widest">SYSTEM_HEALTH</span>
+              <span className="ws-meta text-[9px] opacity-40 font-black tracking-widest">{t("workstation.systemHealth")}</span>
               <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-[var(--panel-bg)] border border-[var(--hairline)] shadow-inner">
                  <div className={cn("w-1.5 h-1.5 rounded-full shadow-[0_0_8px_var(--ok)] animate-pulse", summary.health > 80 ? "bg-[var(--ok)]" : "bg-[var(--warn)]")} />
                  <span className="ws-num text-[11px] font-black">{summary.health}%</span>
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <span className="ws-meta text-[9px] opacity-40 font-black tracking-widest">ACTIVE_SESSIONS</span>
+              <span className="ws-meta text-[9px] opacity-40 font-black tracking-widest">{t("workstation.activeSessions")}</span>
               <span className="ws-num text-[15px] font-black tracking-tighter">{summary.totalSessions}</span>
             </div>
           </div>
@@ -191,7 +194,7 @@ export function ModelPoolsPage() {
 
         <div className="flex items-center gap-4 text-[10px] text-[var(--ink-4)] font-mono uppercase tracking-[0.2em]">
            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[var(--hairline)] bg-white/[0.02]">
-              <span className="opacity-40">Cooling:</span>
+              <span className="opacity-40">{t("workstation.cooling")}</span>
               <span className={cn("font-black", summary.coolingProviders > 0 ? "text-[var(--danger)]" : "text-[var(--ok)]")}>{summary.coolingProviders}</span>
            </div>
         </div>
@@ -237,24 +240,24 @@ export function ModelPoolsPage() {
                   <div>
                     <div className="flex items-center gap-3 mb-4">
                       <div className="h-px w-8 bg-[var(--accent-strong)] opacity-40" />
-                      <span className="ws-meta text-[10px] font-black tracking-[0.4em] text-[var(--accent-strong)] uppercase">Subsystem_Focus</span>
+                      <span className="ws-meta text-[10px] font-black tracking-[0.4em] text-[var(--accent-strong)] uppercase">{t("workstation.subsystemFocus")}</span>
                     </div>
                     <h2 className="ws-view-title text-5xl font-black tracking-tighter mb-4">{selectedPool.display_name}</h2>
                     <p className="ws-body text-[var(--ink-3)] text-base font-medium max-w-xl leading-relaxed">
-                      {t("descriptions.focus")}. This pool acts as a high-availability nexus for model distribution.
+                      {t("descriptions.focusExtended")}
                     </p>
                   </div>
 
                   <div className="flex gap-4">
                     <div className="ws-bezel min-w-[140px]">
                       <div className="ws-bezel-inner p-4 text-center bg-white/[0.02]">
-                        <div className="ws-meta text-[8px] font-black opacity-40 tracking-widest mb-1">SUCCESS_RATE</div>
+                        <div className="ws-meta text-[8px] font-black opacity-40 tracking-widest mb-1">{t("workstation.successRate")}</div>
                         <div className="ws-num text-2xl font-black">{formatPercent(selectedPool.success_rate)}</div>
                       </div>
                     </div>
                     <div className="ws-bezel min-w-[140px]">
                       <div className="ws-bezel-inner p-4 text-center bg-white/[0.02]">
-                        <div className="ws-meta text-[8px] font-black opacity-40 tracking-widest mb-1">AVG_LATENCY</div>
+                        <div className="ws-meta text-[8px] font-black opacity-40 tracking-widest mb-1">{t("workstation.avgLatency")}</div>
                         <div className="ws-num text-2xl font-black tracking-tighter">{formatLatency(selectedPool.avg_latency_ms)}</div>
                       </div>
                     </div>
@@ -291,14 +294,14 @@ export function ModelPoolsPage() {
                           <TableRow className="hover:bg-transparent">
                             <TableHead className="ws-meta text-[10px] font-black py-4 pl-8">{t("labels.boundProvider")}</TableHead>
                             <TableHead className="ws-meta text-[10px] font-black py-4">{t("labels.lastActive")}</TableHead>
-                            <TableHead className="ws-meta text-[10px] font-black py-4 text-right pr-8 tracking-widest">BINDING_ID</TableHead>
+                            <TableHead className="ws-meta text-[10px] font-black py-4 text-right pr-8 tracking-widest">{t("workstation.bindingId")}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {selectedPool.bindings.map((binding) => (
                             <TableRow key={`${binding.session_id}:${binding.pinned_provider_model_id}`} className="border-b border-white/[0.02] transition-colors hover:bg-[var(--accent-soft)]/20">
                               <TableCell className="py-5 pl-8">
-                                <div className="font-bold text-[var(--ink-2)] text-[13px]">{binding.title || "Anonymous Session"}</div>
+                                <div className="font-bold text-[var(--ink-2)] text-[13px]">{binding.title || t("workstation.anonymousSession")}</div>
                                 <div className="mt-1 font-mono text-[9px] text-[var(--ink-4)] font-black uppercase tracking-wider">{binding.pinned_provider_model_id}</div>
                               </TableCell>
                               <TableCell className="ws-num text-[12px] opacity-60 font-medium">
@@ -329,7 +332,7 @@ export function ModelPoolsPage() {
                        <Waves className="size-12 text-[var(--accent-strong)] opacity-60" />
                     </div>
                  </div>
-                 <h3 className="ws-view-title text-3xl mb-4 tracking-tighter font-black opacity-30 uppercase tracking-[0.2em]">Select Neural Nexus</h3>
+                 <h3 className="ws-view-title text-3xl mb-4 tracking-tighter font-black opacity-30 uppercase tracking-[0.2em]">{t("workstation.selectPool")}</h3>
               </div>
             )}
           </div>

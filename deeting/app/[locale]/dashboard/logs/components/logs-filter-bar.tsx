@@ -1,5 +1,6 @@
 "use client"
 
+import { useTranslations } from "next-intl"
 import { RefreshCw, RotateCcw, Search } from "lucide-react"
 
 import { Button } from "@/components/ui/shadcn/button"
@@ -43,23 +44,23 @@ export function LogsFilterBar({
   onReset,
   refreshing,
 }: LogsFilterBarProps) {
+  const t = useTranslations("logs")
+
   return (
     <div className="border-b border-[var(--hairline)] bg-[var(--background)] p-2">
       <div className="flex flex-wrap items-center gap-4">
-        {/* Compact Search */}
         <div className="relative w-48">
           <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-[var(--ink-4)]" />
           <Input
             value={value.model}
             onChange={(event) => onChange({ ...value, model: event.target.value })}
-            placeholder="FILTER_MODEL"
+            placeholder={t("filters.model")}
             className={`${BRUTAL_INPUT} pl-8`}
           />
         </div>
 
-        {/* Status Select */}
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-bold text-[var(--ink-3)] uppercase tracking-tight">Status:</span>
+          <span className="text-[10px] font-bold text-[var(--ink-3)] uppercase tracking-tight">{t("filters.statusLabel")}</span>
           <Select value={value.statusCode} onValueChange={(statusCode) => onChange({ ...value, statusCode })}>
             <SelectTrigger className={`${BRUTAL_INPUT} w-[80px]`}>
               <SelectValue />
@@ -74,9 +75,8 @@ export function LogsFilterBar({
           </Select>
         </div>
 
-        {/* Cache Select */}
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-bold text-[var(--ink-3)] uppercase tracking-tight">Cache:</span>
+          <span className="text-[10px] font-bold text-[var(--ink-3)] uppercase tracking-tight">{t("filters.cacheLabel")}</span>
           <Select
             value={value.cache}
             onValueChange={(cache) => onChange({ ...value, cache: cache as LogsFilters["cache"] })}
@@ -85,16 +85,15 @@ export function LogsFilterBar({
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="rounded-none border-[var(--hairline)] bg-[var(--popover)] font-mono text-[var(--ink-2)]">
-              <SelectItem value="all" className="focus:bg-[var(--accent)] focus:text-[var(--accent-foreground)]">ALL</SelectItem>
-              <SelectItem value="hit" className="focus:bg-[var(--accent)] focus:text-[var(--accent-foreground)]">HIT</SelectItem>
-              <SelectItem value="miss" className="focus:bg-[var(--accent)] focus:text-[var(--accent-foreground)]">MISS</SelectItem>
+              <SelectItem value="all" className="focus:bg-[var(--accent)] focus:text-[var(--accent-foreground)]">{t("filters.cacheAll")}</SelectItem>
+              <SelectItem value="hit" className="focus:bg-[var(--accent)] focus:text-[var(--accent-foreground)]">{t("filters.cacheHit")}</SelectItem>
+              <SelectItem value="miss" className="focus:bg-[var(--accent)] focus:text-[var(--accent-foreground)]">{t("filters.cacheMiss")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
-        {/* Time Inputs */}
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-bold text-[var(--ink-3)] uppercase tracking-tight">Window:</span>
+          <span className="text-[10px] font-bold text-[var(--ink-3)] uppercase tracking-tight">{t("filters.windowLabel")}</span>
           <Input
             type="datetime-local"
             value={value.start}
@@ -110,7 +109,6 @@ export function LogsFilterBar({
           />
         </div>
 
-        {/* Action Buttons */}
         <div className="ml-auto flex items-center gap-1">
           <Button
             type="button"
@@ -121,7 +119,7 @@ export function LogsFilterBar({
             onClick={onReset}
           >
             <RotateCcw className="mr-1 size-3" />
-            Reset
+            {t("filters.reset")}
           </Button>
           <Button
             type="button"
@@ -132,7 +130,7 @@ export function LogsFilterBar({
             onClick={onRefresh}
           >
             <RefreshCw className={refreshing ? "mr-1 size-3 animate-spin" : "mr-1 size-3"} />
-            Refresh
+            {t("filters.refresh")}
           </Button>
         </div>
       </div>

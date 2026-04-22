@@ -72,6 +72,10 @@
     "toggleSnapshot": "View full technical details",
     "revisionSource": "Source: {source}"
   },
+  "meta": {
+    "created": "Created",
+    "updated": "Updated"
+  },
   "guide": {
     "step0": "Look",
     "step1": "Evaluate",

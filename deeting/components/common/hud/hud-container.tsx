@@ -1,23 +1,24 @@
 'use client';
 
-import { ChevronDown, LayoutGrid, Home, LayoutDashboard, ShoppingBag, LogOut, Settings, Sun, Moon } from 'lucide-react';
+import { ChevronDown, LayoutGrid } from 'lucide-react';
 import { Button } from '@/ui/shadcn/button';
-import { Link } from '@/i18n/routing';
-import { useEffect, useState, useMemo, useCallback, type ReactNode } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from 'next-themes';
+import { useTranslations } from 'next-intl';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useChatStore } from '@/store/chat-store';
 import { useChatRuntimeStore } from '@/store/chat-runtime-store';
 import { useShallow } from 'zustand/react/shallow';
+import { useAuthService } from '@/hooks/use-auth';
+import { useAuthWorldModel } from '@/hooks/use-auth-world-model';
 import { useChatModels } from '@/hooks/use-chat-models';
 import { useI18n } from '@/hooks/use-i18n';
-import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
 import { resolveChatModelSelectionValue } from '@/lib/api/models';
-import { resolveModelVisual } from '@/components/models/model-visual';
+import { resolveModelVisual, type ModelPickerModel } from '@/components/models/model-visual';
 import { resolveStatusDetail } from '@/lib/chat/status-detail';
 import { StatusPill } from '@/ui/common/status-pill';
-import { createConversation } from '@/lib/api/conversations';
+import { useAuthStore } from '@/store/auth-store';
 import {
   DeferredHistorySidebar,
   DeferredHudControlCenterPanel,
@@ -44,45 +45,28 @@ export default function HUD() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isControlCenterOpen, setIsControlCenterOpen] = useState(false);
   const t = useI18n('chat');
+  const tHeader = useTranslations('common.header');
   const pathname = usePathname();
   const searchParams = useSearchParams();
   
   const { setTheme, theme } = useTheme();
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const { logout } = useAuthService();
   
-  const {
-    config,
-    setConfig,
-    models,
-    setModels,
-    setMessages,
-    clearAttachments,
-  } = useChatStore(
+  const { config, setConfig, models, setModels } = useChatStore(
     useShallow((state) => ({
       config: state.config,
       setConfig: state.setConfig,
       models: state.models,
       setModels: state.setModels,
-      setMessages: state.setMessages,
-      clearAttachments: state.clearAttachments,
     }))
   );
-  const {
-    isLoading,
-    errorMessage,
-    statusCode,
-    statusMeta,
-    resetSession,
-    setSessionId,
-    setGlobalLoading,
-  } = useChatRuntimeStore(
+  const { isLoading, errorMessage, statusCode, statusMeta } = useChatRuntimeStore(
     useShallow((state) => ({
       isLoading: state.isLoading,
       errorMessage: state.errorMessage,
       statusCode: state.statusCode,
       statusMeta: state.statusMeta,
-      resetSession: state.resetSession,
-      setSessionId: state.setSessionId,
-      setGlobalLoading: state.setGlobalLoading,
     }))
   );
 
@@ -91,7 +75,14 @@ export default function HUD() {
     modelCapability: "chat",
   });
 
-  const isTauriRuntime = detectTauriRuntime();
+  const authCallbackUrl = useMemo(() => {
+    const query = searchParams?.toString();
+    const safePathname = pathname || '/chat';
+    return query ? `${safePathname}?${query}` : safePathname;
+  }, [pathname, searchParams]);
+  const { loginTarget, launchLogin, isLaunchingLogin } = useAuthWorldModel({
+    callbackUrl: authCallbackUrl,
+  });
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -134,7 +125,17 @@ export default function HUD() {
   const activeModel =
     activeModelSource.find((model) => model.provider_model_id === activeModelId || model.id === activeModelId) ??
     activeModelSource[0];
-  const activeModelVisual = resolveModelVisual(activeModel as any, {
+  const activeModelVisualSource: ModelPickerModel | undefined = activeModel
+    ? {
+        id: activeModel.id,
+        owned_by: activeModel.owned_by,
+        provider_model_id: activeModel.provider_model_id,
+        health_status: activeModel.health_status,
+        is_platform: activeModel.is_platform,
+        pricing: activeModel.pricing,
+      }
+    : undefined;
+  const activeModelVisual = resolveModelVisual(activeModelVisualSource, {
     healthStatus: activeModel?.health_status ?? null,
     statusCode,
     isLoading,
@@ -142,48 +143,6 @@ export default function HUD() {
   });
   const statusDetail = resolveStatusDetail(t, statusCode, statusMeta);
   
-  // 使用 useCallback 缓存事件处理函数
-  const handleNewChat = useCallback(async () => {
-     resetSession();
-     setMessages([]);
-     clearAttachments();
-     setGlobalLoading(true);
-     try {
-      const created = await createConversation({});
-       if (created.session_id) {
-         setSessionId(created.session_id);
-         if (typeof window !== "undefined") {
-           const params = new URLSearchParams(searchParams?.toString());
-          params.set("session", created.session_id);
-          params.delete("agentId");
-          const basePath = "/chat";
-           const query = params.toString();
-           const nextUrl = query ? `${basePath}?${query}` : basePath;
-           window.history.replaceState(null, "", nextUrl);
-         }
-         return;
-       }
-     } catch (error) {
-       console.warn("create_conversation_failed", error);
-     } finally {
-       setGlobalLoading(false);
-     }
-     if (typeof window !== "undefined") {
-       const params = new URLSearchParams(searchParams?.toString());
-       params.delete("session");
-       const url = params.toString() ? `${pathname}?${params.toString()}` : pathname;
-       window.history.replaceState(null, "", url || "/chat");
-     }
-  }, [
-    resetSession,
-    setMessages,
-    clearAttachments,
-    searchParams,
-    pathname,
-    setSessionId,
-    setGlobalLoading,
-  ]);
-
   const handleToggleControlCenter = useCallback(() => {
     setIsControlCenterOpen(prev => !prev);
   }, []);
@@ -207,6 +166,16 @@ export default function HUD() {
   const handleModelChange = useCallback((value: string) => {
     setConfig({ model: value });
   }, [setConfig]);
+
+  const handleAuthAction = useCallback(async () => {
+    if (isAuthenticated) {
+      await logout();
+      window.location.assign(loginTarget);
+      return;
+    }
+
+    await launchLogin();
+  }, [isAuthenticated, launchLogin, loginTarget, logout]);
 
   return (
     <>
@@ -310,10 +279,16 @@ export default function HUD() {
                   registryLabel={t("hud.menu.registry")}
                   preferencesLabel={t("hud.menu.preferences")}
                   interfaceModeLabel={t("hud.menu.interfaceMode")}
-                  terminateSessionLabel={t("hud.menu.terminateSession")}
+                  authActionLabel={isAuthenticated ? t("hud.menu.terminateSession") : tHeader("login")}
+                  authActionTone={isAuthenticated ? 'danger' : 'default'}
+                  authActionPending={isLaunchingLogin}
                   theme={theme}
                   onThemeToggle={handleThemeToggle}
-                  logoutHref={`/login?callbackUrl=${encodeURIComponent(pathname || "/")}`}
+                  onAuthAction={() => {
+                    void handleAuthAction().catch((error) => {
+                      console.error('hud auth action failed', error);
+                    });
+                  }}
                 />
             </motion.div>
         )}

@@ -1,6 +1,7 @@
 "use client"
 
-import { Bell, Plus, RefreshCw, ShieldCheck, Sparkles, Workflow } from "lucide-react"
+import { useTranslations } from "next-intl"
+import { Bell, Plus, RefreshCw } from "lucide-react"
 
 import { Button } from "@/components/ui/shadcn/button"
 
@@ -18,6 +19,8 @@ export function NotificationChannelsHeader({
   onRefresh: () => void
   onCreate: () => void
 }) {
+  const t = useTranslations("monitoring")
+
   return (
     <section className="border-b border-[color:var(--border)] bg-[color:var(--card)] px-6 py-8 md:px-10">
       <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
@@ -27,16 +30,16 @@ export function NotificationChannelsHeader({
               <Bell className="size-3.5" />
             </div>
             <span className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
-              Notification Matrix
+              {t("notificationChannels.header.eyebrow")}
             </span>
           </div>
 
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
-              通知出口与运行态
+              {t("notificationChannels.header.title")}
             </h1>
             <p className="max-w-2xl text-[13px] leading-relaxed text-muted-foreground">
-              集成通知出口管理、桌面 IM 运行态观察与微信配对。所有投递任务将根据此处定义的通道活性与优先级进行分发。
+              {t("notificationChannels.header.description")}
             </p>
           </div>
 
@@ -48,7 +51,7 @@ export function NotificationChannelsHeader({
               className="h-9 px-5 font-medium shadow-none"
             >
               <Plus className="mr-2 size-4" />
-              新增通知渠道
+              {t("notificationChannels.header.actions.create")}
             </Button>
             <Button
               variant="outline"
@@ -57,16 +60,16 @@ export function NotificationChannelsHeader({
               className="h-9 border-[color:var(--border)] bg-transparent px-4 font-medium transition-colors hover:bg-muted"
             >
               <RefreshCw className="mr-2 size-3.5" />
-              刷新运行态
+              {t("notificationChannels.header.actions.refresh")}
             </Button>
           </div>
         </div>
 
         <div className="grid shrink-0 gap-px overflow-hidden rounded-lg border border-[color:var(--border)] bg-[color:var(--border)] sm:grid-cols-2 lg:grid-cols-4">
-          <HeroMetric label="Total Channels" value={String(stats.total)} />
-          <HeroMetric label="Active" value={String(stats.active)} />
-          <HeroMetric label="Runtime Ready" value={String(stats.runtimeReady)} />
-          <HeroMetric label="Available" value={String(stats.available)} />
+          <HeroMetric label={t("notificationChannels.header.metrics.total")} value={String(stats.total)} />
+          <HeroMetric label={t("notificationChannels.header.metrics.active")} value={String(stats.active)} />
+          <HeroMetric label={t("notificationChannels.header.metrics.runtimeReady")} value={String(stats.runtimeReady)} />
+          <HeroMetric label={t("notificationChannels.header.metrics.available")} value={String(stats.available)} />
         </div>
       </div>
     </section>

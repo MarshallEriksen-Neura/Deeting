@@ -101,7 +101,7 @@ export function ChatTaskAgentEditor({
       <div className="space-y-20 animate-in fade-in slide-in-from-bottom-4 duration-700">
         <section className="space-y-4">
           <div className="font-mono text-[10px] font-bold tracking-[0.4em] text-[var(--ink)] uppercase">
-            Capability Registry
+            {t("bindings.title")}
           </div>
           <p className="text-[13px] text-[var(--ink-4)] leading-relaxed max-w-2xl">
             {t("bindings.description")}

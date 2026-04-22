@@ -22,12 +22,14 @@
     },
     "descriptions": {
       "focus": "查看当前选中模型池的健康度、容量和路由就绪情况。",
+      "focusExtended": "查看当前选中模型池的健康度、容量和路由就绪情况。该模型池会作为高可用分发中枢。",
       "directory": "切换模型池，检查对应的 provider 和会话绑定。",
       "members": "当前参与这个模型池的 provider 列表。",
       "bindings": "当前固定绑定到某个 provider model 的会话。"
     },
     "labels": {
       "providers": "{count} 个 provider",
+      "nodesAttached": "{count} 个已接入节点",
       "sessions": "{count} 个会话",
       "cooling": "{count} 个冷却中",
       "latency": "平均延迟",
@@ -61,6 +63,17 @@
       "ready": "就绪",
       "cooldown": "冷却中",
       "idle": "空闲"
+    },
+    "workstation": {
+      "systemHealth": "系统健康度",
+      "activeSessions": "活跃会话",
+      "cooling": "冷却中:",
+      "subsystemFocus": "当前聚焦池",
+      "successRate": "成功率",
+      "avgLatency": "平均延迟",
+      "bindingId": "绑定 ID",
+      "anonymousSession": "匿名会话",
+      "selectPool": "选择一个模型池"
     }
   }
 }

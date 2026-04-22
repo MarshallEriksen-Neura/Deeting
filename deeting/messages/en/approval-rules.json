@@ -100,6 +100,10 @@
       "resetLearning": "Learning data reset",
       "loadFailed": "Failed to load approval controls",
       "actionFailed": "Action failed"
+    },
+    "status": {
+      "loading": "Loading approval controls...",
+      "unknownRisk": "Unknown risk"
     }
   }
 }

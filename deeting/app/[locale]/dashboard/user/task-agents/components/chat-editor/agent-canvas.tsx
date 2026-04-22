@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Bot, Plus, X, MessageSquare, Sparkles, Eye, EyeOff, Zap } from "lucide-react"
+import { Plus, X, MessageSquare, Eye, EyeOff, Zap } from "lucide-react"
 import type { ModelGroup } from "@/lib/api/models"
 import { TaskAgentModelPickerField } from "../task-agent-model-picker-field"
 import type {
@@ -11,32 +11,6 @@ import type {
 import styles from "./agent-canvas.module.css"
 
 type Translation = (key: string, values?: Record<string, string | number>) => string
-
-/* ------------------------------------------------------------------ */
-/*  Inline name input — editorial display face                         */
-/* ------------------------------------------------------------------ */
-function InlineNameInput({
-  value,
-  onChange,
-  placeholder,
-}: {
-  value: string
-  onChange: (value: string) => void
-  placeholder: string
-}) {
-  return (
-    <div className={styles.nameWrap}>
-      <input
-        type="text"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        className={styles.nameInput}
-      />
-      {!value ? <span className={styles.requiredHint}>required</span> : null}
-    </div>
-  )
-}
 
 /* ------------------------------------------------------------------ */
 /*  Status pill — dot + icon + label                                   */
@@ -114,7 +88,7 @@ function DescriptionStrip({
         className={`${styles.description} ${styles.descriptionEmpty}`}
       >
         <Plus className={styles.descriptionEmptyIcon} />
-        <span>{t("editor.placeholders.description") || "Add description"}</span>
+        <span>{t("editor.placeholders.description")}</span>
       </button>
     )
   }
@@ -181,7 +155,7 @@ function TagChips({
             type="button"
             onClick={() => removeChip(chip)}
             className={styles.tagRemove}
-            aria-label={`Remove ${chip}`}
+            aria-label={t("editor.ui.removeTagAria", { tag: chip })}
           >
             <X />
           </button>
@@ -250,7 +224,7 @@ export function AgentCanvas({
       {/* Description Area */}
       <section className="space-y-4">
         <div className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">
-          Entity Description
+          {t("editor.fields.description")}
         </div>
         <DescriptionStrip
           t={t}
@@ -265,7 +239,7 @@ export function AgentCanvas({
       <section className="grid grid-cols-2 gap-16">
         <div className="space-y-8">
           <div className={styles.metaField}>
-            <span className={styles.metaLabel}>Neural Engine</span>
+            <span className={styles.metaLabel}>{t("editor.ui.neuralEngine")}</span>
             <div className={styles.metaEngine}>
               <TaskAgentModelPickerField
                 t={t}
@@ -280,7 +254,7 @@ export function AgentCanvas({
           </div>
 
           <div className={styles.metaField}>
-            <span className={styles.metaLabel}>Status & Visibility</span>
+            <span className={styles.metaLabel}>{t("editor.ui.statusVisibility")}</span>
             <div className={styles.statusCluster}>
               <TogglePill
                 checked={draft.is_enabled}
@@ -306,7 +280,7 @@ export function AgentCanvas({
 
         <div className="space-y-8">
           <div className={styles.metaField}>
-            <span className={styles.metaLabel}>Classification</span>
+            <span className={styles.metaLabel}>{t("editor.ui.classification")}</span>
             <span className="flex items-center gap-3 text-[11px] font-bold tracking-widest text-[var(--ink)] uppercase">
               <MessageSquare className="size-3.5 opacity-50" />
               {t("badges.chat")}
@@ -314,7 +288,7 @@ export function AgentCanvas({
           </div>
 
           <div className={styles.metaField}>
-            <span className={styles.metaLabel}>Indexing Tags</span>
+            <span className={styles.metaLabel}>{t("editor.fields.tags")}</span>
             <TagChips
               t={t}
               value={draft.tags_input}
@@ -334,7 +308,7 @@ export function AgentCanvas({
             <span className={styles.promptRequired}>*</span>
           </span>
           <span className={promptCountClass}>
-            {promptChars.toLocaleString()} BIT_UNITS
+            {t("editor.ui.bitUnits", { count: promptChars.toLocaleString() })}
           </span>
         </header>
 

@@ -34,7 +34,15 @@
       "draftDescription": "你正在编辑一个尚未保存的新任务智能体。",
       "emptyTitle": "还没有任务智能体",
       "emptyDescription": "创建你的第一个任务智能体，开始构建可复用的本地工作流。",
+      "noResults": "未找到匹配的任务智能体。",
+      "unnamed": "未命名智能体",
+      "modifiedShort": "修改: {value}",
       "updatedAt": "更新于 {value}",
+      "kindLabels": {
+        "chat": "对话核心",
+        "image": "视觉",
+        "voice": "语音"
+      },
       "sections": {
         "chat": "聊天任务智能体",
         "image": "图片智能体",
@@ -44,6 +52,8 @@
     "starter": {
       "title": "先选择要创建的智能体类型",
       "description": "从类型开始，再进入对应的专用创建工作台。聊天任务智能体和图片智能体会走完全不同的配置路径。",
+      "protocol": "初始化协议 / 选择单元类型",
+      "typePrefix": "类型_",
       "chat": {
         "title": "聊天任务智能体",
         "description": "适合在 chat 中协作办事、承接任务，并按需绑定本地 skills 与 MCP tools。",
@@ -106,6 +116,31 @@
       "bindings": "绑定",
       "preview": "预览",
       "debug": "调试"
+    },
+    "workspace": {
+      "coreRegistry": "核心注册表 / {count} 个单元",
+      "defaultKind": "聊天智能体",
+      "diagnostic": "诊断",
+      "copyright": "© {year} DEETING LABS",
+      "inspector": {
+        "title": "诊断日志",
+        "efficiencyTitle": "运行效率",
+        "precision": "准确率",
+        "latency": "延迟",
+        "ms": "毫秒",
+        "loadDistribution": "负载分布",
+        "registryHooks": "注册钩子",
+        "hooks": {
+          "tokenization": "分词",
+          "vectorIndex": "向量索引",
+          "functionCall": "函数调用"
+        },
+        "status": {
+          "stable": "稳定",
+          "synced": "已同步",
+          "optimized": "已优化"
+        }
+      }
     },
     "editor": {
       "newTitle": "新建任务智能体",
@@ -242,6 +277,15 @@
         "typeLocked": "类型已锁定",
         "preferredForImageGenerationOn": "优先",
         "preferredForImageGenerationOff": "普通"
+      },
+      "ui": {
+        "neuralEngine": "模型引擎",
+        "globalFlags": "全局标记",
+        "visibilityFlags": "可见性标记",
+        "statusVisibility": "状态与可见性",
+        "classification": "分类",
+        "removeTagAria": "移除 {tag}",
+        "bitUnits": "{count} 位单元"
       }
     },
     "bindings": {
@@ -296,10 +340,20 @@
     "debug": {
       "title": "调试快照",
       "description": "查看当前将被保存的本地载荷，以及正在生效的运行时输入。",
+      "stateDump": "系统状态快照",
+      "rawProfileProtocol": "原始配置协议",
       "cards": {
         "identity": "模型身份",
         "bindings": "绑定摘要",
         "preview": "预览设置"
+      },
+      "values": {
+        "default": "默认",
+        "none": "无",
+        "yes": "是",
+        "no": "否",
+        "surfaced": "已展示",
+        "redacted": "已隐藏"
       },
       "rawProfile": "当前载荷"
     },

@@ -39,6 +39,13 @@
         "actionManage": "管理",
         "actionConnect": "连接"
       },
+      "workstation": {
+        "uplinkStable": "链路稳定",
+        "standbyReady": "待命就绪",
+        "manageSystem": "进入管理",
+        "initialize": "开始接入",
+        "navigator": "服务导航"
+      },
       "error": {
         "loadFailed": "加载模型服务商失败：",
         "unknown": "未知错误"
@@ -113,7 +120,18 @@
       "localTag": "本地",
       "edit": "编辑",
       "enable": "启用",
-      "disconnect": "断开连接"
+      "disconnect": "断开连接",
+      "workstation": {
+        "liveNodes": "{count} 个在线节点",
+        "latencyMetric": "延迟:",
+        "stable": "稳定",
+        "versionMetric": "版本:",
+        "channelRegistry": "通道列表",
+        "linkedOnline": "在线连接",
+        "nodeOffline": "节点离线",
+        "linkStandbyTitle": "等待选择节点",
+        "linkStandbyDescription": "链路已初始化。请在左侧选择一个处理节点以开始管理。"
+      }
     },
     "list": {
       "latency": "延迟",

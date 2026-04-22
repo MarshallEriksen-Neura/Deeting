@@ -1,7 +1,7 @@
 'use client';
 
-import type { ReactNode } from 'react';
-import { Home, LayoutDashboard, ShoppingBag, Settings, Sun, Moon, LogOut } from 'lucide-react';
+import type { ComponentProps, ReactNode } from 'react';
+import { Home, LayoutDashboard, ShoppingBag, Settings, Sun, Moon, LogIn, LogOut, Loader2 } from 'lucide-react';
 import { Button } from '@/ui/shadcn/button';
 import { Link } from '@/i18n/routing';
 import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
@@ -12,10 +12,12 @@ interface HudSystemMenuPanelProps {
   registryLabel: string;
   preferencesLabel: string;
   interfaceModeLabel: string;
-  terminateSessionLabel: string;
+  authActionLabel: string;
+  authActionTone: 'default' | 'danger';
+  authActionPending?: boolean;
   theme: string | undefined;
   onThemeToggle: () => void;
-  logoutHref: string;
+  onAuthAction: () => void;
 }
 
 export function HudSystemMenuPanel({
@@ -24,10 +26,12 @@ export function HudSystemMenuPanel({
   registryLabel,
   preferencesLabel,
   interfaceModeLabel,
-  terminateSessionLabel,
+  authActionLabel,
+  authActionTone,
+  authActionPending = false,
   theme,
   onThemeToggle,
-  logoutHref,
+  onAuthAction,
 }: HudSystemMenuPanelProps) {
   return (
     <>
@@ -51,19 +55,34 @@ export function HudSystemMenuPanel({
           <span className="text-[9px] opacity-40 uppercase">{theme}</span>
         </Button>
 
-        <a
-          href={logoutHref}
-          className="flex items-center gap-3 p-3 rounded-2xl bg-white/60 dark:bg-white/5 hover:bg-red-500/10 hover:text-red-500 transition-colors text-[11px] font-semibold shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
+        <button
+          type="button"
+          onClick={onAuthAction}
+          disabled={authActionPending}
+          className={[
+            "flex items-center gap-3 p-3 rounded-2xl transition-colors text-[11px] font-semibold shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] disabled:opacity-60 disabled:pointer-events-none",
+            authActionTone === 'danger'
+              ? 'bg-white/60 dark:bg-white/5 hover:bg-red-500/10 hover:text-red-500'
+              : 'bg-white/60 dark:bg-white/5 hover:bg-white/90 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white',
+          ].join(' ')}
         >
-          <LogOut className="w-4 h-4" />
-          <span>{terminateSessionLabel}</span>
-        </a>
+          {authActionPending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : authActionTone === 'danger' ? (
+            <LogOut className="w-4 h-4" />
+          ) : (
+            <LogIn className="w-4 h-4" />
+          )}
+          <span>{authActionLabel}</span>
+        </button>
       </div>
     </>
   );
 }
 
-function MenuLink({ href, icon, label }: { href: string; icon: ReactNode; label: string }) {
+type AppLinkHref = ComponentProps<typeof Link>['href'];
+
+function MenuLink({ href, icon, label }: { href: AppLinkHref; icon: ReactNode; label: string }) {
   const isTauriRuntime = detectTauriRuntime()
   const className =
     "flex flex-col items-center justify-center gap-2 p-4 rounded-2xl bg-white/70 dark:bg-white/5 hover:bg-white/90 dark:hover:bg-white/10 transition-all group shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
@@ -89,7 +108,7 @@ function MenuLink({ href, icon, label }: { href: string; icon: ReactNode; label:
 
   return (
     <Link
-      href={href as any}
+      href={href}
       className={className}
     >
       {content}

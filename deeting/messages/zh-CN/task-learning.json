@@ -72,6 +72,10 @@
     "toggleSnapshot": "查看完整技术细节",
     "revisionSource": "来源：{source}"
   },
+  "meta": {
+    "created": "创建时间",
+    "updated": "最近修订"
+  },
   "guide": {
     "step0": "看一看",
     "step1": "给评价",

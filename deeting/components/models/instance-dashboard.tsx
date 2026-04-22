@@ -92,11 +92,11 @@ export function InstanceDashboard({ instance, syncState, onSettings, className }
               {instance.is_public && (
                 <div className="flex items-center gap-1 rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 text-blue-500">
                   <Globe className="size-2.5" />
-                  <span className="ws-meta text-[8px] tracking-tighter">Public</span>
+                  <span className="ws-meta text-[8px] tracking-tighter">{t("instance.publicBadge")}</span>
                 </div>
               )}
               {!instance.is_enabled && (
-                <Badge variant="outline" className="h-5 rounded-full border-[var(--warn-border)] bg-[var(--warn-soft)] px-2 text-[9px] font-bold text-[var(--warn)]">Paused</Badge>
+                <Badge variant="outline" className="h-5 rounded-full border-[var(--warn-border)] bg-[var(--warn-soft)] px-2 text-[9px] font-bold text-[var(--warn)]">{t("instance.pausedBadge")}</Badge>
               )}
             </div>
             
@@ -105,7 +105,9 @@ export function InstanceDashboard({ instance, syncState, onSettings, className }
                
                <div className="flex items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--panel-bg)] px-2.5 py-1 opacity-70">
                   <Activity className="size-3 text-[var(--ink-4)]" />
-                  <span className="ws-num text-[11px] font-medium text-[var(--ink-2)]">{instance.model_count ?? 0} models</span>
+                  <span className="ws-num text-[11px] font-medium text-[var(--ink-2)]">
+                    {t("instance.modelCount", { count: instance.model_count ?? 0 })}
+                  </span>
                </div>
                
                <div className="hidden min-w-0 items-center gap-1.5 opacity-45 sm:flex">
@@ -119,7 +121,7 @@ export function InstanceDashboard({ instance, syncState, onSettings, className }
         <div className="flex items-center gap-3">
           <div className="hidden min-w-[148px] rounded-2xl border border-[var(--hairline)] bg-[var(--panel-bg-inset)]/65 px-3 py-2 lg:block">
             <div className="flex items-center justify-between gap-3">
-              <span className="ws-meta text-[8px] uppercase tracking-[0.18em] opacity-50">Registry</span>
+              <span className="ws-meta text-[8px] uppercase tracking-[0.18em] opacity-50">{t("instance.registry")}</span>
               <span className="ws-num text-[11px] font-semibold text-[var(--ink-2)]">{safeSyncState.is_syncing ? `${safeSyncState.progress}%` : syncLabel}</span>
             </div>
             <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--accent-strong)]/12">

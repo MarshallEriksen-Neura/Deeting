@@ -18,23 +18,23 @@ interface ModelDataStripProps {
   readOnly?: boolean;
 }
 
-function getModelStatusTone(model: ProviderModel) {
+function getModelStatusTone(model: ProviderModel, t: (key: string) => string) {
   if (model.is_locked) {
     return {
-      label: "Locked",
+      label: t("list.actions.locked"),
       className: "border-[var(--warn-border)] bg-[var(--warn-soft)] text-[var(--warn)]",
     };
   }
 
   if (model.is_active) {
     return {
-      label: "Active",
+      label: t("list.status.active"),
       className: "border-[var(--ok-border)] bg-[var(--ok-soft)] text-[var(--ok)]",
     };
   }
 
   return {
-    label: "Disabled",
+    label: t("list.status.disabled"),
     className: "border-[var(--hairline)] bg-[var(--panel-bg-inset)] text-[var(--ink-3)]",
   };
 }
@@ -73,9 +73,10 @@ export function ModelDataStrip({
   isExpanded, 
   readOnly = false 
 }: ModelDataStripProps) {
+  const t = useTranslations("models");
   const isLocked = model.is_locked === true;
   const stopPropagation = React.useCallback((e: React.SyntheticEvent) => e.stopPropagation(), []);
-  const statusTone = getModelStatusTone(model);
+  const statusTone = getModelStatusTone(model, t);
 
   return (
     <div 
@@ -119,11 +120,11 @@ export function ModelDataStrip({
       <div className="hidden md:block">
          <div className="flex flex-col gap-1 rounded-2xl border border-[var(--hairline-subtle)] bg-[var(--panel-bg-inset)]/55 px-3 py-2">
             <div className="flex items-center justify-between gap-2">
-               <span className="ws-meta text-[8px] uppercase tracking-[0.16em] opacity-45">In</span>
+               <span className="ws-meta text-[8px] uppercase tracking-[0.16em] opacity-45">{t("list.header.inputShort")}</span>
                <span className="ws-num text-[11px] font-semibold text-[var(--ok)]">{formatPrice(model.pricing.input)}</span>
             </div>
             <div className="flex items-center justify-between gap-2">
-               <span className="ws-meta text-[8px] uppercase tracking-[0.16em] opacity-45">Out</span>
+               <span className="ws-meta text-[8px] uppercase tracking-[0.16em] opacity-45">{t("list.header.outputShort")}</span>
                <span className="ws-num text-[11px] font-semibold text-[var(--warn)]">{formatPrice(model.pricing.output)}</span>
             </div>
          </div>
@@ -187,7 +188,7 @@ export function ModelMatrix({
         <div className="ws-meta text-[10px] tracking-[0.18em]">{t("list.header.id")}</div>
         <div className="hidden ws-meta text-[10px] tracking-[0.18em] md:block">{t("list.header.capabilities")}</div>
         <div className="hidden ws-meta text-[10px] tracking-[0.18em] md:block">{t("list.header.pricing")}</div>
-        <div className="ws-meta text-right text-[10px] tracking-[0.18em]">Status</div>
+        <div className="ws-meta text-right text-[10px] tracking-[0.18em]">{t("list.header.status")}</div>
       </div>
 
       <div className="flex flex-col divide-y divide-[var(--hairline-subtle)]">

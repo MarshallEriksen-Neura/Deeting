@@ -51,7 +51,7 @@ export function ChatDebugTab({
     <div className="space-y-16 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <section className="space-y-6">
         <div className="font-mono text-[10px] font-bold tracking-[0.4em] text-[var(--ink)] uppercase">
-          System State Dump
+          {t("debug.stateDump")}
         </div>
         
         <div className="grid gap-12 lg:grid-cols-3">
@@ -60,7 +60,7 @@ export function ChatDebugTab({
             rows={[
               {
                 label: t("editor.fields.model"),
-                value: draft.model.trim() || "default",
+                value: draft.model.trim() || t("debug.values.default"),
               },
               {
                 label: t("editor.fields.invocationKind"),
@@ -81,15 +81,19 @@ export function ChatDebugTab({
               },
               {
                 label: t("editor.fields.boundAsset"),
-                value: draft.bound_asset_id || "none",
+                value: draft.bound_asset_id || t("debug.values.none"),
               },
               {
                 label: t("editor.fields.preferredForImageGeneration"),
-                value: draft.preferred_for_image_generation ? "YES" : "NO",
+                value: draft.preferred_for_image_generation
+                  ? t("debug.values.yes")
+                  : t("debug.values.no"),
               },
               {
                 label: t("editor.fields.discoverable"),
-                value: draft.discoverable ? "SURFACED" : "REDACTED",
+                value: draft.discoverable
+                  ? t("debug.values.surfaced")
+                  : t("debug.values.redacted"),
               },
             ]}
           />
@@ -98,15 +102,15 @@ export function ChatDebugTab({
             rows={[
               {
                 label: t("preview.fields.maxRounds"),
-                value: previewDraft.max_rounds.trim() || "default",
+                value: previewDraft.max_rounds.trim() || t("debug.values.default"),
               },
               {
                 label: t("preview.fields.maxTokens"),
-                value: previewDraft.max_tokens.trim() || "default",
+                value: previewDraft.max_tokens.trim() || t("debug.values.default"),
               },
               {
                 label: t("preview.fields.temperature"),
-                value: previewDraft.temperature.trim() || "default",
+                value: previewDraft.temperature.trim() || t("debug.values.default"),
               },
             ]}
           />
@@ -116,7 +120,7 @@ export function ChatDebugTab({
       <section className="space-y-4">
         <header className="flex items-center justify-between">
            <div className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">
-             Raw Profile Protocol
+             {t("debug.rawProfileProtocol")}
            </div>
         </header>
         <div className="bg-[var(--panel-bg-inset)]/40 p-8 border border-[var(--hairline-strong)]">

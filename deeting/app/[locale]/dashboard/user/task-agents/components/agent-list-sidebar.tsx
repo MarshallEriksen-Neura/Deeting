@@ -57,7 +57,7 @@ export function AgentListSidebar({
     return (
       <div className="flex h-full flex-col items-center justify-center p-8 text-center opacity-30">
         <LayoutGrid className="size-10 mb-4" />
-        <p className="ws-caption text-xs leading-relaxed">{t("library.empty") || "No units found"}</p>
+        <p className="ws-caption text-xs leading-relaxed">{t("library.noResults")}</p>
       </div>
     )
   }
@@ -67,7 +67,12 @@ export function AgentListSidebar({
       <div className="flex-1 overflow-y-auto py-2 space-y-0 custom-scrollbar mask-linear-b">
         {filteredAgents.map((agent) => {
           const selected = agent.id === selectedAgentId && !isStarterState;
-          const kindLabel = agent.kind === "image" ? "VISION" : agent.kind === "voice" ? "AUDIO" : "NEURAL_CORE";
+          const kindLabel =
+            agent.kind === "image"
+              ? t("library.kindLabels.image")
+              : agent.kind === "voice"
+                ? t("library.kindLabels.voice")
+                : t("library.kindLabels.chat")
           
           return (
             <button
@@ -96,7 +101,7 @@ export function AgentListSidebar({
                     "text-xl font-bold tracking-tight transition-all duration-300 truncate",
                     selected ? "text-[var(--ink)] translate-x-1" : "text-[var(--ink-3)] group-hover:text-[var(--ink)]"
                   )}>
-                    {agent.name || "UNNAMED_ENTITY"}
+                    {agent.name || t("library.unnamed")}
                   </h3>
                 </div>
 
@@ -120,7 +125,7 @@ export function AgentListSidebar({
                            }}
                          >
                             <Trash2 className="size-3 mr-3" />
-                            Delete
+                            {t("actions.delete")}
                          </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -129,7 +134,13 @@ export function AgentListSidebar({
 
               <div className="flex items-center gap-4 mt-2 px-2 opacity-30 group-hover:opacity-60 transition-opacity">
                 <span className="font-mono text-[8px] tracking-widest text-[var(--ink-4)]">
-                   MODIFIED: {new Date(agent.updated_at).toLocaleDateString(undefined, { month: '2-digit', day: '2-digit', year: 'numeric' })}
+                   {t("library.modifiedShort", {
+                     value: new Date(agent.updated_at).toLocaleDateString(undefined, {
+                       month: "2-digit",
+                       day: "2-digit",
+                       year: "numeric",
+                     }),
+                   })}
                 </span>
                 <div className="h-px flex-1 bg-[var(--hairline-strong)]" />
               </div>

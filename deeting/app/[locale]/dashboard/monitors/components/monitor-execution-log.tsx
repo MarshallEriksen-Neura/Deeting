@@ -1,6 +1,7 @@
-﻿"use client"
+"use client"
 
-import { useCallback } from "react"
+import { useCallback, useMemo } from "react"
+import { useLocale, useTranslations } from "next-intl"
 import {
   AlertTriangle,
   CheckCircle2,
@@ -39,15 +40,19 @@ interface MonitorExecutionLogProps {
   onClose: () => void
 }
 
-const LOG_STATUS_META = {
-  success: { label: "成功", icon: CheckCircle2, className: "text-emerald-600" },
-  failure: { label: "失败", icon: XCircle, className: "text-red-600" },
-  skipped: { label: "跳过", icon: MinusCircle, className: "text-amber-600" },
-} as const
-
 export function MonitorExecutionLog({ taskId, onClose }: MonitorExecutionLogProps) {
+  const t = useTranslations("monitoring")
+  const locale = useLocale()
   const { data: logs, isLoading, mutate } = useMonitorLogs(taskId)
   const { data: deliveryStates } = useMonitorDeliveryStates(taskId)
+  const statusMeta = useMemo(
+    () => ({
+      success: { label: t("monitors.log.status.success"), icon: CheckCircle2, className: "text-emerald-600" },
+      failure: { label: t("monitors.log.status.failure"), icon: XCircle, className: "text-red-600" },
+      skipped: { label: t("monitors.log.status.skipped"), icon: MinusCircle, className: "text-amber-600" },
+    }),
+    [t],
+  )
 
   const handleFeedback = useCallback(
     async (log: MonitorExecutionLogItem, score: number) => {
@@ -61,9 +66,9 @@ export function MonitorExecutionLog({ taskId, onClose }: MonitorExecutionLogProp
     <Sheet open={Boolean(taskId)} onOpenChange={(open) => (!open ? onClose() : undefined)}>
       <SheetContent className="w-full overflow-y-auto sm:max-w-2xl">
         <SheetHeader>
-          <SheetTitle>执行日志</SheetTitle>
+          <SheetTitle>{t("monitors.log.title")}</SheetTitle>
           <SheetDescription>
-            查看最近执行结果、交付锚点和人工反馈。
+            {t("monitors.log.description")}
           </SheetDescription>
         </SheetHeader>
 
@@ -71,11 +76,16 @@ export function MonitorExecutionLog({ taskId, onClose }: MonitorExecutionLogProp
           {deliveryStates?.items?.length ? (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">通知交付状态</CardTitle>
+                <CardTitle className="text-base">{t("monitors.log.deliveryTitle")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 {deliveryStates.items.map((item) => (
-                  <DeliveryStateRow key={`${item.channel_id}-${item.target_key}`} item={item} />
+                  <DeliveryStateRow
+                    key={`${item.channel_id}-${item.target_key}`}
+                    item={item}
+                    locale={locale}
+                    t={t}
+                  />
                 ))}
               </CardContent>
             </Card>
@@ -88,12 +98,21 @@ export function MonitorExecutionLog({ taskId, onClose }: MonitorExecutionLogProp
               </Card>
             ))
           ) : logs?.items?.length ? (
-            logs.items.map((log) => <LogCard key={log.id} log={log} onFeedback={handleFeedback} />)
+            logs.items.map((log) => (
+              <LogCard
+                key={log.id}
+                log={log}
+                onFeedback={handleFeedback}
+                locale={locale}
+                t={t}
+                statusMeta={statusMeta}
+              />
+            ))
           ) : (
             <Card className="border-dashed">
               <CardContent className="flex flex-col items-center gap-3 py-12 text-center text-sm text-muted-foreground">
                 <Clock3 className="size-8" />
-                <div>还没有执行记录，首次触发后会在这里看到每次结果。</div>
+                <div>{t("monitors.log.empty")}</div>
               </CardContent>
             </Card>
           )}
@@ -103,15 +122,28 @@ export function MonitorExecutionLog({ taskId, onClose }: MonitorExecutionLogProp
   )
 }
 
-function DeliveryStateRow({ item }: { item: MonitorDeliveryStateRecord }) {
+function DeliveryStateRow({
+  item,
+  locale,
+  t,
+}: {
+  item: MonitorDeliveryStateRecord
+  locale: string
+  t: ReturnType<typeof useTranslations>
+}) {
   return (
     <div className="rounded-xl border border-border/60 bg-muted/30 p-3 text-sm">
       <div className="flex items-center gap-2">
-        <Badge variant="secondary">{item.channel_kind || "channel"}</Badge>
+        <Badge variant="secondary">{item.channel_kind || t("monitors.log.channelFallback")}</Badge>
         <span className="font-medium">{item.channel_display_name || item.target_key}</span>
-        <span className="ml-auto text-xs text-muted-foreground">{deliveryStateLabel(item.status)}</span>
+        <span className="ml-auto text-xs text-muted-foreground">{deliveryStateLabel(item.status, t)}</span>
       </div>
       <div className="mt-2 text-xs text-muted-foreground">{item.target_key}</div>
+      {item.updated_at ? (
+        <div className="mt-1 text-[11px] text-muted-foreground/80">
+          {formatTime(item.updated_at, locale)}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -119,11 +151,21 @@ function DeliveryStateRow({ item }: { item: MonitorDeliveryStateRecord }) {
 function LogCard({
   log,
   onFeedback,
+  locale,
+  t,
+  statusMeta,
 }: {
   log: MonitorExecutionLogItem
   onFeedback: (log: MonitorExecutionLogItem, score: number) => Promise<void>
+  locale: string
+  t: ReturnType<typeof useTranslations>
+  statusMeta: {
+    success: { label: string; icon: typeof CheckCircle2; className: string }
+    failure: { label: string; icon: typeof XCircle; className: string }
+    skipped: { label: string; icon: typeof MinusCircle; className: string }
+  }
 }) {
-  const meta = LOG_STATUS_META[log.status]
+  const meta = statusMeta[log.status]
   const StatusIcon = meta.icon
   const events = log.output_data?.events ?? []
   const changeSummary = log.output_data?.change_summary
@@ -139,10 +181,10 @@ function LogCard({
           {log.output_data?.is_significant_change ? (
             <Badge variant="outline">
               <AlertTriangle className="mr-1 size-3.5" />
-              检测到显著变化
+              {t("monitors.log.significantChange")}
             </Badge>
           ) : null}
-          <span className="ml-auto text-xs text-muted-foreground">{formatTime(log.triggered_at)}</span>
+          <span className="ml-auto text-xs text-muted-foreground">{formatTime(log.triggered_at, locale)}</span>
         </div>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
@@ -167,17 +209,17 @@ function LogCard({
         <div className="flex items-center gap-3 border-t border-border/60 pt-4 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1">
             <Coins className="size-3.5" />
-            {log.tokens_used} tokens
+            {t("monitors.log.tokensUsed", { count: log.tokens_used })}
           </span>
           {log.status === "success" ? (
             <div className="ml-auto flex items-center gap-2">
               <Button variant="ghost" size="sm" onClick={() => void onFeedback(log, 1)}>
                 <ThumbsUp className="size-3.5" />
-                有用
+                {t("monitors.log.feedback.useful")}
               </Button>
               <Button variant="ghost" size="sm" onClick={() => void onFeedback(log, 0)}>
                 <ThumbsDown className="size-3.5" />
-                无用
+                {t("monitors.log.feedback.notUseful")}
               </Button>
             </div>
           ) : null}
@@ -187,22 +229,25 @@ function LogCard({
   )
 }
 
-function deliveryStateLabel(status: string) {
+function deliveryStateLabel(
+  status: string,
+  t: ReturnType<typeof useTranslations>,
+) {
   switch (status) {
     case "anchored":
-      return "已建立消息锚点"
+      return t("monitors.log.deliveryStatus.anchored")
     case "context_ready":
-      return "上下文已建立"
+      return t("monitors.log.deliveryStatus.contextReady")
     case "waiting_for_contact_message":
-      return "等待联系人先发消息"
+      return t("monitors.log.deliveryStatus.waitingForContact")
     default:
-      return "待初始化"
+      return t("monitors.log.deliveryStatus.pending")
   }
 }
 
-function formatTime(isoString: string) {
+function formatTime(isoString: string, locale: string) {
   const date = new Date(isoString)
-  return date.toLocaleString("zh-CN", {
+  return date.toLocaleString(locale, {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",

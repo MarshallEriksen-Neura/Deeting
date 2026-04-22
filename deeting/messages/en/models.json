@@ -7,7 +7,9 @@
       "unknown": "Something went wrong while loading models."
     },
     "actions": {
-      "retry": "Retry"
+      "retry": "Retry",
+      "dismiss": "Dismiss",
+      "initiateTest": "Initiate Test"
     },
     "toast": {
       "syncSuccess": "Models synced successfully",
@@ -40,7 +42,11 @@
       "syncModels": "Sync Models",
       "justNow": "Just now",
       "ago": "{time} ago",
-      "neverSynced": "Never synced"
+      "neverSynced": "Never synced",
+      "publicBadge": "Public",
+      "pausedBadge": "Paused",
+      "modelCount": "{count} models",
+      "registry": "Registry"
     },
     "status": {
       "online": "Online ({latency}ms)",
@@ -52,12 +58,26 @@
     "filter": {
       "searchPlaceholder": "Search by ID (e.g., gpt-4)...",
       "context": "Context: {label}",
+      "contextWindow": "Context Window",
       "activeOnly": "Active models only",
+      "activeOnlyShort": "Active Only",
       "priceTier": "Price Tier",
       "clear": "Clear",
+      "reset": "Reset",
       "advanced": "Advanced Filters",
+      "refine": "Refine",
+      "allCapabilities": "All capabilities",
+      "capabilitiesSelected": "{count} capabilities",
       "modelsCount": "{count} models",
       "filteredCount": "{filtered} / {total} models",
+      "visible": "Visible",
+      "total": "Total",
+      "priceTierOptions": {
+        "cheap": "cheap",
+        "moderate": "moderate",
+        "expensive": "expensive",
+        "premium": "premium"
+      },
       "batchTitle": "Batch Set Capabilities",
       "batchHint": "Set capability tags for {count} matched models at once",
       "batchApply": "Apply to {count} models",
@@ -139,7 +159,13 @@
         "capabilities": "Capabilities",
         "context": "Context",
         "pricing": "Pricing (In/Out)",
+        "inputShort": "In",
+        "outputShort": "Out",
         "status": "Status"
+      },
+      "status": {
+        "active": "Active",
+        "disabled": "Disabled"
       },
       "empty": {
         "title": "No Models Detected Yet",
@@ -180,7 +206,10 @@
       "hint": "Press Enter to send, Shift+Enter for new line",
       "connectionError": "Connection Error",
       "retry": "Retry",
-      "clearChat": "Clear chat"
+      "clearChat": "Clear chat",
+      "noModelSelected": "No model selected",
+      "success": "Success",
+      "errorWithDetail": "Error: {message}"
     },
     "capabilities": {
       "chat": { "label": "Chat", "description": "Conversational AI capabilities" },

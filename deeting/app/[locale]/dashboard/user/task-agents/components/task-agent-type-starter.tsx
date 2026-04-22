@@ -21,9 +21,11 @@ type OptionSpec = {
 function OptionRow({
   option,
   onSelect,
+  t,
 }: {
   option: OptionSpec
   onSelect: (kind: TaskAgentKind) => void
+  t: (key: string) => string
 }) {
   const { title, description, kind } = option
   return (
@@ -34,7 +36,8 @@ function OptionRow({
     >
       <div className="flex items-baseline gap-6">
         <span className="font-mono text-[10px] font-bold tracking-[0.4em] text-[var(--accent-strong)] opacity-40 group-hover:opacity-100 transition-opacity">
-          TYPE_{kind.toUpperCase()}
+          {t("starter.typePrefix")}
+          {kind.toUpperCase()}
         </span>
         <h3 className="text-5xl font-bold tracking-tighter text-[var(--ink-2)] group-hover:text-[var(--ink)] transition-colors">
           {title.toUpperCase()}
@@ -78,14 +81,14 @@ export function TaskAgentTypeStarter({ t, onSelect }: TaskAgentTypeStarterProps)
         <div className="flex items-center gap-4">
            <div className="h-px w-12 bg-[var(--accent-strong)]" />
            <p className="font-mono text-[10px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">
-             Initialization Protocol / Select Unit Class
+             {t("starter.protocol")}
            </p>
         </div>
       </header>
 
       <div className="border-t border-[var(--hairline-strong)]">
         {options.map((option) => (
-          <OptionRow key={option.kind} option={option} onSelect={onSelect} />
+          <OptionRow key={option.kind} option={option} onSelect={onSelect} t={t} />
         ))}
       </div>
     </div>

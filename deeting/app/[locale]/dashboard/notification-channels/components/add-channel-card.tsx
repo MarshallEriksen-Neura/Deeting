@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useTranslations } from "next-intl"
 import { Plus } from "lucide-react"
 
 import { Badge } from "@/components/ui/shadcn/badge"
@@ -47,6 +48,8 @@ export function AddChannelCard({
   onResetType: () => void
   onCreate: (channelType: ChannelType, config: ChannelConfig, displayName: string) => Promise<void>
 }) {
+  const t = useTranslations("monitoring")
+
   if (!availableTypes.length && !showAdd) {
     return (
       <Card className="overflow-hidden border-[color:var(--hairline)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--panel-bg)_96%,white_4%)_0%,color-mix(in_srgb,var(--ok-soft)_22%,var(--panel-bg)_78%)_100%)] shadow-[var(--elev-floating)]">
@@ -57,7 +60,7 @@ export function AddChannelCard({
             </div>
             <div>
               <CardTitle className="text-base text-[color:var(--ink)]">
-                当前渠道已接满
+                {t("notificationChannels.addCard.fullTitle")}
               </CardTitle>
             </div>
           </div>
@@ -84,7 +87,7 @@ export function AddChannelCard({
           </div>
           <div>
             <CardTitle className="text-base text-[color:var(--ink)]">
-              新增通知渠道
+              {t("notificationChannels.addCard.title")}
             </CardTitle>
           </div>
         </div>
@@ -102,7 +105,7 @@ export function AddChannelCard({
         </div>
         <Button variant="ios-primary" onClick={onShowAdd} className="w-full">
           <Plus className="size-4" />
-          开始配置新渠道
+          {t("notificationChannels.addCard.startConfig")}
         </Button>
       </CardContent>
     </Card>
@@ -124,6 +127,7 @@ function AddChannelComposer({
   onResetType: () => void
   onCreate: (channelType: ChannelType, config: ChannelConfig, displayName: string) => Promise<void>
 }) {
+  const t = useTranslations("monitoring")
   const [displayName, setDisplayName] = useState("")
   const [creating, setCreating] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
@@ -152,10 +156,10 @@ function AddChannelComposer({
     setFeedback(null)
     try {
       await onCreate(addType, buildChannelConfig(addType, fields, values), displayName)
-      setFeedback("创建成功")
+      setFeedback(t("notificationChannels.addCard.feedback.createSuccess"))
       onResetType()
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "创建失败")
+      setFeedback(error instanceof Error ? error.message : t("notificationChannels.addCard.feedback.createFailed"))
     } finally {
       setCreating(false)
     }
@@ -165,13 +169,13 @@ function AddChannelComposer({
     <ChannelFormField
       key={field.key}
       id={`create-${addType ?? "channel"}-${field.key}`}
-      label={field.label}
-      placeholder={field.placeholder}
+      label={t(field.labelKey)}
+      placeholder={t(field.placeholderKey)}
       type={field.type}
       value={values[field.key] ?? (field.valueKind === "boolean" ? false : "")}
       onChange={(nextValue) => setValue(field.key, nextValue)}
-      description={field.description}
-      options={field.options}
+      description={field.descriptionKey ? t(field.descriptionKey) : undefined}
+      options={field.options?.map((option) => ({ value: option.value, label: t(option.labelKey) }))}
     />
   )
 
@@ -181,11 +185,11 @@ function AddChannelComposer({
         <div className="flex items-start justify-between gap-3">
           <div>
             <CardTitle className="text-base text-[color:var(--ink)]">
-              新增通知渠道
+              {t("notificationChannels.addCard.title")}
             </CardTitle>
           </div>
           <Button variant="ghost" size="sm" onClick={onCancelAdd}>
-            取消
+            {t("notificationChannels.addCard.cancel")}
           </Button>
         </div>
       </CardHeader>
@@ -214,7 +218,7 @@ function AddChannelComposer({
                     <span className="text-sm font-semibold text-[color:var(--ink)]">
                       {CHANNEL_META[type].label}
                     </span>
-                    {active ? <Badge variant="secondary">当前</Badge> : null}
+                    {active ? <Badge variant="secondary">{t("notificationChannels.addCard.current")}</Badge> : null}
                   </div>
                   <div className="mt-1 text-xs leading-5 text-[color:var(--ink-3)]">
                     {CHANNEL_META[type].description}
@@ -229,12 +233,12 @@ function AddChannelComposer({
           <div className="space-y-4 rounded-[24px] border border-[color:var(--hairline)] bg-[color:var(--panel-bg)]/78 p-4">
             <div className="space-y-2">
               <label className="text-sm font-medium text-[color:var(--ink)]">
-                显示名称
+                {t("notificationChannels.addCard.displayName")}
               </label>
               <Input
                 value={displayName}
                 onChange={(event) => setDisplayName(event.target.value)}
-                placeholder={`例如：${CHANNEL_META[addType].label} 主通知`}
+                placeholder={t("notificationChannels.addCard.displayNamePlaceholder", { channel: CHANNEL_META[addType].label })}
               />
             </div>
 
@@ -250,7 +254,7 @@ function AddChannelComposer({
 
             <div className="flex flex-wrap justify-end gap-2">
               <Button variant="outline" size="sm" onClick={onResetType}>
-                重置类型
+                {t("notificationChannels.addCard.resetType")}
               </Button>
               <Button
                 variant="ios-primary"
@@ -258,7 +262,7 @@ function AddChannelComposer({
                 onClick={() => void handleCreate()}
                 disabled={creating || !validateChannelConfig(addType, values)}
               >
-                {creating ? "创建中..." : "创建渠道"}
+                {creating ? t("notificationChannels.addCard.creating") : t("notificationChannels.addCard.create")}
               </Button>
             </div>
           </div>

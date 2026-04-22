@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { useLocale, useTranslations } from "next-intl"
 import { Terminal } from "lucide-react"
 
 import { Button } from "@/components/ui/shadcn/button"
@@ -22,6 +23,8 @@ const INITIAL_FILTERS: LogsFilters = {
 }
 
 export function LogsClient() {
+  const t = useTranslations("logs")
+  const locale = useLocale()
   const [filters, setFilters] = useState<LogsFilters>(INITIAL_FILTERS)
   const [cursor, setCursor] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -60,30 +63,28 @@ export function LogsClient() {
 
   return (
     <main className="-mb-[var(--shell-canvas-pb)] -mt-[var(--shell-canvas-pt)] -mx-[var(--shell-canvas-px)] flex h-[calc(100dvh-var(--shell-toolbar-h))] flex-col overflow-hidden bg-[var(--background)] font-mono text-[var(--ink-2)]">
-      {/* Brutalist Header */}
       <header className="flex h-12 flex-none items-center justify-between border-b border-[var(--hairline)] bg-[var(--background)] px-4">
         <div className="flex items-center gap-3">
           <Terminal className="size-4 text-[var(--ok)]" />
           <span className="text-sm font-bold tracking-tighter text-[var(--ink)] uppercase">
-            Gateway Log Observatory <span className="text-[var(--ink-4)]">{"//"}</span> {statsData?.total ?? items.length} Records
+            {t("header.title", { count: statsData?.total ?? items.length })}
           </span>
         </div>
         <div className="flex items-center gap-6 text-[10px] uppercase tracking-widest md:text-[11px]">
           <div className="flex items-center gap-2">
-            <span className="text-[var(--ink-3)]">Filters:</span>
+            <span className="text-[var(--ink-3)]">{t("header.filters")}</span>
             <span className={activeFilterCount > 0 ? "text-[var(--ok)]" : "text-[var(--ink-4)]"}>
               {activeFilterCount}
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-[var(--ink-3)]">Selected:</span>
-            <span className="text-[var(--ok)]">{selectedLog ? shortId(selectedLog.id) : "NULL"}</span>
+            <span className="text-[var(--ink-3)]">{t("header.selected")}</span>
+            <span className="text-[var(--ok)]">{selectedLog ? shortId(selectedLog.id) : t("header.none")}</span>
           </div>
         </div>
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col">
-        {/* Filter Bar */}
         <LogsFilterBar
           value={filters}
           activeCount={activeFilterCount}
@@ -104,7 +105,7 @@ export function LogsClient() {
 
         {error ? (
           <div className="border-y border-[var(--danger-border)] bg-[var(--danger-soft)] px-4 py-2 text-[12px] text-[var(--danger)]">
-            [ERROR_LOAD_FAIL] {error.message || "Unknown gateway error"}
+            {t("error.loadFailed", { message: error.message || t("error.unknown") })}
           </div>
         ) : null}
 
@@ -119,12 +120,11 @@ export function LogsClient() {
               />
             </div>
 
-            {/* Terminal-style Footer */}
             <footer className="flex h-10 flex-none items-center justify-between border-t border-[var(--hairline)] bg-[var(--background)] px-4">
               <div className="flex items-center gap-4 text-[11px]">
-                <span className="text-[var(--ink-4)]">PAGE_INFO:</span>
-                <span className="text-[var(--ink-2)]">ITEMS={items.length}</span>
-                <span className="text-[var(--ink-2)]">SIZE={filters.pageSize}</span>
+                <span className="text-[var(--ink-4)]">{t("footer.pageInfoLabel")}</span>
+                <span className="text-[var(--ink-2)]">{t("footer.items", { count: items.length })}</span>
+                <span className="text-[var(--ink-2)]">{t("footer.size", { size: filters.pageSize })}</span>
               </div>
 
               <div className="flex items-center gap-2">
@@ -135,7 +135,7 @@ export function LogsClient() {
                   disabled={!data?.previous_page || isValidating}
                   onClick={() => setCursor(data?.previous_page ?? null)}
                 >
-                  [ PREV ]
+                  {t("footer.prev")}
                 </Button>
                 <Button
                   variant="ghost"
@@ -144,14 +144,14 @@ export function LogsClient() {
                   disabled={!data?.next_page || isValidating}
                   onClick={() => setCursor(data?.next_page ?? null)}
                 >
-                  [ NEXT ]
+                  {t("footer.next")}
                 </Button>
               </div>
             </footer>
           </section>
 
           <section className="min-h-0 bg-[var(--panel-bg-inset)]">
-            <LogsDetailPanel log={selectedLog} />
+            <LogsDetailPanel log={selectedLog} locale={locale} />
           </section>
         </div>
       </div>

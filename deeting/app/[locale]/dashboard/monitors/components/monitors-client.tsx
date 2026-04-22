@@ -1,12 +1,12 @@
-﻿"use client"
+"use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useTranslations } from "next-intl"
 import { Crosshair, Plus, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 
 import { Container } from "@/components/ui/common/container"
 import { Button } from "@/components/ui/shadcn/button"
-import { Badge } from "@/components/ui/shadcn/badge"
 import { useMonitorTasks } from "@/lib/swr/use-monitors"
 import { fetchMonitorLogs, triggerMonitorTask, type MonitorStatus, type MonitorTask } from "@/lib/api/monitors"
 
@@ -15,14 +15,8 @@ import { MonitorEmptyState } from "./monitor-empty-state"
 import { MonitorExecutionLog } from "./monitor-execution-log"
 import { MonitorTaskCard } from "./monitor-task-card"
 
-const STATUS_FILTERS: Array<{ label: string; value: MonitorStatus | "all" }> = [
-  { label: "全部", value: "all" },
-  { label: "运行中", value: "active" },
-  { label: "已暂停", value: "paused" },
-  { label: "已挂起", value: "failed_suspended" },
-]
-
 export function MonitorsClient() {
+  const t = useTranslations("monitoring")
   const [statusFilter, setStatusFilter] = useState<MonitorStatus | "all">("all")
   const [createOpen, setCreateOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<MonitorTask | null>(null)
@@ -31,6 +25,15 @@ export function MonitorsClient() {
   const mountedRef = useRef(true)
   const query = statusFilter === "all" ? undefined : { status: statusFilter }
   const { data, isLoading, mutate } = useMonitorTasks(query)
+  const statusFilters = useMemo<Array<{ label: string; value: MonitorStatus | "all" }>>(
+    () => [
+      { label: t("monitors.filters.all"), value: "all" },
+      { label: t("monitors.filters.active"), value: "active" },
+      { label: t("monitors.filters.paused"), value: "paused" },
+      { label: t("monitors.filters.failedSuspended"), value: "failed_suspended" },
+    ],
+    [t],
+  )
 
   useEffect(() => {
     return () => {
@@ -64,9 +67,11 @@ export function MonitorsClient() {
           const matched = logs.items.find((item) => Date.parse(item.triggered_at) >= startedAtMs - toleranceMs)
           if (!matched) continue
 
-          if (matched.status === "success") toast.success("本次执行已完成")
-          if (matched.status === "failure") toast.error(matched.error_message || "本次执行失败")
-          if (matched.status === "skipped") toast("本次执行被跳过")
+          if (matched.status === "success") toast.success(t("monitors.toast.executionCompleted"))
+          if (matched.status === "failure") {
+            toast.error(matched.error_message || t("monitors.toast.executionFailed"))
+          }
+          if (matched.status === "skipped") toast(t("monitors.toast.executionSkipped"))
 
           if (mountedRef.current) {
             clearPendingTrigger(task.id)
@@ -81,10 +86,10 @@ export function MonitorsClient() {
       if (mountedRef.current) {
         clearPendingTrigger(task.id)
         refreshAll()
-        toast("执行结果稍后可在日志中查看")
+        toast(t("monitors.toast.checkLogsLater"))
       }
     },
-    [clearPendingTrigger, refreshAll],
+    [clearPendingTrigger, refreshAll, t],
   )
 
   const handleTrigger = useCallback(
@@ -101,19 +106,19 @@ export function MonitorsClient() {
 
       try {
         await triggerMonitorTask(task.id)
-        toast.success("已提交执行，正在等待结果")
+        toast.success(t("monitors.toast.triggerSubmitted"))
         refreshAll()
         void trackTriggerResult(task, startedAtIso)
       } catch {
         clearPendingTrigger(task.id)
-        toast.error("触发失败，请重试")
+        toast.error(t("monitors.toast.triggerFailed"))
       }
     },
-    [clearPendingTrigger, refreshAll, trackTriggerResult],
+    [clearPendingTrigger, refreshAll, t, trackTriggerResult],
   )
 
   return (
-    <Container as="main" gutter="none" size="full" className="min-h-screen bg-[color:var(--background)]">
+    <Container as="main" gutter="md" size="full" className="min-h-screen !mx-0 !max-w-none bg-[color:var(--background)]">
       <div className="flex flex-col border-b border-[color:var(--border)] bg-[color:var(--card)] px-6 py-8 md:px-10">
         <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
           <div className="space-y-1.5">
@@ -122,14 +127,14 @@ export function MonitorsClient() {
                 <Crosshair className="size-3.5" />
               </div>
               <span className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
-                Active Hunting System
+                {t("monitors.header.eyebrow")}
               </span>
             </div>
             <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
-              主动巡猎与自动化
+              {t("monitors.header.title")}
             </h1>
             <p className="max-w-2xl text-[13px] leading-relaxed text-muted-foreground">
-              集成桌面端深度侦察任务。系统将根据配置的启发式规则自动运行，并在发现质变信号时通过预设渠道推送研判结果。
+              {t("monitors.header.description")}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-3">
@@ -140,7 +145,7 @@ export function MonitorsClient() {
               className="h-9 border-[color:var(--border)] bg-transparent px-4 font-medium transition-colors hover:bg-muted"
             >
               <RefreshCw className="mr-2 size-3.5" />
-              刷新状态
+              {t("monitors.actions.refresh")}
             </Button>
             <Button
               variant="ios-primary"
@@ -149,13 +154,13 @@ export function MonitorsClient() {
               className="h-9 px-5 font-medium shadow-none"
             >
               <Plus className="mr-2 size-4" />
-              部署新任务
+              {t("monitors.actions.create")}
             </Button>
           </div>
         </div>
 
         <div className="mt-8 flex flex-wrap items-center gap-1.5">
-          {STATUS_FILTERS.map((filter) => (
+          {statusFilters.map((filter) => (
             <button
               key={filter.value}
               onClick={() => setStatusFilter(filter.value)}
@@ -173,7 +178,7 @@ export function MonitorsClient() {
           ))}
           <div className="ml-auto flex items-center gap-2 text-[11px] font-medium text-muted-foreground uppercase tracking-widest">
             <span className="inline-block size-1.5 rounded-full bg-primary" />
-            Total Scanners: {data?.total ?? 0}
+            {t("monitors.header.totalScanners", { count: data?.total ?? 0 })}
           </div>
         </div>
       </div>
@@ -223,4 +228,3 @@ export function MonitorsClient() {
     </Container>
   )
 }
-

@@ -7,7 +7,9 @@
       "unknown": "加载模型时出现未知错误"
     },
     "actions": {
-      "retry": "重试"
+      "retry": "重试",
+      "dismiss": "关闭",
+      "initiateTest": "开始测试"
     },
     "toast": {
       "syncSuccess": "模型同步成功",
@@ -40,7 +42,11 @@
       "syncModels": "同步模型",
       "justNow": "刚刚",
       "ago": "{time}前",
-      "neverSynced": "从未同步"
+      "neverSynced": "从未同步",
+      "publicBadge": "公开",
+      "pausedBadge": "已暂停",
+      "modelCount": "{count} 个模型",
+      "registry": "注册表"
     },
     "status": {
       "online": "在线 ({latency}ms)",
@@ -52,12 +58,26 @@
     "filter": {
       "searchPlaceholder": "按 ID 搜索 (例如 gpt-4)...",
       "context": "上下文: {label}",
+      "contextWindow": "上下文窗口",
       "activeOnly": "仅显示激活",
+      "activeOnlyShort": "仅激活",
       "priceTier": "价格层级",
       "clear": "清除",
+      "reset": "重置",
       "advanced": "高级筛选",
+      "refine": "细化",
+      "allCapabilities": "全部能力",
+      "capabilitiesSelected": "{count} 项能力",
       "modelsCount": "{count} 个模型",
       "filteredCount": "{filtered} / {total} 个模型",
+      "visible": "可见",
+      "total": "总计",
+      "priceTierOptions": {
+        "cheap": "低价",
+        "moderate": "中价",
+        "expensive": "高价",
+        "premium": "高级"
+      },
       "batchTitle": "批量设置能力",
       "batchHint": "为匹配的 {count} 个模型一键设置能力标签",
       "batchApply": "应用到 {count} 个模型",
@@ -139,7 +159,13 @@
         "capabilities": "能力",
         "context": "上下文",
         "pricing": "价格 (输入/输出)",
+        "inputShort": "入",
+        "outputShort": "出",
         "status": "状态"
+      },
+      "status": {
+        "active": "启用",
+        "disabled": "停用"
       },
       "empty": {
         "title": "尚未检测到模型",
@@ -180,7 +206,10 @@
       "hint": "按 Enter 发送，Shift+Enter 换行",
       "connectionError": "连接错误",
       "retry": "重试",
-      "clearChat": "清除聊天"
+      "clearChat": "清除聊天",
+      "noModelSelected": "未选择模型",
+      "success": "成功",
+      "errorWithDetail": "错误: {message}"
     },
     "capabilities": {
       "chat": {

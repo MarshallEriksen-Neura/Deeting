@@ -22,12 +22,14 @@
     },
     "descriptions": {
       "focus": "Health, capacity, and readiness for the pool currently in focus.",
+      "focusExtended": "Health, capacity, and readiness for the pool currently in focus. This pool acts as a high-availability nexus for model distribution.",
       "directory": "Pick a pool to inspect its providers and pinned sessions.",
       "members": "Providers currently participating in the selected pool.",
       "bindings": "Sessions that are currently pinned to a specific provider model."
     },
     "labels": {
       "providers": "{count} providers",
+      "nodesAttached": "{count} nodes attached",
       "sessions": "{count} sessions",
       "cooling": "{count} cooling",
       "latency": "Avg latency",
@@ -61,6 +63,17 @@
       "ready": "Ready",
       "cooldown": "Cooling",
       "idle": "Idle"
+    },
+    "workstation": {
+      "systemHealth": "SYSTEM_HEALTH",
+      "activeSessions": "ACTIVE_SESSIONS",
+      "cooling": "Cooling:",
+      "subsystemFocus": "SUBSYSTEM_FOCUS",
+      "successRate": "SUCCESS_RATE",
+      "avgLatency": "AVG_LATENCY",
+      "bindingId": "BINDING_ID",
+      "anonymousSession": "Anonymous Session",
+      "selectPool": "Select Neural Nexus"
     }
   }
 }

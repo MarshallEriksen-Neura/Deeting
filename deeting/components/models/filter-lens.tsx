@@ -33,7 +33,9 @@ function CapabilityFilter({ selected, onToggle }: { selected: ModelCapability[];
         )}>
           <LayoutGrid className="size-3.5" />
           <span className="text-[11px] tracking-tight">
-            {selected.length > 0 ? `${selected.length} capabilities` : "All capabilities"}
+            {selected.length > 0
+              ? t("filter.capabilitiesSelected", { count: selected.length })
+              : t("filter.allCapabilities")}
           </span>
           <ChevronDown className="size-3 opacity-50" />
         </button>
@@ -123,14 +125,14 @@ export function FilterLens({ filters, onFiltersChange, totalModels, filteredCoun
                   : "border-[var(--hairline)] bg-[var(--panel-bg)] text-[var(--ink-3)] hover:bg-[var(--panel-bg-inset)]"
               )}>
                 <Filter className="size-3.5" />
-                <span className="text-[11px] tracking-tight">Refine</span>
+                <span className="text-[11px] tracking-tight">{t("filter.refine")}</span>
                 <ChevronDown className="size-3 opacity-50" />
               </button>
             </PopoverTrigger>
             <PopoverContent className="w-72 ws-bezel-inner border-[var(--hairline-strong)] p-4 shadow-2xl" align="start">
               <div className="space-y-4">
                  <div className="space-y-2">
-                    <Label className="ws-meta text-[9px] uppercase tracking-widest opacity-60">Context Window</Label>
+                    <Label className="ws-meta text-[9px] uppercase tracking-widest opacity-60">{t("filter.contextWindow")}</Label>
                     <div className="grid grid-cols-3 gap-1.5">
                       {CONTEXT_WINDOW_PRESETS.map((preset) => (
                         <button
@@ -152,12 +154,12 @@ export function FilterLens({ filters, onFiltersChange, totalModels, filteredCoun
                  <Separator className="bg-[var(--hairline-subtle)]" />
                  
                  <div className="flex items-center justify-between">
-                    <Label className="ws-control text-xs">Active Only</Label>
+                    <Label className="ws-control text-xs">{t("filter.activeOnlyShort")}</Label>
                     <Switch checked={filters.active_only} onCheckedChange={(checked) => onFiltersChange({ ...filters, active_only: checked })} className="data-[state=checked]:bg-[var(--accent-strong)] scale-75" />
                  </div>
 
                  <div className="space-y-2">
-                    <Label className="ws-meta text-[9px] uppercase tracking-widest opacity-60">Price Tier</Label>
+                    <Label className="ws-meta text-[9px] uppercase tracking-widest opacity-60">{t("filter.priceTier")}</Label>
                     <div className="flex flex-wrap gap-1.5">
                       {(["cheap", "moderate", "expensive", "premium"] as PriceTier[]).map((tier) => (
                         <button
@@ -170,7 +172,7 @@ export function FilterLens({ filters, onFiltersChange, totalModels, filteredCoun
                               : "border-[var(--hairline)] text-[var(--ink-3)] hover:bg-[var(--panel-bg-inset)]"
                           )}
                         >
-                          {tier}
+                          {t(`filter.priceTierOptions.${tier}`)}
                         </button>
                       ))}
                     </div>
@@ -182,7 +184,7 @@ export function FilterLens({ filters, onFiltersChange, totalModels, filteredCoun
           {hasActiveFilters && (
             <button onClick={handleClearFilters} className="ws-control flex h-9 items-center gap-1.5 rounded-xl px-3 text-[11px] font-semibold text-[var(--ink-4)] transition-all hover:bg-[var(--danger-soft)] hover:text-[var(--danger)]">
               <X className="size-3" />
-              Reset
+              {t("filter.reset")}
             </button>
           )}
         </div>
@@ -191,13 +193,13 @@ export function FilterLens({ filters, onFiltersChange, totalModels, filteredCoun
           <div className="rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-3 py-2">
             <div className="flex items-baseline gap-2">
               <span className="ws-num text-[14px] font-bold leading-none text-[var(--ink)]">{filteredCount}</span>
-              <span className="ws-meta text-[9px] uppercase tracking-[0.18em] opacity-45">Visible</span>
+              <span className="ws-meta text-[9px] uppercase tracking-[0.18em] opacity-45">{t("filter.visible")}</span>
             </div>
           </div>
           <div className="rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg)] px-3 py-2">
             <div className="flex items-baseline gap-2">
               <span className="ws-num text-[14px] font-medium leading-none text-[var(--ink-3)]">{totalModels}</span>
-              <span className="ws-meta text-[9px] uppercase tracking-[0.18em] opacity-35">Total</span>
+              <span className="ws-meta text-[9px] uppercase tracking-[0.18em] opacity-35">{t("filter.total")}</span>
             </div>
           </div>
         </div>

@@ -1,6 +1,7 @@
 "use client"
 
 import { type ReactNode, useMemo, useState } from "react"
+import { useTranslations } from "next-intl"
 import { Copy, Terminal } from "lucide-react"
 
 import { Button } from "@/components/ui/shadcn/button"
@@ -16,13 +17,15 @@ import {
 
 interface LogsDetailPanelProps {
   log: GatewayLogDTO | null
+  locale: string
 }
 
-export function LogsDetailPanel({ log }: LogsDetailPanelProps) {
+export function LogsDetailPanel({ log, locale }: LogsDetailPanelProps) {
+  const t = useTranslations("logs")
   const [copied, setCopied] = useState(false)
   const meta = useMemo(
     () => (log?.meta && typeof log.meta === "object" ? (log.meta as Record<string, unknown>) : null),
-    [log]
+    [log],
   )
   const requestPayload = meta?.request_payload ?? null
   const upstreamRequest = meta?.upstream_request ?? null
@@ -40,10 +43,10 @@ export function LogsDetailPanel({ log }: LogsDetailPanelProps) {
       <div className="flex h-full items-center justify-center p-8 text-center bg-[var(--panel-bg-inset)] font-mono">
         <div className="max-w-xs space-y-4">
           <Terminal className="mx-auto size-6 text-[var(--ink-4)]" />
-          <p className="text-[11px] uppercase tracking-widest text-[var(--ink-3)]">Waiting For Selection...</p>
+          <p className="text-[11px] uppercase tracking-widest text-[var(--ink-3)]">{t("detail.emptyTitle")}</p>
           <div className="h-px w-full bg-[var(--hairline)]" />
           <p className="text-[10px] text-[var(--ink-4)] leading-relaxed italic">
-            Pick a request from the left to inspect raw telemetry, headers, and payloads.
+            {t("detail.emptyDescription")}
           </p>
         </div>
       </div>
@@ -52,10 +55,9 @@ export function LogsDetailPanel({ log }: LogsDetailPanelProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--panel-bg)] font-mono">
-      {/* Detail Header */}
       <header className="flex h-10 flex-none items-center justify-between border-b border-[var(--hairline)] bg-[var(--background)] px-4">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-bold uppercase text-[var(--ink-3)]">INSPECT:</span>
+          <span className="text-[10px] font-bold uppercase text-[var(--ink-3)]">{t("detail.header.inspect")}</span>
           <span className="text-[11px] font-bold text-[var(--ink)] uppercase">{shortId(log.id)}</span>
         </div>
         <Button
@@ -65,44 +67,47 @@ export function LogsDetailPanel({ log }: LogsDetailPanelProps) {
           onClick={() => void handleCopy()}
         >
           <Copy className="mr-1 size-3" />
-          {copied ? "COPIED" : "COPY_JSON"}
+          {copied ? t("detail.header.copied") : t("detail.header.copyJson")}
         </Button>
       </header>
 
       <Tabs defaultValue="overview" className="flex min-h-0 flex-1 flex-col">
-        {/* Metric Bar */}
         <div className="grid grid-cols-2 gap-px border-b border-[var(--hairline)] bg-[var(--hairline)]">
-          <MetricBox label="STATUS" value={log.status_code.toString()} tone={isError ? "red" : "green"} />
-          <MetricBox label="MODEL" value={log.model} />
-          <MetricBox label="LATENCY" value={`${log.duration_ms}ms`} />
-          <MetricBox label="COST" value={`$${formatCurrency(log.cost_user)}`} tone="green" />
+          <MetricBox label={t("detail.metrics.status")} value={log.status_code.toString()} tone={isError ? "red" : "green"} />
+          <MetricBox label={t("detail.metrics.model")} value={log.model} />
+          <MetricBox label={t("detail.metrics.latency")} value={t("table.durationValue", { value: log.duration_ms })} />
+          <MetricBox label={t("detail.metrics.cost")} value={`$${formatCurrency(log.cost_user)}`} tone="green" />
         </div>
 
         <TabsList className="h-9 w-full justify-start gap-px rounded-none border-b border-[var(--hairline)] bg-[var(--hairline)] p-0">
-          <DetailTab value="overview" label="OVERVIEW" />
-          <DetailTab value="request" label="REQUEST" />
-          <DetailTab value="upstream" label="UPSTREAM" />
-          <DetailTab value="raw" label="RAW" />
+          <DetailTab value="overview" label={t("detail.tabs.overview")} />
+          <DetailTab value="request" label={t("detail.tabs.request")} />
+          <DetailTab value="upstream" label={t("detail.tabs.upstream")} />
+          <DetailTab value="raw" label={t("detail.tabs.raw")} />
         </TabsList>
 
         <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar-brutalist p-4 bg-[var(--panel-bg)]">
           <TabsContent value="overview" className="mt-0 space-y-6">
-            <InfoGroup title="IDENTIFICATION">
-              <Row label="ID" value={log.id} />
-              <Row label="TIMESTAMP" value={formatDateTime(log.created_at, true)} />
-              <Row label="USER_ID" value={log.user_id ?? "N/A"} />
+            <InfoGroup title={t("detail.groups.identification")}>
+              <Row label={t("detail.rows.id")} value={log.id} />
+              <Row label={t("detail.rows.timestamp")} value={formatDateTime(log.created_at, true, locale)} />
+              <Row label={t("detail.rows.userId")} value={log.user_id ?? t("detail.rows.na")} />
             </InfoGroup>
 
-            <InfoGroup title="TELEMETRY">
-              <Row label="INPUT_TOKENS" value={log.input_tokens.toLocaleString()} />
-              <Row label="OUTPUT_TOKENS" value={log.output_tokens.toLocaleString()} />
-              <Row label="TOTAL_TOKENS" value={log.total_tokens.toLocaleString()} />
-              <Row label="TTFT" value={log.ttft_ms ? `${log.ttft_ms}ms` : "N/A"} />
-              <Row label="CACHED" value={log.is_cached ? "TRUE" : "FALSE"} tone={log.is_cached ? "cyan" : "gray"} />
+            <InfoGroup title={t("detail.groups.telemetry")}>
+              <Row label={t("detail.rows.inputTokens")} value={log.input_tokens.toLocaleString(locale)} />
+              <Row label={t("detail.rows.outputTokens")} value={log.output_tokens.toLocaleString(locale)} />
+              <Row label={t("detail.rows.totalTokens")} value={log.total_tokens.toLocaleString(locale)} />
+              <Row label={t("detail.rows.ttft")} value={log.ttft_ms ? t("table.durationValue", { value: log.ttft_ms }) : t("detail.rows.na")} />
+              <Row
+                label={t("detail.rows.cached")}
+                value={log.is_cached ? t("detail.rows.true") : t("detail.rows.false")}
+                tone={log.is_cached ? "cyan" : "gray"}
+              />
             </InfoGroup>
 
             {log.error_code && (
-              <InfoGroup title="EXCEPTION" tone="red">
+              <InfoGroup title={t("detail.groups.exception")} tone="red">
                 <div className="text-[11px] text-[var(--danger)] uppercase font-bold break-all">
                   {log.error_code}
                 </div>
@@ -111,15 +116,15 @@ export function LogsDetailPanel({ log }: LogsDetailPanelProps) {
           </TabsContent>
 
           <TabsContent value="request" className="mt-0">
-            <JsonTerminal value={requestPayload} />
+            <JsonTerminal value={requestPayload} emptyLabel={t("detail.noData")} />
           </TabsContent>
 
           <TabsContent value="upstream" className="mt-0">
-            <JsonTerminal value={upstreamRequest} />
+            <JsonTerminal value={upstreamRequest} emptyLabel={t("detail.noData")} />
           </TabsContent>
 
           <TabsContent value="raw" className="mt-0">
-            <JsonTerminal value={meta} />
+            <JsonTerminal value={meta} emptyLabel={t("detail.noData")} />
           </TabsContent>
         </div>
       </Tabs>
@@ -178,11 +183,11 @@ function Row({ label, value, tone = "gray" }: { label: string; value: string; to
   )
 }
 
-function JsonTerminal({ value }: { value: unknown }) {
+function JsonTerminal({ value, emptyLabel }: { value: unknown; emptyLabel: string }) {
   if (value == null) {
     return (
       <div className="py-8 text-center text-[10px] text-[var(--ink-4)] uppercase italic">
-        [ NO_DATA_RECORDED ]
+        {emptyLabel}
       </div>
     )
   }

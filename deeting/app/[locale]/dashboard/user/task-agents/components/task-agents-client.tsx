@@ -123,7 +123,7 @@ export function TaskAgentsClient() {
           </h1>
           <div className="flex items-center gap-4">
              <span className="font-mono text-[10px] tracking-[0.3em] text-[var(--ink-4)] uppercase">
-                Core Registry / {stats.totalCount} Units
+                {t("workspace.coreRegistry", { count: stats.totalCount })}
              </span>
              <div className="h-px flex-1 bg-[var(--hairline-strong)] opacity-30" />
           </div>
@@ -175,7 +175,7 @@ export function TaskAgentsClient() {
               onClick={() => setImportDialogOpen(true)}
               className="text-[10px] font-bold tracking-widest text-[var(--ink-3)] hover:text-[var(--accent-strong)] transition-colors uppercase"
             >
-              {t("library.import") || "Import"}
+              {t("library.import")}
             </button>
           </div>
         </div>
@@ -208,9 +208,9 @@ export function TaskAgentsClient() {
               className="group flex items-center gap-2 text-[9px] font-bold tracking-[0.2em] text-[var(--ink-4)] hover:text-[var(--ink)] transition-colors"
             >
               <RefreshCw className={cn("size-2.5 transition-transform duration-700", isReindexing && "animate-spin")} />
-              {isReindexing ? "REINDEXING" : "FORCE REINDEX"}
+              {(isReindexing ? t("actions.reindexing") : t("actions.reindex")).toUpperCase()}
             </button>
-            <span className="font-mono text-[9px] text-[var(--ink-5)] tabular-nums">© 2026 DEETING LABS</span>
+            <span className="font-mono text-[9px] text-[var(--ink-5)] tabular-nums">{t("workspace.copyright", { year: 2026 })}</span>
         </footer>
       </aside>
 
@@ -227,9 +227,11 @@ export function TaskAgentsClient() {
           className="flex min-h-0 min-w-0 flex-1 flex-col"
         >
           {isStarterState ? (
-            <div className="flex-1 flex items-center justify-center p-24 animate-in fade-in zoom-in-95 duration-1000">
-              <div className="max-w-xl w-full">
-                <TaskAgentTypeStarter t={t} onSelect={handleSelectNewAgentType} />
+            <div className="custom-scrollbar mask-linear-b flex-1 min-h-0 overflow-y-auto">
+              <div className="flex min-h-full items-center justify-center p-24 animate-in fade-in zoom-in-95 duration-1000">
+                <div className="max-w-xl w-full">
+                  <TaskAgentTypeStarter t={t} onSelect={handleSelectNewAgentType} />
+                </div>
               </div>
             </div>
           ) : (
@@ -240,7 +242,7 @@ export function TaskAgentsClient() {
                   <div className="space-y-1">
                     <div className="flex items-center gap-3">
                       <span className="font-mono text-[10px] font-bold tracking-[0.2em] text-[var(--accent-strong)] opacity-80 uppercase">
-                        {selectedAgent?.kind || "CHAT_AGENT"}
+                        {selectedAgent?.kind || t("workspace.defaultKind")}
                       </span>
                       <div className="h-px w-8 bg-[var(--accent-strong)] opacity-30" />
                       <span className="font-mono text-[10px] font-bold tracking-[0.2em] text-[var(--ink-4)] uppercase">
@@ -250,7 +252,7 @@ export function TaskAgentsClient() {
                     <input
                       value={draft.name}
                       onChange={(e) => updateDraft("name", e.target.value)}
-                      placeholder="UNNAMED ENTITY"
+                      placeholder={t("editor.placeholders.name")}
                       className="w-full bg-transparent border-none p-0 text-6xl font-bold tracking-tight text-[var(--ink)] placeholder:opacity-10 focus:outline-none focus:ring-0 transition-all duration-500"
                     />
                   </div>
@@ -264,7 +266,7 @@ export function TaskAgentsClient() {
                       )}
                     >
                       <Activity className="size-4" />
-                      <span className="text-[8px] font-bold tracking-[0.3em] uppercase opacity-60 group-hover:opacity-100 transition-opacity">Diagnostic</span>
+                      <span className="text-[8px] font-bold tracking-[0.3em] uppercase opacity-60 group-hover:opacity-100 transition-opacity">{t("workspace.diagnostic")}</span>
                     </button>
                     
                     <div className="w-px h-8 bg-[var(--hairline)] mx-2" />
@@ -274,7 +276,7 @@ export function TaskAgentsClient() {
                       disabled={saveDisabled || isSaving}
                       className="h-12 px-10 bg-[var(--ink)] text-[var(--window-bg)] font-bold text-[11px] tracking-[0.2em] uppercase hover:bg-[var(--accent-strong)] disabled:opacity-20 disabled:grayscale transition-all active:scale-[0.98]"
                     >
-                      {isSaving ? "SYNCING..." : "COMMIT CHANGES"}
+                      {(isSaving ? t("actions.saving") : t("actions.save")).toUpperCase()}
                     </button>
                   </div>
                 </div>
@@ -317,8 +319,6 @@ export function TaskAgentsClient() {
                       <ImageTaskAgentEditor
                         t={t}
                         draft={draft}
-                        previewDraft={previewDraft}
-                        draftPayload={draftPayload}
                         parsedImageExtraParamsError={parsedImageExtraParams.error}
                         taskAgentModelSelectValue={taskAgentModelSelectValue}
                         selectedTaskAgentModelOption={selectedTaskAgentModelOption}
@@ -403,7 +403,7 @@ export function TaskAgentsClient() {
           <div className="absolute top-20 right-10 w-[320px] bg-[var(--window-bg)] border border-[var(--hairline-strong)] p-8 shadow-2xl animate-in fade-in slide-in-from-right-8 duration-500 z-50">
              <div className="flex items-center justify-between mb-10">
                 <h3 className="font-mono text-[10px] font-bold uppercase tracking-[0.4em] text-[var(--accent-strong)]">
-                   Diagnostic.log
+                   {t("workspace.inspector.title")}
                 </h3>
                 <button
                   onClick={() => setInspectorOpen(false)}
@@ -416,20 +416,20 @@ export function TaskAgentsClient() {
              <div className="space-y-12">
               <section className="space-y-4">
                  <h4 className="text-[9px] font-bold uppercase tracking-[0.2em] text-[var(--ink-4)] border-b border-[var(--hairline)] pb-2">
-                    Neural Efficiency
+                    {t("workspace.inspector.efficiencyTitle")}
                  </h4>
                  <div className="space-y-6">
                     <div className="flex justify-between items-end">
-                       <span className="text-[11px] font-bold uppercase tracking-widest text-[var(--ink-3)]">Precision</span>
+                       <span className="text-[11px] font-bold uppercase tracking-widest text-[var(--ink-3)]">{t("workspace.inspector.precision")}</span>
                        <span className="font-mono text-2xl font-bold text-[var(--ok)] tracking-tighter">98.4</span>
                     </div>
                     <div className="flex justify-between items-end">
-                       <span className="text-[11px] font-bold uppercase tracking-widest text-[var(--ink-3)]">Latency</span>
-                       <span className="font-mono text-2xl font-bold tracking-tighter">2.4<span className="text-xs ml-1 opacity-40">ms</span></span>
+                       <span className="text-[11px] font-bold uppercase tracking-widest text-[var(--ink-3)]">{t("workspace.inspector.latency")}</span>
+                       <span className="font-mono text-2xl font-bold tracking-tighter">2.4<span className="text-xs ml-1 opacity-40">{t("workspace.inspector.ms")}</span></span>
                     </div>
                     <div className="space-y-2">
                        <div className="flex justify-between text-[9px] font-bold tracking-widest text-[var(--ink-4)] uppercase">
-                         <span>Load Distribution</span>
+                         <span>{t("workspace.inspector.loadDistribution")}</span>
                          <span>65%</span>
                        </div>
                        <div className="w-full h-[1px] bg-[var(--hairline-strong)]">
@@ -441,13 +441,13 @@ export function TaskAgentsClient() {
 
               <section className="space-y-4">
                  <h4 className="text-[9px] font-bold uppercase tracking-[0.2em] text-[var(--ink-4)] border-b border-[var(--hairline)] pb-2">
-                    Registry Hooks
+                    {t("workspace.inspector.registryHooks")}
                  </h4>
                  <div className="space-y-1">
                     {[
-                      { label: "Tokenization", status: "STABLE" },
-                      { label: "Vector Index", status: "SYNCED" },
-                      { label: "Function Call", status: "OPTIMIZED" }
+                      { label: t("workspace.inspector.hooks.tokenization"), status: t("workspace.inspector.status.stable") },
+                      { label: t("workspace.inspector.hooks.vectorIndex"), status: t("workspace.inspector.status.synced") },
+                      { label: t("workspace.inspector.hooks.functionCall"), status: t("workspace.inspector.status.optimized") }
                     ].map(item => (
                        <div key={item.label} className="flex items-center justify-between py-2 group">
                           <span className="text-[10px] font-bold tracking-widest text-[var(--ink-3)] group-hover:text-[var(--ink)] transition-colors">{item.label.toUpperCase()}</span>

@@ -49,7 +49,7 @@ export function VoiceTaskAgentEditor({
       <section className="grid grid-cols-2 gap-16">
         <div className="space-y-10">
           <div className="space-y-4">
-             <label className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">Neural Engine</label>
+             <label className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">{t("editor.ui.neuralEngine")}</label>
              <TaskAgentModelPickerField
                 t={t}
                 taskAgentModelSelectValue={taskAgentModelSelectValue}
@@ -62,17 +62,21 @@ export function VoiceTaskAgentEditor({
           </div>
 
           <div className="space-y-4">
-            <label className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">Visibility Flags</label>
+            <label className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">{t("editor.ui.visibilityFlags")}</label>
             <div className="space-y-6">
               {[
                 { label: t("editor.fields.discoverable"), checked: draft.discoverable, key: "discoverable" },
                 { label: t("editor.fields.isEnabled"), checked: draft.is_enabled, key: "is_enabled" },
-              ].map(flag => (
+              ].map((flag: {
+                label: string
+                checked: boolean
+                key: "discoverable" | "is_enabled"
+              }) => (
                 <div key={flag.key} className="flex items-center justify-between gap-4">
                   <span className="text-[11px] font-bold tracking-widest text-[var(--ink-2)] uppercase">{flag.label}</span>
                   <Switch
                     checked={flag.checked}
-                    onCheckedChange={(checked) => updateDraft(flag.key as any, checked)}
+                    onCheckedChange={(checked) => updateDraft(flag.key, checked)}
                   />
                 </div>
               ))}
@@ -81,7 +85,7 @@ export function VoiceTaskAgentEditor({
         </div>
 
         <div className="space-y-4">
-          <label className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">Description</label>
+          <label className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">{t("editor.fields.description")}</label>
           <textarea
             value={draft.description}
             onChange={(event) => updateDraft("description", event.target.value)}
@@ -96,19 +100,24 @@ export function VoiceTaskAgentEditor({
 
       {/* Acoustic Parameters */}
       <section className="space-y-12">
-        <div className="font-mono text-[10px] font-bold tracking-[0.4em] text-[var(--ink)] uppercase">Acoustic parameters</div>
+        <div className="font-mono text-[10px] font-bold tracking-[0.4em] text-[var(--ink)] uppercase">{t("editor.voiceConfig.title")}</div>
         
         <div className="grid grid-cols-3 gap-12">
           {[
-            { label: "Voice Model", value: draft.voice_config.voice, key: "voice", placeholder: "alloy" },
-            { label: "Response Format", value: draft.voice_config.response_format, key: "response_format", placeholder: "mp3" },
-            { label: "Playback Speed", value: draft.voice_config.speed, key: "speed", placeholder: "1.0" },
-          ].map(field => (
+            { label: t("editor.voiceConfig.fields.voice"), value: draft.voice_config.voice, key: "voice", placeholder: t("editor.voiceConfig.placeholders.voice") },
+            { label: t("editor.voiceConfig.fields.responseFormat"), value: draft.voice_config.response_format, key: "response_format", placeholder: t("editor.voiceConfig.placeholders.responseFormat") },
+            { label: t("editor.voiceConfig.fields.speed"), value: draft.voice_config.speed, key: "speed", placeholder: t("editor.voiceConfig.placeholders.speed") },
+          ].map((field: {
+            label: string
+            value: string
+            key: "voice" | "response_format" | "speed"
+            placeholder: string
+          }) => (
             <div key={field.key} className="space-y-2">
               <label className="font-mono text-[8px] font-bold tracking-[0.2em] text-[var(--ink-4)] uppercase">{field.label}</label>
               <input
                 value={field.value}
-                onChange={(event) => updateVoiceDraft(field.key as any, event.target.value)}
+                onChange={(event) => updateVoiceDraft(field.key, event.target.value)}
                 placeholder={field.placeholder}
                 className="w-full bg-transparent border-b border-[var(--hairline-subtle)] py-1 text-[11px] font-mono text-[var(--ink)] focus:outline-none focus:border-[var(--accent-strong)] transition-colors"
               />
@@ -117,7 +126,7 @@ export function VoiceTaskAgentEditor({
         </div>
 
         <div className="space-y-4">
-          <label className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">Advanced parameters (JSON)</label>
+          <label className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">{t("editor.voiceConfig.fields.extraParamsJson")}</label>
           <textarea
             value={draft.voice_config.extra_params_json}
             onChange={(event) => updateVoiceDraft("extra_params_json", event.target.value)}

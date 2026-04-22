@@ -1,4 +1,6 @@
-﻿"use client"
+"use client"
+
+import { useTranslations } from "next-intl"
 
 import { Input } from "@/components/ui/shadcn/input"
 import { Button } from "@/components/ui/shadcn/button"
@@ -30,14 +32,16 @@ export function WechatPairingPanel({
   busy?: boolean
   feedback?: string | null
 }) {
+  const t = useTranslations("monitoring")
+
   return (
     <div className="rounded-[22px] border border-[color:var(--hairline)] bg-[color:var(--panel-bg)]/80 p-4 shadow-[var(--ios-button-shadow-soft)]">
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-[color:var(--ink-3)]">
         <span className="rounded-full border border-[color:var(--hairline)] bg-[color:var(--panel-bg)] px-2.5 py-1">
-          待处理配对 {pendingPairings}
+          {t("notificationChannels.wechat.pairing.pendingPairings", { count: pendingPairings })}
         </span>
         <span className="rounded-full border border-[color:var(--hairline)] bg-[color:var(--panel-bg)] px-2.5 py-1">
-          白名单联系人 {allowlistSize}
+          {t("notificationChannels.wechat.pairing.allowlistSize", { count: allowlistSize })}
         </span>
       </div>
 
@@ -46,14 +50,14 @@ export function WechatPairingPanel({
           type="text"
           value={pairingCode}
           onChange={(event) => onPairingCodeChange(event.target.value)}
-          placeholder="输入 pairing code"
+          placeholder={t("notificationChannels.wechat.pairing.inputPlaceholder")}
           className="h-10 w-full rounded-xl"
         />
         <Button type="button" size="sm" onClick={onApprove} disabled={busy || pairingCode.trim().length === 0}>
-          通过
+          {t("notificationChannels.wechat.pairing.approve")}
         </Button>
         <Button type="button" size="sm" variant="outline" onClick={onReject} disabled={busy || pairingCode.trim().length === 0}>
-          拒绝
+          {t("notificationChannels.wechat.pairing.reject")}
         </Button>
       </div>
 
@@ -65,7 +69,7 @@ export function WechatPairingPanel({
 
       {contextContacts.length > 0 ? (
         <div className="mt-3">
-          <div className="mb-2 text-[11px] font-medium text-[color:var(--ink-3)]">已有上下文的联系人</div>
+          <div className="mb-2 text-[11px] font-medium text-[color:var(--ink-3)]">{t("notificationChannels.wechat.pairing.contextContactsTitle")}</div>
           <div className="flex flex-wrap gap-2">
             {contextContacts.map((contactId) => (
               <div
@@ -73,15 +77,15 @@ export function WechatPairingPanel({
                 className="inline-flex items-center gap-1 rounded-full border border-[color:var(--ok-border)] bg-[color:var(--ok-soft)] px-2 py-1 text-[11px] text-[color:var(--ok)]"
               >
                 <button type="button" onClick={() => onUseContact(contactId)} className="rounded-full px-1">
-                  {contactId} · 有上下文
+                  {t("notificationChannels.wechat.pairing.contactWithContext", { contactId })}
                 </button>
                 <button
                   type="button"
                   onClick={() => onCopyContact(contactId)}
                   className="rounded-full border border-[color:var(--ok-border)] px-1.5 py-0.5 text-[10px]"
-                  aria-label={`复制 ${contactId}`}
+                  aria-label={t("notificationChannels.wechat.pairing.copyAria", { contactId })}
                 >
-                  复制
+                  {t("notificationChannels.wechat.pairing.copy")}
                 </button>
               </div>
             ))}
@@ -91,7 +95,7 @@ export function WechatPairingPanel({
 
       {allowlistContacts.length > 0 ? (
         <div className="mt-3">
-          <div className="mb-2 text-[11px] font-medium text-[color:var(--ink-3)]">已批准联系人</div>
+          <div className="mb-2 text-[11px] font-medium text-[color:var(--ink-3)]">{t("notificationChannels.wechat.pairing.approvedContactsTitle")}</div>
           <div className="flex flex-wrap gap-2">
             {allowlistContacts.map((contactId) => (
               <div
@@ -99,15 +103,15 @@ export function WechatPairingPanel({
                 className="inline-flex items-center gap-1 rounded-full border border-[color:var(--hairline)] bg-[color:var(--panel-bg)] px-2 py-1 text-[11px] text-[color:var(--ink-2)]"
               >
                 <button type="button" onClick={() => onUseContact(contactId)} className="rounded-full px-1">
-                  {contactId} · 已批准
+                  {t("notificationChannels.wechat.pairing.contactApproved", { contactId })}
                 </button>
                 <button
                   type="button"
                   onClick={() => onCopyContact(contactId)}
                   className="rounded-full border border-[color:var(--hairline)] px-1.5 py-0.5 text-[10px]"
-                  aria-label={`复制 ${contactId}`}
+                  aria-label={t("notificationChannels.wechat.pairing.copyAria", { contactId })}
                 >
-                  复制
+                  {t("notificationChannels.wechat.pairing.copy")}
                 </button>
               </div>
             ))}

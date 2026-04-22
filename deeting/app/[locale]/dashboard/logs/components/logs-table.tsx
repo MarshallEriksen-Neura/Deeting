@@ -1,5 +1,6 @@
 "use client"
 
+import { useLocale, useTranslations } from "next-intl"
 import { Database } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -19,6 +20,9 @@ interface LogsTableProps {
 }
 
 export function LogsTable({ items, isLoading, selectedId, onSelect }: LogsTableProps) {
+  const t = useTranslations("logs")
+  const locale = useLocale()
+
   if (isLoading) {
     return (
       <div className="flex flex-col">
@@ -36,23 +40,22 @@ export function LogsTable({ items, isLoading, selectedId, onSelect }: LogsTableP
     return (
       <div className="flex min-h-[400px] flex-col items-center justify-center p-12 text-center">
         <Database className="mb-4 size-8 text-[var(--ink-4)]" />
-        <p className="text-[12px] font-bold uppercase tracking-widest text-[var(--ink-3)]">No Logs In Current Window</p>
-        <p className="mt-2 text-[11px] text-[var(--ink-4)]">Adjust filters or time range to begin discovery.</p>
+        <p className="text-[12px] font-bold uppercase tracking-widest text-[var(--ink-3)]">{t("table.noDataTitle")}</p>
+        <p className="mt-2 text-[11px] text-[var(--ink-4)]">{t("table.noDataDescription")}</p>
       </div>
     )
   }
 
   return (
     <div className="flex flex-col bg-[var(--background)]">
-      {/* Table Header */}
       <div className="sticky top-0 z-10 flex h-8 items-center border-b border-[var(--hairline)] bg-[var(--background)] px-4 text-[10px] font-bold uppercase tracking-tight text-[var(--ink-3)]">
-        <div className="w-[140px] shrink-0">Timestamp</div>
-        <div className="w-[60px] shrink-0">Status</div>
-        <div className="w-[100px] shrink-0">ID</div>
-        <div className="min-w-0 flex-1 px-4">Model</div>
-        <div className="w-[100px] shrink-0 text-right">Duration</div>
-        <div className="w-[80px] shrink-0 text-right">Tokens</div>
-        <div className="w-[80px] shrink-0 text-right">Cost</div>
+        <div className="w-[140px] shrink-0">{t("table.headers.timestamp")}</div>
+        <div className="w-[60px] shrink-0">{t("table.headers.status")}</div>
+        <div className="w-[100px] shrink-0">{t("table.headers.id")}</div>
+        <div className="min-w-0 flex-1 px-4">{t("table.headers.model")}</div>
+        <div className="w-[100px] shrink-0 text-right">{t("table.headers.duration")}</div>
+        <div className="w-[80px] shrink-0 text-right">{t("table.headers.tokens")}</div>
+        <div className="w-[80px] shrink-0 text-right">{t("table.headers.cost")}</div>
       </div>
 
       {items.map((item) => {
@@ -72,8 +75,8 @@ export function LogsTable({ items, isLoading, selectedId, onSelect }: LogsTableP
             )}
           >
             <div className="w-[140px] shrink-0 text-[var(--ink-4)]">
-              {formatDateTime(item.created_at).split(" ")[1]}
-              <span className="ml-1 opacity-50">{formatDateTime(item.created_at).split(" ")[0]}</span>
+              {formatDateTime(item.created_at, false, locale).split(" ")[1]}
+              <span className="ml-1 opacity-50">{formatDateTime(item.created_at, false, locale).split(" ")[0]}</span>
             </div>
 
             <div className="w-[60px] shrink-0">
@@ -92,16 +95,16 @@ export function LogsTable({ items, isLoading, selectedId, onSelect }: LogsTableP
             <div className="min-w-0 flex-1 truncate px-4 font-bold text-[var(--ink-2)]">
               {item.model}
               {item.is_cached && (
-                <span className="ml-2 text-[9px] text-[var(--info)] uppercase">[cached]</span>
+                <span className="ml-2 text-[9px] text-[var(--info)] uppercase">[{t("table.cached")}]</span>
               )}
             </div>
 
             <div className="w-[100px] shrink-0 text-right text-[var(--ink-3)]">
-              {item.duration_ms}ms
+              {t("table.durationValue", { value: item.duration_ms })}
             </div>
 
             <div className="w-[80px] shrink-0 text-right text-[var(--ink-4)]">
-              {item.total_tokens.toLocaleString()}
+              {item.total_tokens.toLocaleString(locale)}
             </div>
 
             <div className="w-[80px] shrink-0 text-right text-[var(--ok)] opacity-80">

@@ -13,7 +13,11 @@
       "start": "Start",
       "end": "End",
       "refresh": "Refresh",
-      "pageSize": "Page size"
+      "pageSize": "Page size",
+      "statusLabel": "Status Label",
+      "cacheLabel": "Cache Label",
+      "windowLabel": "Window Label",
+      "reset": "Reset"
     },
     "table": {
       "headers": {
@@ -21,7 +25,12 @@
         "requestModel": "Request / Model",
         "time": "Time",
         "latency": "Latency",
-        "cost": "Cost"
+        "cost": "Cost",
+        "timestamp": "Timestamp",
+        "id": "Id",
+        "model": "Model",
+        "duration": "Duration",
+        "tokens": "Tokens"
       },
       "time": "Time",
       "status": "Status",
@@ -49,7 +58,10 @@
         "gateway": "Gateway",
         "upstream": "Upstream"
       },
-      "noData": "No logs yet. Adjust filters and try again."
+      "noData": "No logs yet. Adjust filters and try again.",
+      "durationValue": "{value}ms",
+      "noDataTitle": "No Data Title",
+      "noDataDescription": "No Data Description"
     },
     "pagination": {
       "pageInfo": "{pageSize} per page · {count} on this page",
@@ -92,7 +104,11 @@
         "cached": "Cached",
         "hit": "HIT",
         "miss": "MISS",
-        "na": "N/A"
+        "na": "N/A",
+        "status": "Status",
+        "model": "Model",
+        "latency": "Latency",
+        "cost": "Cost"
       },
       "tokens": {
         "input": "Input Tokens",
@@ -143,10 +159,43 @@
       "callUser": "Caller ID",
       "preset": "Preset ID",
       "errorCode": "Error code",
-      "upstreamModel": "Upstream model"
+      "upstreamModel": "Upstream model",
+      "emptyTitle": "Empty Title",
+      "emptyDescription": "Empty Description",
+      "header": {
+        "inspect": "Inspect",
+        "copied": "Copied",
+        "copyJson": "Copy Json"
+      },
+      "tabs": {
+        "overview": "Overview",
+        "request": "Request",
+        "upstream": "Upstream",
+        "raw": "Raw"
+      },
+      "groups": {
+        "identification": "Identification",
+        "telemetry": "Telemetry",
+        "exception": "Exception"
+      },
+      "rows": {
+        "id": "Id",
+        "timestamp": "Timestamp",
+        "userId": "User Id",
+        "na": "Na",
+        "inputTokens": "Input Tokens",
+        "outputTokens": "Output Tokens",
+        "totalTokens": "Total Tokens",
+        "ttft": "Ttft",
+        "cached": "Cached",
+        "true": "True",
+        "false": "False"
+      },
+      "noData": "No Data"
     },
     "error": {
-      "loadFailed": "Failed to load logs: {message}"
+      "loadFailed": "Failed to load logs: {message}",
+      "unknown": "Unknown"
     },
     "summary": {
       "totalRequests": "Requests on this page",
@@ -157,6 +206,19 @@
     "states": {
       "selectHint": "Select a log row on the left to inspect details.",
       "copied": "Copied"
+    },
+    "header": {
+      "title": "Title",
+      "filters": "Filters",
+      "selected": "Selected",
+      "none": "None"
+    },
+    "footer": {
+      "pageInfoLabel": "Page {page} of {totalPages}",
+      "items": "Items",
+      "size": "Size",
+      "prev": "Prev",
+      "next": "Next"
     }
   }
 }

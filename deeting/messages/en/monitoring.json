@@ -176,6 +176,287 @@
         "exploring": "New",
         "noAssistants": "No assistant routing data yet"
       }
+    },
+    "monitors": {
+      "filters": {
+        "all": "All",
+        "active": "Active",
+        "paused": "Paused",
+        "failedSuspended": "Failed Suspended"
+      },
+      "toast": {
+        "executionCompleted": "Execution Completed",
+        "executionFailed": "Execution Failed",
+        "executionSkipped": "Execution Skipped",
+        "checkLogsLater": "Check Logs Later",
+        "triggerSubmitted": "Trigger Submitted",
+        "triggerFailed": "Trigger Failed",
+        "taskPaused": "Task Paused",
+        "taskResumed": "Task Resumed",
+        "taskDeleted": "Task Deleted"
+      },
+      "header": {
+        "eyebrow": "Eyebrow",
+        "title": "Title",
+        "description": "Description",
+        "totalScanners": "Total Scanners"
+      },
+      "actions": {
+        "refresh": "Refresh",
+        "create": "Create"
+      },
+      "empty": {
+        "title": "Title",
+        "description": "Description",
+        "create": "Create"
+      },
+      "modal": {
+        "cronPresets": {
+          "highFreq": {
+            "label": "Label",
+            "description": "Description"
+          },
+          "balanced": {
+            "label": "Label",
+            "description": "Description"
+          },
+          "light": {
+            "label": "Label",
+            "description": "Description"
+          },
+          "custom": {
+            "label": "Label",
+            "description": "Description"
+          }
+        },
+        "analysisModes": {
+          "concise": {
+            "label": "Label",
+            "description": "Description"
+          },
+          "deep": {
+            "label": "Label",
+            "description": "Description"
+          },
+          "alertFirst": {
+            "label": "Label",
+            "description": "Description"
+          }
+        },
+        "titleEdit": "Title Edit",
+        "titleCreate": "Title Create",
+        "description": "Description",
+        "taskAgentLabel": "Task Agent Label",
+        "taskAgentPlaceholder": "Task Agent Placeholder",
+        "taskAgentHint": "Task Agent Hint",
+        "titleLabel": "Title Label",
+        "titlePlaceholder": "Title Placeholder",
+        "objectiveLabel": "Objective Label",
+        "objectivePlaceholder": "Objective Placeholder",
+        "frequencyLabel": "Frequency Label",
+        "customCronPlaceholder": "Custom Cron Placeholder",
+        "analysisModeLabel": "Analysis Mode Label",
+        "current": "Current",
+        "channelLabel": "Channel Label",
+        "selected": "Selected",
+        "noChannels": "No Channels",
+        "cancel": "Cancel",
+        "save": "Save",
+        "create": "Create"
+      },
+      "log": {
+        "status": {
+          "success": "Success",
+          "failure": "Failure",
+          "skipped": "Skipped"
+        },
+        "title": "Title",
+        "description": "Description",
+        "deliveryTitle": "Delivery Title",
+        "empty": "Empty",
+        "channelFallback": "Channel Fallback",
+        "significantChange": "Significant Change",
+        "tokensUsed": "Tokens Used",
+        "feedback": {
+          "useful": "Useful",
+          "notUseful": "Not Useful"
+        },
+        "deliveryStatus": {
+          "anchored": "Anchored",
+          "contextReady": "Context Ready",
+          "waitingForContact": "Waiting For Contact",
+          "pending": "Pending"
+        }
+      },
+      "taskCard": {
+        "status": {
+          "active": "Active",
+          "paused": "Paused",
+          "failedSuspended": "Failed Suspended",
+          "bindingRequired": "Binding Required",
+          "bindingInvalid": "Binding Invalid"
+        },
+        "labels": {
+          "frequency": "Frequency",
+          "tokens": "Tokens",
+          "agentBinding": "Agent Binding",
+          "nextScheduled": "Next Scheduled"
+        },
+        "systemBase": "System Base",
+        "pending": "Pending",
+        "actions": {
+          "logs": "Logs",
+          "edit": "Edit",
+          "delete": "Delete",
+          "triggerNow": "Trigger Now",
+          "pause": "Pause",
+          "resume": "Resume"
+        },
+        "deleteDialog": {
+          "title": "Title",
+          "description": "Description",
+          "cancel": "Cancel",
+          "confirm": "Confirm"
+        },
+        "interval": {
+          "notSet": "Not Set",
+          "days": "{value} days",
+          "hours": "{value} hours",
+          "minutes": "{value} minutes"
+        }
+      }
+    },
+    "notificationChannels": {
+      "header": {
+        "eyebrow": "Eyebrow",
+        "title": "Title",
+        "description": "Description",
+        "actions": {
+          "create": "Create",
+          "refresh": "Refresh"
+        },
+        "metrics": {
+          "total": "Total",
+          "active": "Active",
+          "runtimeReady": "Runtime Ready",
+          "available": "Available"
+        }
+      },
+      "empty": {
+        "chips": {
+          "structuredConfig": "Structured Config",
+          "wechatPairing": "Wechat Pairing",
+          "runtimeVisible": "Runtime Visible"
+        },
+        "title": "Title",
+        "description": "Description",
+        "addFirst": "Add First"
+      },
+      "addCard": {
+        "fullTitle": "Full Title",
+        "title": "Title",
+        "startConfig": "Start Config",
+        "feedback": {
+          "createSuccess": "Create Success",
+          "createFailed": "Create Failed"
+        },
+        "cancel": "Cancel",
+        "current": "Current",
+        "displayName": "Display Name",
+        "displayNamePlaceholder": "Display Name Placeholder",
+        "resetType": "Reset Type",
+        "creating": "Creating",
+        "create": "Create"
+      },
+      "wechat": {
+        "dialog": {
+          "disconnectedHint": "Disconnected Hint",
+          "startConnect": "Start Connect",
+          "qrAlt": "Qr Alt",
+          "scanHint": "Scan Hint",
+          "expiresAt": "Expires At",
+          "cancelPairing": "Cancel Pairing",
+          "waitingConfirm": "Waiting Confirm",
+          "waitingDescription": "Waiting Description",
+          "connectedAccount": "Connected Account",
+          "connectedFallback": "Connected Fallback",
+          "reconnect": "Reconnect",
+          "disconnect": "Disconnect",
+          "retry": "Retry",
+          "title": "Title",
+          "description": "Description"
+        },
+        "pairing": {
+          "pendingPairings": "Pending Pairings",
+          "allowlistSize": "Allowlist Size",
+          "inputPlaceholder": "Input Placeholder",
+          "approve": "Approve",
+          "reject": "Reject",
+          "contextContactsTitle": "Context Contacts Title",
+          "contactWithContext": "Contact With Context",
+          "copyAria": "Copy Aria",
+          "copy": "Copy",
+          "approvedContactsTitle": "Approved Contacts Title",
+          "contactApproved": "Contact Approved"
+        }
+      },
+      "channelCard": {
+        "feedback": {
+          "wechatConnectionError": "Wechat Connection Error",
+          "qrExpired": "Qr Expired",
+          "connectFailed": "Connect Failed",
+          "saved": "Saved",
+          "testSuccess": "Test Success",
+          "testFailed": "Test Failed",
+          "disconnectFailed": "Disconnect Failed",
+          "approved": "Approved: {contactId}",
+          "approveFailed": "Approve Failed",
+          "rejectedPairingCode": "Rejected Pairing Code",
+          "rejectFailed": "Reject Failed",
+          "copied": "Copied: {contactId}",
+          "copyUnsupported": "Copy Unsupported",
+          "copyFailed": "Copy Failed"
+        },
+        "runtime": {
+          "imState": "IM state: {state}",
+          "notConnected": "Not Connected"
+        },
+        "lastUsed": {
+          "never": "Never"
+        },
+        "systemActive": "System Active",
+        "meta": {
+          "protocol": "Protocol",
+          "configIntegrity": "Config Integrity",
+          "passed": "Passed",
+          "actionRequired": "Action Required",
+          "lastActive": "Last Active"
+        },
+        "actions": {
+          "closeEditor": "Close Editor",
+          "configure": "Configure",
+          "wechatLink": "Wechat Link",
+          "disconnect": "Disconnect",
+          "testing": "Testing",
+          "syncChanges": "Sync Changes"
+        },
+        "instanceAlias": "Instance Alias",
+        "wechat": {
+          "handshakeState": "Handshake State",
+          "established": "Established",
+          "handshaking": "Handshaking",
+          "idle": "Idle",
+          "pairingMetadata": "Pairing Metadata",
+          "allowedNodes": "Allowed nodes: {count}",
+          "deliveryNodes": "Delivery Nodes"
+        },
+        "deleteDialog": {
+          "title": "Title",
+          "description": "Description",
+          "cancel": "Cancel",
+          "confirm": "Confirm"
+        }
+      }
     }
   }
 }

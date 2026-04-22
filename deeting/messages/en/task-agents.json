@@ -34,7 +34,15 @@
       "draftDescription": "You are editing a new task agent that has not been saved yet.",
       "emptyTitle": "No task agents yet",
       "emptyDescription": "Create your first task agent to start building repeatable local workflows.",
+      "noResults": "No matching task agents.",
+      "unnamed": "Unnamed Agent",
+      "modifiedShort": "MODIFIED: {value}",
       "updatedAt": "Updated {value}",
+      "kindLabels": {
+        "chat": "NEURAL_CORE",
+        "image": "VISION",
+        "voice": "AUDIO"
+      },
       "sections": {
         "chat": "Chat Task Agents",
         "image": "Image Agents",
@@ -44,6 +52,8 @@
     "starter": {
       "title": "Choose what you want to create",
       "description": "Start with the agent type, then move into a dedicated creation workspace designed for that role.",
+      "protocol": "Initialization Protocol / Select Unit Class",
+      "typePrefix": "TYPE_",
       "chat": {
         "title": "Chat Task Agent",
         "description": "A collaborative agent for chat work, task execution, and capability orchestration.",
@@ -106,6 +116,31 @@
       "bindings": "Bindings",
       "preview": "Preview",
       "debug": "Debug"
+    },
+    "workspace": {
+      "coreRegistry": "Core Registry / {count} Units",
+      "defaultKind": "CHAT_AGENT",
+      "diagnostic": "Diagnostic",
+      "copyright": "© {year} DEETING LABS",
+      "inspector": {
+        "title": "Diagnostic.log",
+        "efficiencyTitle": "Neural Efficiency",
+        "precision": "Precision",
+        "latency": "Latency",
+        "ms": "ms",
+        "loadDistribution": "Load Distribution",
+        "registryHooks": "Registry Hooks",
+        "hooks": {
+          "tokenization": "Tokenization",
+          "vectorIndex": "Vector Index",
+          "functionCall": "Function Call"
+        },
+        "status": {
+          "stable": "STABLE",
+          "synced": "SYNCED",
+          "optimized": "OPTIMIZED"
+        }
+      }
     },
     "editor": {
       "newTitle": "New Task Agent",
@@ -242,6 +277,15 @@
         "typeLocked": "Type locked",
         "preferredForImageGenerationOn": "Preferred",
         "preferredForImageGenerationOff": "Standard"
+      },
+      "ui": {
+        "neuralEngine": "Neural Engine",
+        "globalFlags": "Global Flags",
+        "visibilityFlags": "Visibility Flags",
+        "statusVisibility": "Status & Visibility",
+        "classification": "Classification",
+        "removeTagAria": "Remove {tag}",
+        "bitUnits": "{count} BIT_UNITS"
       }
     },
     "bindings": {
@@ -317,10 +361,20 @@
     "debug": {
       "title": "Debug Snapshot",
       "description": "Review the exact local payload that will be persisted and the runtime inputs currently configured.",
+      "stateDump": "System State Dump",
+      "rawProfileProtocol": "Raw Profile Protocol",
       "cards": {
         "identity": "Model Identity",
         "bindings": "Bindings Summary",
         "preview": "Preview Settings"
+      },
+      "values": {
+        "default": "default",
+        "none": "none",
+        "yes": "YES",
+        "no": "NO",
+        "surfaced": "SURFACED",
+        "redacted": "REDACTED"
       },
       "rawProfile": "Current Payload"
     },

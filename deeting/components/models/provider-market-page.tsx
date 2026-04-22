@@ -17,11 +17,6 @@ const ConnectProviderDrawer = dynamic(
   { ssr: false }
 );
 
-function categoryLabel(category: string | null | undefined) {
-  if (!category) return "unknown";
-  return category;
-}
-
 type MarketTab = "all" | "cloud" | "local" | "custom" | "platform";
 
 function mapProviderToPreset(provider: ProviderCard): ProviderPresetConfig {
@@ -89,7 +84,7 @@ function ProviderCard({
             {provider.connected && (
               <div className="flex items-center gap-1.5 rounded-full bg-[var(--ok-soft)] px-2 py-0.5 border border-[var(--ok-border)]">
                 <div className="size-1 rounded-full bg-[var(--ok)] shadow-[0_0_8px_var(--ok)]" />
-                <span className="text-[9px] font-black text-[var(--ok)] uppercase tracking-tighter">Connected</span>
+                <span className="text-[9px] font-black text-[var(--ok)] uppercase tracking-tighter">{t("card.connected")}</span>
               </div>
             )}
           </div>
@@ -125,11 +120,11 @@ function ProviderCard({
            <div className="flex items-center gap-3">
              <div className="ws-dot opacity-40 group-hover:opacity-100" data-tone={provider.connected ? "ok" : "accent"} />
              <span className="ws-num text-[10px] font-bold tracking-widest text-[var(--ink-4)] group-hover:text-[var(--ink-2)]">
-                {provider.connected ? "UPLINK_STABLE" : "STANDBY_READY"}
+                {provider.connected ? t("workstation.uplinkStable") : t("workstation.standbyReady")}
              </span>
            </div>
            <div className="flex items-center gap-1 text-[11px] font-black tracking-tighter text-[var(--accent-strong)] opacity-0 transition-all duration-500 translate-x-2 group-hover:opacity-100 group-hover:translate-x-0">
-              {provider.connected ? "MANAGE_SYSTEM" : "INITIALIZE"}
+              {provider.connected ? t("workstation.manageSystem") : t("workstation.initialize")}
               <Zap className="size-3 fill-current" />
            </div>
         </div>
@@ -254,7 +249,7 @@ export function ProviderMarketPage() {
         {/* Secondary Sidebar (Categories) */}
         <aside className="w-60 flex-none border-r border-[var(--hairline)] bg-[var(--sidebar-bg)]/40 p-4 overflow-y-auto custom-scrollbar backdrop-blur-sm">
           <nav className="space-y-1.5">
-            <p className="ws-meta px-3 py-2 mb-2 text-[9px] opacity-40">Neural Navigator</p>
+            <p className="ws-meta px-3 py-2 mb-2 text-[9px] opacity-40">{t("workstation.navigator")}</p>
             {categories.map((cat) => {
               const active = selectedTab === cat.id;
               const Icon = cat.icon;

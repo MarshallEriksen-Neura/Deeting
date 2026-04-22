@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages, setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
+import { AuthWorldBridge } from "@/components/auth";
 import { InterfaceTransitionOverlay } from "@/components/common/interface-transition-overlay";
 import { LocaleShellBoundary } from "@/components/layout/locale-shell-boundary";
 import { routing } from "@/i18n/routing";
@@ -32,6 +33,7 @@ export default async function LocaleLayout({
   return (
     <NextIntlClientProvider locale={locale} messages={messages}>
       <LocaleShellBoundary>{children}</LocaleShellBoundary>
+      <AuthWorldBridge />
       <InterfaceTransitionOverlay />
     </NextIntlClientProvider>
   );

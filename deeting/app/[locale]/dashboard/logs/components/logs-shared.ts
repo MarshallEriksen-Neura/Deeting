@@ -1,4 +1,5 @@
 export type StatusTone = "ok" | "warn" | "danger" | "accent"
+export type StatusLabelKey = "failed" | "upstreamError" | "requestError" | "redirect" | "success"
 
 export function isFailedRequest(statusCode: number, errorCode?: string | null) {
   return statusCode >= 400 || (statusCode <= 0 && Boolean(errorCode))
@@ -12,12 +13,12 @@ export function getStatusTone(statusCode: number, errorCode?: string | null): St
   return "ok"
 }
 
-export function getStatusLabel(statusCode: number, errorCode?: string | null) {
-  if (statusCode <= 0 && errorCode) return "执行失败"
-  if (statusCode >= 500) return "上游错误"
-  if (statusCode >= 400) return "请求异常"
-  if (statusCode >= 300) return "重定向"
-  return "请求成功"
+export function getStatusLabelKey(statusCode: number, errorCode?: string | null): StatusLabelKey {
+  if (statusCode <= 0 && errorCode) return "failed"
+  if (statusCode >= 500) return "upstreamError"
+  if (statusCode >= 400) return "requestError"
+  if (statusCode >= 300) return "redirect"
+  return "success"
 }
 
 export function formatCurrency(value: number) {
@@ -27,11 +28,11 @@ export function formatCurrency(value: number) {
   })
 }
 
-export function formatDateTime(iso: string, includeYear = false) {
+export function formatDateTime(iso: string, includeYear = false, locale = "en") {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return iso
 
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat(locale, {
     ...(includeYear ? { year: "numeric" as const } : {}),
     month: "2-digit",
     day: "2-digit",
@@ -41,23 +42,23 @@ export function formatDateTime(iso: string, includeYear = false) {
   }).format(date)
 }
 
-export function formatRelativeTime(iso: string) {
+export function formatRelativeTime(iso: string, locale = "en") {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return iso
 
   const deltaMs = date.getTime() - Date.now()
   const minutes = Math.round(deltaMs / 60_000)
   if (Math.abs(minutes) < 60) {
-    return new Intl.RelativeTimeFormat("zh-CN", { numeric: "auto" }).format(minutes, "minute")
+    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(minutes, "minute")
   }
 
   const hours = Math.round(deltaMs / 3_600_000)
   if (Math.abs(hours) < 24) {
-    return new Intl.RelativeTimeFormat("zh-CN", { numeric: "auto" }).format(hours, "hour")
+    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(hours, "hour")
   }
 
   const days = Math.round(deltaMs / 86_400_000)
-  return new Intl.RelativeTimeFormat("zh-CN", { numeric: "auto" }).format(days, "day")
+  return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(days, "day")
 }
 
 export function shortId(value: string) {

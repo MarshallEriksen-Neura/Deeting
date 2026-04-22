@@ -1,9 +1,8 @@
-﻿"use client"
+"use client"
 
 import { useMemo, useState } from "react"
+import { useLocale, useTranslations } from "next-intl"
 import {
-  Bot,
-  Clock3,
   FileText,
   Pause,
   Play,
@@ -13,15 +12,6 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/shadcn/card"
 import { Button } from "@/components/ui/shadcn/button"
 import { Badge } from "@/components/ui/shadcn/badge"
 import {
@@ -39,10 +29,8 @@ import {
   deleteMonitorTask,
   pauseMonitorTask,
   resumeMonitorTask,
-  type MonitorDeliveryStateRecord,
   type MonitorTask,
 } from "@/lib/api/monitors"
-import { useMonitorDeliveryStates } from "@/lib/swr/use-monitors"
 
 interface MonitorTaskCardProps {
   task: MonitorTask
@@ -53,20 +41,6 @@ interface MonitorTaskCardProps {
   isTriggering?: boolean
 }
 
-const STATUS_META = {
-  active: { label: "运行中", tone: "text-emerald-700" },
-  paused: { label: "已暂停", tone: "text-amber-700" },
-  failed_suspended: { label: "已挂起", tone: "text-red-700" },
-  binding_required: { label: "待绑定", tone: "text-amber-700" },
-  binding_invalid: { label: "绑定失效", tone: "text-red-700" },
-} as const
-
-const ANALYSIS_MODE_LABEL = {
-  concise: "精简",
-  deep: "深度",
-  alert_first: "预警优先",
-} as const
-
 export function MonitorTaskCard({
   task,
   onEdit,
@@ -75,15 +49,30 @@ export function MonitorTaskCard({
   onTrigger,
   isTriggering = false,
 }: MonitorTaskCardProps) {
+  const t = useTranslations("monitoring")
+  const locale = useLocale()
   const [acting, setActing] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const { data: deliveryStates } = useMonitorDeliveryStates(task.id)
-  const statusMeta = STATUS_META[task.display_status]
   const bindingReady = task.binding_state === "ok"
 
-  const deliverySummary = useMemo(
-    () => summarizeDeliveryStates(deliveryStates?.items ?? []),
-    [deliveryStates?.items],
+  const statusMeta = useMemo(
+    () => ({
+      active: { label: t("monitors.taskCard.status.active"), tone: "text-emerald-700" },
+      paused: { label: t("monitors.taskCard.status.paused"), tone: "text-amber-700" },
+      failed_suspended: { label: t("monitors.taskCard.status.failedSuspended"), tone: "text-red-700" },
+      binding_required: { label: t("monitors.taskCard.status.bindingRequired"), tone: "text-amber-700" },
+      binding_invalid: { label: t("monitors.taskCard.status.bindingInvalid"), tone: "text-red-700" },
+    }),
+    [t],
+  )
+
+  const analysisModeLabel = useMemo(
+    () => ({
+      concise: t("monitors.modal.analysisModes.concise.label"),
+      deep: t("monitors.modal.analysisModes.deep.label"),
+      alert_first: t("monitors.modal.analysisModes.alertFirst.label"),
+    }),
+    [t],
   )
 
   async function handleToggle() {
@@ -91,10 +80,10 @@ export function MonitorTaskCard({
     try {
       if (task.status === "active") {
         await pauseMonitorTask(task.id)
-        toast.success("任务已暂停")
+        toast.success(t("monitors.toast.taskPaused"))
       } else {
         await resumeMonitorTask(task.id)
-        toast.success("任务已恢复")
+        toast.success(t("monitors.toast.taskResumed"))
       }
       onRefresh()
     } finally {
@@ -106,7 +95,7 @@ export function MonitorTaskCard({
     setActing(true)
     try {
       await deleteMonitorTask(task.id)
-      toast.success("任务已删除")
+      toast.success(t("monitors.toast.taskDeleted"))
       setDeleteOpen(false)
       onRefresh()
     } finally {
@@ -128,7 +117,7 @@ export function MonitorTaskCard({
           <div className="flex items-center gap-2">
             <div className={cn("size-1.5 rounded-full", ledColor)} />
             <span className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">
-              {statusMeta.label}
+              {statusMeta[task.display_status].label}
             </span>
           </div>
           <div className="flex gap-1.5">
@@ -136,7 +125,7 @@ export function MonitorTaskCard({
               variant="outline"
               className="rounded-sm border-[color:var(--border)] px-1.5 py-0 text-[10px] font-medium"
             >
-              {ANALYSIS_MODE_LABEL[task.analysis_mode]}
+              {analysisModeLabel[task.analysis_mode]}
             </Badge>
           </div>
         </div>
@@ -152,33 +141,33 @@ export function MonitorTaskCard({
           <div className="mt-5 grid grid-cols-2 gap-x-8 gap-y-4 border-t border-[color:var(--border)] pt-4">
             <div className="space-y-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                Frequency
+                {t("monitors.taskCard.labels.frequency")}
               </span>
-              <p className="text-xs font-medium">{formatInterval(task.current_interval_minutes)}</p>
+              <p className="text-xs font-medium">{formatInterval(task.current_interval_minutes, t)}</p>
             </div>
             <div className="space-y-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                Tokens Used
+                {t("monitors.taskCard.labels.tokens")}
               </span>
               <p className="text-xs font-medium">{formatNumber(task.total_tokens)}</p>
             </div>
             <div className="space-y-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                Agent Binding
+                {t("monitors.taskCard.labels.agentBinding")}
               </span>
               <div className="flex items-center gap-1.5">
                 <span className={cn("size-1 rounded-full", bindingReady ? "bg-emerald-500" : "bg-amber-500")} />
                 <p className="truncate text-xs font-medium">
-                  {task.task_agent_name || task.assistant_name || "System Base"}
+                  {task.task_agent_name || task.assistant_name || t("monitors.taskCard.systemBase")}
                 </p>
               </div>
             </div>
             <div className="space-y-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                Next Scheduled
+                {t("monitors.taskCard.labels.nextScheduled")}
               </span>
               <p className="text-xs font-medium">
-                {task.next_run_at ? formatDateTime(task.next_run_at) : "Pending"}
+                {task.next_run_at ? formatDateTime(task.next_run_at, locale) : t("monitors.taskCard.pending")}
               </p>
             </div>
           </div>
@@ -189,21 +178,21 @@ export function MonitorTaskCard({
             <button
               onClick={() => onViewLogs(task.id)}
               className="flex size-7 items-center justify-center rounded border border-[color:var(--border)] transition-colors hover:bg-muted"
-              title="日志"
+              title={t("monitors.taskCard.actions.logs")}
             >
               <FileText className="size-3.5" />
             </button>
             <button
               onClick={() => onEdit(task)}
               className="flex size-7 items-center justify-center rounded border border-[color:var(--border)] transition-colors hover:bg-muted"
-              title="编辑"
+              title={t("monitors.taskCard.actions.edit")}
             >
               <Wrench className="size-3.5" />
             </button>
             <button
               onClick={() => setDeleteOpen(true)}
               className="flex size-7 items-center justify-center rounded border border-[color:var(--border)] text-destructive transition-colors hover:bg-destructive/10"
-              title="删除"
+              title={t("monitors.taskCard.actions.delete")}
             >
               <Trash2 className="size-3.5" />
             </button>
@@ -218,7 +207,7 @@ export function MonitorTaskCard({
               className="h-8 border-[color:var(--border)] px-3 text-[11px] font-medium"
             >
               <RotateCw className={cn("mr-1.5 size-3", isTriggering && "animate-spin")} />
-              立即触发
+              {t("monitors.taskCard.actions.triggerNow")}
             </Button>
             <button
               onClick={() => void handleToggle()}
@@ -228,12 +217,12 @@ export function MonitorTaskCard({
               {task.status === "active" ? (
                 <>
                   <Pause className="size-3" />
-                  PAUSE
+                  {t("monitors.taskCard.actions.pause")}
                 </>
               ) : (
                 <>
                   <Play className="size-3" />
-                  RESUME
+                  {t("monitors.taskCard.actions.resume")}
                 </>
               )}
             </button>
@@ -244,15 +233,15 @@ export function MonitorTaskCard({
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>确认删除这个主动寻猎任务？</AlertDialogTitle>
+            <AlertDialogTitle>{t("monitors.taskCard.deleteDialog.title")}</AlertDialogTitle>
             <AlertDialogDescription>
-              删除后会移除任务配置和后续调度。已有执行日志是否保留取决于本地运行时存储策略。
+              {t("monitors.taskCard.deleteDialog.description")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={acting}>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={acting}>{t("monitors.taskCard.deleteDialog.cancel")}</AlertDialogCancel>
             <AlertDialogAction onClick={() => void handleDelete()} disabled={acting}>
-              确认删除
+              {t("monitors.taskCard.deleteDialog.confirm")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -261,48 +250,22 @@ export function MonitorTaskCard({
   )
 }
 
-function Metric({
-  label,
-  value,
-  icon: Icon,
-}: {
-  label: string
-  value: string
-  icon: typeof Clock3
-}) {
-  return (
-    <div className="rounded-2xl border border-border/60 bg-muted/30 p-3">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Icon className="size-3.5" />
-        {label}
-      </div>
-      <div className="mt-2 text-sm font-medium">{value}</div>
-    </div>
-  )
-}
-
-function summarizeDeliveryStates(states: MonitorDeliveryStateRecord[]) {
-  const labels = new Set<string>()
-
-  for (const item of states) {
-    const channel = item.channel_kind?.toLowerCase() || ""
-    if (channel === "feishu") labels.add(item.status === "anchored" ? "飞书已建锚点" : "飞书待建锚点")
-    if (channel === "telegram") labels.add(item.status === "anchored" ? "Telegram 已建锚点" : "Telegram 待建锚点")
-    if (channel === "wechat") labels.add(item.status === "context_ready" ? "微信上下文已建立" : "微信等待联系人先发消息")
+function formatInterval(
+  minutes: number | null,
+  t: ReturnType<typeof useTranslations>,
+) {
+  if (!minutes) return t("monitors.taskCard.interval.notSet")
+  if (minutes >= 1440) {
+    return t("monitors.taskCard.interval.days", { count: Math.round(minutes / 1440) })
   }
-
-  return Array.from(labels).slice(0, 3)
+  if (minutes >= 60) {
+    return t("monitors.taskCard.interval.hours", { count: Math.round(minutes / 60) })
+  }
+  return t("monitors.taskCard.interval.minutes", { count: minutes })
 }
 
-function formatInterval(minutes: number | null) {
-  if (!minutes) return "未设置"
-  if (minutes >= 1440) return `每 ${Math.round(minutes / 1440)} 天`
-  if (minutes >= 60) return `每 ${Math.round(minutes / 60)} 小时`
-  return `每 ${minutes} 分钟`
-}
-
-function formatDateTime(value: string) {
-  return new Date(value).toLocaleString("zh-CN", {
+function formatDateTime(value: string, locale: string) {
+  return new Date(value).toLocaleString(locale, {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",

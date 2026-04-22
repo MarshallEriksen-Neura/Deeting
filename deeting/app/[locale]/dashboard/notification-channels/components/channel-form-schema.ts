@@ -1,202 +1,217 @@
-﻿import type { ChannelConfig, ChannelType } from "@/lib/api/notification-channels"
+import type { ChannelConfig, ChannelType } from "@/lib/api/notification-channels"
 
 export type FieldDef = {
   key: string
-  label: string
-  placeholder: string
+  labelKey: string
+  placeholderKey: string
   type?: "text" | "number" | "password" | "textarea" | "switch" | "select"
   valueKind?: "string" | "number" | "string[]" | "boolean"
-  description?: string
-  options?: Array<{ value: string; label: string }>
+  descriptionKey?: string
+  options?: Array<{ value: string; labelKey: string }>
 }
 
 export const FIELD_DEFS: Record<ChannelType, FieldDef[]> = {
   feishu: [
     {
       key: "webhook_url",
-      label: "Webhook URL",
-      placeholder: "https://open.feishu.cn/open-apis/bot/v2/hook/...",
+      labelKey: "notificationChannels.form.fields.feishu.webhookUrl.label",
+      placeholderKey: "notificationChannels.form.fields.feishu.webhookUrl.placeholder",
     },
     {
       key: "chat_ids",
-      label: "Chat IDs",
-      placeholder: "每行一个 chat_id",
+      labelKey: "notificationChannels.form.fields.feishu.chatIds.label",
+      placeholderKey: "notificationChannels.form.fields.feishu.chatIds.placeholder",
       type: "textarea",
       valueKind: "string[]",
-      description: "可选，指定要投递的群聊 ID 列表。",
+      descriptionKey: "notificationChannels.form.fields.feishu.chatIds.description",
     },
     {
       key: "bot_open_id",
-      label: "Bot Open ID",
-      placeholder: "ou_xxx",
+      labelKey: "notificationChannels.form.fields.feishu.botOpenId.label",
+      placeholderKey: "notificationChannels.form.fields.feishu.botOpenId.placeholder",
     },
     {
       key: "bot_app_id",
-      label: "Bot App ID",
-      placeholder: "cli_xxx",
+      labelKey: "notificationChannels.form.fields.feishu.botAppId.label",
+      placeholderKey: "notificationChannels.form.fields.feishu.botAppId.placeholder",
     },
     {
       key: "bot_app_secret",
-      label: "Bot App Secret",
-      placeholder: "输入飞书 Bot 密钥",
+      labelKey: "notificationChannels.form.fields.feishu.botAppSecret.label",
+      placeholderKey: "notificationChannels.form.fields.feishu.botAppSecret.placeholder",
       type: "password",
     },
     {
       key: "im_enabled",
-      label: "启用桌面 IM",
-      placeholder: "启用后允许桌面 IM 通道介入",
+      labelKey: "notificationChannels.form.fields.feishu.imEnabled.label",
+      placeholderKey: "notificationChannels.form.fields.feishu.imEnabled.placeholder",
       type: "switch",
       valueKind: "boolean",
-      description: "开启后，这个渠道会参与桌面端 IM 运行时。",
+      descriptionKey: "notificationChannels.form.fields.feishu.imEnabled.description",
     },
     {
       key: "transport_preference",
-      label: "传输偏好",
-      placeholder: "选择传输模式",
+      labelKey: "notificationChannels.form.fields.feishu.transportPreference.label",
+      placeholderKey: "notificationChannels.form.fields.feishu.transportPreference.placeholder",
       type: "select",
       options: [
-        { value: "auto", label: "自动" },
-        { value: "direct", label: "直连" },
-        { value: "relay", label: "Relay" },
+        {
+          value: "auto",
+          labelKey: "notificationChannels.form.fields.feishu.transportPreference.options.auto",
+        },
+        {
+          value: "direct",
+          labelKey: "notificationChannels.form.fields.feishu.transportPreference.options.direct",
+        },
+        {
+          value: "relay",
+          labelKey: "notificationChannels.form.fields.feishu.transportPreference.options.relay",
+        },
       ],
-      description: "决定优先使用本地直连还是 relay。",
+      descriptionKey: "notificationChannels.form.fields.feishu.transportPreference.description",
     },
     {
       key: "relay_base_url",
-      label: "Relay Base URL",
-      placeholder: "https://relay.example.com",
-      description: "当偏好为 relay 或 auto fallback 时使用。",
+      labelKey: "notificationChannels.form.fields.feishu.relayBaseUrl.label",
+      placeholderKey: "notificationChannels.form.fields.feishu.relayBaseUrl.placeholder",
+      descriptionKey: "notificationChannels.form.fields.feishu.relayBaseUrl.description",
     },
     {
       key: "relay_shared_secret",
-      label: "Relay Shared Secret",
-      placeholder: "输入 relay 共享密钥",
+      labelKey: "notificationChannels.form.fields.feishu.relaySharedSecret.label",
+      placeholderKey: "notificationChannels.form.fields.feishu.relaySharedSecret.placeholder",
       type: "password",
-      description: "Relay 鉴权使用的共享密钥。",
+      descriptionKey: "notificationChannels.form.fields.feishu.relaySharedSecret.description",
     },
   ],
   dingtalk: [
     {
       key: "webhook_url",
-      label: "Webhook URL",
-      placeholder: "https://oapi.dingtalk.com/robot/send?...",
+      labelKey: "notificationChannels.form.fields.dingtalk.webhookUrl.label",
+      placeholderKey: "notificationChannels.form.fields.dingtalk.webhookUrl.placeholder",
     },
   ],
   wechat: [
     {
       key: "im_enabled",
-      label: "启用桌面 IM",
-      placeholder: "启用微信桌面连接",
+      labelKey: "notificationChannels.form.fields.wechat.imEnabled.label",
+      placeholderKey: "notificationChannels.form.fields.wechat.imEnabled.placeholder",
       type: "switch",
       valueKind: "boolean",
-      description: "关闭后不会参与桌面端 IM 运行时。",
+      descriptionKey: "notificationChannels.form.fields.wechat.imEnabled.description",
     },
     {
       key: "access_policy",
-      label: "接入策略",
-      placeholder: "选择接入策略",
+      labelKey: "notificationChannels.form.fields.wechat.accessPolicy.label",
+      placeholderKey: "notificationChannels.form.fields.wechat.accessPolicy.placeholder",
       type: "select",
       options: [
-        { value: "pairing", label: "配对审批" },
-        { value: "allowlist", label: "白名单" },
+        {
+          value: "pairing",
+          labelKey: "notificationChannels.form.fields.wechat.accessPolicy.options.pairing",
+        },
+        {
+          value: "allowlist",
+          labelKey: "notificationChannels.form.fields.wechat.accessPolicy.options.allowlist",
+        },
       ],
-      description: "配对审批更安全，白名单适合固定联系人。",
+      descriptionKey: "notificationChannels.form.fields.wechat.accessPolicy.description",
     },
     {
       key: "notify_contact_ids",
-      label: "通知联系人",
-      placeholder: "每行一个 contact_id",
+      labelKey: "notificationChannels.form.fields.wechat.notifyContactIds.label",
+      placeholderKey: "notificationChannels.form.fields.wechat.notifyContactIds.placeholder",
       type: "textarea",
       valueKind: "string[]",
-      description: "这些联系人会接收主动寻猎或自动化通知。",
+      descriptionKey: "notificationChannels.form.fields.wechat.notifyContactIds.description",
     },
   ],
   telegram: [
     {
       key: "im_enabled",
-      label: "启用桌面 IM",
-      placeholder: "启用 Telegram 桌面通道",
+      labelKey: "notificationChannels.form.fields.telegram.imEnabled.label",
+      placeholderKey: "notificationChannels.form.fields.telegram.imEnabled.placeholder",
       type: "switch",
       valueKind: "boolean",
-      description: "关闭后不参与桌面端 IM 运行时。",
+      descriptionKey: "notificationChannels.form.fields.telegram.imEnabled.description",
     },
     {
       key: "media_enabled",
-      label: "启用媒体发送",
-      placeholder: "允许图片或其他媒体",
+      labelKey: "notificationChannels.form.fields.telegram.mediaEnabled.label",
+      placeholderKey: "notificationChannels.form.fields.telegram.mediaEnabled.placeholder",
       type: "switch",
       valueKind: "boolean",
-      description: "控制是否允许发送媒体内容。",
+      descriptionKey: "notificationChannels.form.fields.telegram.mediaEnabled.description",
     },
     {
       key: "bot_token",
-      label: "Bot Token",
-      placeholder: "123456:ABC...",
+      labelKey: "notificationChannels.form.fields.telegram.botToken.label",
+      placeholderKey: "notificationChannels.form.fields.telegram.botToken.placeholder",
       type: "password",
     },
     {
       key: "chat_id",
-      label: "Chat ID",
-      placeholder: "输入 Telegram chat_id",
+      labelKey: "notificationChannels.form.fields.telegram.chatId.label",
+      placeholderKey: "notificationChannels.form.fields.telegram.chatId.placeholder",
     },
   ],
   email: [
     {
       key: "smtp_host",
-      label: "SMTP Host",
-      placeholder: "smtp.example.com",
+      labelKey: "notificationChannels.form.fields.email.smtpHost.label",
+      placeholderKey: "notificationChannels.form.fields.email.smtpHost.placeholder",
     },
     {
       key: "smtp_port",
-      label: "SMTP Port",
-      placeholder: "587",
+      labelKey: "notificationChannels.form.fields.email.smtpPort.label",
+      placeholderKey: "notificationChannels.form.fields.email.smtpPort.placeholder",
       type: "number",
     },
     {
       key: "from_email",
-      label: "From Email",
-      placeholder: "bot@example.com",
+      labelKey: "notificationChannels.form.fields.email.fromEmail.label",
+      placeholderKey: "notificationChannels.form.fields.email.fromEmail.placeholder",
     },
     {
       key: "from_name",
-      label: "From Name",
-      placeholder: "Deeting Bot",
+      labelKey: "notificationChannels.form.fields.email.fromName.label",
+      placeholderKey: "notificationChannels.form.fields.email.fromName.placeholder",
     },
     {
       key: "to_email",
-      label: "To Email",
-      placeholder: "owner@example.com",
+      labelKey: "notificationChannels.form.fields.email.toEmail.label",
+      placeholderKey: "notificationChannels.form.fields.email.toEmail.placeholder",
     },
     {
       key: "username",
-      label: "Username",
-      placeholder: "SMTP 用户名",
+      labelKey: "notificationChannels.form.fields.email.username.label",
+      placeholderKey: "notificationChannels.form.fields.email.username.placeholder",
     },
     {
       key: "password",
-      label: "Password",
-      placeholder: "SMTP 密码",
+      labelKey: "notificationChannels.form.fields.email.password.label",
+      placeholderKey: "notificationChannels.form.fields.email.password.placeholder",
       type: "password",
     },
   ],
   webhook: [
     {
       key: "webhook_url",
-      label: "Webhook URL",
-      placeholder: "https://example.com/webhook",
+      labelKey: "notificationChannels.form.fields.webhook.webhookUrl.label",
+      placeholderKey: "notificationChannels.form.fields.webhook.webhookUrl.placeholder",
     },
   ],
 }
 
 export const FEISHU_FIELD_GROUPS = [
   {
-    title: "基础投递",
-    description: "用于普通消息投递和群聊通知。",
+    titleKey: "notificationChannels.form.groups.feishu.delivery.title",
+    descriptionKey: "notificationChannels.form.groups.feishu.delivery.description",
     keys: ["webhook_url", "chat_ids", "bot_open_id"],
   },
   {
-    title: "桌面 IM 运行时",
-    description: "用于桌面端飞书 IM 接入和 transport 配置。",
+    titleKey: "notificationChannels.form.groups.feishu.desktopIm.title",
+    descriptionKey: "notificationChannels.form.groups.feishu.desktopIm.description",
     keys: [
       "im_enabled",
       "transport_preference",

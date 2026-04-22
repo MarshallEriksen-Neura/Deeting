@@ -342,21 +342,33 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
   )
 
   const handleSendTestMessage = React.useCallback(async (message: string) => {
-    if (!testModel) return { id: "error", role: "assistant" as const, content: "No model selected", timestamp: new Date().toISOString() }
+    if (!testModel) {
+      return {
+        id: "error",
+        role: "assistant" as const,
+        content: t("test.noModelSelected"),
+        timestamp: new Date().toISOString(),
+      }
+    }
     try {
       const res = await testModelApi(testModel.uuid, { prompt: message })
-      if (!res.success) throw new Error(res.error || "Unknown error")
+      if (!res.success) throw new Error(res.error || t("error.unknown"))
       return {
         id: `resp-${Date.now()}`,
         role: "assistant" as const,
-        content: res.response_body ? JSON.stringify(res.response_body, null, 2) : (res.error || "Success"),
+        content: res.response_body ? JSON.stringify(res.response_body, null, 2) : (res.error || t("test.success")),
         timestamp: new Date().toISOString(),
         latency: res.latency_ms,
       }
     } catch (err: unknown) {
-      return { id: `error-${Date.now()}`, role: "assistant" as const, content: `Error: ${err instanceof Error ? err.message : String(err)}`, timestamp: new Date().toISOString() }
+      return {
+        id: `error-${Date.now()}`,
+        role: "assistant" as const,
+        content: t("test.errorWithDetail", { message: err instanceof Error ? err.message : String(err) }),
+        timestamp: new Date().toISOString(),
+      }
     }
-  }, [testModel, testModelApi])
+  }, [t, testModel, testModelApi])
 
   if (isLoading) {
     return (
@@ -506,13 +518,13 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
                         onClick={() => setSelectedModelId(null)}
                         className="ws-control h-10 px-6 rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg)] text-[var(--ink-2)] font-bold text-[12px] hover:bg-[var(--panel-bg-inset)] transition-all"
                      >
-                        DISMISS
+                        {t("actions.dismiss").toUpperCase()}
                      </button>
                      <button 
                         onClick={() => handleTestModel(selectedModel)}
                         className="ws-control h-10 px-8 rounded-xl bg-[var(--accent-strong)] text-white font-bold text-[12px] shadow-lg shadow-[var(--accent-soft)] hover:brightness-110 active:scale-95 transition-all"
                      >
-                        INITIATE TEST
+                        {t("actions.initiateTest").toUpperCase()}
                      </button>
                   </div>
                 </motion.div>

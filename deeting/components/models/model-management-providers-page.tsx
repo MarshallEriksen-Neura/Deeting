@@ -3,7 +3,6 @@
 import * as React from "react";
 import { Bot, Server, MoreHorizontal, Layers } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { Badge } from "@/components/ui/shadcn/badge";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { useProviderInstances } from "@/hooks/use-providers";
 import { ModelsManager } from "@/components/models/models-manager";
@@ -46,7 +45,7 @@ export function ModelManagementProvidersPage() {
              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--window-bg)] border border-[var(--hairline)] shadow-inner">
                 <div className="w-1.5 h-1.5 rounded-full bg-[var(--ok)] shadow-[0_0_8px_var(--ok)] animate-pulse" />
                 <span className="ws-num text-[10px] font-black text-[var(--ink-2)] tracking-widest uppercase">
-                   {instances.length} Live_Nodes
+                   {t("workstation.liveNodes", { count: instances.length })}
                 </span>
              </div>
           </div>
@@ -55,12 +54,12 @@ export function ModelManagementProvidersPage() {
         <div className="flex items-center gap-6">
            <div className="hidden lg:flex items-center gap-4 text-[9px] font-mono font-bold text-[var(--ink-4)] uppercase tracking-[0.2em]">
               <div className="flex items-center gap-1.5">
-                 <span className="opacity-40">LATENCY_MS:</span>
-                 <span className="text-[var(--ok)]">Stable</span>
+                 <span className="opacity-40">{t("workstation.latencyMetric")}</span>
+                 <span className="text-[var(--ok)]">{t("workstation.stable")}</span>
               </div>
               <div className="h-2 w-px bg-[var(--hairline)]" />
               <div className="flex items-center gap-1.5">
-                 <span className="opacity-40">VERSION:</span>
+                 <span className="opacity-40">{t("workstation.versionMetric")}</span>
                  <span className="text-[var(--ink-2)]">0.1.1-3</span>
               </div>
            </div>
@@ -71,7 +70,7 @@ export function ModelManagementProvidersPage() {
         {/* Sidebar: Neural Link Navigator */}
         <aside className="flex w-[310px] flex-none flex-col overflow-hidden border-r border-[var(--hairline)] bg-[var(--sidebar-bg)]/30 backdrop-blur-md relative">
           <div className="flex-none px-6 pb-4 pt-6">
-            <p className="ws-meta text-[9px] uppercase tracking-[0.3em] font-black opacity-30">Channel Registry</p>
+            <p className="ws-meta text-[9px] uppercase tracking-[0.3em] font-black opacity-30">{t("workstation.channelRegistry")}</p>
           </div>
           
           <div className="flex-1 space-y-2 overflow-y-auto px-4 pb-12 custom-scrollbar">
@@ -135,7 +134,7 @@ export function ModelManagementProvidersPage() {
                            ? "bg-[var(--ok-soft)] text-[var(--ok)] border-[var(--ok-border)]"
                            : "bg-[var(--panel-bg-inset)] text-[var(--ink-4)] border-transparent"
                        )}>
-                          {instance.is_enabled ? "Linked_Online" : "Node_Offline"}
+                          {instance.is_enabled ? t("workstation.linkedOnline") : t("workstation.nodeOffline")}
                        </div>
                        
                        <DropdownMenu>
@@ -183,9 +182,9 @@ export function ModelManagementProvidersPage() {
                        <Bot className="size-12 text-[var(--accent-strong)] opacity-60" />
                     </div>
                  </div>
-                 <h3 className="ws-view-title text-[var(--ink-2)] text-3xl mb-4 tracking-tighter font-black">Link_Standby</h3>
+                 <h3 className="ws-view-title text-[var(--ink-2)] text-3xl mb-4 tracking-tighter font-black">{t("workstation.linkStandbyTitle")}</h3>
                  <p className="ws-body text-[var(--ink-3)] text-sm max-w-[360px] leading-relaxed mx-auto font-medium opacity-60">
-                    Neural uplink initialized. Select a processing node from the link navigator to engage command operations.
+                    {t("workstation.linkStandbyDescription")}
                  </p>
               </div>
             )}

@@ -39,6 +39,13 @@
         "actionManage": "Manage",
         "actionConnect": "Connect"
       },
+      "workstation": {
+        "uplinkStable": "UPLINK_STABLE",
+        "standbyReady": "STANDBY_READY",
+        "manageSystem": "MANAGE_SYSTEM",
+        "initialize": "INITIALIZE",
+        "navigator": "Neural Navigator"
+      },
       "error": {
         "loadFailed": "Failed to load providers:",
         "unknown": "Unknown error"
@@ -113,7 +120,18 @@
       "localTag": "LOCAL",
       "edit": "Edit",
       "enable": "Enable",
-      "disconnect": "Disconnect"
+      "disconnect": "Disconnect",
+      "workstation": {
+        "liveNodes": "{count} Live_Nodes",
+        "latencyMetric": "LATENCY_MS:",
+        "stable": "Stable",
+        "versionMetric": "VERSION:",
+        "channelRegistry": "Channel Registry",
+        "linkedOnline": "LINKED_ONLINE",
+        "nodeOffline": "NODE_OFFLINE",
+        "linkStandbyTitle": "LINK_STANDBY",
+        "linkStandbyDescription": "Neural uplink initialized. Select a processing node from the link navigator to engage command operations."
+      }
     },
     "list": {
       "latency": "Latency",

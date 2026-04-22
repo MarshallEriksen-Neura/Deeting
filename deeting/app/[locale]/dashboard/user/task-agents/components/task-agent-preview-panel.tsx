@@ -2,13 +2,10 @@
 
 import * as React from "react"
 import {
-  Bot,
-  BrainCircuit,
   ImageIcon,
   Play,
   Sparkles,
   Wrench,
-  XCircle,
   Zap,
 } from "lucide-react"
 
@@ -18,32 +15,6 @@ import AudioResultPanel from "@/components/audio/audio-result-panel"
 import type { PreviewDraft } from "./task-agent-editor-types"
 
 type Translation = (key: string, values?: Record<string, string | number>) => string
-
-function PreviewDisclosure({
-  title,
-  defaultOpen = false,
-  children,
-}: {
-  title: string
-  defaultOpen?: boolean
-  children: React.ReactNode
-}) {
-  const [open, setOpen] = React.useState(defaultOpen)
-
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03]">
-      <button
-        type="button"
-        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span className="text-sm font-medium text-[var(--foreground)]">{title}</span>
-        <span className="text-[var(--muted)]">{open ? "-" : "+"}</span>
-      </button>
-      {open ? <div className="px-4 pb-4">{children}</div> : null}
-    </div>
-  )
-}
 
 type TaskAgentPreviewPanelProps = {
   t: Translation
@@ -74,7 +45,7 @@ export function TaskAgentPreviewPanel({
           <div className="space-y-8">
             <div className="space-y-4">
               <label className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">
-                Invocation Message
+                {t("preview.fields.message")}
               </label>
               <textarea
                 value={previewDraft.message}
@@ -93,9 +64,9 @@ export function TaskAgentPreviewPanel({
 
             <div className="space-y-6">
               {[
-                { id: "temperature", label: "Thermal Variance", value: previewDraft.temperature, placeholder: "0.2" },
-                { id: "max_tokens", label: "Token Limit", value: previewDraft.max_tokens, placeholder: "512" },
-                { id: "max_rounds", label: "Recursion Depth", value: previewDraft.max_rounds, placeholder: "4" },
+                { id: "temperature", label: t("preview.fields.temperature"), value: previewDraft.temperature, placeholder: "0.2" },
+                { id: "max_tokens", label: t("preview.fields.maxTokens"), value: previewDraft.max_tokens, placeholder: "512" },
+                { id: "max_rounds", label: t("preview.fields.maxRounds"), value: previewDraft.max_rounds, placeholder: "4" },
               ].map(field => (
                 <div key={field.id} className="space-y-2">
                   <label className="font-mono text-[9px] font-bold tracking-[0.2em] text-[var(--ink-4)] uppercase">
@@ -124,7 +95,7 @@ export function TaskAgentPreviewPanel({
             className="w-full h-12 border border-[var(--ink)] text-[var(--ink)] font-bold text-[10px] tracking-[0.3em] uppercase hover:bg-[var(--ink)] hover:text-[var(--window-bg)] disabled:opacity-20 transition-all active:scale-[0.98] flex items-center justify-center gap-3"
           >
             <Play className={cn("size-3", isPreviewing && "animate-pulse")} />
-            {isPreviewing ? "EXECUTING..." : "INITIATE RUN"}
+            {isPreviewing ? t("actions.runningPreview") : t("actions.runPreview")}
           </button>
         </aside>
 
@@ -132,7 +103,7 @@ export function TaskAgentPreviewPanel({
         <main className="min-h-[500px] space-y-12">
           {previewError && (
             <div className="border-l-2 border-[var(--danger)] pl-6 py-2 space-y-2">
-              <span className="font-mono text-[10px] font-bold text-[var(--danger)] tracking-widest uppercase">Execution Error</span>
+              <span className="font-mono text-[10px] font-bold text-[var(--danger)] tracking-widest uppercase">{t("preview.errorTitle")}</span>
               <p className="text-sm text-[var(--ink-2)] leading-relaxed">{previewError}</p>
             </div>
           )}
@@ -140,14 +111,14 @@ export function TaskAgentPreviewPanel({
           {!previewResult && !previewError ? (
             <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-20">
               <Sparkles className="size-8" />
-              <p className="font-mono text-[10px] tracking-[0.4em] uppercase">Standby for intelligence output</p>
+              <p className="font-mono text-[10px] tracking-[0.4em] uppercase">{t("preview.emptyDescription")}</p>
             </div>
           ) : previewResult ? (
             <div className="space-y-16">
                {/* Core Content */}
                <section className="space-y-6">
                   <div className="flex items-center gap-4">
-                    <span className="font-mono text-[10px] font-bold tracking-[0.3em] text-[var(--accent-strong)] uppercase">Primary Output</span>
+                    <span className="font-mono text-[10px] font-bold tracking-[0.3em] text-[var(--accent-strong)] uppercase">{t("preview.response")}</span>
                     <div className="h-px flex-1 bg-[var(--hairline-strong)] opacity-20" />
                   </div>
                   
@@ -181,7 +152,7 @@ export function TaskAgentPreviewPanel({
                {previewResult.reasoning_content && (
                   <section className="space-y-6">
                     <div className="flex items-center gap-4">
-                      <span className="font-mono text-[10px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">Internal Reasoning</span>
+                      <span className="font-mono text-[10px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">{t("preview.reasoning")}</span>
                       <div className="h-px flex-1 bg-[var(--hairline-strong)] opacity-10" />
                     </div>
                     <div className="text-[13px] leading-relaxed text-[var(--ink-3)] font-serif italic opacity-80 max-w-2xl whitespace-pre-wrap">
@@ -193,9 +164,9 @@ export function TaskAgentPreviewPanel({
                {/* Technical Logs */}
                <section className="space-y-10 pt-10">
                   {[
-                    { title: "Tool Activation", data: previewResult.tool_calls, icon: Wrench },
-                    { title: "Execution Trace", data: previewResult.tool_trace, icon: Zap },
-                    { title: "Raw Response", data: previewResult.raw, icon: ImageIcon }
+                    { title: t("preview.toolCalls"), data: previewResult.tool_calls, icon: Wrench },
+                    { title: t("preview.toolTrace"), data: previewResult.tool_trace, icon: Zap },
+                    { title: t("preview.raw"), data: previewResult.raw, icon: ImageIcon }
                   ].map(log => (
                     log.data && (Array.isArray(log.data) ? log.data.length > 0 : Object.keys(log.data as object).length > 0) && (
                       <div key={log.title} className="space-y-4">
