@@ -1,8 +1,7 @@
 "use client"
 
-import { ModelCostBreakdown } from "./model-cost-breakdown"
-import { ErrorDistribution } from "./error-distribution"
-import { KeyActivityRanking } from "./key-activity-ranking"
+import { TokenThroughputChart } from "@/frontend-reference/app-locale/dashboard/components/token-throughput-chart"
+import { useDashboardOverview } from "@/lib/swr/use-dashboard-overview"
 import type { MonitoringFilters } from "./monitoring-control-bar"
 
 /**
@@ -18,16 +17,20 @@ export function DimensionalBreakdown({
 }: {
   filters: MonitoringFilters
 }) {
+  const { data: overview, isLoading } = useDashboardOverview({
+    source: "auto",
+    period: filters.timeRange,
+    recentErrorLimit: 10,
+  })
+
   return (
     <div className="grid gap-6 lg:grid-cols-3">
-      {/* Left: Model Cost */}
-      <ModelCostBreakdown filters={filters} />
-
-      {/* Center: Error Distribution */}
-      <ErrorDistribution filters={filters} />
-
-      {/* Right: Key Activity */}
-      <KeyActivityRanking filters={filters} />
+      <div className="lg:col-span-3">
+        <TokenThroughputChart
+          data={overview?.tokenThroughput}
+          isLoading={isLoading}
+        />
+      </div>
     </div>
   )
 }

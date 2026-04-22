@@ -32,10 +32,44 @@ const mockFetchAdminGatewayLogStats = fetchAdminGatewayLogStats as jest.MockedFu
 >
 const mockInvoke = invoke as jest.MockedFunction<typeof invoke>
 const originalTauriFlag = process.env.NEXT_PUBLIC_IS_TAURI
-const windowWithTauri = window as Window & {
+const testWindow = (globalThis as typeof globalThis & { window?: Window }).window ??
+  ({} as Window)
+;(globalThis as typeof globalThis & { window?: Window }).window = testWindow
+const windowWithTauri = testWindow as Window & {
   __TAURI__?: unknown
   __TAURI_INTERNALS__?: unknown
 }
+
+const gatewayStats = (overrides: Partial<Awaited<ReturnType<typeof fetchAdminGatewayLogStats>>> = {}) => ({
+  total: 0,
+  success_rate: 0,
+  cache_hit_rate: 0,
+  avg_duration_ms: 0,
+  total_cost_user: 0,
+  error_distribution: [],
+  model_ranking: [],
+  latency_histogram: [],
+  ...overrides,
+})
+
+const gatewayLog = (
+  overrides: Partial<Awaited<ReturnType<typeof fetchAdminGatewayLogs>>["items"][number]>
+) => ({
+  id: "log",
+  model: "gpt-4o",
+  status_code: 200,
+  duration_ms: 0,
+  ttft_ms: null,
+  input_tokens: 0,
+  output_tokens: 0,
+  total_tokens: 0,
+  cost_upstream: 0,
+  cost_user: 0,
+  is_cached: false,
+  error_code: null,
+  created_at: "2026-03-04T09:00:00.000Z",
+  ...overrides,
+})
 
 describe("dashboard apis", () => {
   beforeEach(() => {
@@ -59,20 +93,18 @@ describe("dashboard apis", () => {
   })
 
   it("aggregates dashboard stats from local gateway logs in tauri runtime", async () => {
-    mockFetchAdminGatewayLogStats.mockResolvedValue({
-      total: 3,
-      success_rate: 66.67,
-      cache_hit_rate: 33.33,
-      error_distribution: [],
-      model_ranking: [],
-      latency_histogram: [],
-    })
+    mockFetchAdminGatewayLogStats
+      .mockResolvedValueOnce(gatewayStats({ total: 2, success_rate: 50, avg_duration_ms: 210 }))
+      .mockResolvedValueOnce(gatewayStats({ total: 1, success_rate: 100, avg_duration_ms: 100 }))
+      .mockResolvedValueOnce(gatewayStats({ total: 2 }))
+      .mockResolvedValueOnce(gatewayStats({ total: 1 }))
+      .mockResolvedValueOnce(gatewayStats({ total_cost_user: 0.17 }))
     mockFetchAdminGatewayLogs.mockResolvedValue({
       total: 3,
       skip: 0,
       limit: 500,
       items: [
-        {
+        gatewayLog({
           id: "log-1",
           model: "gpt-4o",
           status_code: 200,
@@ -84,8 +116,8 @@ describe("dashboard apis", () => {
           is_cached: false,
           error_code: null,
           created_at: "2026-03-04T09:00:00.000Z",
-        },
-        {
+        }),
+        gatewayLog({
           id: "log-2",
           model: "gpt-4o-mini",
           status_code: 500,
@@ -97,8 +129,8 @@ describe("dashboard apis", () => {
           is_cached: false,
           error_code: "UPSTREAM_TIMEOUT",
           created_at: "2026-03-04T08:00:00.000Z",
-        },
-        {
+        }),
+        gatewayLog({
           id: "log-3",
           model: "gpt-4o",
           status_code: 200,
@@ -110,35 +142,33 @@ describe("dashboard apis", () => {
           is_cached: true,
           error_code: null,
           created_at: "2026-03-03T12:00:00.000Z",
-        },
+        }),
       ],
     })
 
     const result = await fetchDashboardStats()
 
     expect(result.traffic.todayRequests).toBe(2)
-    expect(result.health.totalRequests).toBeGreaterThan(0)
+    expect(result.health.totalRequests).toBe(2)
+    expect(result.health.successRate).toBe(50)
     expect(result.speed.avgTTFT).toBeGreaterThan(0)
     expect(mockRequest).not.toHaveBeenCalled()
-    expect(mockFetchAdminGatewayLogStats).toHaveBeenCalledTimes(1)
+    expect(mockFetchAdminGatewayLogStats).toHaveBeenCalledTimes(5)
     expect(mockFetchAdminGatewayLogs).toHaveBeenCalledTimes(1)
   })
 
   it("builds token throughput and smart-router stats in tauri runtime", async () => {
-    mockFetchAdminGatewayLogStats.mockResolvedValue({
+    mockFetchAdminGatewayLogStats.mockResolvedValue(gatewayStats({
       total: 2,
       success_rate: 100,
       cache_hit_rate: 50,
-      error_distribution: [],
-      model_ranking: [],
-      latency_histogram: [],
-    })
+    }))
     mockFetchAdminGatewayLogs.mockResolvedValue({
       total: 2,
       skip: 0,
       limit: 500,
       items: [
-        {
+        gatewayLog({
           id: "log-1",
           model: "gpt-4o",
           status_code: 200,
@@ -154,8 +184,8 @@ describe("dashboard apis", () => {
           cache_source: null,
           error_code: null,
           created_at: "2026-03-04T09:30:00.000Z",
-        },
-        {
+        }),
+        gatewayLog({
           id: "log-2",
           model: "gpt-4o",
           status_code: 200,
@@ -171,7 +201,7 @@ describe("dashboard apis", () => {
           cache_source: "provider_reported",
           error_code: null,
           created_at: "2026-03-04T08:30:00.000Z",
-        },
+        }),
       ],
     })
 
@@ -193,7 +223,7 @@ describe("dashboard apis", () => {
       skip: 0,
       limit: 500,
       items: [
-        {
+        gatewayLog({
           id: "log-err-1",
           model: "gpt-4o",
           status_code: 502,
@@ -205,8 +235,8 @@ describe("dashboard apis", () => {
           is_cached: false,
           error_code: "BAD_GATEWAY",
           created_at: "2026-03-04T09:00:00.000Z",
-        },
-        {
+        }),
+        gatewayLog({
           id: "log-ok-1",
           model: "gpt-4o-mini",
           status_code: 200,
@@ -218,7 +248,7 @@ describe("dashboard apis", () => {
           is_cached: true,
           error_code: null,
           created_at: "2026-03-04T08:00:00.000Z",
-        },
+        }),
       ],
     })
     mockInvoke.mockResolvedValueOnce([

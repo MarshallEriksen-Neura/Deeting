@@ -7,6 +7,7 @@ import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Input } from "@/components/ui/shadcn/input";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
+import { ProviderIcon } from "@/components/models/provider-icon";
 import { useProviderHub } from "@/hooks/use-providers";
 import { cn } from "@/lib/utils";
 import type { ProviderCard } from "@/lib/api/providers";
@@ -67,11 +68,11 @@ function ProviderCard({
         <div className="mb-8 flex items-start justify-between">
           <div className="relative">
             <div className="flex size-14 items-center justify-center rounded-2xl border border-white/[0.05] bg-[var(--window-bg)] shadow-inner transition-transform duration-700 group-hover:rotate-[10deg] group-hover:scale-110">
-              {provider.icon ? (
-                <img src={provider.icon} alt="" className="size-8 object-contain" />
-              ) : (
-                <Store className="size-7 text-[var(--ink-4)]" />
-              )}
+              <ProviderIcon
+                src={provider.icon}
+                className="size-8"
+                fallback={<Store className="size-7 text-[var(--ink-4)]" />}
+              />
             </div>
             {/* Icon 背后的小装饰点 */}
             <div className="absolute -right-1 -top-1 size-2 rounded-full bg-[var(--brand-glow)] blur-[2px] animate-pulse" />

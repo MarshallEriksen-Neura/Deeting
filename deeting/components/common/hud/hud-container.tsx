@@ -1,28 +1,22 @@
 'use client';
 
-import { ChevronDown, LayoutGrid } from 'lucide-react';
+import { ChevronDown, LogOut } from 'lucide-react';
 import { Button } from '@/ui/shadcn/button';
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from 'next-themes';
-import { useTranslations } from 'next-intl';
-import { usePathname, useSearchParams } from 'next/navigation';
 import { useChatStore } from '@/store/chat-store';
 import { useChatRuntimeStore } from '@/store/chat-runtime-store';
 import { useShallow } from 'zustand/react/shallow';
-import { useAuthService } from '@/hooks/use-auth';
-import { useAuthWorldModel } from '@/hooks/use-auth-world-model';
 import { useChatModels } from '@/hooks/use-chat-models';
 import { useI18n } from '@/hooks/use-i18n';
 import { resolveChatModelSelectionValue } from '@/lib/api/models';
 import { resolveModelVisual, type ModelPickerModel } from '@/components/models/model-visual';
 import { resolveStatusDetail } from '@/lib/chat/status-detail';
 import { StatusPill } from '@/ui/common/status-pill';
-import { useAuthStore } from '@/store/auth-store';
 import {
   DeferredHistorySidebar,
   DeferredHudControlCenterPanel,
-  DeferredHudSystemMenuPanel,
   preloadHudDeferredSurfaces,
 } from './hud-lazy';
 
@@ -41,17 +35,10 @@ import {
  * - 使用 useShallow 优化 Zustand store 订阅
  */
 export default function HUD() {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isControlCenterOpen, setIsControlCenterOpen] = useState(false);
   const t = useI18n('chat');
-  const tHeader = useTranslations('common.header');
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  
   const { setTheme, theme } = useTheme();
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const { logout } = useAuthService();
   
   const { config, setConfig, models, setModels } = useChatStore(
     useShallow((state) => ({
@@ -73,15 +60,6 @@ export default function HUD() {
   const { models: serviceModels, modelGroups: serviceModelGroups } = useChatModels({
     enabled: true,
     modelCapability: "chat",
-  });
-
-  const authCallbackUrl = useMemo(() => {
-    const query = searchParams?.toString();
-    const safePathname = pathname || '/chat';
-    return query ? `${safePathname}?${query}` : safePathname;
-  }, [pathname, searchParams]);
-  const { loginTarget, launchLogin, isLaunchingLogin } = useAuthWorldModel({
-    callbackUrl: authCallbackUrl,
   });
 
   useEffect(() => {
@@ -147,10 +125,6 @@ export default function HUD() {
     setIsControlCenterOpen(prev => !prev);
   }, []);
 
-  const handleToggleMenu = useCallback(() => {
-    setIsMenuOpen(prev => !prev);
-  }, []);
-
   const handleOpenHistory = useCallback(() => {
     setIsHistoryOpen(true);
   }, []);
@@ -167,15 +141,9 @@ export default function HUD() {
     setConfig({ model: value });
   }, [setConfig]);
 
-  const handleAuthAction = useCallback(async () => {
-    if (isAuthenticated) {
-      await logout();
-      window.location.assign(loginTarget);
-      return;
-    }
-
-    await launchLogin();
-  }, [isAuthenticated, launchLogin, loginTarget, logout]);
+  const handleExitToHome = useCallback(() => {
+    window.location.assign('/');
+  }, []);
 
   return (
     <>
@@ -225,16 +193,19 @@ export default function HUD() {
 
           <span className="text-slate-200 dark:text-white/10 text-xs self-center h-4 w-px bg-current"></span>
 
-          {/* System Menu Trigger (Right) */}
+          {/* Exit Trigger (Right) */}
           <Button
             variant="ghost"
-            onClick={handleToggleMenu}
+            onClick={() => {
+              handleExitToHome();
+            }}
+            aria-label={t("hud.menu.home")}
             className={`
                 p-1.5 rounded-full transition-all duration-300 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]
-                ${isMenuOpen ? 'bg-slate-900 text-white dark:bg-white dark:text-black scale-[1.06] shadow-[0_6px_16px_-8px_rgba(15,23,42,0.45)]' : 'bg-white/60 dark:bg-white/5 text-slate-600 dark:text-white/50 hover:text-slate-900 dark:hover:text-white hover:bg-white/90 dark:hover:bg-white/10'}
+                bg-white/60 dark:bg-white/5 text-slate-600 dark:text-white/50 hover:text-red-500 dark:hover:text-red-400 hover:bg-white/90 dark:hover:bg-white/10
             `}
           >
-            <LayoutGrid className="w-4 h-4" />
+            <LogOut className="w-4 h-4" />
           </Button>
 
       </motion.div>
@@ -263,37 +234,6 @@ export default function HUD() {
             </motion.div>
         )}
       </AnimatePresence>
-
-      {/* 3. System Dropdown (Existing) */}
-      <AnimatePresence>
-        {isMenuOpen && (
-            <motion.div
-                initial={{ opacity: 0, y: -10, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                className="absolute top-full mt-3 w-64 bg-white/82 dark:bg-[#121212]/88 backdrop-blur-2xl border border-white/70 dark:border-white/10 rounded-[1.75rem] shadow-[0_18px_40px_-20px_rgba(15,23,42,0.35)] ring-1 ring-white/40 dark:ring-white/5 overflow-hidden p-3 flex flex-col gap-2 z-50"
-            >
-                <DeferredHudSystemMenuPanel
-                  homeLabel={t("hud.menu.home")}
-                  dashboardLabel={t("hud.menu.dashboard")}
-                  registryLabel={t("hud.menu.registry")}
-                  preferencesLabel={t("hud.menu.preferences")}
-                  interfaceModeLabel={t("hud.menu.interfaceMode")}
-                  authActionLabel={isAuthenticated ? t("hud.menu.terminateSession") : tHeader("login")}
-                  authActionTone={isAuthenticated ? 'danger' : 'default'}
-                  authActionPending={isLaunchingLogin}
-                  theme={theme}
-                  onThemeToggle={handleThemeToggle}
-                  onAuthAction={() => {
-                    void handleAuthAction().catch((error) => {
-                      console.error('hud auth action failed', error);
-                    });
-                  }}
-                />
-            </motion.div>
-        )}
-      </AnimatePresence>
-
     </nav>
     
     <DeferredHistorySidebar isOpen={isHistoryOpen} onClose={handleCloseHistory} />

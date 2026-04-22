@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Minus, X } from "lucide-react";
+import { Minus, Square, X } from "lucide-react";
 
 function isTauriRuntime() {
   return (
@@ -13,18 +13,42 @@ function isTauriRuntime() {
 export function TitleBar() {
   const [isTauri, setIsTauri] = useState(false);
   const [isIslandWindow, setIsIslandWindow] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
 
   useEffect(() => {
     if (!isTauriRuntime()) return;
 
     setIsTauri(true);
-    import("@tauri-apps/api/window")
-      .then(({ getCurrentWindow }) => {
-        setIsIslandWindow(getCurrentWindow().label === "island");
-      })
-      .catch(() => {
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+
+    const setupWindowState = async () => {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const currentWindow = getCurrentWindow();
+
+        if (disposed) return;
+
+        setIsIslandWindow(currentWindow.label === "island");
+        setIsMaximized(await currentWindow.isMaximized());
+
+        cleanup = await currentWindow.onResized(async () => {
+          if (disposed) return;
+          setIsMaximized(await currentWindow.isMaximized());
+        });
+      } catch {
+        if (disposed) return;
         setIsIslandWindow(false);
-      });
+        setIsMaximized(false);
+      }
+    };
+
+    void setupWindowState();
+
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
   }, []);
 
   if (!isTauri || isIslandWindow) return null;
@@ -41,6 +65,23 @@ export function TitleBar() {
       } catch {
         // ignore fallback failure
       }
+    }
+  };
+
+  const handleToggleMaximize = async () => {
+    try {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      const currentWindow = getCurrentWindow();
+      if (await currentWindow.isMaximized()) {
+        await currentWindow.unmaximize();
+        setIsMaximized(false);
+        return;
+      }
+
+      await currentWindow.maximize();
+      setIsMaximized(true);
+    } catch (error) {
+      console.error("Failed to maximize/unmaximize window:", error);
     }
   };
 
@@ -68,16 +109,25 @@ export function TitleBar() {
           type="button"
           onClick={handleMinimize}
           className="flex h-full w-11 items-center justify-center text-[var(--ink-3)] transition-colors duration-150 hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/8"
-          aria-label="最小化"
+          aria-label="Minimize"
         >
           <Minus className="h-3.5 w-3.5" />
         </button>
 
         <button
           type="button"
+          onClick={handleToggleMaximize}
+          className="flex h-full w-11 items-center justify-center text-[var(--ink-3)] transition-colors duration-150 hover:bg-black/5 hover:text-[var(--ink)] dark:hover:bg-white/8"
+          aria-label={isMaximized ? "Restore" : "Maximize"}
+        >
+          <Square className={isMaximized ? "h-3 w-3 scale-75" : "h-3 w-3"} />
+        </button>
+
+        <button
+          type="button"
           onClick={handleClose}
           className="flex h-full w-11 items-center justify-center text-[var(--ink-3)] transition-colors duration-150 hover:bg-red-500 hover:text-white"
-          aria-label="关闭"
+          aria-label="Close"
         >
           <X className="h-3.5 w-3.5" />
         </button>

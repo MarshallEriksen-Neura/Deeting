@@ -2,22 +2,13 @@
 
 import { useTranslations } from "next-intl"
 import { DollarSign } from "lucide-react"
-import {
-  GlassCard,
-  GlassCardContent,
-  GlassCardDescription,
-  GlassCardHeader,
-  GlassCardTitle,
-} from "@/ui/common/glass-card"
+import { BlueprintCard } from "@/ui/common/blueprint-card"
 import { useModelCostBreakdown } from "@/lib/swr/use-model-cost-breakdown"
 import { cn } from "@/lib/utils"
 import type { MonitoringFilters } from "./monitoring-control-bar"
 
 /**
- * Model Cost Breakdown Component
- *
- * Horizontal bar chart showing cost by model
- * Purpose: Identify which models are consuming the most budget
+ * Model Cost Breakdown - Blueprint Edition
  */
 export function ModelCostBreakdown({ filters }: { filters: MonitoringFilters }) {
   const t = useTranslations("monitoring.dimensional.modelCost")
@@ -26,82 +17,63 @@ export function ModelCostBreakdown({ filters }: { filters: MonitoringFilters }) 
   })
 
   const models = data?.models ?? []
-
   const totalCost = models.reduce((sum, m) => sum + m.cost, 0)
 
   return (
-    <GlassCard className="bg-[var(--card)]">
-      <GlassCardHeader>
-        <GlassCardTitle className="flex items-center gap-2">
-          <DollarSign className="h-5 w-5 text-amber-400" />
-          {t("title")}
-        </GlassCardTitle>
-        <GlassCardDescription className="mt-1">
-          {t("description")}
-        </GlassCardDescription>
-      </GlassCardHeader>
-      <GlassCardContent>
-        {isLoading ? (
-          <div className="space-y-3">
-            {[...Array(4)].map((_, i) => (
-              <div
-                key={i}
-                className="h-12 animate-pulse rounded bg-[var(--foreground)]/5"
-              />
+    <BlueprintCard
+      title={t("title")}
+      subtitle={t("description")}
+      headerAction={<DollarSign className="h-4 w-4 text-amber-500/70" />}
+    >
+      {isLoading ? (
+        <div className="space-y-3">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-12 animate-pulse bg-[var(--border)]" />
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* Total Cost Section */}
+          <div className="border border-amber-500/20 bg-amber-500/5 p-4 flex items-end justify-between">
+            <div className="flex flex-col gap-1">
+              <span className="font-mono text-[9px] uppercase tracking-wider text-amber-600/60">{t("total")}</span>
+              <span className="font-mono text-2xl font-bold text-amber-600 tabular-nums">
+                ${totalCost.toFixed(2)}
+              </span>
+            </div>
+            <div className="h-2 w-2 bg-amber-500/40 animate-pulse" />
+          </div>
+
+          {/* Model Bars */}
+          <div className="space-y-5">
+            {models.map((model, index) => (
+              <div key={model.name} className="space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-mono">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[var(--ink-4)]">0{index + 1}</span>
+                    <span className="font-bold uppercase tracking-tight text-[var(--foreground)]">{model.name}</span>
+                  </div>
+                  <span className="font-bold text-[var(--foreground)] tabular-nums">
+                    ${model.cost.toFixed(2)}
+                  </span>
+                </div>
+                <div className="relative h-1 bg-[var(--border)]">
+                  <div
+                    className="h-full bg-amber-500/60 transition-all duration-1000"
+                    style={{ width: `${model.percentage}%` }}
+                  />
+                  {/* Tick marks on the bar */}
+                  <div className="absolute inset-0 flex justify-between px-px pointer-events-none">
+                     {[...Array(5)].map((_, i) => (
+                       <div key={i} className="h-full w-px bg-white/20" />
+                     ))}
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Total Cost */}
-            <div className="rounded-lg bg-amber-500/10 p-3">
-              <div className="text-xs text-[var(--muted)]">{t("total")}</div>
-              <div className="text-2xl font-bold text-amber-400 tabular-nums">
-                ${totalCost.toFixed(2)}
-              </div>
-            </div>
-
-            {/* Model Bars */}
-            <div className="space-y-3">
-              {models.map((model, index) => (
-                <ModelBar key={model.name} model={model} rank={index + 1} />
-              ))}
-            </div>
-          </div>
-        )}
-      </GlassCardContent>
-    </GlassCard>
-  )
-}
-
-function ModelBar({
-  model,
-  rank,
-}: {
-  model: { name: string; cost: number; percentage: number }
-  rank: number
-}) {
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between text-sm">
-        <div className="flex items-center gap-2">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--primary)]/10 text-xs font-semibold text-[var(--primary)]">
-            {rank}
-          </span>
-          <span className="font-medium text-[var(--foreground)]">{model.name}</span>
         </div>
-        <span className="font-mono font-semibold text-[var(--foreground)] tabular-nums">
-          ${model.cost.toFixed(2)}
-        </span>
-      </div>
-      <div className="relative h-2 overflow-hidden rounded-full bg-[var(--muted)]/20">
-        <div
-          className={cn(
-            "h-full rounded-full transition-all duration-1000",
-            "bg-gradient-to-r from-amber-400 to-amber-500"
-          )}
-          style={{ width: `${model.percentage}%` }}
-        />
-      </div>
-    </div>
+      )}
+    </BlueprintCard>
   )
 }

@@ -4,6 +4,7 @@ import * as React from "react";
 import { Bot, Server, MoreHorizontal, Layers } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
+import { ProviderIcon } from "@/components/models/provider-icon";
 import { useProviderInstances } from "@/hooks/use-providers";
 import { ModelsManager } from "@/components/models/models-manager";
 import { cn } from "@/lib/utils";
@@ -106,11 +107,11 @@ export function ModelManagementProvidersPage() {
                             ? "border-[var(--accent-border)] bg-[var(--panel-bg)] shadow-[inset_0_2px_10px_rgba(0,0,0,0.1)] scale-110 rotate-[-4deg]" 
                             : "border-[var(--hairline)] bg-[var(--panel-bg-inset)] opacity-60"
                         )}>
-                          {instance.icon ? (
-                             <img src={instance.icon} className="size-5.5 flex-none transition-transform group-hover:scale-110" alt="" />
-                          ) : (
-                             <Server className={cn("size-4.5 flex-none", selected ? "text-[var(--accent-strong)]" : "text-[var(--ink-4)]")} />
-                          )}
+                          <ProviderIcon
+                            src={instance.icon}
+                            className="size-5.5 flex-none transition-transform group-hover:scale-110"
+                            fallback={<Server className={cn("size-4.5 flex-none", selected ? "text-[var(--accent-strong)]" : "text-[var(--ink-4)]")} />}
+                          />
                         </div>
                         <div className="min-w-0">
                           <span className={cn(

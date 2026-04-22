@@ -2,27 +2,14 @@
 
 import { useTranslations } from "next-intl"
 import { AlertTriangle } from "lucide-react"
-import {
-  GlassCard,
-  GlassCardContent,
-  GlassCardDescription,
-  GlassCardHeader,
-  GlassCardTitle,
-} from "@/ui/common/glass-card"
+import { BlueprintCard } from "@/ui/common/blueprint-card"
 import { Cell, Pie, PieChart } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/ui/shadcn/chart"
 import { useErrorDistribution } from "@/lib/swr/use-error-distribution"
 import type { MonitoringFilters } from "./monitoring-control-bar"
 
 /**
- * Error Distribution Component
- *
- * Donut chart categorizing errors:
- * - 429: Rate limiting (money issue)
- * - 5xx: Upstream failures (provider issue)
- * - 4xx: Client errors (code issue)
- *
- * Purpose: Quick fault attribution
+ * Error Distribution - Blueprint Edition
  */
 export function ErrorDistribution({
   filters,
@@ -42,95 +29,83 @@ export function ErrorDistribution({
   const errorData = (data?.categories ?? []).map((item) => ({
     ...item,
     label: errorLabelMap[item.category] ?? item.label ?? item.category,
+    // Clean up color names from potential double parenthesis
+    color: item.color.replace(/\)\)/g, ')'),
   }))
 
   const totalErrors = errorData.reduce((sum, e) => sum + e.count, 0)
 
   const chartConfig = {
-    "429": { label: errorLabelMap["429"], color: "var(--chart-3))" },
-    "5xx": { label: errorLabelMap["5xx"], color: "var(--chart-1))" },
-    "4xx": { label: errorLabelMap["4xx"], color: "var(--chart-4))" },
+    "429": { label: errorLabelMap["429"], color: "var(--chart-3)" },
+    "5xx": { label: errorLabelMap["5xx"], color: "var(--chart-1)" },
+    "4xx": { label: errorLabelMap["4xx"], color: "var(--chart-4)" },
   }
 
   return (
-    <GlassCard className="bg-[var(--card)]">
-      <GlassCardHeader>
-        <GlassCardTitle className="flex items-center gap-2">
-          <AlertTriangle className="h-5 w-5 text-red-400" />
-          {t("title")}
-        </GlassCardTitle>
-        <GlassCardDescription className="mt-1">
-          {t("description")}
-        </GlassCardDescription>
-      </GlassCardHeader>
-      <GlassCardContent>
-        {isLoading ? (
-          <div className="flex h-64 items-center justify-center">
-            <div className="text-[var(--muted)]">{t("loading")}</div>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Donut Chart */}
-            <ChartContainer config={chartConfig} className="mx-auto h-48 w-48">
+    <BlueprintCard
+      title={t("title")}
+      subtitle={t("description")}
+      headerAction={<AlertTriangle className="h-4 w-4 text-[var(--danger)]/70" />}
+    >
+      {isLoading ? (
+        <div className="flex h-64 items-center justify-center">
+          <div className="text-[var(--muted)]">{t("loading")}</div>
+        </div>
+      ) : (
+        <div className="space-y-8 flex flex-col items-center">
+          <div className="relative w-full aspect-square max-w-[200px]">
+            <ChartContainer config={chartConfig} className="h-full w-full">
               <PieChart>
                 <Pie
                   data={errorData}
                   dataKey="count"
                   nameKey="label"
-                  innerRadius={50}
-                  outerRadius={80}
-                  paddingAngle={2}
+                  innerRadius={65}
+                  outerRadius={85}
+                  paddingAngle={4}
+                  stroke="none"
+                  isAnimationActive={false}
                 >
                   {errorData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
+                    <Cell 
+                      key={`cell-${index}`} 
+                      fill={entry.color} 
+                      className="opacity-80 hover:opacity-100 transition-opacity"
+                    />
                   ))}
                 </Pie>
                 <ChartTooltip content={<ChartTooltipContent />} />
               </PieChart>
             </ChartContainer>
 
-            {/* Total in center (simulated) */}
-            <div className="text-center -mt-32 mb-24">
-              <div className="text-3xl font-bold text-[var(--foreground)] tabular-nums">
+            {/* Blueprint Center Value */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <span className="font-mono text-3xl font-bold tracking-tighter tabular-nums text-[var(--foreground)]">
                 {totalErrors}
-              </div>
-              <div className="text-xs text-[var(--muted)]">{t("totalErrors")}</div>
-            </div>
-
-            {/* Legend with details */}
-            <div className="space-y-2">
-              {errorData.map((error) => (
-                <ErrorLegendItem key={error.category} error={error} total={totalErrors} />
-              ))}
+              </span>
+              <span className="font-mono text-[9px] uppercase tracking-widest text-[var(--ink-4)]">
+                {t("totalErrors")}
+              </span>
             </div>
           </div>
-        )}
-      </GlassCardContent>
-    </GlassCard>
-  )
-}
 
-function ErrorLegendItem({
-  error,
-  total,
-}: {
-  error: { category: string; label: string; count: number; color: string }
-  total: number
-}) {
-  const percentage = total > 0 ? ((error.count / total) * 100).toFixed(1) : "0.0"
-
-  return (
-    <div className="flex items-center justify-between rounded-lg border border-[var(--border)] p-2">
-      <div className="flex items-center gap-2">
-        <div className="h-3 w-3 rounded-full" style={{ backgroundColor: error.color }} />
-        <span className="text-sm font-medium text-[var(--foreground)]">{error.label}</span>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold text-[var(--foreground)] tabular-nums">
-          {error.count}
-        </span>
-        <span className="text-xs text-[var(--muted)]">({percentage}%)</span>
-      </div>
-    </div>
+          {/* Blueprint Detail List */}
+          <div className="w-full space-y-1">
+            {errorData.map((error) => (
+              <div key={error.category} className="flex items-center justify-between border-t border-[var(--border)] pt-2 pb-1">
+                <div className="flex items-center gap-2">
+                  <div className="size-1.5" style={{ backgroundColor: error.color }} />
+                  <span className="font-mono text-[10px] uppercase font-bold text-[var(--foreground)]">{error.label}</span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="font-mono text-xs font-bold tabular-nums text-[var(--foreground)]">{error.count}</span>
+                  <span className="font-mono text-[9px] text-[var(--ink-4)]">({totalErrors > 0 ? ((error.count / totalErrors) * 100).toFixed(1) : "0.0"}%)</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </BlueprintCard>
   )
 }

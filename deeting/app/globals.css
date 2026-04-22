@@ -1854,3 +1854,32 @@ html:not(.dark) [data-tauri-drag-region] {
 .atelier-diff-sign[data-kind="remove"] { color: var(--atl-danger); font-weight: 600; }
 .atelier-diff-num { text-align: right; opacity: 0.55; }
 .atelier-diff-text { white-space: pre-wrap; word-break: break-word; }
+
+/* ©¤©¤©¤ 16. Diagnosis & Scanning (Blueprint Extension) ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤ */
+@keyframes ws-scan-line {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(1000%); }
+}
+.ws-scanner-sweep {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    var(--primary) 50%,
+    transparent 100%
+  );
+  height: 2px;
+  opacity: 0.15;
+  pointer-events: none;
+  z-index: 10;
+  animation: ws-scan-line 4s linear infinite;
+}
+.ws-led {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  filter: blur(1px);
+  box-shadow: 0 0 4px var(--led-color);
+  background: var(--led-color);
+}

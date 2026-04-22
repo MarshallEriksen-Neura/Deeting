@@ -7,6 +7,7 @@ import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { GlassButton } from "@/components/ui/common/glass-button";
 import { Badge } from "@/components/ui/shadcn/badge";
+import { ProviderIcon } from "@/components/models/provider-icon";
 import type { ProviderInstance, ProviderStatus, SyncState } from "./types";
 
 interface InstanceDashboardProps {
@@ -81,9 +82,7 @@ export function InstanceDashboard({ instance, syncState, onSettings, className }
               boxShadow: `0 8px 16px -8px color-mix(in oklch, ${theme.color} 25%, transparent)`
             }}
           >
-            {instance.icon ? (
-              <img src={instance.icon} className="size-6 object-contain" alt="" />
-            ) : theme.icon}
+            <ProviderIcon src={instance.icon} className="size-6" fallback={theme.icon} />
           </div>
           
           <div className="flex min-w-0 flex-col">

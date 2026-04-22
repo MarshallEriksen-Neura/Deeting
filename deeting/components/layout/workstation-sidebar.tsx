@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import * as React from "react";
 import Image from "next/image";
@@ -9,18 +9,22 @@ import {
   BookOpen,
   ChevronDown,
   Cpu,
+  FileSearch,
   FolderOpen,
   Gauge,
+  KeyRound,
   LayoutDashboard,
   MessageSquare,
   Settings,
   Shield,
   Terminal,
+  Users,
   Workflow,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Link, usePathname } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
+import { useUserProfile } from "@/hooks/use-user";
 import {
   SidebarContent,
   SidebarFooter,
@@ -39,6 +43,7 @@ type NavItem = {
   labelKey: string;
   icon: React.ComponentType<{ className?: string }>;
   disabled?: boolean;
+  adminOnly?: boolean;
 };
 
 type NavGroup = {
@@ -47,7 +52,8 @@ type NavGroup = {
     | "nav.workspace"
     | "nav.modelsAndAgents"
     | "nav.automationAndObservability"
-    | "nav.knowledgeAndStorage";
+    | "nav.knowledgeAndStorage"
+    | "nav.admin";
   items: NavItem[];
 };
 
@@ -92,9 +98,17 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "knowledge", href: "/knowledge", labelKey: "nav.knowledge", icon: FolderOpen },
       { id: "llm-wiki", href: "/llm-wiki", labelKey: "nav.llmWiki", icon: FolderOpen },
       { id: "memory", href: "/memory", labelKey: "nav.memory", icon: FolderOpen },
+      { id: "scan-reviews", href: "/scan-reviews", labelKey: "nav.scanReviews", icon: FileSearch },
     ],
   },
-];
+  {
+    id: "admin",
+    titleKey: "nav.admin",
+    items: [
+      { id: "admin-provider-presets", href: "/admin/provider-presets", labelKey: "nav.providerPresets", icon: KeyRound, adminOnly: true },
+      { id: "admin-users", href: "/admin/users", labelKey: "nav.userManagement", icon: Users, adminOnly: true },
+    ],
+  },];
 
 const FOOTER_ACTIONS: Required<Pick<NavItem, "id" | "href" | "labelKey" | "icon">>[] = [
   { id: "docs", href: "/", labelKey: "docs", icon: BookOpen },
@@ -261,11 +275,14 @@ export function WorkstationSidebar() {
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
   const unavailableLabel = tCommon("nav.planned");
+  const { profile } = useUserProfile();
+  const isAdmin = Boolean(profile?.is_superuser);
   const [expandedGroups, setExpandedGroups] = React.useState<Record<string, boolean>>({
     workspace: true,
     "models-and-agents": true,
     "automation-and-observability": true,
     "knowledge-and-storage": true,
+    admin: true,
   });
 
   return (
@@ -316,6 +333,10 @@ export function WorkstationSidebar() {
       </SidebarHeader>
       <SidebarContent className={cn("relative z-[1] min-h-0 flex-1 overflow-y-auto px-2 pb-3", isCollapsed && "px-1.5")}>
         {NAV_GROUPS.map((group) => {
+          const visibleItems = group.items.filter((item) => !item.adminOnly || isAdmin);
+          if (visibleItems.length === 0) {
+            return null;
+          }
           const isExpanded = expandedGroups[group.id] ?? true;
 
           return (
@@ -335,7 +356,7 @@ export function WorkstationSidebar() {
               {isExpanded ? (
                 <SidebarGroupContent>
                   <SidebarMenu className="gap-1">
-                    {group.items.map((item) => {
+                    {visibleItems.map((item) => {
                       const isActive = isNavItemActive(pathname, item);
                       const label = tCommon(item.labelKey as never);
 
@@ -363,3 +384,5 @@ export function WorkstationSidebar() {
     </aside>
   );
 }
+
+

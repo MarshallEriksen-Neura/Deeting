@@ -1,14 +1,8 @@
 "use client"
 
 import { useTranslations } from "next-intl"
-import { Activity } from "lucide-react"
-import {
-  GlassCard,
-  GlassCardContent,
-  GlassCardDescription,
-  GlassCardHeader,
-  GlassCardTitle,
-} from "@/ui/common/glass-card"
+import { Activity, BarChart3 } from "lucide-react"
+import { BlueprintCard } from "@/ui/common/blueprint-card"
 import { LatencyHeatmap } from "./latency-heatmap"
 import { PercentileTrends } from "./percentile-trends"
 import type { MonitoringFilters } from "./monitoring-control-bar"
@@ -16,9 +10,10 @@ import type { MonitoringFilters } from "./monitoring-control-bar"
 /**
  * Performance Diagnostics Section
  *
- * Two-part vertical layout:
- * 1. Latency Heatmap - Shows request distribution over time
- * 2. P99 vs P50 Trends - Tail latency monitoring
+ * Blueprint Redesign:
+ * - Uses BlueprintCard for industrial aesthetic
+ * - Heatmap as primary focus
+ * - Percentile trends as secondary focus
  */
 export function PerformanceDiagnostics({
   filters,
@@ -28,35 +23,24 @@ export function PerformanceDiagnostics({
   const t = useTranslations("monitoring.performance")
 
   return (
-    <div className="mb-6 space-y-6">
+    <div className="mb-8 space-y-8">
       {/* Main Chart: Latency Heatmap */}
-      <GlassCard className="bg-[var(--card)]">
-        <GlassCardHeader>
-          <GlassCardTitle className="flex items-center gap-2">
-            <Activity className="h-5 w-5 text-[var(--primary)]" />
-            {t("heatmap.title")}
-          </GlassCardTitle>
-          <GlassCardDescription className="mt-1">
-            {t("heatmap.description")}
-          </GlassCardDescription>
-        </GlassCardHeader>
-        <GlassCardContent>
-          <LatencyHeatmap filters={filters} />
-        </GlassCardContent>
-      </GlassCard>
+      <BlueprintCard
+        title={t("heatmap.title")}
+        subtitle={t("heatmap.description")}
+        headerAction={<Activity className="h-4 w-4 text-[var(--primary)]" />}
+      >
+        <LatencyHeatmap filters={filters} />
+      </BlueprintCard>
 
       {/* Sub Chart: P99 vs P50 Trends */}
-      <GlassCard className="bg-[var(--card)]">
-        <GlassCardHeader>
-          <GlassCardTitle>{t("percentile.title")}</GlassCardTitle>
-          <GlassCardDescription className="mt-1">
-            {t("percentile.description")}
-          </GlassCardDescription>
-        </GlassCardHeader>
-        <GlassCardContent>
-          <PercentileTrends filters={filters} />
-        </GlassCardContent>
-      </GlassCard>
+      <BlueprintCard
+        title={t("percentile.title")}
+        subtitle={t("percentile.description")}
+        headerAction={<BarChart3 className="h-4 w-4 text-[var(--ink-4)]" />}
+      >
+        <PercentileTrends filters={filters} />
+      </BlueprintCard>
     </div>
   )
 }

@@ -123,6 +123,13 @@ type LocalProviderModel = {
 }
 
 type LocalGatewayLogStats = Awaited<ReturnType<typeof fetchAdminGatewayLogStats>>
+type LocalGatewayStatsWindow = {
+  current24h: LocalGatewayLogStats
+  previous24h: LocalGatewayLogStats
+  today: LocalGatewayLogStats
+  yesterday: LocalGatewayLogStats
+  month: LocalGatewayLogStats
+}
 type LocalGatewayLogCacheEntry = {
   maxItems: number
   items: GatewayLogItem[]
@@ -274,6 +281,39 @@ async function loadLocalGatewayStats(): Promise<LocalGatewayLogStats> {
   }
 }
 
+async function loadLocalGatewayStatsWindow(nowTs: number): Promise<LocalGatewayStatsWindow> {
+  const dayStart = startOfDayTs(nowTs)
+  const yesterdayStart = dayStart - DAY_MS
+  const nowDate = new Date(nowTs)
+  const monthStart = new Date(nowDate.getFullYear(), nowDate.getMonth(), 1).getTime()
+  const nextDayStart = dayStart + DAY_MS
+
+  const [current24h, previous24h, today, yesterday, month] = await Promise.all([
+    fetchAdminGatewayLogStats({
+      start_time: new Date(nowTs - DAY_MS).toISOString(),
+      end_time: new Date(nowTs).toISOString(),
+    }),
+    fetchAdminGatewayLogStats({
+      start_time: new Date(nowTs - 2 * DAY_MS).toISOString(),
+      end_time: new Date(nowTs - DAY_MS).toISOString(),
+    }),
+    fetchAdminGatewayLogStats({
+      start_time: new Date(dayStart).toISOString(),
+      end_time: new Date(nextDayStart).toISOString(),
+    }),
+    fetchAdminGatewayLogStats({
+      start_time: new Date(yesterdayStart).toISOString(),
+      end_time: new Date(dayStart).toISOString(),
+    }),
+    fetchAdminGatewayLogStats({
+      start_time: new Date(monthStart).toISOString(),
+      end_time: new Date(nowTs).toISOString(),
+    }),
+  ])
+
+  return { current24h, previous24h, today, yesterday, month }
+}
+
 async function loadLocalProviderHealth(): Promise<ProviderHealth[]> {
   const data = await invokeTauri<unknown[]>("list_local_provider_health")
   return z.array(ProviderHealthSchema).parse(data)
@@ -361,6 +401,58 @@ function computeDashboardStatsFromLocal(
       successRate: recentHealthRate,
       totalRequests: total24h,
       successfulRequests: successful24h,
+    },
+  })
+}
+
+function computeDashboardStatsFromLocalStats(
+  statsWindow: LocalGatewayStatsWindow,
+  logs: GatewayLogItem[],
+  nowTs: number
+): DashboardStats {
+  const dayStart = startOfDayTs(nowTs)
+  const nowDate = new Date(nowTs)
+  const daysInMonth = new Date(nowDate.getFullYear(), nowDate.getMonth() + 1, 0).getDate()
+  const passedDays = Math.max(1, nowDate.getDate())
+  const monthlySpent = statsWindow.month.total_cost_user
+  const avgTtftCurrent = average(logs.map(getPreferredLatency).filter((value) => value > 0))
+  const avgTtft = avgTtftCurrent > 0 ? avgTtftCurrent : statsWindow.current24h.avg_duration_ms
+
+  const hourlyTrend = Array.from({ length: 24 }, () => 0)
+  for (const log of logs) {
+    const ts = toTimestamp(log.created_at)
+    if (ts == null || ts < dayStart || ts >= dayStart + DAY_MS) continue
+    const hourIdx = Math.floor((ts - dayStart) / HOUR_MS)
+    if (hourIdx >= 0 && hourIdx < 24) {
+      hourlyTrend[hourIdx] += 1
+    }
+  }
+
+  return DashboardStatsSchema.parse({
+    financial: {
+      monthlySpent,
+      balance: 0,
+      quotaUsedPercent: 0,
+      estimatedMonthEnd: (monthlySpent / passedDays) * daysInMonth,
+    },
+    traffic: {
+      todayRequests: statsWindow.today.total,
+      hourlyTrend,
+      trendPercent: percentChange(statsWindow.today.total, statsWindow.yesterday.total),
+    },
+    speed: {
+      avgTTFT: avgTtft,
+      trendPercent: percentChange(
+        statsWindow.current24h.avg_duration_ms,
+        statsWindow.previous24h.avg_duration_ms
+      ),
+    },
+    health: {
+      successRate: statsWindow.current24h.success_rate,
+      totalRequests: statsWindow.current24h.total,
+      successfulRequests: Math.round(
+        (statsWindow.current24h.total * statsWindow.current24h.success_rate) / 100
+      ),
     },
   })
 }
@@ -544,17 +636,17 @@ export async function fetchDashboardOverview(options?: {
       period === "30d" ? 10000 : 5000,
       Math.max(500, recentErrorLimit * 40)
     )
-    const [localStats, logs, providerHealth] = await Promise.all([
-      loadLocalGatewayStats(),
+    const nowTs = Date.now()
+    const [statsWindow, logs, providerHealth] = await Promise.all([
+      loadLocalGatewayStatsWindow(nowTs),
       loadLocalGatewayLogs(maxItems),
       loadLocalProviderHealth(),
     ])
-    const nowTs = Date.now()
 
     return DashboardOverviewSchema.parse({
-      stats: computeDashboardStatsFromLocal(localStats, logs, nowTs),
+      stats: computeDashboardStatsFromLocalStats(statsWindow, logs, nowTs),
       tokenThroughput: computeTokenThroughputFromLocal(logs, period, nowTs),
-      smartRouterStats: computeSmartRouterStatsFromLocal(localStats, logs),
+      smartRouterStats: computeSmartRouterStatsFromLocal(statsWindow.current24h, logs),
       providerHealth,
       recentErrors: computeRecentErrorsFromLocal(logs, recentErrorLimit),
     })
@@ -584,11 +676,12 @@ export async function fetchDashboardStats(options?: {
   source?: DashboardDataSource
 }): Promise<DashboardStats> {
   if (shouldUseLocal(options?.source)) {
-    const [localStats, logs] = await Promise.all([
-      loadLocalGatewayStats(),
+    const nowTs = Date.now()
+    const [statsWindow, logs] = await Promise.all([
+      loadLocalGatewayStatsWindow(nowTs),
       loadLocalGatewayLogs(5000),
     ])
-    return computeDashboardStatsFromLocal(localStats, logs, Date.now())
+    return computeDashboardStatsFromLocalStats(statsWindow, logs, nowTs)
   }
 
   const data = await request<DashboardStats>({
