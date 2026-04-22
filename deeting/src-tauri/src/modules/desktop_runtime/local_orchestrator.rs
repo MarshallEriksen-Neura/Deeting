@@ -917,6 +917,7 @@ pub async fn execute_local_orchestrated_chat(
                     input.request_id.as_deref(),
                     Some(&trace_id),
                     &fingerprint_key,
+                    ctx.latest_user_query(),
                     &task_fingerprint_json,
                     route_decision_json.as_deref(),
                     &execution_policy_json,

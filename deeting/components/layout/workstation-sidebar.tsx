@@ -10,8 +10,11 @@ import {
   ChevronDown,
   Cpu,
   FolderOpen,
+  Gauge,
   LayoutDashboard,
+  MessageSquare,
   Settings,
+  Shield,
   Terminal,
   Workflow,
 } from "lucide-react";
@@ -53,6 +56,7 @@ const NAV_GROUPS: NavGroup[] = [
     id: "workspace",
     titleKey: "nav.workspace",
     items: [
+      { id: "chat", href: "/chat", labelKey: "nav.chat", icon: MessageSquare },
       { id: "overview", href: "/", labelKey: "nav.dashboard", icon: LayoutDashboard },
       { id: "mcp", href: "/mcp", labelKey: "nav.mcp", icon: Terminal },
       { id: "skills", href: "/skills", labelKey: "nav.skills", icon: Workflow },
@@ -72,10 +76,10 @@ const NAV_GROUPS: NavGroup[] = [
     id: "automation-and-observability",
     titleKey: "nav.automationAndObservability",
     items: [
-      { id: "security-policy", labelKey: "nav.securityPolicy", icon: Activity, disabled: true },
+      { id: "security-policy", href: "/dashboard/approval-rules", labelKey: "nav.securityPolicy", icon: Shield },
       { id: "monitors", href: "/dashboard/monitors", labelKey: "nav.monitors", icon: Activity },
       { id: "notification-channels", href: "/dashboard/notification-channels", labelKey: "nav.notificationChannels", icon: Bell },
-      { id: "monitoring", labelKey: "nav.monitoring", icon: Activity, disabled: true },
+      { id: "monitoring", href: "/dashboard/monitoring", labelKey: "nav.monitoring", icon: Gauge },
       { id: "bandit", href: "/dashboard/bandit", labelKey: "nav.bandit", icon: Activity },
       { id: "task-learning", href: "/dashboard/task-learning", labelKey: "nav.taskLearning", icon: Activity },
       { id: "logs", href: "/dashboard/logs", labelKey: "nav.logs", icon: Activity },
@@ -86,7 +90,7 @@ const NAV_GROUPS: NavGroup[] = [
     titleKey: "nav.knowledgeAndStorage",
     items: [
       { id: "knowledge", href: "/knowledge", labelKey: "nav.knowledge", icon: FolderOpen },
-      { id: "llm-wiki", labelKey: "nav.llmWiki", icon: FolderOpen, disabled: true },
+      { id: "llm-wiki", href: "/llm-wiki", labelKey: "nav.llmWiki", icon: FolderOpen },
       { id: "memory", href: "/memory", labelKey: "nav.memory", icon: FolderOpen },
     ],
   },

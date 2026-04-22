@@ -27,6 +27,33 @@ const DEFAULT_LOCAL_SOURCE_PATH: &str = "~/.config/deeting/mcp.json";
 const QUERY_AFFINITY_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 const QUERY_AFFINITY_MAX_ROWS_PER_TARGET: i64 = 12;
 
+fn task_preview_select_expr(alias: &str) -> String {
+    format!(
+        r#"
+        COALESCE(
+          {alias}.task_preview_text,
+          (
+            SELECT um.content
+            FROM conversation_message am
+            JOIN conversation_message um
+              ON um.session_id = am.session_id
+             AND um.role = 'user'
+             AND um.is_deleted = 0
+             AND um.turn_index < am.turn_index
+             AND um.content IS NOT NULL
+             AND trim(um.content) <> ''
+            WHERE am.role = 'assistant'
+              AND am.is_deleted = 0
+              AND am.meta_info IS NOT NULL
+              AND json_extract(am.meta_info, '$.trace_id') = {alias}.trace_id
+            ORDER BY um.turn_index DESC, um.created_at DESC
+            LIMIT 1
+          )
+        ) AS task_preview_text
+        "#
+    )
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ToolExecutionAffinityRow {
     pub tool_name: String,
@@ -76,6 +103,7 @@ pub struct TaskLearningRunRow {
     pub request_id: Option<String>,
     pub trace_id: Option<String>,
     pub fingerprint_key: String,
+    pub task_preview_text: Option<String>,
     pub task_fingerprint_json: String,
     pub route_decision_json: Option<String>,
     pub execution_policy_json: String,
@@ -582,6 +610,7 @@ impl McpStore {
               request_id TEXT,
               trace_id TEXT,
               fingerprint_key TEXT NOT NULL,
+              task_preview_text TEXT,
               task_fingerprint_json TEXT NOT NULL,
               route_decision_json TEXT,
               execution_policy_json TEXT NOT NULL,
@@ -725,6 +754,13 @@ impl McpStore {
             "mcp_tools",
             "service_display_name",
             "ALTER TABLE mcp_tools ADD COLUMN service_display_name TEXT;",
+        )
+        .await?;
+
+        self.ensure_column(
+            "task_learning_runs",
+            "task_preview_text",
+            "ALTER TABLE task_learning_runs ADD COLUMN task_preview_text TEXT;",
         )
         .await?;
 
@@ -1641,6 +1677,7 @@ impl McpStore {
         request_id: Option<&str>,
         trace_id: Option<&str>,
         fingerprint_key: &str,
+        task_preview_text: Option<&str>,
         task_fingerprint_json: &str,
         route_decision_json: Option<&str>,
         execution_policy_json: &str,
@@ -1688,6 +1725,7 @@ impl McpStore {
               request_id,
               trace_id,
               fingerprint_key,
+              task_preview_text,
               task_fingerprint_json,
               route_decision_json,
               execution_policy_json,
@@ -1700,7 +1738,7 @@ impl McpStore {
               revision_count,
               last_revision_at_unix_ms,
               created_at_unix_ms
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
             "#,
         )
         .bind(run_id.as_str())
@@ -1708,6 +1746,7 @@ impl McpStore {
         .bind(request_id.map(str::trim).filter(|value| !value.is_empty()))
         .bind(trace_id.map(str::trim).filter(|value| !value.is_empty()))
         .bind(normalized_fingerprint_key)
+        .bind(task_preview_text.map(str::trim).filter(|value| !value.is_empty()))
         .bind(normalized_task_fingerprint_json)
         .bind(
             route_decision_json
@@ -1809,43 +1848,46 @@ impl McpStore {
         let learning_eligible_flag =
             learning_eligible.map(|value| if value { 1_i64 } else { 0_i64 });
 
-        let rows = sqlx::query(
+        let query = format!(
             r#"
             SELECT
-              run_id,
-              session_id,
-              request_id,
-              trace_id,
-              fingerprint_key,
-              task_fingerprint_json,
-              route_decision_json,
-              execution_policy_json,
-              outcome_json,
-              attribution_json,
-              policy_delta_json,
-              learning_eligible,
-              delta_state,
-              revision_count,
-              last_signal,
-              created_at_unix_ms,
-              last_revision_at_unix_ms
-            FROM task_learning_runs
-            WHERE (? IS NULL OR session_id = ?)
-              AND (? IS NULL OR fingerprint_key = ?)
+              tlr.run_id,
+              tlr.session_id,
+              tlr.request_id,
+              tlr.trace_id,
+              tlr.fingerprint_key,
+              {},
+              tlr.task_fingerprint_json,
+              tlr.route_decision_json,
+              tlr.execution_policy_json,
+              tlr.outcome_json,
+              tlr.attribution_json,
+              tlr.policy_delta_json,
+              tlr.learning_eligible,
+              tlr.delta_state,
+              tlr.revision_count,
+              tlr.last_signal,
+              tlr.created_at_unix_ms,
+              tlr.last_revision_at_unix_ms
+            FROM task_learning_runs tlr
+            WHERE (? IS NULL OR tlr.session_id = ?)
+              AND (? IS NULL OR tlr.fingerprint_key = ?)
               AND (
                     ? IS NULL OR
                     COALESCE(
-                      json_extract(policy_delta_json, '$.decision_point'),
-                      json_extract(attribution_json, '$.primary_stage')
+                      json_extract(tlr.policy_delta_json, '$.decision_point'),
+                      json_extract(tlr.attribution_json, '$.primary_stage')
                     ) = ?
                   )
-              AND (? IS NULL OR json_extract(outcome_json, '$.user_response_signal') = ?)
-              AND (? IS NULL OR learning_eligible = ?)
-            ORDER BY COALESCE(last_revision_at_unix_ms, created_at_unix_ms) DESC, created_at_unix_ms DESC
+              AND (? IS NULL OR json_extract(tlr.outcome_json, '$.user_response_signal') = ?)
+              AND (? IS NULL OR tlr.learning_eligible = ?)
+            ORDER BY COALESCE(tlr.last_revision_at_unix_ms, tlr.created_at_unix_ms) DESC, tlr.created_at_unix_ms DESC
             LIMIT ?
             OFFSET ?
             "#,
-        )
+            task_preview_select_expr("tlr")
+        );
+        let rows = sqlx::query(&query)
         .bind(normalized_session_id)
         .bind(normalized_session_id)
         .bind(normalized_fingerprint_key)
@@ -1879,6 +1921,9 @@ impl McpStore {
                         .map_err(|err| McpError::Storage(err.to_string()))?,
                     fingerprint_key: row
                         .try_get::<String, _>("fingerprint_key")
+                        .map_err(|err| McpError::Storage(err.to_string()))?,
+                    task_preview_text: row
+                        .try_get::<Option<String>, _>("task_preview_text")
                         .map_err(|err| McpError::Storage(err.to_string()))?,
                     task_fingerprint_json: row
                         .try_get::<String, _>("task_fingerprint_json")
@@ -1930,31 +1975,34 @@ impl McpStore {
         if normalized_run_id.is_empty() {
             return Ok(None);
         }
-        let row = sqlx::query(
+        let query = format!(
             r#"
             SELECT
-              run_id,
-              session_id,
-              request_id,
-              trace_id,
-              fingerprint_key,
-              task_fingerprint_json,
-              route_decision_json,
-              execution_policy_json,
-              outcome_json,
-              attribution_json,
-              policy_delta_json,
-              learning_eligible,
-              delta_state,
-              revision_count,
-              last_signal,
-              created_at_unix_ms,
-              last_revision_at_unix_ms
-            FROM task_learning_runs
-            WHERE run_id = ?
+              tlr.run_id,
+              tlr.session_id,
+              tlr.request_id,
+              tlr.trace_id,
+              tlr.fingerprint_key,
+              {},
+              tlr.task_fingerprint_json,
+              tlr.route_decision_json,
+              tlr.execution_policy_json,
+              tlr.outcome_json,
+              tlr.attribution_json,
+              tlr.policy_delta_json,
+              tlr.learning_eligible,
+              tlr.delta_state,
+              tlr.revision_count,
+              tlr.last_signal,
+              tlr.created_at_unix_ms,
+              tlr.last_revision_at_unix_ms
+            FROM task_learning_runs tlr
+            WHERE tlr.run_id = ?
             LIMIT 1
             "#,
-        )
+            task_preview_select_expr("tlr")
+        );
+        let row = sqlx::query(&query)
         .bind(normalized_run_id)
         .fetch_optional(&self.pool)
         .await
@@ -1976,6 +2024,9 @@ impl McpStore {
                     .map_err(|err| McpError::Storage(err.to_string()))?,
                 fingerprint_key: row
                     .try_get::<String, _>("fingerprint_key")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                task_preview_text: row
+                    .try_get::<Option<String>, _>("task_preview_text")
                     .map_err(|err| McpError::Storage(err.to_string()))?,
                 task_fingerprint_json: row
                     .try_get::<String, _>("task_fingerprint_json")
@@ -2027,32 +2078,35 @@ impl McpStore {
         if normalized_trace_id.is_empty() {
             return Ok(None);
         }
-        let row = sqlx::query(
+        let query = format!(
             r#"
             SELECT
-              run_id,
-              session_id,
-              request_id,
-              trace_id,
-              fingerprint_key,
-              task_fingerprint_json,
-              route_decision_json,
-              execution_policy_json,
-              outcome_json,
-              attribution_json,
-              policy_delta_json,
-              learning_eligible,
-              delta_state,
-              revision_count,
-              last_signal,
-              created_at_unix_ms,
-              last_revision_at_unix_ms
-            FROM task_learning_runs
-            WHERE trace_id = ?
-            ORDER BY COALESCE(last_revision_at_unix_ms, created_at_unix_ms) DESC, created_at_unix_ms DESC
+              tlr.run_id,
+              tlr.session_id,
+              tlr.request_id,
+              tlr.trace_id,
+              tlr.fingerprint_key,
+              {},
+              tlr.task_fingerprint_json,
+              tlr.route_decision_json,
+              tlr.execution_policy_json,
+              tlr.outcome_json,
+              tlr.attribution_json,
+              tlr.policy_delta_json,
+              tlr.learning_eligible,
+              tlr.delta_state,
+              tlr.revision_count,
+              tlr.last_signal,
+              tlr.created_at_unix_ms,
+              tlr.last_revision_at_unix_ms
+            FROM task_learning_runs tlr
+            WHERE tlr.trace_id = ?
+            ORDER BY COALESCE(tlr.last_revision_at_unix_ms, tlr.created_at_unix_ms) DESC, tlr.created_at_unix_ms DESC
             LIMIT 1
             "#,
-        )
+            task_preview_select_expr("tlr")
+        );
+        let row = sqlx::query(&query)
         .bind(normalized_trace_id)
         .fetch_optional(&self.pool)
         .await
@@ -2074,6 +2128,9 @@ impl McpStore {
                     .map_err(|err| McpError::Storage(err.to_string()))?,
                 fingerprint_key: row
                     .try_get::<String, _>("fingerprint_key")
+                    .map_err(|err| McpError::Storage(err.to_string()))?,
+                task_preview_text: row
+                    .try_get::<Option<String>, _>("task_preview_text")
                     .map_err(|err| McpError::Storage(err.to_string()))?,
                 task_fingerprint_json: row
                     .try_get::<String, _>("task_fingerprint_json")

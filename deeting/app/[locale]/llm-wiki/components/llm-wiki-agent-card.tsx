@@ -3,13 +3,13 @@ import { Bot, Copy, RefreshCw, Sparkles } from "lucide-react"
 
 import { Button } from "@/ui/shadcn/button"
 import {
-  GlassCard,
-  GlassCardContent,
-  GlassCardDescription,
-  GlassCardFooter,
-  GlassCardHeader,
-  GlassCardTitle,
-} from "@/ui/common/glass-card"
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/ui/shadcn/card"
 import { Textarea } from "@/ui/shadcn/textarea"
 import type { LocalLlmWikiState } from "@/lib/api/llm-wiki"
 
@@ -35,28 +35,23 @@ export function LlmWikiAgentCard({
   const workspacePath = state?.workspaceStatus?.resolvedWorkspacePath ?? null
 
   return (
-    <GlassCard
-      blur="lg"
-      theme="surface"
-      hover="none"
-      className="h-full border-white/15 bg-[linear-gradient(180deg,rgba(255,255,255,0.85),rgba(241,248,255,0.74))]"
-    >
-      <GlassCardHeader className="border-b border-white/60 pb-5">
+    <Card className="h-full gap-0 py-0 border-[var(--hairline)] bg-[var(--panel-bg)] shadow-[0_18px_40px_-30px_rgba(15,17,28,0.22)]">
+      <CardHeader className="border-b border-[var(--hairline)] pb-5">
         <div className="space-y-2">
           <div className="inline-flex items-center gap-2 rounded-full bg-sky-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">
             <Bot className="size-3.5" />
             {t("agent.eyebrow")}
           </div>
-          <GlassCardTitle className="text-slate-900">
+          <CardTitle className="text-[var(--ink)]">
             {t("agent.title")}
-          </GlassCardTitle>
-          <GlassCardDescription className="text-slate-500">
+          </CardTitle>
+          <CardDescription className="text-[var(--ink-3)]">
             {t("agent.description")}
-          </GlassCardDescription>
+          </CardDescription>
         </div>
-      </GlassCardHeader>
+      </CardHeader>
 
-      <GlassCardContent className="space-y-4 pt-6">
+      <CardContent className="space-y-4 pt-6">
         <div className="rounded-[1.75rem] border border-white/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.9),rgba(236,248,255,0.82))] p-4 shadow-[0_20px_45px_-32px_rgba(15,23,42,0.32)]">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-1">
@@ -151,9 +146,9 @@ export function LlmWikiAgentCard({
           readOnly
           className="min-h-[260px] rounded-[1.75rem] border-white/70 bg-slate-950/[0.95] p-5 font-mono text-xs leading-6 text-slate-100 shadow-[0_32px_70px_-42px_rgba(15,23,42,0.58)]"
         />
-      </GlassCardContent>
+      </CardContent>
 
-      <GlassCardFooter className="border-t border-white/60 pt-5">
+      <CardFooter className="flex-wrap gap-3 border-t border-[var(--hairline)] pt-5">
         <Button
           onClick={onSyncMaintainerAgent}
           disabled={isSyncingAgent || !state?.binding}
@@ -183,8 +178,8 @@ export function LlmWikiAgentCard({
           <Bot className="mr-2 size-4 text-sky-600" />
           {t("agent.openTaskAgents")}
         </button>
-      </GlassCardFooter>
-    </GlassCard>
+      </CardFooter>
+    </Card>
   )
 }
 

@@ -4,13 +4,13 @@ import { FolderOpen, FolderSearch, RefreshCw, ShieldCheck } from "lucide-react"
 
 import { Button } from "@/ui/shadcn/button"
 import {
-  GlassCard,
-  GlassCardContent,
-  GlassCardDescription,
-  GlassCardFooter,
-  GlassCardHeader,
-  GlassCardTitle,
-} from "@/ui/common/glass-card"
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/ui/shadcn/card"
 import { Input } from "@/ui/shadcn/input"
 import type { LocalLlmWikiAdoptionPreview, LocalLlmWikiState } from "@/lib/api/llm-wiki"
 
@@ -59,40 +59,35 @@ export function LlmWikiBindingCard({
   const isAdoptMode = bindingMode === "adopt_existing_folder"
 
   return (
-    <GlassCard
-      blur="lg"
-      theme="surface"
-      hover="none"
-      className="h-full border-white/15 bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(245,248,255,0.72))]"
-    >
-      <GlassCardHeader className="border-b border-white/60 pb-5">
+    <Card className="h-full gap-0 py-0 border-[var(--hairline)] bg-[var(--panel-bg)] shadow-[0_18px_40px_-30px_rgba(15,17,28,0.22)]">
+      <CardHeader className="border-b border-[var(--hairline)] pb-5">
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 rounded-full bg-sky-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-600">
               <FolderSearch className="size-3.5" />
               {t("binding.eyebrow")}
             </div>
-            <GlassCardTitle className="text-slate-900">
+            <CardTitle className="text-[var(--ink)]">
               {t("binding.title")}
-            </GlassCardTitle>
-            <GlassCardDescription className="max-w-xl text-slate-500">
+            </CardTitle>
+            <CardDescription className="max-w-xl text-[var(--ink-3)]">
               {t("binding.description")}
-            </GlassCardDescription>
+            </CardDescription>
           </div>
 
           <Button
             variant="ghost"
             size="sm"
             onClick={onRefresh}
-            className="rounded-full border border-white/65 bg-white/70 text-slate-600 shadow-sm"
+            className="rounded-full border border-[var(--hairline)] bg-[var(--panel-bg-inset)] text-[var(--ink-2)] shadow-sm"
           >
             <RefreshCw className="mr-2 size-4" />
             {t("binding.refresh")}
           </Button>
         </div>
-      </GlassCardHeader>
+      </CardHeader>
 
-      <GlassCardContent className="space-y-5 pt-6">
+      <CardContent className="space-y-5 pt-6">
         <div className="grid gap-2 sm:grid-cols-2">
           <ModeButton
             active={!isAdoptMode}
@@ -232,9 +227,9 @@ export function LlmWikiBindingCard({
             />
           </div>
         )}
-      </GlassCardContent>
+      </CardContent>
 
-      <GlassCardFooter className="border-t border-white/60 pt-5">
+      <CardFooter className="flex-wrap gap-3 border-t border-[var(--hairline)] pt-5">
         <Button
           onClick={onAnalyze}
           disabled={isAnalyzing || isPreviewingAdoption}
@@ -267,8 +262,8 @@ export function LlmWikiBindingCard({
             {t("binding.adoption.confirm")}
           </Button>
         ) : null}
-      </GlassCardFooter>
-    </GlassCard>
+      </CardFooter>
+    </Card>
   )
 }
 

@@ -140,13 +140,16 @@ export function TaskAgentsClient() {
           
           <div className="w-px h-4 bg-[var(--hairline)]" />
           
-          <button 
+          <Button
+            type="button"
+            variant="ios-primary"
+            size="sm"
             onClick={handleCreateNew}
-            className="ws-control flex items-center gap-2 rounded-full bg-[var(--accent-strong)] px-4 py-1.5 text-[11px] text-white shadow-sm hover:brightness-110 transition-all active:scale-95"
+            className="h-8 gap-2 rounded-full px-4 text-[11px] font-semibold font-[var(--font-text)] leading-none tracking-[0.1px]"
           >
             <Plus className="size-3.5" />
             {t("actions.new")}
-          </button>
+          </Button>
         </div>
       </header>
 

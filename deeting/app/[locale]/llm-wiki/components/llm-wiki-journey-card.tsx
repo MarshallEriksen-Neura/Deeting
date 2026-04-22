@@ -3,7 +3,7 @@
 import { Bot, CheckCircle2, DatabaseZap, FolderSearch, LoaderCircle } from "lucide-react"
 
 import { Button } from "@/ui/shadcn/button"
-import { GlassCard, GlassCardDescription, GlassCardHeader, GlassCardTitle } from "@/ui/common/glass-card"
+import { Card, CardDescription, CardHeader, CardTitle } from "@/ui/shadcn/card"
 import type { LocalLlmWikiState } from "@/lib/api/llm-wiki"
 
 type Translation = (key: string, values?: Record<string, string | number>) => string
@@ -114,31 +114,21 @@ export function LlmWikiJourneyCard({
   ] as const
 
   return (
-    <GlassCard
-      blur="lg"
-      theme="surface"
-      hover="none"
-      className="overflow-hidden border-white/15 bg-[linear-gradient(135deg,rgba(255,255,255,0.82),rgba(246,249,255,0.74)_54%,rgba(239,252,248,0.7)_100%)] shadow-[0_24px_70px_-38px_rgba(15,23,42,0.32)]"
-    >
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-16 top-0 h-28 w-28 rounded-full bg-sky-300/16 blur-3xl" />
-        <div className="absolute right-20 top-12 h-32 w-32 rounded-full bg-indigo-300/14 blur-3xl" />
-      </div>
-
-      <GlassCardHeader className="relative border-b border-white/60 pb-5">
+    <Card className="overflow-hidden gap-0 py-0 border-[var(--hairline)] bg-[var(--panel-bg)] shadow-[0_18px_40px_-30px_rgba(15,17,28,0.22)]">
+      <CardHeader className="relative border-b border-[var(--hairline)] pb-5">
         <div className="space-y-2">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/60 bg-white/72 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
             <CheckCircle2 className="size-3.5 text-emerald-500" />
             {t("journey.eyebrow")}
           </div>
-          <GlassCardTitle className="text-slate-900">
+          <CardTitle className="text-[var(--ink)]">
             {t("journey.title")}
-          </GlassCardTitle>
-          <GlassCardDescription className="max-w-3xl text-slate-500">
+          </CardTitle>
+          <CardDescription className="max-w-3xl text-[var(--ink-3)]">
             {t("journey.description")}
-          </GlassCardDescription>
+          </CardDescription>
         </div>
-      </GlassCardHeader>
+      </CardHeader>
 
       <div className="relative grid gap-4 p-5 md:p-6 xl:grid-cols-3">
         {stages.map((stage) => (
@@ -157,10 +147,10 @@ export function LlmWikiJourneyCard({
         ))}
       </div>
 
-      <div className="relative border-t border-white/60 px-5 py-4 text-sm text-slate-600 md:px-6">
+      <div className="relative border-t border-[var(--hairline)] px-5 py-4 text-sm text-[var(--ink-2)] md:px-6">
         {t("journey.boundary")}
       </div>
-    </GlassCard>
+    </Card>
   )
 }
 

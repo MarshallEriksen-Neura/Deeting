@@ -3,6 +3,7 @@ use crate::modules::conversations::store::CHAT_HISTORY_RETENTION_CONFIG_KEY;
 use crate::modules::mcp::commands::runtime::capability_catalog::build_capability_registry;
 use mcp_registry::types::LocalCapabilityRegistryUpsert;
 use mcp_session::admin::LocalGatewayLogQuery;
+use mcp_session::conversation::{CreateConversationMessageRequest, LocalConversationCreateRequest};
 use serde_json::json;
 use sqlx::Row;
 use uuid::Uuid;
@@ -1014,6 +1015,7 @@ async fn record_task_learning_run_persists_learning_snapshot() {
             Some("request-1"),
             Some("trace-1"),
             "fingerprint-1",
+            Some("Investigate why the task-learning run has no readable task preview"),
             r#"{"goalShape":"repair"}"#,
             Some(r#"{"route":"worker"}"#),
             r#"{"route":"worker","plane":"worker_reasoning"}"#,
@@ -1027,7 +1029,7 @@ async fn record_task_learning_run_persists_learning_snapshot() {
         .expect("record task learning run");
 
     let row = sqlx::query(
-        "SELECT session_id, request_id, trace_id, fingerprint_key, learning_eligible, delta_state FROM task_learning_runs WHERE run_id = ?",
+        "SELECT session_id, request_id, trace_id, fingerprint_key, task_preview_text, learning_eligible, delta_state FROM task_learning_runs WHERE run_id = ?",
     )
     .bind(run_id)
     .fetch_one(&store.pool)
@@ -1052,6 +1054,11 @@ async fn record_task_learning_run_persists_learning_snapshot() {
         "fingerprint-1"
     );
     assert_eq!(
+        row.try_get::<String, _>("task_preview_text")
+            .expect("task_preview_text"),
+        "Investigate why the task-learning run has no readable task preview"
+    );
+    assert_eq!(
         row.try_get::<i64, _>("learning_eligible")
             .expect("learning_eligible"),
         1
@@ -1060,6 +1067,92 @@ async fn record_task_learning_run_persists_learning_snapshot() {
         row.try_get::<String, _>("delta_state")
             .expect("delta_state"),
         "confirmed"
+    );
+}
+
+#[tokio::test]
+async fn task_learning_run_queries_fall_back_to_previous_user_message_for_preview() {
+    let store = create_test_store("task-learning-run-preview-fallback").await;
+    store.init().await.expect("init store");
+
+    let conversation = store
+        .create_local_conversation(LocalConversationCreateRequest {
+            assistant_id: None,
+            title: Some("Task Learning Preview".to_string()),
+        })
+        .await
+        .expect("create local conversation");
+
+    store
+        .append_local_conversation_message(CreateConversationMessageRequest {
+            session_id: conversation.session_id.clone(),
+            role: "user".to_string(),
+            content: "Explain why the task-learning review screen hides the real task".to_string(),
+            name: None,
+            meta_info: None,
+            is_truncated: Some(false),
+            parent_message_id: None,
+        })
+        .await
+        .expect("append user message");
+    store
+        .append_local_conversation_message(CreateConversationMessageRequest {
+            session_id: conversation.session_id.clone(),
+            role: "assistant".to_string(),
+            content: String::new(),
+            name: None,
+            meta_info: Some(json!({ "trace_id": "trace-preview-1" })),
+            is_truncated: Some(false),
+            parent_message_id: None,
+        })
+        .await
+        .expect("append assistant message");
+
+    let run_id = store
+        .record_task_learning_run(
+            conversation.session_id.as_str(),
+            Some("request-preview-1"),
+            Some("trace-preview-1"),
+            "fingerprint-preview-1",
+            None,
+            r#"{"goal_shape":"analysis"}"#,
+            Some(r#"{"route":"direct"}"#),
+            r#"{"route":"direct","plane":"response_only"}"#,
+            r#"{"final_status":"success","user_response_signal":"silent"}"#,
+            r#"{"primary_stage":"route"}"#,
+            Some(r#"{"decision_point":"route","action_key":"direct"}"#),
+            true,
+            "confirmed",
+        )
+        .await
+        .expect("record task learning run");
+
+    let listed = store
+        .list_task_learning_runs(
+            Some(conversation.session_id.as_str()),
+            None,
+            None,
+            None,
+            None,
+            0,
+            10,
+        )
+        .await
+        .expect("list task learning runs");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(
+        listed[0].task_preview_text.as_deref(),
+        Some("Explain why the task-learning review screen hides the real task")
+    );
+
+    let detail = store
+        .get_task_learning_run(run_id.as_str())
+        .await
+        .expect("load task learning run")
+        .expect("task learning run");
+    assert_eq!(
+        detail.task_preview_text.as_deref(),
+        Some("Explain why the task-learning review screen hides the real task")
     );
 }
 
@@ -1117,6 +1210,7 @@ async fn append_task_learning_revision_persists_revision_history() {
             Some("request-r"),
             Some("trace-r"),
             "fingerprint-r",
+            Some("Fix the verification routing before replaying the run"),
             r#"{"goal_shape":"repair"}"#,
             Some(r#"{"route":"direct"}"#),
             r#"{"route":"direct","plane":"response_only"}"#,

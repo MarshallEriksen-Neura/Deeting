@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 import { Store, Zap, Search, Cloud, Monitor, User, ShieldCheck } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/shadcn/badge";
@@ -9,13 +10,40 @@ import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { useProviderHub } from "@/hooks/use-providers";
 import { cn } from "@/lib/utils";
 import type { ProviderCard } from "@/lib/api/providers";
+import type { ProviderPresetConfig } from "@/components/providers/connect-provider-drawer";
+
+const ConnectProviderDrawer = dynamic(
+  () => import("@/components/providers/connect-provider-drawer"),
+  { ssr: false }
+);
 
 function categoryLabel(category: string | null | undefined) {
   if (!category) return "unknown";
   return category;
 }
 
-function ProviderMarketGrid({ providers }: { providers: ProviderCard[] }) {
+type MarketTab = "all" | "cloud" | "local" | "custom" | "platform";
+
+function mapProviderToPreset(provider: ProviderCard): ProviderPresetConfig {
+  return {
+    slug: provider.slug,
+    name: provider.name,
+    type: provider.slug === "custom" ? "custom" : "system",
+    provider: provider.provider,
+    protocol: provider.protocol ?? undefined,
+    default_endpoint: provider.base_url || undefined,
+    brand_color: provider.theme_color || "#3b82f6",
+    icon_key: provider.icon || "lucide:server",
+  };
+}
+
+function ProviderMarketGrid({
+  providers,
+  onProviderSelect,
+}: {
+  providers: ProviderCard[];
+  onProviderSelect: (provider: ProviderCard) => void;
+}) {
   const t = useTranslations("providers.market");
 
   if (!providers.length) {
@@ -91,7 +119,11 @@ function ProviderMarketGrid({ providers }: { providers: ProviderCard[] }) {
                   <div className={cn("ws-dot", provider.connected && "bg-[var(--ok)]")} />
                   <span className="ws-caption">{provider.connected ? "Online" : "Ready"}</span>
                </div>
-               <button className="ws-control text-[var(--accent-ink)] hover:underline">
+               <button
+                  type="button"
+                  onClick={() => onProviderSelect(provider)}
+                  className="ws-control text-[var(--accent-ink)] hover:underline"
+               >
                   {provider.connected ? t("card.actionManage") : t("card.actionConnect")}
                </button>
             </div>
@@ -104,11 +136,17 @@ function ProviderMarketGrid({ providers }: { providers: ProviderCard[] }) {
 
 export function ProviderMarketPage() {
   const t = useTranslations("providers.market");
-  const [selectedTab, setSelectedTab] = React.useState<"all" | "cloud" | "local" | "custom" | "platform">("all");
+  const [selectedTab, setSelectedTab] = React.useState<MarketTab>("all");
   const [query, setQuery] = React.useState("");
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
+  const [selectedPreset, setSelectedPreset] = React.useState<ProviderPresetConfig | null>(null);
 
   const params = React.useMemo(() => {
-    const p: any = { q: query || undefined, include_public: true };
+    const p: {
+      q?: string;
+      include_public: true;
+      category?: string;
+    } = { q: query || undefined, include_public: true };
     if (selectedTab === "cloud") p.category = "cloud api";
     if (selectedTab === "local") p.category = "local hosted";
     if (selectedTab === "custom") p.category = "custom";
@@ -116,9 +154,23 @@ export function ProviderMarketPage() {
     return p;
   }, [query, selectedTab]);
 
-  const { providers, stats, isLoading } = useProviderHub(params);
+  const { providers, stats, isLoading, mutate } = useProviderHub(params);
 
-  const categories = [
+  const handleProviderSelect = React.useCallback((provider: ProviderCard) => {
+    setSelectedPreset(mapProviderToPreset(provider));
+    setDrawerOpen(true);
+  }, []);
+
+  const handleDrawerClose = React.useCallback(() => {
+    setDrawerOpen(false);
+  }, []);
+
+  const handleDrawerSave = React.useCallback(async () => {
+    setDrawerOpen(false);
+    await mutate();
+  }, [mutate]);
+
+  const categories: Array<{ id: MarketTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
     { id: "all", label: t("tabs.all"), icon: Store },
     { id: "platform", label: t("tabs.platform"), icon: ShieldCheck },
     { id: "cloud", label: t("tabs.cloud"), icon: Cloud },
@@ -169,7 +221,7 @@ export function ProviderMarketPage() {
               return (
                 <button
                   key={cat.id}
-                  onClick={() => setSelectedTab(cat.id as any)}
+                  onClick={() => setSelectedTab(cat.id)}
                   className={cn(
                     "ws-rail flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors",
                     active ? "ws-row-active" : "text-[var(--ink-2)] hover:bg-[var(--hairline-subtle)]"
@@ -194,11 +246,18 @@ export function ProviderMarketPage() {
                 ))}
               </div>
             ) : (
-              <ProviderMarketGrid providers={providers} />
+              <ProviderMarketGrid providers={providers} onProviderSelect={handleProviderSelect} />
             )}
           </div>
         </main>
       </div>
+
+      <ConnectProviderDrawer
+        isOpen={drawerOpen}
+        onClose={handleDrawerClose}
+        preset={selectedPreset}
+        onSave={handleDrawerSave}
+      />
     </div>
   );
 }

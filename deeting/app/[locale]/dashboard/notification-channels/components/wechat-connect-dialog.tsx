@@ -99,10 +99,14 @@ export function WechatConnectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="overflow-hidden border-[color:var(--hairline)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--panel-bg)_96%,white_4%)_0%,color-mix(in_srgb,var(--panel-bg)_88%,var(--window-bg)_12%)_100%)] sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>连接微信</DialogTitle>
-          <DialogDescription>管理桌面端微信接入状态，并通过扫码完成授权。</DialogDescription>
+          <DialogTitle className="tracking-[-0.03em] text-[color:var(--ink)]">
+            连接微信
+          </DialogTitle>
+          <DialogDescription className="text-[color:var(--ink-3)]">
+            管理桌面端微信接入状态，并通过扫码完成授权。
+          </DialogDescription>
         </DialogHeader>
         {renderBody()}
       </DialogContent>

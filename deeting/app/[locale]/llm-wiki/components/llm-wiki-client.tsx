@@ -5,13 +5,12 @@ import { Bot, Database, HardDrive, Wrench } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Button } from "@/ui/shadcn/button"
-import { GlassCard, GlassCardContent, GlassCardHeader, GlassCardTitle } from "@/ui/common/glass-card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/shadcn/tabs"
 import { LlmWikiAgentCard } from "./llm-wiki-agent-card"
 import { LlmWikiAutomationCard } from "./llm-wiki-automation-card"
 import { LlmWikiBindingCard } from "./llm-wiki-binding-card"
 import { LlmWikiCorpusCard } from "./llm-wiki-corpus-card"
-import { LlmWikiHero } from "./llm-wiki-hero"
 import { LlmWikiJourneyCard } from "./llm-wiki-journey-card"
 import { LlmWikiLifecycleCard } from "./llm-wiki-lifecycle-card"
 import { LlmWikiMaintenanceCard } from "./llm-wiki-maintenance-card"
@@ -95,7 +94,7 @@ export function LlmWikiClient() {
           variant="ghost"
           size="sm"
           disabled
-          className="rounded-full border border-white/60 bg-white/70 px-5 text-slate-500"
+          className="rounded-full border border-[var(--hairline)] bg-[var(--panel-bg)] px-5 text-[var(--ink-3)]"
         >
           {t("loading")}
         </Button>
@@ -105,23 +104,22 @@ export function LlmWikiClient() {
 
   if (desktopSupported === false) {
     return (
-      <GlassCard blur="lg" theme="surface" hover="none" className="border-white/15 bg-white/80">
-        <GlassCardHeader>
-          <GlassCardTitle className="flex items-center gap-3 text-slate-900">
+      <Card className="gap-0 py-0 border-[var(--hairline)] bg-[var(--panel-bg)] shadow-[0_18px_40px_-30px_rgba(15,17,28,0.22)]">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-3 text-[var(--ink)]">
             <HardDrive className="size-5 text-slate-500" />
             {t("desktopOnly.title")}
-          </GlassCardTitle>
-        </GlassCardHeader>
-        <GlassCardContent className="text-sm leading-7 text-slate-500">
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm leading-7 text-[var(--ink-3)]">
           {t("desktopOnly.description")}
-        </GlassCardContent>
-      </GlassCard>
+        </CardContent>
+      </Card>
     )
   }
 
   return (
     <div className="space-y-6">
-      <LlmWikiHero t={t} state={state} />
       <LlmWikiJourneyCard
         t={t}
         state={state}
@@ -137,31 +135,31 @@ export function LlmWikiClient() {
 
       <div ref={tabsAnchorRef}>
         <Tabs value={activeTab} onValueChange={handleTabChange} className="gap-5">
-          <TabsList className="grid h-auto w-full grid-cols-2 rounded-[1.4rem] border border-white/60 bg-white/70 p-1 shadow-[0_20px_45px_-35px_rgba(15,23,42,0.45)] md:grid-cols-4">
+          <TabsList className="grid h-auto w-full grid-cols-2 rounded-[20px] border border-[var(--hairline)] bg-[var(--panel-bg)]/88 p-1 shadow-[0_18px_40px_-32px_rgba(15,17,28,0.22)] backdrop-blur-xl md:grid-cols-4">
             <TabsTrigger
               value="setup"
-              className="h-auto min-h-14 flex-col gap-1 rounded-[1.05rem] px-3 py-3 text-center text-xs leading-tight whitespace-normal text-slate-500 data-[state=active]:bg-white data-[state=active]:text-slate-900 sm:text-sm"
+              className="h-auto min-h-14 flex-col gap-1 rounded-[16px] px-3 py-3 text-center text-xs leading-tight whitespace-normal text-[var(--ink-3)] data-[state=active]:bg-[var(--accent-soft)] data-[state=active]:text-[var(--accent-ink)] data-[state=active]:shadow-none sm:text-sm"
             >
               <HardDrive className="size-4" />
               {t("tabs.setup")}
             </TabsTrigger>
             <TabsTrigger
               value="operations"
-              className="h-auto min-h-14 flex-col gap-1 rounded-[1.05rem] px-3 py-3 text-center text-xs leading-tight whitespace-normal text-slate-500 data-[state=active]:bg-white data-[state=active]:text-slate-900 sm:text-sm"
+              className="h-auto min-h-14 flex-col gap-1 rounded-[16px] px-3 py-3 text-center text-xs leading-tight whitespace-normal text-[var(--ink-3)] data-[state=active]:bg-[var(--accent-soft)] data-[state=active]:text-[var(--accent-ink)] data-[state=active]:shadow-none sm:text-sm"
             >
               <Wrench className="size-4" />
               {t("tabs.operations")}
             </TabsTrigger>
             <TabsTrigger
               value="corpus"
-              className="h-auto min-h-14 flex-col gap-1 rounded-[1.05rem] px-3 py-3 text-center text-xs leading-tight whitespace-normal text-slate-500 data-[state=active]:bg-white data-[state=active]:text-slate-900 sm:text-sm"
+              className="h-auto min-h-14 flex-col gap-1 rounded-[16px] px-3 py-3 text-center text-xs leading-tight whitespace-normal text-[var(--ink-3)] data-[state=active]:bg-[var(--accent-soft)] data-[state=active]:text-[var(--accent-ink)] data-[state=active]:shadow-none sm:text-sm"
             >
               <Database className="size-4" />
               {t("tabs.corpus")}
             </TabsTrigger>
             <TabsTrigger
               value="agent"
-              className="h-auto min-h-14 flex-col gap-1 rounded-[1.05rem] px-3 py-3 text-center text-xs leading-tight whitespace-normal text-slate-500 data-[state=active]:bg-white data-[state=active]:text-slate-900 sm:text-sm"
+              className="h-auto min-h-14 flex-col gap-1 rounded-[16px] px-3 py-3 text-center text-xs leading-tight whitespace-normal text-[var(--ink-3)] data-[state=active]:bg-[var(--accent-soft)] data-[state=active]:text-[var(--accent-ink)] data-[state=active]:shadow-none sm:text-sm"
             >
               <Bot className="size-4" />
               {t("tabs.agent")}
@@ -275,7 +273,7 @@ export function LlmWikiClient() {
             variant="ghost"
             size="sm"
             disabled
-            className="rounded-full border border-white/60 bg-white/70 px-5 text-slate-500"
+            className="rounded-full border border-[var(--hairline)] bg-[var(--panel-bg)] px-5 text-[var(--ink-3)]"
           >
             {t("loading")}
           </Button>

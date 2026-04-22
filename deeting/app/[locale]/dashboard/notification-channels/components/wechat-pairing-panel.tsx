@@ -31,10 +31,14 @@ export function WechatPairingPanel({
   feedback?: string | null
 }) {
   return (
-    <div className="rounded-2xl border bg-muted/20 p-4">
-      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span className="rounded-full bg-background px-2.5 py-1">待处理配对 {pendingPairings}</span>
-        <span className="rounded-full bg-background px-2.5 py-1">白名单联系人 {allowlistSize}</span>
+    <div className="rounded-[22px] border border-[color:var(--hairline)] bg-[color:var(--panel-bg)]/80 p-4 shadow-[var(--ios-button-shadow-soft)]">
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-[color:var(--ink-3)]">
+        <span className="rounded-full border border-[color:var(--hairline)] bg-[color:var(--panel-bg)] px-2.5 py-1">
+          待处理配对 {pendingPairings}
+        </span>
+        <span className="rounded-full border border-[color:var(--hairline)] bg-[color:var(--panel-bg)] px-2.5 py-1">
+          白名单联系人 {allowlistSize}
+        </span>
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row">
@@ -53,18 +57,30 @@ export function WechatPairingPanel({
         </Button>
       </div>
 
-      {feedback ? <div className="mt-2 text-xs text-muted-foreground">{feedback}</div> : null}
+      {feedback ? (
+        <div className="mt-2 rounded-xl border border-[color:var(--hairline)] bg-[color:var(--panel-bg)]/82 px-3 py-2 text-xs text-[color:var(--ink-3)]">
+          {feedback}
+        </div>
+      ) : null}
 
       {contextContacts.length > 0 ? (
         <div className="mt-3">
-          <div className="mb-2 text-[11px] font-medium text-muted-foreground">已有上下文的联系人</div>
+          <div className="mb-2 text-[11px] font-medium text-[color:var(--ink-3)]">已有上下文的联系人</div>
           <div className="flex flex-wrap gap-2">
             {contextContacts.map((contactId) => (
-              <div key={`ctx-${contactId}`} className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-700">
+              <div
+                key={`ctx-${contactId}`}
+                className="inline-flex items-center gap-1 rounded-full border border-[color:var(--ok-border)] bg-[color:var(--ok-soft)] px-2 py-1 text-[11px] text-[color:var(--ok)]"
+              >
                 <button type="button" onClick={() => onUseContact(contactId)} className="rounded-full px-1">
                   {contactId} · 有上下文
                 </button>
-                <button type="button" onClick={() => onCopyContact(contactId)} className="rounded-full border border-emerald-500/20 px-1.5 py-0.5 text-[10px]" aria-label={`复制 ${contactId}`}>
+                <button
+                  type="button"
+                  onClick={() => onCopyContact(contactId)}
+                  className="rounded-full border border-[color:var(--ok-border)] px-1.5 py-0.5 text-[10px]"
+                  aria-label={`复制 ${contactId}`}
+                >
                   复制
                 </button>
               </div>
@@ -75,14 +91,22 @@ export function WechatPairingPanel({
 
       {allowlistContacts.length > 0 ? (
         <div className="mt-3">
-          <div className="mb-2 text-[11px] font-medium text-muted-foreground">已批准联系人</div>
+          <div className="mb-2 text-[11px] font-medium text-[color:var(--ink-3)]">已批准联系人</div>
           <div className="flex flex-wrap gap-2">
             {allowlistContacts.map((contactId) => (
-              <div key={`allow-${contactId}`} className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-1 text-[11px]">
+              <div
+                key={`allow-${contactId}`}
+                className="inline-flex items-center gap-1 rounded-full border border-[color:var(--hairline)] bg-[color:var(--panel-bg)] px-2 py-1 text-[11px] text-[color:var(--ink-2)]"
+              >
                 <button type="button" onClick={() => onUseContact(contactId)} className="rounded-full px-1">
                   {contactId} · 已批准
                 </button>
-                <button type="button" onClick={() => onCopyContact(contactId)} className="rounded-full border border-border px-1.5 py-0.5 text-[10px]" aria-label={`复制 ${contactId}`}>
+                <button
+                  type="button"
+                  onClick={() => onCopyContact(contactId)}
+                  className="rounded-full border border-[color:var(--hairline)] px-1.5 py-0.5 text-[10px]"
+                  aria-label={`复制 ${contactId}`}
+                >
                   复制
                 </button>
               </div>

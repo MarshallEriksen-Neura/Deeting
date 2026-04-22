@@ -4,12 +4,12 @@ import { Activity, FileInput, RefreshCw, ShieldAlert, Wrench } from "lucide-reac
 
 import { Button } from "@/ui/shadcn/button"
 import {
-  GlassCard,
-  GlassCardContent,
-  GlassCardDescription,
-  GlassCardHeader,
-  GlassCardTitle,
-} from "@/ui/common/glass-card"
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/ui/shadcn/card"
 import { Textarea } from "@/ui/shadcn/textarea"
 import type {
   IngestLocalLlmWikiSelectionResult,
@@ -53,28 +53,23 @@ export function LlmWikiMaintenanceCard({
   const topFindings = lastLintReport?.findings.slice(0, 6) ?? []
 
   return (
-    <GlassCard
-      blur="lg"
-      theme="surface"
-      hover="none"
-      className="border-white/15 bg-[linear-gradient(180deg,rgba(255,255,255,0.85),rgba(245,250,246,0.74))]"
-    >
-      <GlassCardHeader className="border-b border-white/60 pb-5">
+    <Card className="gap-0 py-0 border-[var(--hairline)] bg-[var(--panel-bg)] shadow-[0_18px_40px_-30px_rgba(15,17,28,0.22)]">
+      <CardHeader className="border-b border-[var(--hairline)] pb-5">
         <div className="space-y-2">
           <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">
             <Wrench className="size-3.5" />
             {t("maintenance.eyebrow")}
           </div>
-          <GlassCardTitle className="text-slate-900">
+          <CardTitle className="text-[var(--ink)]">
             {t("maintenance.title")}
-          </GlassCardTitle>
-          <GlassCardDescription className="text-slate-500">
+          </CardTitle>
+          <CardDescription className="text-[var(--ink-3)]">
             {t("maintenance.description")}
-          </GlassCardDescription>
+          </CardDescription>
         </div>
-      </GlassCardHeader>
+      </CardHeader>
 
-      <GlassCardContent className="space-y-6 pt-6">
+      <CardContent className="space-y-6 pt-6">
         <div className="grid gap-3 md:grid-cols-3">
           <ActionButton
             icon={RefreshCw}
@@ -225,8 +220,8 @@ export function LlmWikiMaintenanceCard({
             </div>
           </div>
         </div>
-      </GlassCardContent>
-    </GlassCard>
+      </CardContent>
+    </Card>
   )
 }
 

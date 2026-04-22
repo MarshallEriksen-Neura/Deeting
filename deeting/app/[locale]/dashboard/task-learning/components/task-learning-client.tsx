@@ -52,6 +52,20 @@ function prettyJson(value: unknown) {
   }
 }
 
+function sanitizeTaskPreview(value?: string | null) {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function compactTaskPreview(value?: string | null) {
+  return sanitizeTaskPreview(value)?.replace(/\s+/g, " ") ?? null
+}
+
+function taskFingerprintLabel(fingerprintKey: string) {
+  return `任务 ${fingerprintKey.slice(0, 8)}`
+}
+
 export function TaskLearningClient() {
   const [runs, setRuns] = useState<TaskLearningRunListItem[]>([])
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
@@ -73,7 +87,6 @@ export function TaskLearningClient() {
   const [note, setNote] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const [isPending, startTransition] = useTransition()
-  const [showSnapshot, setShowSnapshot] = useState(false)
 
   async function loadRuns(preferredRunId?: string | null) {
     setIsLoading(true)
@@ -128,7 +141,6 @@ export function TaskLearningClient() {
     : null
 
   function selectRun(runId: string) {
-    setShowSnapshot(false)
     startTransition(() => {
       void getTaskLearningRun(runId)
         .then((next) => {
@@ -259,7 +271,7 @@ export function TaskLearningClient() {
                 <BookOpen className="size-4 text-sky-500" />
                 运行列表
               </CardTitle>
-              <CardDescription>按任务指纹、反馈信号和最近修订时间查看本地学习运行。</CardDescription>
+              <CardDescription>按任务内容、反馈信号和最近修订时间查看本地学习运行。</CardDescription>
             </CardHeader>
             <CardContent>
               {isLoading ? (
@@ -276,6 +288,8 @@ export function TaskLearningClient() {
                 <div className="max-h-[42rem] space-y-3 overflow-y-auto pr-1">
                   {runs.map((run) => {
                     const active = run.run_id === selectedRunId
+                    const taskTitle = compactTaskPreview(run.task_preview) ?? taskFingerprintLabel(run.fingerprint_key)
+                    const fingerprintLabel = taskFingerprintLabel(run.fingerprint_key)
                     return (
                       <button
                         key={run.run_id}
@@ -288,8 +302,13 @@ export function TaskLearningClient() {
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <div className="text-sm font-medium text-slate-800">任务 {run.fingerprint_key.slice(0, 8)}</div>
-                            <div className="mt-0.5 text-xs text-slate-500">{formatTime(run.last_revision_at_unix_ms ?? run.created_at_unix_ms)}</div>
+                            <div className="text-sm font-medium leading-6 text-slate-800 [display:-webkit-box] overflow-hidden [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
+                              {taskTitle}
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                              <span>{formatTime(run.last_revision_at_unix_ms ?? run.created_at_unix_ms)}</span>
+                              <span className="rounded-lg border bg-slate-50/60 px-2 py-0.5">{fingerprintLabel}</span>
+                            </div>
                           </div>
                           <Badge variant="outline">{run.user_response_signal ?? "silent"}</Badge>
                         </div>
@@ -336,6 +355,21 @@ export function TaskLearningClient() {
                 </div>
               ) : (
                 <div className="space-y-5">
+                  <div className="rounded-2xl border bg-slate-50/40 p-4">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      任务内容
+                    </div>
+                    <div className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-800">
+                      {sanitizeTaskPreview(detail.task_preview) ?? taskFingerprintLabel(detail.fingerprint_key)}
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                      <span className="rounded-lg border bg-white/70 px-2 py-0.5">
+                        {taskFingerprintLabel(detail.fingerprint_key)}
+                      </span>
+                      {detail.trace_id ? <span>trace {detail.trace_id.slice(0, 8)}</span> : null}
+                    </div>
+                  </div>
+
                   <div className="grid gap-3 md:grid-cols-2">
                     <InfoBlock label="当前状态" value={detail.delta_state} />
                     <InfoBlock label="当前信号" value={currentSignal ?? "silent"} />

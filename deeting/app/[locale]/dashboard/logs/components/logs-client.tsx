@@ -3,8 +3,6 @@
 import { type ReactNode, useMemo, useState } from "react"
 import { Activity, AlertTriangle, Coins, Database } from "lucide-react"
 
-import { Container } from "@/components/ui/common/container"
-import { Card, CardContent } from "@/components/ui/shadcn/card"
 import { Button } from "@/components/ui/shadcn/button"
 import { computePreferredDesktopCacheRate } from "@/lib/gateway-log/cache-metrics"
 import { useGatewayLogs, useGatewayLogStats, type GatewayLogQuery } from "@/lib/swr/use-gateway-logs"
@@ -75,81 +73,130 @@ export function LogsClient() {
   }, [items, statsData])
 
   return (
-    <Container as="main" gutter="md" size="full" className="py-6 md:py-8 !mx-0 !max-w-none">
-      <div className="space-y-6">
-        <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 rounded-full border border-[color:var(--ios-pill-border)] bg-[color:var(--ios-pill-muted)] px-3 py-1 text-xs text-muted-foreground">
-            <Database className="size-3.5" />
-            桌面端本地请求日志
+    <main className="-mb-[var(--shell-canvas-pb)] -mt-[var(--shell-canvas-pt)] -mx-[var(--shell-canvas-px)] flex h-[calc(100dvh-var(--shell-toolbar-h))] flex-col overflow-hidden bg-[var(--window-bg)]">
+      <header className="flex h-14 flex-none items-center justify-between gap-4 border-b border-[var(--hairline)] bg-[var(--panel-bg-inset)]/34 px-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-2xl border border-[var(--hairline)] bg-[var(--panel-bg)] text-[var(--accent-strong)] shadow-[var(--elev-inset-hi)]">
+            <Database className="size-4" />
           </div>
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">日志</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              查看桌面端本地网关请求、缓存命中、成本与错误详情。
-            </p>
+          <div className="min-w-0">
+            <div className="ws-view-title">日志</div>
+            <p className="ws-caption mt-0.5 truncate">本地网关请求列表与详情工作台</p>
           </div>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <SummaryCard label="总请求数" value={summary.total.toLocaleString()} icon={<Database className="size-5" />} />
-          <SummaryCard label="错误率" value={`${summary.errorRate.toFixed(1)}%`} icon={<AlertTriangle className="size-5" />} />
-          <SummaryCard label="缓存命中率" value={`${summary.cacheHitRate.toFixed(1)}%`} icon={<Activity className="size-5" />} />
-          <SummaryCard label="总成本" value={`$${formatCurrency(summary.totalCost)}`} icon={<Coins className="size-5" />} />
+        <div className="hidden min-w-0 flex-wrap items-center justify-end gap-2 xl:flex">
+          <ToolbarStat label="请求总数" value={summary.total.toLocaleString()} icon={<Database className="size-3.5" />} />
+          <ToolbarStat label="错误率" value={`${summary.errorRate.toFixed(1)}%`} icon={<AlertTriangle className="size-3.5" />} tone="danger" />
+          <ToolbarStat label="缓存命中" value={`${summary.cacheHitRate.toFixed(1)}%`} icon={<Activity className="size-3.5" />} tone="info" />
+          <ToolbarStat label="总成本" value={`$${formatCurrency(summary.totalCost)}`} icon={<Coins className="size-3.5" />} tone="accent" />
         </div>
+      </header>
 
-        <LogsFilterBar
-          value={filters}
-          onChange={(next) => {
-            setFilters(next)
-            setCursor(null)
-          }}
-          onRefresh={() => {
-            void Promise.all([mutate(), mutateStats()])
-          }}
-          refreshing={isValidating}
-        />
+      <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1.08fr)_minmax(0,0.92fr)] lg:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)] lg:grid-rows-1">
+        <section className="flex min-h-0 flex-col border-b border-[var(--hairline)] bg-[var(--panel-bg-inset)]/20 lg:border-b-0 lg:border-r">
+          <LogsFilterBar
+            value={filters}
+            onChange={(next) => {
+              setFilters(next)
+              setCursor(null)
+            }}
+            onRefresh={() => {
+              void Promise.all([mutate(), mutateStats()])
+            }}
+            refreshing={isValidating}
+          />
 
-        {error ? (
-          <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-700 dark:text-red-300">
-            加载日志失败：{error.message || "unknown"}
-          </div>
-        ) : null}
-
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.8fr)_minmax(0,1.2fr)]">
-          <div className="rounded-2xl border border-border bg-card p-4">
-            <LogsTable items={items} isLoading={isLoading} selectedId={effectiveSelectedId} onSelect={(log) => setSelectedId(log.id)} />
-
-            <div className="mt-4 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs text-muted-foreground">当前页 {items.length} 条，每页 {filters.pageSize} 条</p>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" disabled={!data?.previous_page || isValidating} onClick={() => setCursor(data?.previous_page ?? null)}>
-                  上一页
-                </Button>
-                <Button variant="outline" size="sm" disabled={!data?.next_page || isValidating} onClick={() => setCursor(data?.next_page ?? null)}>
-                  下一页
-                </Button>
-              </div>
+          {error ? (
+            <div className="mx-4 mt-4 flex items-start gap-2 rounded-[16px] border border-[var(--danger-border)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--panel-bg)_88%,white_12%)_0%,color-mix(in_srgb,var(--panel-bg)_82%,var(--danger-soft)_18%)_100%)] px-3 py-2.5 text-[12px] text-[var(--danger)]">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <span className="leading-5">加载日志失败：{error.message || "unknown"}</span>
             </div>
+          ) : null}
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-3 md:px-4 custom-scrollbar">
+            <LogsTable
+              items={items}
+              isLoading={isLoading}
+              selectedId={effectiveSelectedId}
+              onSelect={(log) => setSelectedId(log.id)}
+            />
           </div>
 
+          <footer className="flex flex-none flex-col gap-3 border-t border-[var(--hairline)] bg-[var(--panel-bg)]/92 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <p className="ws-caption">
+                当前页 <span className="ws-num font-semibold text-[var(--ink)]">{items.length}</span> 条
+              </p>
+              <p className="ws-caption">
+                每页 <span className="ws-num font-semibold text-[var(--ink)]">{filters.pageSize}</span> 条
+              </p>
+              {selectedLog ? (
+                <p className="ws-caption">
+                  已选日志 <span className="ws-num font-semibold text-[var(--ink)]">{selectedLog.id.slice(0, 8)}</span>
+                </p>
+              ) : null}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-[var(--hairline)] bg-[var(--panel-bg)] text-[var(--ink-2)] shadow-none"
+                disabled={!data?.previous_page || isValidating}
+                onClick={() => setCursor(data?.previous_page ?? null)}
+              >
+                上一页
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-[var(--hairline)] bg-[var(--panel-bg)] text-[var(--ink-2)] shadow-none"
+                disabled={!data?.next_page || isValidating}
+                onClick={() => setCursor(data?.next_page ?? null)}
+              >
+                下一页
+              </Button>
+            </div>
+          </footer>
+        </section>
+
+        <section className="min-h-0 bg-[var(--panel-bg)]">
           <LogsDetailPanel log={selectedLog} />
-        </div>
+        </section>
       </div>
-    </Container>
+    </main>
   )
 }
 
-function SummaryCard({ label, value, icon }: { label: string; value: string; icon: ReactNode }) {
+function ToolbarStat({
+  label,
+  value,
+  icon,
+  tone = "default",
+}: {
+  label: string
+  value: string
+  icon: ReactNode
+  tone?: "default" | "danger" | "info" | "accent"
+}) {
+  const toneClass =
+    tone === "danger"
+      ? "border-[var(--danger-border)] bg-[var(--danger-soft)] text-[var(--danger)]"
+      : tone === "info"
+        ? "border-[var(--info-border)] bg-[var(--info-soft)] text-[var(--info)]"
+        : tone === "accent"
+          ? "border-[var(--accent-border)] bg-[var(--accent-soft)] text-[var(--accent-ink)]"
+          : "border-[var(--hairline)] bg-[var(--panel-bg)] text-[var(--ink-2)]"
+
   return (
-    <Card>
-      <CardContent className="flex items-center justify-between p-4">
-        <div>
-          <div className="text-sm text-muted-foreground">{label}</div>
-          <div className="mt-1 text-2xl font-semibold">{value}</div>
-        </div>
-        <div className="text-muted-foreground">{icon}</div>
-      </CardContent>
-    </Card>
+    <div className={`flex min-w-[118px] items-center gap-3 rounded-full border px-3 py-2 ${toneClass}`}>
+      <div className="shrink-0">{icon}</div>
+      <div className="min-w-0">
+        <div className="ws-caption text-current/75">{label}</div>
+        <div className="ws-num mt-0.5 truncate text-[13px] font-semibold text-[var(--ink)]">{value}</div>
+      </div>
+    </div>
   )
 }
 

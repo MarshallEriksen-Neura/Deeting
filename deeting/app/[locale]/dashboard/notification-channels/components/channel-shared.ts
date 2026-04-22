@@ -12,12 +12,12 @@ export const CHANNEL_ICONS: Record<ChannelType, typeof Mail> = {
 }
 
 export const CHANNEL_COLORS: Record<ChannelType, string> = {
-  feishu: "bg-blue-500/10 text-blue-500",
-  wechat: "bg-emerald-500/10 text-emerald-500",
-  dingtalk: "bg-sky-500/10 text-sky-500",
-  telegram: "bg-cyan-500/10 text-cyan-500",
-  email: "bg-amber-500/10 text-amber-500",
-  webhook: "bg-violet-500/10 text-violet-500",
+  feishu: "bg-[color:var(--info-soft)] text-[color:var(--info)]",
+  wechat: "bg-[color:var(--ok-soft)] text-[color:var(--ok)]",
+  dingtalk: "bg-[color:var(--info-soft)] text-[color:var(--info)]",
+  telegram: "bg-[color:var(--accent-soft)] text-[color:var(--accent-strong)]",
+  email: "bg-[color:var(--warn-soft)] text-[color:var(--warn)]",
+  webhook: "bg-[color:var(--accent-soft)] text-[color:var(--accent-strong)]",
 }
 
 export const isDesktopRuntime = () =>

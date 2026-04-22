@@ -4,12 +4,12 @@ import { Bot, CheckCircle2, Clock3, Play, Settings2, Sparkles, X } from "lucide-
 
 import { Button } from "@/ui/shadcn/button"
 import {
-  GlassCard,
-  GlassCardContent,
-  GlassCardDescription,
-  GlassCardHeader,
-  GlassCardTitle,
-} from "@/ui/common/glass-card"
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/ui/shadcn/card"
 import { Switch } from "@/ui/shadcn/switch"
 import type {
   LocalLlmWikiAutomationAuditEntry,
@@ -141,28 +141,23 @@ export function LlmWikiAutomationCard({
   ]
 
   return (
-    <GlassCard
-      blur="lg"
-      theme="surface"
-      hover="none"
-      className="border-white/15 bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(247,250,255,0.74))]"
-    >
-      <GlassCardHeader className="border-b border-white/60 pb-5">
+    <Card className="gap-0 py-0 border-[var(--hairline)] bg-[var(--panel-bg)] shadow-[0_18px_40px_-30px_rgba(15,17,28,0.22)]">
+      <CardHeader className="border-b border-[var(--hairline)] pb-5">
         <div className="space-y-2">
           <div className="inline-flex items-center gap-2 rounded-full bg-amber-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-700">
             <Settings2 className="size-3.5" />
             {t("automation.eyebrow")}
           </div>
-          <GlassCardTitle className="text-slate-900">
+          <CardTitle className="text-[var(--ink)]">
             {t("automation.title")}
-          </GlassCardTitle>
-          <GlassCardDescription className="text-slate-500">
+          </CardTitle>
+          <CardDescription className="text-[var(--ink-3)]">
             {t("automation.description")}
-          </GlassCardDescription>
+          </CardDescription>
         </div>
-      </GlassCardHeader>
+      </CardHeader>
 
-      <GlassCardContent className="grid gap-6 pt-6 xl:grid-cols-[1.1fr_0.9fr]">
+      <CardContent className="grid gap-6 pt-6 xl:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-4">
           <div className="rounded-[1.75rem] border border-white/70 bg-white/78 p-4 shadow-[0_20px_45px_-32px_rgba(15,23,42,0.32)]">
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
@@ -297,8 +292,8 @@ export function LlmWikiAutomationCard({
             </div>
           </div>
         </div>
-      </GlassCardContent>
-    </GlassCard>
+      </CardContent>
+    </Card>
   )
 }
 
