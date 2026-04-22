@@ -29,6 +29,7 @@
       "title": "Agent Library",
       "description": "Search and switch between your local task agents.",
       "searchPlaceholder": "Search by name, description, prompt, or tags...",
+      "import": "Import",
       "draftTitle": "Unsaved draft",
       "draftDescription": "You are editing a new task agent that has not been saved yet.",
       "emptyTitle": "No task agents yet",

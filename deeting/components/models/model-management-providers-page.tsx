@@ -31,40 +31,54 @@ export function ModelManagementProvidersPage() {
   }, [instances, selectedInstanceId]);
 
   return (
-    <div className="flex flex-col bg-[var(--window-bg)] overflow-hidden -mx-[var(--shell-canvas-px)] -mt-[var(--shell-canvas-pt)] -mb-[var(--shell-canvas-pb)] h-[calc(100vh-var(--shell-toolbar-h))]">
-        {/* Workstation Header */}
-      <header className="flex h-[56px] flex-none items-center justify-between border-b border-[var(--hairline)] bg-[var(--panel-bg-inset)]/30 px-6 backdrop-blur-md">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2.5">
-            <div className="flex size-8 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent-strong)]">
+    <div className="flex flex-col bg-[var(--window-bg)] overflow-hidden -mx-[var(--shell-canvas-px)] -mt-[var(--shell-canvas-pt)] -mb-[var(--shell-canvas-pb)] h-[calc(100vh-var(--shell-toolbar-h))] relative">
+      {/* Workstation Command Header */}
+      <header className="flex h-[56px] flex-none items-center justify-between border-b border-[var(--hairline)] bg-[var(--panel-bg-inset)]/30 px-6 backdrop-blur-xl relative z-30">
+        <div className="flex items-center gap-5">
+          <div className="flex items-center gap-3">
+            <div className="flex size-8 items-center justify-center rounded-xl bg-[var(--accent-strong)] text-white shadow-[0_0_20px_var(--accent-soft)] transition-transform hover:scale-110 active:rotate-12">
               <Layers className="size-4.5" />
             </div>
-            <h1 className="ws-view-title">{t("title")}</h1>
+            <h1 className="ws-view-title text-lg tracking-tighter">{t("title")}</h1>
           </div>
           <div className="h-4 w-px bg-[var(--hairline-strong)]" />
-          <div className="flex items-center gap-2">
-             <Badge variant="secondary" className="h-6 rounded-full border-[var(--hairline)] bg-[var(--panel-bg)] px-2.5 py-0 text-[10px] font-medium text-[var(--ink-3)]">
-                {instances.length} channels
-             </Badge>
+          <div className="flex items-center gap-3">
+             <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--window-bg)] border border-[var(--hairline)] shadow-inner">
+                <div className="w-1.5 h-1.5 rounded-full bg-[var(--ok)] shadow-[0_0_8px_var(--ok)] animate-pulse" />
+                <span className="ws-num text-[10px] font-black text-[var(--ink-2)] tracking-widest uppercase">
+                   {instances.length} Live_Nodes
+                </span>
+             </div>
           </div>
         </div>
         
-       
+        <div className="flex items-center gap-6">
+           <div className="hidden lg:flex items-center gap-4 text-[9px] font-mono font-bold text-[var(--ink-4)] uppercase tracking-[0.2em]">
+              <div className="flex items-center gap-1.5">
+                 <span className="opacity-40">LATENCY_MS:</span>
+                 <span className="text-[var(--ok)]">Stable</span>
+              </div>
+              <div className="h-2 w-px bg-[var(--hairline)]" />
+              <div className="flex items-center gap-1.5">
+                 <span className="opacity-40">VERSION:</span>
+                 <span className="text-[var(--ink-2)]">0.1.1-3</span>
+              </div>
+           </div>
+        </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar: Neural Channel Navigator */}
-        <aside className="flex w-[292px] flex-none flex-col overflow-hidden border-r border-[var(--hairline)] bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(242,242,245,0.6))] shadow-[14px_0_30px_-28px_rgba(15,17,28,0.3)]">
-          <div className="flex-none px-5 pb-3 pt-4">
-            <p className="ws-meta text-[9px] uppercase tracking-[0.18em] opacity-55">{t("localTag")}</p>
+      <div className="flex flex-1 overflow-hidden relative z-20">
+        {/* Sidebar: Neural Link Navigator */}
+        <aside className="flex w-[310px] flex-none flex-col overflow-hidden border-r border-[var(--hairline)] bg-[var(--sidebar-bg)]/30 backdrop-blur-md relative">
+          <div className="flex-none px-6 pb-4 pt-6">
+            <p className="ws-meta text-[9px] uppercase tracking-[0.3em] font-black opacity-30">Channel Registry</p>
           </div>
           
-          <div className="flex-1 space-y-1 overflow-y-auto px-3 pb-6 custom-scrollbar">
+          <div className="flex-1 space-y-2 overflow-y-auto px-4 pb-12 custom-scrollbar">
             {isLoading ? (
-              <div className="space-y-3 px-3 mt-2">
-                <Skeleton className="h-14 rounded-xl bg-[var(--hairline-subtle)]" />
-                <Skeleton className="h-14 rounded-xl bg-[var(--hairline-subtle)]" />
-                <Skeleton className="h-14 rounded-xl bg-[var(--hairline-subtle)]" />
+              <div className="space-y-4 px-2">
+                <Skeleton className="h-20 rounded-2xl bg-[var(--panel-bg-inset)] opacity-40" />
+                <Skeleton className="h-20 rounded-2xl bg-[var(--panel-bg-inset)] opacity-40" />
               </div>
             ) : instances.length ? (
               instances.map((instance) => {
@@ -74,57 +88,65 @@ export function ModelManagementProvidersPage() {
                     key={instance.id}
                     onClick={() => setSelectedInstanceId(instance.id)}
                     className={cn(
-                      "ws-rail group relative flex w-full flex-col gap-2 rounded-[20px] border px-4 py-3.5 text-left transition-all",
+                      "ws-rail group relative flex w-full flex-col gap-2 rounded-[24px] border p-4 text-left transition-all duration-500",
                       selected
-                        ? "border-[var(--accent-border)] bg-[var(--accent-soft)]/55 shadow-[0_18px_34px_-28px_rgba(109,92,255,0.55)]"
-                        : "border-transparent bg-transparent hover:border-[var(--hairline)] hover:bg-[var(--panel-bg)]/72"
+                        ? "border-[var(--accent-border)] bg-gradient-to-br from-[var(--accent-soft)]/60 to-transparent shadow-[0_30px_60px_-20px_rgba(0,0,0,0.4)]"
+                        : "border-transparent bg-transparent hover:border-[var(--hairline)] hover:bg-[var(--panel-bg-inset)]/50"
                     )}
-                    data-active={selected}
                   >
+                    {/* Active Link Energy Guide */}
+                    {selected && (
+                       <div className="absolute left-[-16px] top-1/4 bottom-1/4 w-1 bg-[var(--accent-strong)] rounded-r-full shadow-[6px_0_15px_var(--accent-strong)]" />
+                    )}
+
                     <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="flex items-center gap-3.5 min-w-0">
                         <div className={cn(
-                          "flex size-8 items-center justify-center rounded-xl border transition-colors",
-                          selected ? "border-[var(--accent-border)] bg-[var(--panel-bg)] shadow-sm" : "border-[var(--hairline)] bg-[var(--panel-bg-inset)]"
+                          "flex size-10 flex-none items-center justify-center rounded-2xl border transition-all duration-700",
+                          selected 
+                            ? "border-[var(--accent-border)] bg-[var(--panel-bg)] shadow-[inset_0_2px_10px_rgba(0,0,0,0.1)] scale-110 rotate-[-4deg]" 
+                            : "border-[var(--hairline)] bg-[var(--panel-bg-inset)] opacity-60"
                         )}>
                           {instance.icon ? (
-                             <img src={instance.icon} className="size-4.5 flex-none opacity-90" alt="" />
+                             <img src={instance.icon} className="size-5.5 flex-none transition-transform group-hover:scale-110" alt="" />
                           ) : (
-                             <Server className={cn("size-3.5 flex-none", selected ? "text-[var(--accent-strong)]" : "text-[var(--ink-3)]")} />
+                             <Server className={cn("size-4.5 flex-none", selected ? "text-[var(--accent-strong)]" : "text-[var(--ink-4)]")} />
                           )}
                         </div>
                         <div className="min-w-0">
                           <span className={cn(
-                            "ws-control block truncate text-[13px] transition-colors",
-                            selected ? "font-bold text-[var(--ink)]" : "text-[var(--ink-2)]"
+                            "ws-control block truncate text-[14px] transition-colors leading-tight",
+                            selected ? "font-black text-[var(--ink)] tracking-tighter" : "font-bold text-[var(--ink-2)]"
                           )}>{instance.name}</span>
-                          <span className="mt-0.5 block truncate text-[10px] font-medium text-[var(--ink-4)]">
+                          <span className="mt-1 block truncate font-mono text-[9px] font-black text-[var(--ink-4)] opacity-50 tracking-widest uppercase">
                             {instance.base_url.replace(/^https?:\/\//, '').split('/')[0]}
                           </span>
                         </div>
                       </div>
-                      <div className={cn("ws-dot", instance.is_enabled ? "bg-[var(--ok)]" : "bg-[var(--ink-4)]")} data-live={instance.is_enabled && selected} />
+                      <div className="flex flex-col items-end gap-1">
+                        <div className={cn("ws-dot transition-all duration-700", instance.is_enabled ? "bg-[var(--ok)] shadow-[0_0_10px_var(--ok)]" : "bg-[var(--ink-4)]")} data-live={instance.is_enabled && selected} />
+                      </div>
                     </div>
                     
-                    <div className="flex items-center justify-between pl-[42px]">
-                       <span className={cn(
-                         "rounded-full px-2 py-0.5 text-[10px] font-medium",
+                    <div className="flex items-center justify-between pl-[54px] mt-1">
+                       <div className={cn(
+                         "rounded-md px-2 py-0.5 text-[9px] font-black uppercase tracking-widest border transition-all",
                          instance.is_enabled
-                           ? "bg-[var(--ok-soft)] text-[var(--ok)]"
-                           : "bg-[var(--panel-bg-inset)] text-[var(--ink-4)]"
+                           ? "bg-[var(--ok-soft)] text-[var(--ok)] border-[var(--ok-border)]"
+                           : "bg-[var(--panel-bg-inset)] text-[var(--ink-4)] border-transparent"
                        )}>
-                          {instance.is_enabled ? "Active" : "Paused"}
-                       </span>
+                          {instance.is_enabled ? "Linked_Online" : "Node_Offline"}
+                       </div>
                        
                        <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                             <button className="rounded-lg p-1 opacity-0 transition-all hover:bg-black/5 group-hover:opacity-100">
-                                <MoreHorizontal className="size-3.5 text-[var(--ink-3)]" />
+                             <button className="rounded-xl p-1.5 opacity-0 transition-all hover:bg-[var(--panel-bg)] group-hover:opacity-100">
+                                <MoreHorizontal className="size-4 text-[var(--ink-3)]" />
                              </button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="ws-bezel-inner min-w-[140px] shadow-xl border-[var(--hairline-strong)]">
-                             <DropdownMenuItem className="ws-control text-xs py-2 cursor-pointer focus:bg-[var(--accent-soft)] focus:text-[var(--accent-ink)]">{t("edit")}</DropdownMenuItem>
-                             <DropdownMenuItem className="ws-control text-xs py-2 cursor-pointer text-[var(--danger)] focus:bg-[var(--danger-soft)] focus:text-[var(--danger)]">{t("disconnect")}</DropdownMenuItem>
+                          <DropdownMenuContent align="end" className="ws-bezel-inner min-w-[170px] shadow-[0_40px_80px_rgba(0,0,0,0.5)] border-[var(--hairline-strong)] backdrop-blur-2xl p-1.5">
+                             <DropdownMenuItem className="ws-control text-[12px] py-2.5 px-4 font-black tracking-tight cursor-pointer rounded-xl focus:bg-[var(--accent-soft)] focus:text-[var(--accent-ink)] transition-colors transition-all mb-1">{t("edit").toUpperCase()}</DropdownMenuItem>
+                             <DropdownMenuItem className="ws-control text-[12px] py-2.5 px-4 font-black tracking-tight cursor-pointer rounded-xl text-[var(--danger)] focus:bg-[var(--danger-soft)] focus:text-[var(--danger)] transition-all">{t("disconnect").toUpperCase()}</DropdownMenuItem>
                           </DropdownMenuContent>
                        </DropdownMenu>
                     </div>
@@ -132,28 +154,42 @@ export function ModelManagementProvidersPage() {
                 );
               })
             ) : (
-              <div className="mx-4 mt-8 rounded-2xl border-2 border-dashed border-[var(--hairline-strong)] p-6 text-center bg-[var(--panel-bg)]/50">
-                <p className="ws-caption text-xs leading-relaxed">{t("empty")}</p>
+              <div className="mx-2 mt-8 rounded-[32px] border border-dashed border-[var(--hairline-strong)] p-10 text-center bg-white/[0.02] backdrop-blur-md">
+                <Bot className="size-10 text-[var(--ink-4)] mx-auto mb-4 opacity-10 animate-pulse" />
+                <p className="ws-caption text-xs font-black uppercase tracking-widest opacity-40">{t("empty")}</p>
               </div>
             )}
           </div>
         </aside>
 
-        {/* Main Content: Models Manager */}
-        <main className="flex-1 overflow-hidden bg-[var(--window-bg)]">
-          {selectedInstanceId ? (
-            <div className="h-full overflow-y-auto custom-scrollbar">
-              <ModelsManager instanceId={selectedInstanceId} />
-            </div>
-          ) : (
-            <div className="flex h-full flex-col items-center justify-center bg-[var(--panel-bg-inset)]/20 p-12 text-center">
-               <div className="mb-6 flex size-16 items-center justify-center rounded-3xl border border-[var(--hairline)] bg-[var(--panel-bg-inset)] shadow-sm">
-                  <Bot className="size-8 text-[var(--ink-4)]" />
-               </div>
-               <h3 className="ws-view-title text-[var(--ink-3)] mb-2">Neural Workspace Idle</h3>
-               <p className="ws-body text-sm max-w-[280px]">Select a neural channel from the sidebar to manage available brain models.</p>
-            </div>
-          )}
+        {/* Main Workspace: Neural Matrix */}
+        <main className="flex-1 overflow-hidden bg-[var(--window-bg)] relative">
+          {/* Subtle Dynamic Mesh Background */}
+          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+             <div className="absolute inset-0 opacity-[0.03] mesh-grid" />
+             <div className="absolute top-[20%] right-[-10%] w-[600px] h-[600px] rounded-full bg-[radial-gradient(circle,var(--accent-soft)_0%,transparent_70%)] blur-3xl opacity-10" />
+          </div>
+          
+          <div className="relative z-10 h-full">
+            {selectedInstanceId ? (
+              <div className="h-full overflow-y-auto custom-scrollbar">
+                <ModelsManager instanceId={selectedInstanceId} />
+              </div>
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center p-12 text-center">
+                 <div className="relative">
+                    <div className="absolute -inset-8 bg-[var(--accent-soft)] opacity-20 blur-3xl rounded-full animate-pulse" />
+                    <div className="relative mb-10 flex size-24 items-center justify-center rounded-[40px] border border-[var(--hairline-strong)] bg-gradient-to-b from-[var(--panel-bg)] to-transparent shadow-2xl">
+                       <Bot className="size-12 text-[var(--accent-strong)] opacity-60" />
+                    </div>
+                 </div>
+                 <h3 className="ws-view-title text-[var(--ink-2)] text-3xl mb-4 tracking-tighter font-black">Link_Standby</h3>
+                 <p className="ws-body text-[var(--ink-3)] text-sm max-w-[360px] leading-relaxed mx-auto font-medium opacity-60">
+                    Neural uplink initialized. Select a processing node from the link navigator to engage command operations.
+                 </p>
+              </div>
+            )}
+          </div>
         </main>
       </div>
     </div>

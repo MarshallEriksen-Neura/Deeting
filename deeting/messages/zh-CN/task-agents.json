@@ -29,6 +29,7 @@
       "title": "智能体列表",
       "description": "搜索并切换你的本地任务智能体。",
       "searchPlaceholder": "按名称、描述、提示词或标签搜索...",
+      "import": "导入",
       "draftTitle": "未保存草稿",
       "draftDescription": "你正在编辑一个尚未保存的新任务智能体。",
       "emptyTitle": "还没有任务智能体",

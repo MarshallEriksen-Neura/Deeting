@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/shadcn/input"
 import { Label } from "@/components/ui/shadcn/label"
 import { Separator } from "@/components/ui/shadcn/separator"
 import { Switch } from "@/components/ui/shadcn/switch"
-import { TabsContent } from "@/components/ui/shadcn/tabs"
 import { Textarea } from "@/components/ui/shadcn/textarea"
 import { TaskAgentSectionHeader } from "./task-agent-section-header"
 import { TaskAgentModelPickerField } from "./task-agent-model-picker-field"
@@ -57,385 +56,109 @@ export function ImageTaskAgentEditor({
   handleTaskAgentModelChange,
 }: ImageTaskAgentEditorProps) {
   return (
-    <>
-      <TabsContent value="config" className="space-y-6">
-        <TaskAgentSectionHeader
-          title={t("editor.basic.title")}
-          description={t("editor.basic.description")}
-        />
-        <div className="grid gap-5 lg:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="task-agent-name">{t("editor.fields.name")}</Label>
-            <Input
-              id="task-agent-name"
-              value={draft.name}
-              onChange={(event) => updateDraft("name", event.target.value)}
-              placeholder={t("editor.placeholders.name")}
-            />
+    <div className="space-y-20">
+      {/* Configuration Metadata */}
+      <section className="grid grid-cols-2 gap-16">
+        <div className="space-y-10">
+          <div className="space-y-4">
+             <label className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">Neural Engine</label>
+             <TaskAgentModelPickerField
+                t={t}
+                taskAgentModelSelectValue={taskAgentModelSelectValue}
+                selectedTaskAgentModelOption={selectedTaskAgentModelOption}
+                unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}
+                isLoadingModels={isLoadingModels}
+                modelGroups={modelGroups}
+                onValueChange={handleTaskAgentModelChange}
+              />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="task-agent-kind">{t("editor.fields.invocationKind")}</Label>
-            <div
-              id="task-agent-kind"
-              className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm text-[var(--foreground)]">
-                  {t("badges.imageGeneration")}
-                </span>
-                <Badge variant="secondary">{t("editor.values.typeLocked")}</Badge>
-              </div>
+
+          <div className="space-y-4">
+            <label className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">Global Flags</label>
+            <div className="space-y-6">
+              {[
+                { label: t("editor.fields.preferredForImageGeneration"), checked: draft.preferred_for_image_generation, key: "preferred_for_image_generation" },
+                { label: t("editor.fields.discoverable"), checked: draft.discoverable, key: "discoverable" },
+                { label: t("editor.fields.isEnabled"), checked: draft.is_enabled, key: "is_enabled" },
+              ].map(flag => (
+                <div key={flag.key} className="flex items-center justify-between gap-4">
+                  <span className="text-[11px] font-bold tracking-widest text-[var(--ink-2)] uppercase">{flag.label}</span>
+                  <Switch
+                    checked={flag.checked}
+                    onCheckedChange={(checked) => updateDraft(flag.key as any, checked)}
+                  />
+                </div>
+              ))}
             </div>
           </div>
         </div>
 
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-[var(--foreground)]">
-                {t("editor.fields.preferredForImageGeneration")}
-              </p>
-              <p className="text-xs text-[var(--muted)]">
-                {t("editor.toggles.preferredForImageGeneration")}
-              </p>
-            </div>
-            <Switch
-              checked={draft.preferred_for_image_generation}
-              onCheckedChange={(checked) =>
-                updateDraft("preferred_for_image_generation", checked)
-              }
-            />
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="task-agent-description">{t("editor.fields.description")}</Label>
-          <Textarea
-            id="task-agent-description"
+        <div className="space-y-4">
+          <label className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">Description</label>
+          <textarea
             value={draft.description}
             onChange={(event) => updateDraft("description", event.target.value)}
-            rows={3}
+            rows={4}
             placeholder={t("editor.placeholders.description")}
+            className="w-full bg-transparent border-b border-[var(--hairline-strong)] py-1 text-[13px] text-[var(--ink)] placeholder:text-[var(--ink-4)] focus:outline-none focus:border-[var(--accent-strong)] transition-colors resize-none"
+          />
+        </div>
+      </section>
+
+      <div className="h-px bg-[var(--hairline-strong)] opacity-10" />
+
+      {/* Generation Parameters */}
+      <section className="space-y-12">
+        <div className="font-mono text-[10px] font-bold tracking-[0.4em] text-[var(--ink)] uppercase">Vision parameters</div>
+        
+        <div className="space-y-4">
+          <label className="font-mono text-[9px] font-bold tracking-[0.2em] text-[var(--ink-4)] uppercase">Negative Instruction Set</label>
+          <textarea
+            value={draft.image_config.negative_prompt}
+            onChange={(event) => updateImageDraft("negative_prompt", event.target.value)}
+            rows={3}
+            placeholder={t("editor.imageConfig.placeholders.negativePrompt")}
+            className="w-full bg-transparent border-b border-[var(--hairline-strong)] py-1 text-[13px] font-mono text-[var(--ink-3)] focus:outline-none focus:border-[var(--accent-strong)] transition-colors resize-none"
           />
         </div>
 
-        <Separator />
-
-        <TaskAgentSectionHeader
-          title={t("editor.model.title")}
-        />
-
-        <div className="grid gap-5">
-          <TaskAgentModelPickerField
-            t={t}
-            taskAgentModelSelectValue={taskAgentModelSelectValue}
-            selectedTaskAgentModelOption={selectedTaskAgentModelOption}
-            unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}
-            isLoadingModels={isLoadingModels}
-            modelGroups={modelGroups}
-            onValueChange={handleTaskAgentModelChange}
-          />
-        </div>
-
-        <Separator />
-
-        <TaskAgentSectionHeader
-          title={t("editor.imageConfig.title")}
-          description={t("editor.imageConfig.description")}
-        />
-        <div className="grid gap-5 lg:grid-cols-1">
-          <div className="space-y-2">
-            <Label htmlFor="task-agent-image-negative-prompt">
-              {t("editor.imageConfig.fields.negativePrompt")}
-            </Label>
-            <Textarea
-              id="task-agent-image-negative-prompt"
-              value={draft.image_config.negative_prompt}
-              onChange={(event) => updateImageDraft("negative_prompt", event.target.value)}
-              rows={3}
-              placeholder={t("editor.imageConfig.placeholders.negativePrompt")}
-            />
-          </div>
-        </div>
-
-        <div className="grid gap-5 lg:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="task-agent-max-input-images">
-              {t("editor.imageConfig.fields.maxInputImages")}
-            </Label>
-            <Input
-              id="task-agent-max-input-images"
-              value={draft.image_config.max_input_images}
-              onChange={(event) =>
-                updateImageDraft("max_input_images", event.target.value)
-              }
-              placeholder={t("editor.imageConfig.placeholders.maxInputImages")}
-            />
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-[var(--foreground)]">
-                  {t("editor.imageConfig.fields.allowTextOnly")}
-                </p>
-                <p className="text-xs text-[var(--muted)]">
-                  {t("editor.imageConfig.helpers.allowTextOnly")}
-                </p>
-              </div>
-              <Switch
-                checked={draft.image_config.allow_text_only}
-                onCheckedChange={(checked) =>
-                  updateImageDraft("allow_text_only", checked)
-                }
+        <div className="grid grid-cols-4 gap-x-12 gap-y-10">
+          {[
+            { label: "Aspect Ratio", value: draft.image_config.aspect_ratio, key: "aspect_ratio", placeholder: "1:1" },
+            { label: "Num Outputs", value: draft.image_config.num_outputs, key: "num_outputs", placeholder: "1" },
+            { label: "Inf. Steps", value: draft.image_config.steps, key: "steps", placeholder: "30" },
+            { label: "CFG Scale", value: draft.image_config.cfg_scale, key: "cfg_scale", placeholder: "7.5" },
+            { label: "Width", value: draft.image_config.width, key: "width", placeholder: "1024" },
+            { label: "Height", value: draft.image_config.height, key: "height", placeholder: "1024" },
+            { label: "Seed", value: draft.image_config.seed, key: "seed", placeholder: "-1" },
+            { label: "Quality", value: draft.image_config.quality, key: "quality", placeholder: "standard" },
+          ].map(field => (
+            <div key={field.key} className="space-y-2">
+              <label className="font-mono text-[8px] font-bold tracking-[0.2em] text-[var(--ink-4)] uppercase">{field.label}</label>
+              <input
+                value={field.value}
+                onChange={(event) => updateImageDraft(field.key as any, event.target.value)}
+                placeholder={field.placeholder}
+                className="w-full bg-transparent border-b border-[var(--hairline-subtle)] py-1 text-[11px] font-mono text-[var(--ink)] focus:outline-none focus:border-[var(--accent-strong)] transition-colors"
               />
             </div>
-          </div>
+          ))}
         </div>
 
-        <div className="grid gap-5 lg:grid-cols-4">
-          <div className="space-y-2">
-            <Label htmlFor="task-agent-image-aspect-ratio">
-              {t("editor.imageConfig.fields.aspectRatio")}
-            </Label>
-            <Input
-              id="task-agent-image-aspect-ratio"
-              value={draft.image_config.aspect_ratio}
-              onChange={(event) => updateImageDraft("aspect_ratio", event.target.value)}
-              placeholder={t("editor.imageConfig.placeholders.aspectRatio")}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="task-agent-image-num-outputs">
-              {t("editor.imageConfig.fields.numOutputs")}
-            </Label>
-            <Input
-              id="task-agent-image-num-outputs"
-              value={draft.image_config.num_outputs}
-              onChange={(event) => updateImageDraft("num_outputs", event.target.value)}
-              placeholder={t("editor.imageConfig.placeholders.numOutputs")}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="task-agent-image-steps">{t("editor.imageConfig.fields.steps")}</Label>
-            <Input
-              id="task-agent-image-steps"
-              value={draft.image_config.steps}
-              onChange={(event) => updateImageDraft("steps", event.target.value)}
-              placeholder={t("editor.imageConfig.placeholders.steps")}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="task-agent-image-cfg-scale">
-              {t("editor.imageConfig.fields.cfgScale")}
-            </Label>
-            <Input
-              id="task-agent-image-cfg-scale"
-              value={draft.image_config.cfg_scale}
-              onChange={(event) => updateImageDraft("cfg_scale", event.target.value)}
-              placeholder={t("editor.imageConfig.placeholders.cfgScale")}
-            />
-          </div>
-        </div>
-
-        <div className="grid gap-5 lg:grid-cols-4">
-          <div className="space-y-2">
-            <Label htmlFor="task-agent-image-seed">{t("editor.imageConfig.fields.seed")}</Label>
-            <Input
-              id="task-agent-image-seed"
-              value={draft.image_config.seed}
-              onChange={(event) => updateImageDraft("seed", event.target.value)}
-              placeholder={t("editor.imageConfig.placeholders.seed")}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="task-agent-image-response-format">
-              {t("editor.imageConfig.fields.responseFormat")}
-            </Label>
-            <Input
-              id="task-agent-image-response-format"
-              value={draft.image_config.response_format}
-              onChange={(event) =>
-                updateImageDraft("response_format", event.target.value)
-              }
-              placeholder={t("editor.imageConfig.placeholders.responseFormat")}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="task-agent-image-quality">
-              {t("editor.imageConfig.fields.quality")}
-            </Label>
-            <Input
-              id="task-agent-image-quality"
-              value={draft.image_config.quality}
-              onChange={(event) => updateImageDraft("quality", event.target.value)}
-              placeholder={t("editor.imageConfig.placeholders.quality")}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="task-agent-image-style">{t("editor.imageConfig.fields.style")}</Label>
-            <Input
-              id="task-agent-image-style"
-              value={draft.image_config.style}
-              onChange={(event) => updateImageDraft("style", event.target.value)}
-              placeholder={t("editor.imageConfig.placeholders.style")}
-            />
-          </div>
-        </div>
-
-        <div className="grid gap-5 lg:grid-cols-3">
-          <div className="space-y-2">
-            <Label htmlFor="task-agent-image-width">{t("editor.imageConfig.fields.width")}</Label>
-            <Input
-              id="task-agent-image-width"
-              value={draft.image_config.width}
-              onChange={(event) => updateImageDraft("width", event.target.value)}
-              placeholder={t("editor.imageConfig.placeholders.width")}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="task-agent-image-height">{t("editor.imageConfig.fields.height")}</Label>
-            <Input
-              id="task-agent-image-height"
-              value={draft.image_config.height}
-              onChange={(event) => updateImageDraft("height", event.target.value)}
-              placeholder={t("editor.imageConfig.placeholders.height")}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="task-agent-image-sampler-name">
-              {t("editor.imageConfig.fields.samplerName")}
-            </Label>
-            <Input
-              id="task-agent-image-sampler-name"
-              value={draft.image_config.sampler_name}
-              onChange={(event) => updateImageDraft("sampler_name", event.target.value)}
-              placeholder={t("editor.imageConfig.placeholders.samplerName")}
-            />
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="task-agent-image-extra-params">
-            {t("editor.imageConfig.fields.extraParamsJson")}
-          </Label>
-          <Textarea
-            id="task-agent-image-extra-params"
+        <div className="space-y-4">
+          <label className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">Advanced Parameters (JSON)</label>
+          <textarea
             value={draft.image_config.extra_params_json}
             onChange={(event) => updateImageDraft("extra_params_json", event.target.value)}
-            rows={6}
-            placeholder={t.raw?.("editor.imageConfig.placeholders.extraParamsJson") ?? ""}
-            className="font-mono text-xs"
+            rows={4}
+            placeholder="{}"
+            className="w-full bg-[var(--panel-bg-inset)]/40 p-6 border border-[var(--hairline-strong)] font-mono text-[10px] text-[var(--ink-3)] focus:bg-[var(--window-bg)] focus:border-[var(--accent-strong)] transition-all outline-none"
           />
-          <p className="text-xs text-[var(--muted)]">{t("editor.imageConfig.helper")}</p>
-          {parsedImageExtraParamsError ? (
-            <p className="text-xs text-red-300">{parsedImageExtraParamsError}</p>
-          ) : null}
+          {parsedImageExtraParamsError && (
+            <p className="font-mono text-[9px] text-[var(--danger)] uppercase">{parsedImageExtraParamsError}</p>
+          )}
         </div>
-
-        <div className="grid gap-5 lg:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="task-agent-tags">{t("editor.fields.tags")}</Label>
-            <Input
-              id="task-agent-tags"
-              value={draft.tags_input}
-              onChange={(event) => updateDraft("tags_input", event.target.value)}
-              placeholder={t("editor.placeholders.tags")}
-            />
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-[var(--foreground)]">
-                    {t("editor.fields.discoverable")}
-                  </p>
-                  <p className="text-xs text-[var(--muted)]">
-                    {t("editor.toggles.discoverable")}
-                  </p>
-                </div>
-                <Switch
-                  checked={draft.discoverable}
-                  onCheckedChange={(checked) => updateDraft("discoverable", checked)}
-                />
-              </div>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-[var(--foreground)]">
-                    {t("editor.fields.isEnabled")}
-                  </p>
-                  <p className="text-xs text-[var(--muted)]">
-                    {t("editor.toggles.enabled")}
-                  </p>
-                </div>
-                <Switch
-                  checked={draft.is_enabled}
-                  onCheckedChange={(checked) => updateDraft("is_enabled", checked)}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      </TabsContent>
-
-      <TabsContent value="debug" className="space-y-6">
-        <TaskAgentSectionHeader title={t("debug.title")} description={t("debug.description")} />
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">
-              {t("debug.cards.identity")}
-            </p>
-            <dl className="mt-3 space-y-2 text-sm">
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[var(--muted)]">{t("editor.fields.model")}</dt>
-                <dd className="text-right text-[var(--foreground)]">
-                  {draft.model.trim() || "default"}
-                </dd>
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[var(--muted)]">{t("editor.fields.invocationKind")}</dt>
-                <dd className="text-right text-[var(--foreground)]">
-                  {t("badges.imageGeneration")}
-                </dd>
-              </div>
-            </dl>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">
-              {t("debug.cards.preview")}
-            </p>
-            <dl className="mt-3 space-y-2 text-sm">
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[var(--muted)]">{t("preview.fields.maxRounds")}</dt>
-                <dd className="text-right text-[var(--foreground)]">
-                  {previewDraft.max_rounds.trim() || "default"}
-                </dd>
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[var(--muted)]">{t("preview.fields.maxTokens")}</dt>
-                <dd className="text-right text-[var(--foreground)]">
-                  {previewDraft.max_tokens.trim() || "default"}
-                </dd>
-              </div>
-              <div className="flex items-start justify-between gap-3">
-                <dt className="text-[var(--muted)]">{t("preview.fields.temperature")}</dt>
-                <dd className="text-right text-[var(--foreground)]">
-                  {previewDraft.temperature.trim() || "default"}
-                </dd>
-              </div>
-            </dl>
-          </div>
-        </div>
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-          <div className="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--foreground)]">
-            {t("debug.rawProfile")}
-          </div>
-          <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-[var(--muted)]">
-            {JSON.stringify({ payload: draftPayload }, null, 2)}
-          </pre>
-        </div>
-      </TabsContent>
-    </>
+      </section>
+    </div>
   )
 }

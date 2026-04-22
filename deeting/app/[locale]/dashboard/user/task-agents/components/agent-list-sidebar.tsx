@@ -27,6 +27,7 @@ interface AgentListSidebarProps {
   onKindFilterChange: (k: string) => void
   onStatusFilterChange: (s: string) => void
   onSelectAgent: (id: string) => void
+  setDeleteDialogOpen: (open: boolean) => void
 }
 
 export function AgentListSidebar({
@@ -36,13 +37,18 @@ export function AgentListSidebar({
   agentsLoading,
   filteredAgents,
   onSelectAgent,
+  setDeleteDialogOpen,
 }: AgentListSidebarProps) {
   if (agentsLoading) {
     return (
       <div className="space-y-3 px-3 mt-4">
-        <Skeleton className="h-16 rounded-xl bg-[var(--panel-bg-inset)]/50" />
-        <Skeleton className="h-16 rounded-xl bg-[var(--panel-bg-inset)]/50" />
-        <Skeleton className="h-16 rounded-xl bg-[var(--panel-bg-inset)]/50" />
+        {[1, 2, 3].map(i => (
+          <div key={i} className="py-6 border-b border-[var(--hairline-subtle)] space-y-3 opacity-20">
+             <div className="h-2 w-12 bg-[var(--ink-4)]" />
+             <div className="h-6 w-48 bg-[var(--ink-4)]" />
+             <div className="h-2 w-32 bg-[var(--ink-4)]" />
+          </div>
+        ))}
       </div>
     )
   }
@@ -51,85 +57,86 @@ export function AgentListSidebar({
     return (
       <div className="flex h-full flex-col items-center justify-center p-8 text-center opacity-30">
         <LayoutGrid className="size-10 mb-4" />
-        <p className="ws-caption text-xs leading-relaxed">{t("library.empty")}</p>
+        <p className="ws-caption text-xs leading-relaxed">{t("library.empty") || "No units found"}</p>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5 custom-scrollbar">
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="flex-1 overflow-y-auto py-2 space-y-0 custom-scrollbar mask-linear-b">
         {filteredAgents.map((agent) => {
           const selected = agent.id === selectedAgentId && !isStarterState;
-          const kindLabel = agent.kind === "image" ? "VISION" : agent.kind === "voice" ? "AUDIO" : "CORE";
+          const kindLabel = agent.kind === "image" ? "VISION" : agent.kind === "voice" ? "AUDIO" : "NEURAL_CORE";
           
           return (
             <button
               key={agent.id}
               onClick={() => onSelectAgent(agent.id)}
               className={cn(
-                "ws-rail group relative flex w-full flex-col gap-1 rounded-xl px-4 py-3 text-left transition-all",
-                selected ? "bg-[var(--accent-soft)]/50 shadow-[inset_0_0_0_1px_var(--accent-border)]" : "hover:bg-[var(--panel-bg-inset)]/60"
+                "group relative flex w-full flex-col gap-0.5 border-b border-[var(--hairline-subtle)] py-6 pr-4 transition-all duration-300 text-left",
+                selected ? "bg-[var(--accent-soft)]/20" : "hover:bg-[var(--panel-bg-inset)]/20"
               )}
-              data-active={selected}
             >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className={cn(
-                    "size-8 rounded-lg flex items-center justify-center border transition-all",
-                    selected ? "bg-[var(--panel-bg)] border-[var(--accent-border)] shadow-sm" : "bg-[var(--panel-bg-inset)] border-[var(--hairline)]"
-                  )}>
-                    <BrainCircuit className={cn("size-4", selected ? "text-[var(--accent-strong)]" : "text-[var(--ink-4)]")} />
-                  </div>
-                  <div className="flex flex-col min-w-0">
+              <div className="flex items-start justify-between gap-4 px-2">
+                <div className="flex flex-col min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
                     <span className={cn(
-                      "ws-control truncate text-[13px] font-bold transition-colors",
-                      selected ? "text-[var(--ink)]" : "text-[var(--ink-2)]"
-                    )}>{agent.name || "Unnamed Agent"}</span>
-                    <div className="flex items-center gap-2">
-                       <span className="ws-meta text-[8px] tracking-widest opacity-40">{kindLabel}</span>
-                       <div className="size-1 rounded-full bg-[var(--hairline-strong)]" />
-                       <span className="ws-num text-[9px] opacity-40 truncate">
-                          v{agent.version || "1.0"}
-                       </span>
-                    </div>
-                  </div>
-                </div>
-                <div className={cn("ws-dot", agent.is_enabled ? "bg-[var(--ok)]" : "bg-[var(--ink-4)]")} data-live={agent.is_enabled && selected} />
-              </div>
-              
-              <div className="flex items-center justify-between pl-11 mt-0.5">
-                 <div className="flex items-center gap-1.5 opacity-40">
-                    <Clock className="size-2.5" />
-                    <span className="ws-num text-[9px] font-medium uppercase tracking-tight">
-                       {new Date(agent.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                      "font-mono text-[8px] tracking-[0.25em] transition-opacity duration-500",
+                      selected ? "text-[var(--accent-strong)] opacity-100" : "text-[var(--ink-4)] opacity-40 group-hover:opacity-80"
+                    )}>
+                      {kindLabel}
                     </span>
-                 </div>
-                 
-                 <div className="flex items-center gap-1">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                         <button className="opacity-0 group-hover:opacity-100 p-1 hover:bg-black/5 rounded-md transition-all">
-                            <MoreHorizontal className="size-3.5 text-[var(--ink-3)]" />
+                    {agent.is_enabled && (
+                      <div className="size-[3px] rounded-full bg-[var(--ok)] animate-pulse" />
+                    )}
+                  </div>
+                  
+                  <h3 className={cn(
+                    "text-xl font-bold tracking-tight transition-all duration-300 truncate",
+                    selected ? "text-[var(--ink)] translate-x-1" : "text-[var(--ink-3)] group-hover:text-[var(--ink)]"
+                  )}>
+                    {agent.name || "UNNAMED_ENTITY"}
+                  </h3>
+                </div>
+
+                <div className="flex flex-col items-end gap-1 flex-none pt-1">
+                   <span className="font-mono text-[10px] text-[var(--ink-4)] tabular-nums group-hover:text-[var(--ink-3)] transition-colors">
+                      v{agent.version || "1.0"}
+                   </span>
+                   <DropdownMenu>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                         <button className="opacity-0 group-hover:opacity-60 hover:opacity-100 p-1 transition-all">
+                            <MoreHorizontal className="size-3 text-[var(--ink-3)]" />
                          </button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="ws-bezel-inner min-w-[140px] shadow-xl border-[var(--hairline-strong)]">
-                         <DropdownMenuItem className="ws-control text-xs py-2 cursor-pointer focus:bg-[var(--accent-soft)] focus:text-[var(--accent-ink)]">
-                            <Copy className="size-3.5 mr-2" />
-                            Clone
-                         </DropdownMenuItem>
-                         <DropdownMenuItem className="ws-control text-xs py-2 cursor-pointer text-[var(--danger)] focus:bg-[var(--danger-soft)] focus:text-[var(--danger)]">
-                            <Trash2 className="size-3.5 mr-2" />
+                      <DropdownMenuContent align="end" className="ws-bezel-inner min-w-[140px] shadow-2xl border-[var(--hairline-strong)] bg-[var(--window-bg)]">
+                         <DropdownMenuItem 
+                           className="text-[10px] font-bold tracking-widest uppercase py-2.5 cursor-pointer text-[var(--danger)] focus:bg-[var(--danger-soft)] focus:text-[var(--danger)] transition-colors"
+                           onClick={(e) => {
+                             e.stopPropagation();
+                             onSelectAgent(agent.id);
+                             setDeleteDialogOpen(true);
+                           }}
+                         >
+                            <Trash2 className="size-3 mr-3" />
                             Delete
                          </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
-                 </div>
+                </div>
               </div>
 
-              {/* Indicator Rail for Active Agent */}
+              <div className="flex items-center gap-4 mt-2 px-2 opacity-30 group-hover:opacity-60 transition-opacity">
+                <span className="font-mono text-[8px] tracking-widest text-[var(--ink-4)]">
+                   MODIFIED: {new Date(agent.updated_at).toLocaleDateString(undefined, { month: '2-digit', day: '2-digit', year: 'numeric' })}
+                </span>
+                <div className="h-px flex-1 bg-[var(--hairline-strong)]" />
+              </div>
+
+              {/* Selection Mark */}
               {selected && (
-                <div className="absolute left-0 top-3 bottom-3 w-1 bg-[var(--accent-strong)] rounded-r-full shadow-[0_0_8px_var(--accent-strong)]" />
+                <div className="absolute left-[-2px] top-1/2 -translate-y-1/2 w-1 h-8 bg-[var(--accent-strong)] animate-in slide-in-from-left-2 duration-500" />
               )}
             </button>
           )

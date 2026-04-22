@@ -247,19 +247,40 @@ export function AgentCanvas({
 
   return (
     <div className={styles.root}>
-      {/* Hero — avatar, name, status cluster, description */}
-      <section className={styles.hero}>
-        <div className={styles.avatar}>
-          <Bot />
+      {/* Description Area */}
+      <section className="space-y-4">
+        <div className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">
+          Entity Description
         </div>
+        <DescriptionStrip
+          t={t}
+          value={draft.description}
+          onChange={(next) => updateDraft("description", next)}
+        />
+      </section>
 
-        <div className={styles.heroBody}>
-          <div className={styles.heroHead}>
-            <InlineNameInput
-              value={draft.name}
-              onChange={(next) => updateDraft("name", next)}
-              placeholder={t("editor.placeholders.name")}
-            />
+      <div className={styles.rule} />
+
+      {/* Meta Configuration */}
+      <section className="grid grid-cols-2 gap-16">
+        <div className="space-y-8">
+          <div className={styles.metaField}>
+            <span className={styles.metaLabel}>Neural Engine</span>
+            <div className={styles.metaEngine}>
+              <TaskAgentModelPickerField
+                t={t}
+                taskAgentModelSelectValue={taskAgentModelSelectValue}
+                selectedTaskAgentModelOption={selectedTaskAgentModelOption}
+                unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}
+                isLoadingModels={isLoadingModels}
+                modelGroups={modelGroups}
+                onValueChange={handleTaskAgentModelChange}
+              />
+            </div>
+          </div>
+
+          <div className={styles.metaField}>
+            <span className={styles.metaLabel}>Status & Visibility</span>
             <div className={styles.statusCluster}>
               <TogglePill
                 checked={draft.is_enabled}
@@ -281,45 +302,19 @@ export function AgentCanvas({
               />
             </div>
           </div>
-
-          <DescriptionStrip
-            t={t}
-            value={draft.description}
-            onChange={(next) => updateDraft("description", next)}
-          />
-        </div>
-      </section>
-
-      <div className={styles.rule} />
-
-      {/* Meta — engine owns its own row, type + tags share the next */}
-      <section className={styles.meta}>
-        <div className={styles.metaField}>
-          <span className={styles.metaLabel}>Engine</span>
-          <div className={styles.metaEngine}>
-            <TaskAgentModelPickerField
-              t={t}
-              taskAgentModelSelectValue={taskAgentModelSelectValue}
-              selectedTaskAgentModelOption={selectedTaskAgentModelOption}
-              unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}
-              isLoadingModels={isLoadingModels}
-              modelGroups={modelGroups}
-              onValueChange={handleTaskAgentModelChange}
-            />
-          </div>
         </div>
 
-        <div className={styles.metaSplit}>
+        <div className="space-y-8">
           <div className={styles.metaField}>
-            <span className={styles.metaLabel}>Type</span>
-            <span className={styles.typePill}>
-              <MessageSquare />
+            <span className={styles.metaLabel}>Classification</span>
+            <span className="flex items-center gap-3 text-[11px] font-bold tracking-widest text-[var(--ink)] uppercase">
+              <MessageSquare className="size-3.5 opacity-50" />
               {t("badges.chat")}
             </span>
           </div>
 
           <div className={styles.metaField}>
-            <span className={styles.metaLabel}>Tags</span>
+            <span className={styles.metaLabel}>Indexing Tags</span>
             <TagChips
               t={t}
               value={draft.tags_input}
@@ -331,16 +326,15 @@ export function AgentCanvas({
 
       <div className={styles.rule} />
 
-      {/* Prompt */}
+      {/* Primary Instruction Set (Prompt) */}
       <section className={styles.prompt}>
         <header className={styles.promptHead}>
           <span className={styles.promptLabel}>
-            <Sparkles className={styles.promptLabelIcon} />
-            <span>{t("editor.fields.taskPrompt")}</span>
+            <span>{t("editor.fields.taskPrompt").toUpperCase()}</span>
             <span className={styles.promptRequired}>*</span>
           </span>
           <span className={promptCountClass}>
-            {promptChars.toLocaleString()} chars
+            {promptChars.toLocaleString()} BIT_UNITS
           </span>
         </header>
 

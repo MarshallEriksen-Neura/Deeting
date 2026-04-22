@@ -89,8 +89,8 @@ export function ErrorDiagnostic({
               key={idx} 
               className={cn(
                 "text-[11px] leading-relaxed flex gap-3",
-                line.includes('ERROR') || line.includes('CRITICAL') ? 'text-[var(--danger)]' : 
-                line.includes('WARN') ? 'text-[var(--warn)]' : 'text-[var(--ink-3)]'
+                line && (line.includes('ERROR') || line.includes('CRITICAL')) ? 'text-[var(--danger)]' : 
+                line && line.includes('WARN') ? 'text-[var(--warn)]' : 'text-[var(--ink-3)]'
               )}
             >
               <span className="opacity-40 select-none">[{new Date().toLocaleTimeString([], { hour12: false })}]</span>

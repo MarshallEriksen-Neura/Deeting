@@ -1,13 +1,7 @@
 "use client"
 
 import type { ModelGroup } from "@/lib/api/models"
-import { Badge } from "@/components/ui/shadcn/badge"
-import { Input } from "@/components/ui/shadcn/input"
-import { Label } from "@/components/ui/shadcn/label"
-import { Separator } from "@/components/ui/shadcn/separator"
-import { TabsContent } from "@/components/ui/shadcn/tabs"
-import { Textarea } from "@/components/ui/shadcn/textarea"
-import { TaskAgentSectionHeader } from "./task-agent-section-header"
+import { Switch } from "@/components/ui/shadcn/switch"
 import { TaskAgentModelPickerField } from "./task-agent-model-picker-field"
 import type {
   TaskAgentDraft,
@@ -50,124 +44,92 @@ export function VoiceTaskAgentEditor({
   handleTaskAgentModelChange,
 }: VoiceTaskAgentEditorProps) {
   return (
-    <TabsContent value="config" className="space-y-6">
-      <TaskAgentSectionHeader
-        title={t("editor.basic.title")}
-        description={t("editor.basic.description")}
-      />
+    <div className="space-y-20">
+      {/* Configuration Metadata */}
+      <section className="grid grid-cols-2 gap-16">
+        <div className="space-y-10">
+          <div className="space-y-4">
+             <label className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">Neural Engine</label>
+             <TaskAgentModelPickerField
+                t={t}
+                taskAgentModelSelectValue={taskAgentModelSelectValue}
+                selectedTaskAgentModelOption={selectedTaskAgentModelOption}
+                unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}
+                isLoadingModels={isLoadingModels}
+                modelGroups={modelGroups}
+                onValueChange={handleTaskAgentModelChange}
+              />
+          </div>
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="task-agent-name">{t("editor.fields.name")}</Label>
-          <Input
-            id="task-agent-name"
-            value={draft.name}
-            onChange={(event) => updateDraft("name", event.target.value)}
-            placeholder={t("editor.placeholders.name")}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="task-agent-kind">{t("editor.fields.invocationKind")}</Label>
-          <div
-            id="task-agent-kind"
-            className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm text-[var(--foreground)]">
-                {t("badges.textToSpeech")}
-              </span>
-              <Badge variant="secondary">{t("editor.values.typeLocked")}</Badge>
+          <div className="space-y-4">
+            <label className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">Visibility Flags</label>
+            <div className="space-y-6">
+              {[
+                { label: t("editor.fields.discoverable"), checked: draft.discoverable, key: "discoverable" },
+                { label: t("editor.fields.isEnabled"), checked: draft.is_enabled, key: "is_enabled" },
+              ].map(flag => (
+                <div key={flag.key} className="flex items-center justify-between gap-4">
+                  <span className="text-[11px] font-bold tracking-widest text-[var(--ink-2)] uppercase">{flag.label}</span>
+                  <Switch
+                    checked={flag.checked}
+                    onCheckedChange={(checked) => updateDraft(flag.key as any, checked)}
+                  />
+                </div>
+              ))}
             </div>
           </div>
         </div>
-      </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="task-agent-description">{t("editor.fields.description")}</Label>
-        <Textarea
-          id="task-agent-description"
-          value={draft.description}
-          onChange={(event) => updateDraft("description", event.target.value)}
-          rows={3}
-          placeholder={t("editor.placeholders.description")}
-        />
-      </div>
-
-      <Separator />
-
-      <TaskAgentSectionHeader
-        title={t("editor.model.title")}
-      />
-
-      <div className="grid gap-5">
-        <TaskAgentModelPickerField
-          t={t}
-          taskAgentModelSelectValue={taskAgentModelSelectValue}
-          selectedTaskAgentModelOption={selectedTaskAgentModelOption}
-          unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}
-          isLoadingModels={isLoadingModels}
-          modelGroups={modelGroups}
-          onValueChange={handleTaskAgentModelChange}
-        />
-      </div>
-
-      <Separator />
-
-      <TaskAgentSectionHeader
-        title={t("editor.voiceConfig.title")}
-        description={t("editor.voiceConfig.description")}
-      />
-
-      <div className="grid gap-5 lg:grid-cols-3">
-        <div className="space-y-2">
-          <Label htmlFor="task-agent-voice-voice">{t("editor.voiceConfig.fields.voice")}</Label>
-          <Input
-            id="task-agent-voice-voice"
-            value={draft.voice_config.voice}
-            onChange={(event) => updateVoiceDraft("voice", event.target.value)}
-            placeholder={t("editor.voiceConfig.placeholders.voice")}
+        <div className="space-y-4">
+          <label className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">Description</label>
+          <textarea
+            value={draft.description}
+            onChange={(event) => updateDraft("description", event.target.value)}
+            rows={4}
+            placeholder={t("editor.placeholders.description")}
+            className="w-full bg-transparent border-b border-[var(--hairline-strong)] py-1 text-[13px] text-[var(--ink)] placeholder:text-[var(--ink-4)] focus:outline-none focus:border-[var(--accent-strong)] transition-colors resize-none"
           />
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="task-agent-voice-response-format">
-            {t("editor.voiceConfig.fields.responseFormat")}
-          </Label>
-          <Input
-            id="task-agent-voice-response-format"
-            value={draft.voice_config.response_format}
-            onChange={(event) => updateVoiceDraft("response_format", event.target.value)}
-            placeholder={t("editor.voiceConfig.placeholders.responseFormat")}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="task-agent-voice-speed">{t("editor.voiceConfig.fields.speed")}</Label>
-          <Input
-            id="task-agent-voice-speed"
-            value={draft.voice_config.speed}
-            onChange={(event) => updateVoiceDraft("speed", event.target.value)}
-            placeholder={t("editor.voiceConfig.placeholders.speed")}
-          />
-        </div>
-      </div>
+      </section>
 
-      <div className="space-y-2">
-        <Label htmlFor="task-agent-voice-extra-params">
-          {t("editor.voiceConfig.fields.extraParamsJson")}
-        </Label>
-        <Textarea
-          id="task-agent-voice-extra-params"
-          value={draft.voice_config.extra_params_json}
-          onChange={(event) => updateVoiceDraft("extra_params_json", event.target.value)}
-          rows={6}
-          placeholder={t.raw?.("editor.voiceConfig.placeholders.extraParamsJson") ?? ""}
-          className="font-mono text-xs"
-        />
-        <p className="text-xs text-[var(--muted)]">{t("editor.voiceConfig.helper")}</p>
-        {parsedVoiceExtraParamsError ? (
-          <p className="text-xs text-red-300">{parsedVoiceExtraParamsError}</p>
-        ) : null}
-      </div>
+      <div className="h-px bg-[var(--hairline-strong)] opacity-10" />
 
-    </TabsContent>
+      {/* Acoustic Parameters */}
+      <section className="space-y-12">
+        <div className="font-mono text-[10px] font-bold tracking-[0.4em] text-[var(--ink)] uppercase">Acoustic parameters</div>
+        
+        <div className="grid grid-cols-3 gap-12">
+          {[
+            { label: "Voice Model", value: draft.voice_config.voice, key: "voice", placeholder: "alloy" },
+            { label: "Response Format", value: draft.voice_config.response_format, key: "response_format", placeholder: "mp3" },
+            { label: "Playback Speed", value: draft.voice_config.speed, key: "speed", placeholder: "1.0" },
+          ].map(field => (
+            <div key={field.key} className="space-y-2">
+              <label className="font-mono text-[8px] font-bold tracking-[0.2em] text-[var(--ink-4)] uppercase">{field.label}</label>
+              <input
+                value={field.value}
+                onChange={(event) => updateVoiceDraft(field.key as any, event.target.value)}
+                placeholder={field.placeholder}
+                className="w-full bg-transparent border-b border-[var(--hairline-subtle)] py-1 text-[11px] font-mono text-[var(--ink)] focus:outline-none focus:border-[var(--accent-strong)] transition-colors"
+              />
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-4">
+          <label className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">Advanced parameters (JSON)</label>
+          <textarea
+            value={draft.voice_config.extra_params_json}
+            onChange={(event) => updateVoiceDraft("extra_params_json", event.target.value)}
+            rows={4}
+            placeholder="{}"
+            className="w-full bg-[var(--panel-bg-inset)]/40 p-6 border border-[var(--hairline-strong)] font-mono text-[10px] text-[var(--ink-3)] focus:bg-[var(--window-bg)] focus:border-[var(--accent-strong)] transition-all outline-none"
+          />
+          {parsedVoiceExtraParamsError && (
+            <p className="font-mono text-[9px] text-[var(--danger)] uppercase">{parsedVoiceExtraParamsError}</p>
+          )}
+        </div>
+      </section>
+    </div>
   )
 }

@@ -12,16 +12,10 @@ import {
   Zap,
 } from "lucide-react"
 
-import { Button } from "@/components/ui/shadcn/button"
-import { Input } from "@/components/ui/shadcn/input"
-import { Label } from "@/components/ui/shadcn/label"
-import { TabsContent } from "@/components/ui/shadcn/tabs"
-import { Textarea } from "@/components/ui/shadcn/textarea"
 import { cn } from "@/lib/utils"
 import type { CustomTaskAgentPreviewResponse } from "@/lib/api/custom-task-agents"
 import AudioResultPanel from "@/components/audio/audio-result-panel"
 import type { PreviewDraft } from "./task-agent-editor-types"
-import { TaskAgentSectionHeader } from "./task-agent-section-header"
 
 type Translation = (key: string, values?: Record<string, string | number>) => string
 
@@ -73,218 +67,157 @@ export function TaskAgentPreviewPanel({
   handleRunPreview,
 }: TaskAgentPreviewPanelProps) {
   return (
-    <TabsContent value="preview" className="space-y-6">
-      <TaskAgentSectionHeader
-        title={t("preview.title")}
-        description={t("preview.description")}
-      />
-
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
-        <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-          <div className="space-y-2">
-            <Label htmlFor="preview-message">{t("preview.fields.message")}</Label>
-            <Textarea
-              id="preview-message"
-              value={previewDraft.message}
-              onChange={(event) =>
-                setPreviewDraft((current) => ({
-                  ...current,
-                  message: event.target.value,
-                }))
-              }
-              rows={8}
-              placeholder={t("preview.placeholders.message")}
-              disabled={!selectedAgent}
-            />
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="preview-temperature">
-                {t("preview.fields.temperature")}
-              </Label>
-              <Input
-                id="preview-temperature"
-                value={previewDraft.temperature}
+    <div className="space-y-16 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <div className="grid gap-16 xl:grid-cols-[300px_1fr]">
+        {/* Input Parameters */}
+        <aside className="space-y-12">
+          <div className="space-y-8">
+            <div className="space-y-4">
+              <label className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">
+                Invocation Message
+              </label>
+              <textarea
+                value={previewDraft.message}
                 onChange={(event) =>
                   setPreviewDraft((current) => ({
                     ...current,
-                    temperature: event.target.value,
+                    message: event.target.value,
                   }))
                 }
-                placeholder="0.2"
+                rows={6}
+                placeholder={t("preview.placeholders.message")}
                 disabled={!selectedAgent}
+                className="w-full bg-transparent border-b border-[var(--hairline-strong)] py-2 text-[13px] text-[var(--ink)] placeholder:text-[var(--ink-4)] focus:outline-none focus:border-[var(--accent-strong)] transition-colors resize-none"
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="preview-max-tokens">{t("preview.fields.maxTokens")}</Label>
-              <Input
-                id="preview-max-tokens"
-                value={previewDraft.max_tokens}
-                onChange={(event) =>
-                  setPreviewDraft((current) => ({
-                    ...current,
-                    max_tokens: event.target.value,
-                  }))
-                }
-                placeholder="512"
-                disabled={!selectedAgent}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="preview-max-rounds">{t("preview.fields.maxRounds")}</Label>
-              <Input
-                id="preview-max-rounds"
-                value={previewDraft.max_rounds}
-                onChange={(event) =>
-                  setPreviewDraft((current) => ({
-                    ...current,
-                    max_rounds: event.target.value,
-                  }))
-                }
-                placeholder="4"
-                disabled={!selectedAgent}
-              />
+            <div className="space-y-6">
+              {[
+                { id: "temperature", label: "Thermal Variance", value: previewDraft.temperature, placeholder: "0.2" },
+                { id: "max_tokens", label: "Token Limit", value: previewDraft.max_tokens, placeholder: "512" },
+                { id: "max_rounds", label: "Recursion Depth", value: previewDraft.max_rounds, placeholder: "4" },
+              ].map(field => (
+                <div key={field.id} className="space-y-2">
+                  <label className="font-mono text-[9px] font-bold tracking-[0.2em] text-[var(--ink-4)] uppercase">
+                    {field.label}
+                  </label>
+                  <input
+                    value={field.value}
+                    onChange={(event) =>
+                      setPreviewDraft((current) => ({
+                        ...current,
+                        [field.id]: event.target.value,
+                      }))
+                    }
+                    placeholder={field.placeholder}
+                    disabled={!selectedAgent}
+                    className="w-full bg-transparent border-b border-[var(--hairline-subtle)] py-1 text-[11px] font-mono text-[var(--ink-2)] focus:outline-none focus:border-[var(--accent-strong)] transition-colors"
+                  />
+                </div>
+              ))}
             </div>
           </div>
 
-          <Button
+          <button
             onClick={handleRunPreview}
             disabled={isPreviewing || !selectedAgent || !previewDraft.message.trim()}
-            className="w-full"
+            className="w-full h-12 border border-[var(--ink)] text-[var(--ink)] font-bold text-[10px] tracking-[0.3em] uppercase hover:bg-[var(--ink)] hover:text-[var(--window-bg)] disabled:opacity-20 transition-all active:scale-[0.98] flex items-center justify-center gap-3"
           >
-            <Play className={cn("mr-2 size-4", isPreviewing && "animate-pulse")} />
-            {isPreviewing ? t("actions.runningPreview") : t("actions.runPreview")}
-          </Button>
+            <Play className={cn("size-3", isPreviewing && "animate-pulse")} />
+            {isPreviewing ? "EXECUTING..." : "INITIATE RUN"}
+          </button>
+        </aside>
 
-          {!selectedAgent ? (
-            <div className="rounded-2xl border border-dashed border-white/10 p-4 text-sm text-[var(--muted)]">
-              {t("preview.unsavedDescription")}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-          {previewError ? (
-            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4">
-              <div className="flex items-center gap-2 text-red-200">
-                <XCircle className="size-4" />
-                <span className="font-medium">{t("preview.errorTitle")}</span>
-              </div>
-              <p className="mt-2 text-sm text-red-100/90">{previewError}</p>
-            </div>
-          ) : null}
-
-          {!previewResult ? (
-            <div className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 p-8 text-center">
-              <Sparkles className="size-10 text-[var(--muted)]" />
-              <p className="mt-4 font-medium text-[var(--foreground)]">
-                {t("preview.emptyTitle")}
-              </p>
-              <p className="mt-2 max-w-md text-sm text-[var(--muted)]">
-                {t("preview.emptyDescription")}
-              </p>
-            </div>
-          ) : previewResult.invocation_kind === "image_generation" ? (
-            <div className="space-y-4">
-              <TaskAgentSectionHeader title={t("preview.images")} />
-              <div className="grid gap-4 md:grid-cols-2">
-                {previewResult.images.map((image, index) => (
-                  <div
-                    key={`${image}-${index}`}
-                    className="overflow-hidden rounded-2xl border border-white/10 bg-black/20"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={image}
-                      alt={t("preview.imageAlt", { index: index + 1 })}
-                      className="h-full w-full object-cover"
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : previewResult.invocation_kind === "text_to_speech" ? (
-            <div className="space-y-4">
-              <TaskAgentSectionHeader title={t("preview.audio")} />
-              <AudioResultPanel
-                payload={
-                  (previewResult.raw as Record<string, unknown> | null | undefined) ?? {
-                    source_url: previewResult.audios[0] ?? null,
-                    prompt_text: previewDraft.message,
-                  }
-                }
-              />
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                <div className="mb-3 flex items-center gap-2 text-sm font-medium text-[var(--foreground)]">
-                  <Bot className="size-4" />
-                  {t("preview.response")}
-                </div>
-                <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--foreground)]">
-                  {previewResult.content || "-"}
-                </p>
-              </div>
-
-              {previewResult.reasoning_content ? (
-                <PreviewDisclosure title={t("preview.reasoning")} defaultOpen={true}>
-                  <div className="flex items-center gap-2 pb-3 text-sm font-medium text-[var(--foreground)]">
-                    <BrainCircuit className="size-4" />
-                    {t("preview.reasoning")}
-                  </div>
-                  <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--muted)]">
-                    {previewResult.reasoning_content}
-                  </p>
-                </PreviewDisclosure>
-              ) : null}
+        {/* Execution Output */}
+        <main className="min-h-[500px] space-y-12">
+          {previewError && (
+            <div className="border-l-2 border-[var(--danger)] pl-6 py-2 space-y-2">
+              <span className="font-mono text-[10px] font-bold text-[var(--danger)] tracking-widest uppercase">Execution Error</span>
+              <p className="text-sm text-[var(--ink-2)] leading-relaxed">{previewError}</p>
             </div>
           )}
 
-          {previewResult ? (
-            <div className="space-y-4">
-              <PreviewDisclosure
-                title={t("preview.toolCalls")}
-                defaultOpen={previewResult.tool_calls.length > 0}
-              >
-                <div className="flex items-center gap-2 pb-3 text-sm font-medium text-[var(--foreground)]">
-                  <Wrench className="size-4" />
-                  {t("preview.toolCalls")}
-                </div>
-                <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-[var(--muted)]">
-                  {JSON.stringify(previewResult.tool_calls, null, 2)}
-                </pre>
-              </PreviewDisclosure>
+          {!previewResult && !previewError ? (
+            <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-20">
+              <Sparkles className="size-8" />
+              <p className="font-mono text-[10px] tracking-[0.4em] uppercase">Standby for intelligence output</p>
+            </div>
+          ) : previewResult ? (
+            <div className="space-y-16">
+               {/* Core Content */}
+               <section className="space-y-6">
+                  <div className="flex items-center gap-4">
+                    <span className="font-mono text-[10px] font-bold tracking-[0.3em] text-[var(--accent-strong)] uppercase">Primary Output</span>
+                    <div className="h-px flex-1 bg-[var(--hairline-strong)] opacity-20" />
+                  </div>
+                  
+                  {previewResult.invocation_kind === "image_generation" ? (
+                    <div className="grid gap-8 md:grid-cols-2">
+                      {previewResult.images.map((image, index) => (
+                        <div key={index} className="group relative aspect-square bg-[var(--panel-bg-inset)] border border-[var(--hairline)]">
+                           <img src={image} alt="" className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700" />
+                        </div>
+                      ))}
+                    </div>
+                  ) : previewResult.invocation_kind === "text_to_speech" ? (
+                    <div className="py-4 border-y border-[var(--hairline-subtle)]">
+                      <AudioResultPanel
+                        payload={
+                          (previewResult.raw as Record<string, unknown> | null | undefined) ?? {
+                            source_url: previewResult.audios[0] ?? null,
+                            prompt_text: previewDraft.message,
+                          }
+                        }
+                      />
+                    </div>
+                  ) : (
+                    <div className="text-lg leading-relaxed text-[var(--ink-2)] max-w-2xl whitespace-pre-wrap">
+                      {previewResult.content}
+                    </div>
+                  )}
+               </section>
 
-              <PreviewDisclosure
-                title={t("preview.toolTrace")}
-                defaultOpen={previewResult.tool_trace.length > 0}
-              >
-                <div className="flex items-center gap-2 pb-3 text-sm font-medium text-[var(--foreground)]">
-                  <Zap className="size-4" />
-                  {t("preview.toolTrace")}
-                </div>
-                <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-[var(--muted)]">
-                  {JSON.stringify(previewResult.tool_trace, null, 2)}
-                </pre>
-              </PreviewDisclosure>
+               {/* Reasoning Trace */}
+               {previewResult.reasoning_content && (
+                  <section className="space-y-6">
+                    <div className="flex items-center gap-4">
+                      <span className="font-mono text-[10px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">Internal Reasoning</span>
+                      <div className="h-px flex-1 bg-[var(--hairline-strong)] opacity-10" />
+                    </div>
+                    <div className="text-[13px] leading-relaxed text-[var(--ink-3)] font-serif italic opacity-80 max-w-2xl whitespace-pre-wrap">
+                      {previewResult.reasoning_content}
+                    </div>
+                  </section>
+               )}
 
-              <PreviewDisclosure title={t("preview.raw")}>
-                <div className="flex items-center gap-2 pb-3 text-sm font-medium text-[var(--foreground)]">
-                  <ImageIcon className="size-4" />
-                  {t("preview.raw")}
-                </div>
-                <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-[var(--muted)]">
-                  {JSON.stringify(previewResult.raw ?? {}, null, 2)}
-                </pre>
-              </PreviewDisclosure>
+               {/* Technical Logs */}
+               <section className="space-y-10 pt-10">
+                  {[
+                    { title: "Tool Activation", data: previewResult.tool_calls, icon: Wrench },
+                    { title: "Execution Trace", data: previewResult.tool_trace, icon: Zap },
+                    { title: "Raw Response", data: previewResult.raw, icon: ImageIcon }
+                  ].map(log => (
+                    log.data && (Array.isArray(log.data) ? log.data.length > 0 : Object.keys(log.data as object).length > 0) && (
+                      <div key={log.title} className="space-y-4">
+                        <header className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <log.icon className="size-3 text-[var(--ink-4)]" />
+                            <span className="font-mono text-[9px] font-bold tracking-[0.2em] text-[var(--ink-4)] uppercase">{log.title}</span>
+                          </div>
+                        </header>
+                        <div className="bg-[var(--panel-bg-inset)]/40 p-6 border border-[var(--hairline-subtle)] overflow-hidden">
+                           <pre className="text-[10px] font-mono text-[var(--ink-3)] leading-relaxed overflow-x-auto custom-scrollbar">
+                              {JSON.stringify(log.data, null, 2)}
+                           </pre>
+                        </div>
+                      </div>
+                    )
+                  ))}
+               </section>
             </div>
           ) : null}
-        </div>
+        </main>
       </div>
-    </TabsContent>
+    </div>
   )
 }

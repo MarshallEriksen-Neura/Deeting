@@ -121,14 +121,18 @@ export function ChannelCard({
     })
 
   const Icon = CHANNEL_ICONS[channel.channel]
-  const runtimeProfile = getPrimaryDesktopImRuntimeProfile(
-    desktopImSnapshot,
-    channel.channel,
-  )
-  const runtimeResolution = getPrimaryDesktopImResolution(
-    desktopImSnapshot,
-    channel.channel,
-  )
+  const desktopImChannel =
+    channel.channel === "feishu" ||
+    channel.channel === "telegram" ||
+    channel.channel === "wechat"
+      ? channel.channel
+      : null
+  const runtimeProfile = desktopImChannel
+    ? getPrimaryDesktopImRuntimeProfile(desktopImSnapshot, desktopImChannel)
+    : null
+  const runtimeResolution = desktopImChannel
+    ? getPrimaryDesktopImResolution(desktopImSnapshot, desktopImChannel)
+    : null
   const runtimeLabel = runtimeProfile?.effective_state
     ? `IM ${runtimeProfile.effective_state}`
     : runtimeResolution?.enabled

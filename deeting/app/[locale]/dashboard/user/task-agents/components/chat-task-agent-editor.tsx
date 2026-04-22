@@ -1,6 +1,5 @@
 "use client"
 
-import { TabsContent } from "@/components/ui/shadcn/tabs"
 import type { ModelGroup } from "@/lib/api/models"
 import type { LocalAsset } from "@/lib/api/local-assets"
 import type { CustomTaskAgentBindingCatalog } from "@/lib/api/custom-task-agents"
@@ -21,6 +20,7 @@ type Translation = (key: string, values?: Record<string, string | number>) => st
 
 type ChatTaskAgentEditorProps = {
   t: Translation & { raw?: (key: string) => string }
+  activeTab: string
   draft: TaskAgentDraft
   previewDraft: PreviewDraft
   draftPayload: DraftPayload
@@ -53,6 +53,7 @@ type ChatTaskAgentEditorProps = {
 
 export function ChatTaskAgentEditor({
   t,
+  activeTab,
   draft,
   previewDraft,
   draftPayload,
@@ -79,28 +80,30 @@ export function ChatTaskAgentEditor({
   setShowSelectedSkillsOnly,
   toggleBinding,
 }: ChatTaskAgentEditorProps) {
-  return (
-    <>
-      <TabsContent value="config" className="space-y-6">
-        <AgentCanvas
-          t={t}
-          draft={draft}
-          taskAgentModelSelectValue={taskAgentModelSelectValue}
-          selectedTaskAgentModelOption={selectedTaskAgentModelOption}
-          unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}
-          isLoadingModels={isLoadingModels}
-          modelGroups={modelGroups}
-          updateDraft={updateDraft}
-          handleTaskAgentModelChange={handleTaskAgentModelChange}
-        />
-      </TabsContent>
+  if (activeTab === "config") {
+    return (
+      <AgentCanvas
+        t={t}
+        draft={draft}
+        taskAgentModelSelectValue={taskAgentModelSelectValue}
+        selectedTaskAgentModelOption={selectedTaskAgentModelOption}
+        unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}
+        isLoadingModels={isLoadingModels}
+        modelGroups={modelGroups}
+        updateDraft={updateDraft}
+        handleTaskAgentModelChange={handleTaskAgentModelChange}
+      />
+    )
+  }
 
-      <TabsContent value="bindings" className="space-y-6">
-        <section className="space-y-1.5">
-          <h3 className="ws-pane-title text-[15px] tracking-tight">
-            {t("bindings.title")}
-          </h3>
-          <p className="ws-body text-xs opacity-50 leading-relaxed max-w-2xl">
+  if (activeTab === "bindings") {
+    return (
+      <div className="space-y-20 animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <section className="space-y-4">
+          <div className="font-mono text-[10px] font-bold tracking-[0.4em] text-[var(--ink)] uppercase">
+            Capability Registry
+          </div>
+          <p className="text-[13px] text-[var(--ink-4)] leading-relaxed max-w-2xl">
             {t("bindings.description")}
           </p>
         </section>
@@ -113,7 +116,7 @@ export function ChatTaskAgentEditor({
           updateDraft={updateDraft}
         />
 
-        <div className="grid gap-5 xl:grid-cols-2">
+        <div className="grid gap-16 xl:grid-cols-2">
           <ChatToolBindings
             t={t}
             draft={draft}
@@ -139,14 +142,20 @@ export function ChatTaskAgentEditor({
             toggleBinding={toggleBinding}
           />
         </div>
-      </TabsContent>
+      </div>
+    )
+  }
 
+  if (activeTab === "debug") {
+    return (
       <ChatDebugTab
         t={t}
         draft={draft}
         previewDraft={previewDraft}
         draftPayload={draftPayload}
       />
-    </>
-  )
+    )
+  }
+
+  return null
 }

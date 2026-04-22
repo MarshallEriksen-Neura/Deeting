@@ -25,33 +25,24 @@ function OptionRow({
   option: OptionSpec
   onSelect: (kind: TaskAgentKind) => void
 }) {
-  const { icon: Icon, title, description, kind } = option
+  const { title, description, kind } = option
   return (
     <button
       type="button"
       onClick={() => onSelect(kind)}
-      className={cn(
-        "group flex w-full items-center gap-4 rounded-2xl border border-[var(--hairline)] bg-[var(--panel-bg-inset)]/30 px-5 py-4 text-left transition-all",
-        "hover:border-[var(--accent-border)] hover:bg-[var(--accent-soft)]",
-      )}
+      className="group block w-full text-left py-12 border-b border-[var(--hairline-strong)] transition-all hover:pl-4"
     >
-      <div
-        className={cn(
-          "flex size-12 shrink-0 items-center justify-center rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg)] text-[var(--ink-3)]",
-          "transition-colors group-hover:border-[var(--accent-border)] group-hover:bg-[var(--accent-soft)] group-hover:text-[var(--accent-strong)]",
-        )}
-      >
-        <Icon className="size-5" />
+      <div className="flex items-baseline gap-6">
+        <span className="font-mono text-[10px] font-bold tracking-[0.4em] text-[var(--accent-strong)] opacity-40 group-hover:opacity-100 transition-opacity">
+          TYPE_{kind.toUpperCase()}
+        </span>
+        <h3 className="text-5xl font-bold tracking-tighter text-[var(--ink-2)] group-hover:text-[var(--ink)] transition-colors">
+          {title.toUpperCase()}
+        </h3>
       </div>
-      <div className="min-w-0 flex-1">
-        <p className="ws-control text-sm font-bold text-[var(--ink-1)]">
-          {title}
-        </p>
-        <p className="ws-body mt-0.5 truncate text-xs text-[var(--ink-3)] opacity-70">
-          {description}
-        </p>
-      </div>
-      <ArrowRight className="size-4 shrink-0 text-[var(--ink-4)] opacity-40 transition-all group-hover:translate-x-1 group-hover:opacity-100 group-hover:text-[var(--accent-strong)]" />
+      <p className="mt-4 text-[13px] text-[var(--ink-4)] group-hover:text-[var(--ink-3)] transition-colors max-w-lg leading-relaxed">
+        {description}
+      </p>
     </button>
   )
 }
@@ -79,17 +70,20 @@ export function TaskAgentTypeStarter({ t, onSelect }: TaskAgentTypeStarterProps)
   ]
 
   return (
-    <div className="space-y-6">
-      <header className="space-y-1.5">
-        <h2 className="ws-pane-title text-xl font-bold tracking-tight text-[var(--ink-1)]">
+    <div className="space-y-24">
+      <header className="space-y-6">
+        <h2 className="text-6xl font-bold tracking-tight text-[var(--ink)] uppercase">
           {t("starter.title")}
         </h2>
-        <p className="ws-body max-w-xl text-xs text-[var(--ink-3)] opacity-70 leading-relaxed">
-          {t("starter.description")}
-        </p>
+        <div className="flex items-center gap-4">
+           <div className="h-px w-12 bg-[var(--accent-strong)]" />
+           <p className="font-mono text-[10px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">
+             Initialization Protocol / Select Unit Class
+           </p>
+        </div>
       </header>
 
-      <div className="space-y-3">
+      <div className="border-t border-[var(--hairline-strong)]">
         {options.map((option) => (
           <OptionRow key={option.kind} option={option} onSelect={onSelect} />
         ))}

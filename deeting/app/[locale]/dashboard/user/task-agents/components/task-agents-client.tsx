@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/shadcn/button"
 import { Badge } from "@/components/ui/shadcn/badge"
 import { Input } from "@/components/ui/shadcn/input"
 import { cn } from "@/lib/utils"
-
 import { Tabs } from "@/components/ui/shadcn/tabs"
+
 import { useTaskAgents } from "./use-task-agents"
 import { AgentListSidebar } from "./agent-list-sidebar"
 import { TaskAgentsSkeleton, TaskAgentsUnsupported } from "./task-agents-skeleton"
@@ -110,118 +110,176 @@ export function TaskAgentsClient() {
   if (!isDesktop) return <TaskAgentsUnsupported t={t} />
 
   return (
-    <div className="flex flex-col bg-[var(--window-bg)] overflow-hidden -mx-[var(--shell-canvas-px)] -mt-[var(--shell-canvas-pt)] -mb-[var(--shell-canvas-pb)] h-[calc(100dvh-var(--desktop-title-bar-height,0px)-var(--shell-toolbar-h))]">
-      {/* Workstation Header */}
-      <header className="flex h-[56px] flex-none items-center justify-between px-6 border-b border-[var(--hairline)] bg-[var(--window-bg)]">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2.5">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-[var(--accent-soft)] text-[var(--accent-strong)]">
-              <BrainCircuit className="size-4.5" />
-            </div>
-            <h1 className="ws-view-title">{t("title")}</h1>
+    <div className="flex bg-[var(--window-bg)] overflow-hidden -mx-[var(--shell-canvas-px)] -mt-[var(--shell-canvas-pt)] -mb-[var(--shell-canvas-pb)] h-[calc(100dvh-var(--desktop-title-bar-height,0px)-var(--shell-toolbar-h))] select-none">
+      {/* 
+          LEFT COLUMN: THE INDEX 
+          Rational, borderless typographic navigation
+      */}
+      <aside className="w-[380px] flex-none flex flex-col pt-16 pb-8 px-12 overflow-hidden">
+        <header className="flex-none mb-16 space-y-2">
+          <h1 className="text-4xl font-bold tracking-tighter text-[var(--ink)] uppercase">
+            {t("title").split('').map((char, i) => (
+              <span key={i} className="inline-block hover:translate-y-[-2px] transition-transform duration-300 cursor-default">{char}</span>
+            ))}
+          </h1>
+          <div className="flex items-center gap-4">
+             <span className="font-mono text-[10px] tracking-[0.3em] text-[var(--ink-4)] uppercase">
+                Core Registry / {stats.totalCount} Units
+             </span>
+             <div className="h-px flex-1 bg-[var(--hairline-strong)] opacity-30" />
           </div>
-          <div className="h-4 w-px bg-[var(--hairline-strong)]" />
-          <div className="flex items-center gap-2">
-             <Badge variant="secondary" className="ws-num text-[10px] px-2 py-0 h-5 bg-[var(--panel-bg-inset)] border-[var(--hairline)] text-[var(--ink-3)] font-medium">
-                {stats.totalCount} AGENTS
-             </Badge>
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={handleReindex}
-            disabled={isReindexing}
-            className="ws-control flex items-center gap-2 px-3 py-1.5 text-[11px] font-bold text-[var(--ink-3)] hover:bg-[var(--panel-bg-inset)] rounded-lg transition-all"
-          >
-            <RefreshCw className={cn("size-3.5", isReindexing && "animate-spin")} />
-            {isReindexing ? "REINDEXING..." : "REINDEX"}
-          </button>
-          
-          <div className="w-px h-4 bg-[var(--hairline)]" />
-          
-          <Button
-            type="button"
-            variant="ios-primary"
-            size="sm"
-            onClick={handleCreateNew}
-            className="h-8 gap-2 rounded-full px-4 text-[11px] font-semibold font-[var(--font-text)] leading-none tracking-[0.1px]"
-          >
-            <Plus className="size-3.5" />
-            {t("actions.new")}
-          </Button>
-        </div>
-      </header>
+        </header>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar: Agent Library Navigator */}
-        <aside className="w-[280px] flex-none border-r border-[var(--hairline)] bg-[var(--panel-bg-inset)]/30 flex flex-col overflow-hidden">
-          <div className="flex-none px-4 py-4 space-y-4">
-            <div className="flex items-center justify-between px-1">
-               <p className="ws-meta uppercase tracking-widest text-[9px] opacity-60">Library</p>
-               <button onClick={() => setImportDialogOpen(true)} className="ws-control text-[9px] font-bold text-[var(--accent-strong)] hover:underline flex items-center gap-1">
-                  <Download className="size-2.5" />
-                  IMPORT
-               </button>
-            </div>
-            
-            <div className="relative group">
-              <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-[var(--ink-4)] group-focus-within:text-[var(--accent-strong)] transition-colors" />
-              <Input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={t("library.searchPlaceholder")}
-                className="ws-control h-9 border-[var(--hairline)] bg-[var(--panel-bg)]/80 pl-9 text-xs rounded-xl focus:ring-1 focus:ring-[var(--accent-soft)]"
-              />
-              {searchQuery && (
-                <button onClick={() => setSearchQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ink-4)] hover:text-[var(--danger)]">
-                  <X className="size-3.5" />
-                </button>
-              )}
-            </div>
-          </div>
-          
-          <div className="flex-1 overflow-y-auto custom-scrollbar">
-            <AgentListSidebar
-              t={t}
-              searchQuery={searchQuery}
-              kindFilter={kindFilter}
-              statusFilter={statusFilter}
-              selectedAgentId={selectedAgentId}
-              isStarterState={isStarterState}
-              agentsLoading={agentsLoading}
-              agentsError={agentsError}
-              filteredAgents={filteredAgents}
-              groupedAgents={groupedAgents}
-              dateFormatter={dateFormatter}
-              onSearchChange={setSearchQuery}
-              onKindFilterChange={setKindFilter}
-              onStatusFilterChange={setStatusFilter}
-              onSelectAgent={handleSelectAgent}
+        <div className="flex-none mb-12 space-y-8">
+          <div className="relative group">
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t("library.searchPlaceholder").toUpperCase()}
+              className="w-full bg-transparent border-b border-[var(--hairline-strong)] py-2 text-[11px] font-bold tracking-widest text-[var(--ink)] placeholder:text-[var(--ink-4)] focus:outline-none focus:border-[var(--accent-strong)] transition-colors uppercase"
             />
+            <Search className="absolute right-0 top-1/2 -translate-y-1/2 size-3 text-[var(--ink-4)] opacity-50" />
           </div>
 
-        
-        </aside>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+             {[
+               { value: "all", label: t("filters.allKinds") },
+               { value: "chat", label: t("badges.chat") },
+               { value: "image", label: t("badges.imageGeneration") },
+               { value: "voice", label: t("badges.textToSpeech") },
+             ].map(opt => (
+               <button
+                 key={opt.value}
+                 onClick={() => setKindFilter(opt.value)}
+                 className={cn(
+                   "text-[9px] font-bold tracking-[0.2em] uppercase transition-colors",
+                   kindFilter === opt.value ? "text-[var(--accent-strong)]" : "text-[var(--ink-4)] hover:text-[var(--ink-3)]"
+                 )}
+               >
+                 {opt.label}
+               </button>
+             ))}
+          </div>
 
-        {/* Central Workspace: Terminal Editor */}
-        <main className="flex-1 flex flex-col min-w-0 bg-[var(--window-bg)] overflow-hidden relative">
-          <Tabs value={activeWorkspaceTab} onValueChange={(v) => setActiveWorkspaceTab(v as any)} className="flex-1 flex flex-col min-h-0">
-            {isStarterState ? (
-              <div className="flex-1 overflow-y-auto p-12 flex items-center justify-center bg-[var(--panel-bg-inset)]/20">
-                <div className="max-w-3xl w-full">
-                  <TaskAgentTypeStarter t={t} onSelect={handleSelectNewAgentType} />
-                </div>
+          <div className="flex items-center justify-between">
+            <button 
+              onClick={handleCreateNew}
+              className="group flex items-center gap-3 text-[11px] font-bold tracking-widest text-[var(--accent-strong)] hover:text-[var(--ink)] transition-colors"
+            >
+              <div className="size-5 flex items-center justify-center rounded-full border border-current group-hover:bg-current group-hover:text-white transition-all">
+                <Plus className="size-3" />
               </div>
-            ) : (
-              <>
-                {/* Workspace Tabs Header */}
-                <div className="flex h-[48px] flex-none items-center justify-between border-b border-[var(--hairline)] bg-[var(--panel-bg-inset)]/30 backdrop-blur-md px-6">
-                  <nav className="flex items-center gap-1">
+              {t("actions.new").toUpperCase()}
+            </button>
+
+            <button 
+              onClick={() => setImportDialogOpen(true)}
+              className="text-[10px] font-bold tracking-widest text-[var(--ink-3)] hover:text-[var(--accent-strong)] transition-colors uppercase"
+            >
+              {t("library.import") || "Import"}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto custom-scrollbar -mx-2 px-2 mask-linear-b">
+          <AgentListSidebar
+            t={t}
+            searchQuery={searchQuery}
+            kindFilter={kindFilter}
+            statusFilter={statusFilter}
+            selectedAgentId={selectedAgentId}
+            isStarterState={isStarterState}
+            agentsLoading={agentsLoading}
+            agentsError={agentsError}
+            filteredAgents={filteredAgents}
+            groupedAgents={groupedAgents}
+            dateFormatter={dateFormatter}
+            onSearchChange={setSearchQuery}
+            onKindFilterChange={setKindFilter}
+            onStatusFilterChange={setStatusFilter}
+            onSelectAgent={handleSelectAgent}
+            setDeleteDialogOpen={setDeleteDialogOpen}
+          />
+        </div>
+
+        <footer className="flex-none pt-8 flex items-center justify-between">
+           <button 
+              onClick={handleReindex}
+              disabled={isReindexing}
+              className="group flex items-center gap-2 text-[9px] font-bold tracking-[0.2em] text-[var(--ink-4)] hover:text-[var(--ink)] transition-colors"
+            >
+              <RefreshCw className={cn("size-2.5 transition-transform duration-700", isReindexing && "animate-spin")} />
+              {isReindexing ? "REINDEXING" : "FORCE REINDEX"}
+            </button>
+            <span className="font-mono text-[9px] text-[var(--ink-5)] tabular-nums">© 2026 DEETING LABS</span>
+        </footer>
+      </aside>
+
+      {/* 
+          RIGHT COLUMN: THE CANVAS
+          Extreme whitespace, massive type, no panels
+      */}
+      <main className="flex-1 flex flex-col bg-[var(--window-bg)] relative border-l border-[var(--hairline)]">
+        <Tabs value={activeWorkspaceTab} onValueChange={(v) => setActiveWorkspaceTab(v as any)} className="flex-1 flex flex-col">
+          {isStarterState ? (
+            <div className="flex-1 flex items-center justify-center p-24 animate-in fade-in zoom-in-95 duration-1000">
+              <div className="max-w-xl w-full">
+                <TaskAgentTypeStarter t={t} onSelect={handleSelectNewAgentType} />
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {/* Massive Header Section */}
+              <div className="flex-none pt-20 pb-12 px-20 space-y-4">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-[10px] font-bold tracking-[0.2em] text-[var(--accent-strong)] opacity-80 uppercase">
+                        {selectedAgent?.kind || "CHAT_AGENT"}
+                      </span>
+                      <div className="h-px w-8 bg-[var(--accent-strong)] opacity-30" />
+                      <span className="font-mono text-[10px] font-bold tracking-[0.2em] text-[var(--ink-4)] uppercase">
+                        REV-{agentVersion(selectedAgent)}
+                      </span>
+                    </div>
+                    <input
+                      value={draft.name}
+                      onChange={(e) => updateDraft("name", e.target.value)}
+                      placeholder="UNNAMED ENTITY"
+                      className="w-full bg-transparent border-none p-0 text-6xl font-bold tracking-tight text-[var(--ink)] placeholder:opacity-10 focus:outline-none focus:ring-0 transition-all duration-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-4 pt-4">
+                    <button
+                      onClick={() => setInspectorOpen((v) => !v)}
+                      className={cn(
+                        "group flex flex-col items-end gap-1 transition-all",
+                        inspectorOpen ? "text-[var(--accent-strong)]" : "text-[var(--ink-4)] hover:text-[var(--ink)]"
+                      )}
+                    >
+                      <Activity className="size-4" />
+                      <span className="text-[8px] font-bold tracking-[0.3em] uppercase opacity-60 group-hover:opacity-100 transition-opacity">Diagnostic</span>
+                    </button>
+                    
+                    <div className="w-px h-8 bg-[var(--hairline)] mx-2" />
+
+                    <button
+                      onClick={handleSave}
+                      disabled={saveDisabled || isSaving}
+                      className="h-12 px-10 bg-[var(--ink)] text-[var(--window-bg)] font-bold text-[11px] tracking-[0.2em] uppercase hover:bg-[var(--accent-strong)] disabled:opacity-20 disabled:grayscale transition-all active:scale-[0.98]"
+                    >
+                      {isSaving ? "SYNCING..." : "COMMIT CHANGES"}
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-8 border-b border-[var(--hairline)] pb-8">
+                  <nav className="flex items-center gap-10">
                     {[
-                      { id: "config", label: t("tabs.config"), icon: Terminal },
-                      ...(showBindingsWorkspace ? [{ id: "bindings", label: t("tabs.bindings"), icon: Layers }] : []),
-                      { id: "preview", label: t("tabs.preview"), icon: MessageSquare },
+                      { id: "config", label: t("tabs.config") },
+                      ...(showBindingsWorkspace ? [{ id: "bindings", label: t("tabs.bindings") }] : []),
+                      { id: "preview", label: t("tabs.preview") },
                     ].map((tab) => {
                       const active = activeWorkspaceTab === tab.id;
                       return (
@@ -229,222 +287,172 @@ export function TaskAgentsClient() {
                           key={tab.id}
                           onClick={() => setActiveWorkspaceTab(tab.id as any)}
                           className={cn(
-                            "ws-control flex h-8 items-center gap-2 rounded-lg px-3 transition-all",
-                            active
-                              ? "bg-[var(--accent-soft)] text-[var(--accent-ink)] font-semibold"
-                              : "text-[var(--ink-3)] hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink-2)]"
+                            "relative pb-2 text-[10px] font-bold tracking-[0.25em] uppercase transition-all",
+                            active ? "text-[var(--ink)]" : "text-[var(--ink-4)] hover:text-[var(--ink-2)]"
                           )}
                         >
-                          <tab.icon className="size-3.5" />
-                          <span className="text-[11px] uppercase tracking-wide">{tab.label}</span>
+                          {tab.label}
+                          {active && (
+                            <div className="absolute bottom-0 left-0 w-full h-0.5 bg-[var(--accent-strong)] animate-in slide-in-from-left-2 duration-300" />
+                          )}
                         </button>
                       )
                     })}
                   </nav>
-                  
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setInspectorOpen((v) => !v)}
-                      aria-pressed={inspectorOpen}
-                      className={cn(
-                        "ws-control flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[10px] uppercase tracking-wider transition-all",
-                        inspectorOpen
-                          ? "bg-[var(--accent-soft)] text-[var(--accent-ink)] font-semibold"
-                          : "font-medium text-[var(--ink-3)] hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink-2)]",
-                      )}
-                      title="Toggle inspector"
-                    >
-                      <Activity className="size-3.5" />
-                      <span>Inspector</span>
-                    </button>
-                    <div className="h-4 w-px bg-[var(--hairline-strong)]" />
-                    <button
-                      onClick={handleSave}
-                      disabled={saveDisabled || isSaving}
-                      className="ws-control h-8 px-5 rounded-lg bg-[var(--accent-strong)] text-[var(--accent-contrast)] font-semibold text-[11px] hover:brightness-110 active:scale-[0.98] disabled:bg-[var(--panel-bg-inset)] disabled:text-[var(--ink-4)] disabled:cursor-not-allowed disabled:pointer-events-none transition-all flex items-center gap-2"
-                    >
-                      {isSaving && <RefreshCw className="size-3 animate-spin" />}
-                      {t("actions.save").toUpperCase()}
-                    </button>
-                  </div>
                 </div>
+              </div>
 
-                {/* Editor Surface */}
-                <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-[var(--panel-bg-inset)]/40">
-                  <div className="max-w-[960px] mx-auto space-y-8">
-                    {/* Revision eyebrow — editorial masthead strip */}
-                    {selectedAgent ? (
-                      <div className="flex items-center gap-2 text-[var(--ink-4)]">
-                        <span className="font-mono text-[10px] font-bold tabular-nums tracking-[0.16em]">
-                          REV-{agentVersion(selectedAgent)}
-                        </span>
-                        <span className="size-[3px] rounded-full bg-current opacity-60" />
-                        <span className="text-[9px] font-semibold uppercase tracking-[0.22em]">
-                          Last Sync
-                        </span>
-                        <span className="font-mono text-[10px] font-medium tabular-nums tracking-tight text-[var(--ink-3)]">
-                          {dateFormatter.format(new Date(selectedAgent.updated_at))}
-                        </span>
-                        <div className="ml-auto h-px flex-1 bg-[var(--hairline-subtle)]" />
-                      </div>
-                    ) : null}
+              {/* Content Area */}
+              <div className="flex-1 overflow-y-auto px-20 pb-32 custom-scrollbar mask-linear-b">
+                <div className="max-w-[800px] animate-in fade-in slide-in-from-bottom-8 duration-700 delay-150">
+                  {isImageWorkspace ? (
+                    activeWorkspaceTab === "config" ? (
+                      <ImageTaskAgentEditor
+                        t={t}
+                        draft={draft}
+                        previewDraft={previewDraft}
+                        draftPayload={draftPayload}
+                        parsedImageExtraParamsError={parsedImageExtraParams.error}
+                        taskAgentModelSelectValue={taskAgentModelSelectValue}
+                        selectedTaskAgentModelOption={selectedTaskAgentModelOption}
+                        unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}
+                        isLoadingModels={isLoadingModels}
+                        modelGroups={modelGroups}
+                        updateDraft={updateDraft}
+                        updateImageDraft={updateImageDraft}
+                        handleTaskAgentModelChange={handleTaskAgentModelChange}
+                      />
+                    ) : null
+                  ) : isVoiceWorkspace ? (
+                    activeWorkspaceTab === "config" ? (
+                      <VoiceTaskAgentEditor
+                        t={t}
+                        draft={draft}
+                        parsedVoiceExtraParamsError={parsedVoiceExtraParams.error}
+                        taskAgentModelSelectValue={taskAgentModelSelectValue}
+                        selectedTaskAgentModelOption={selectedTaskAgentModelOption}
+                        unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}
+                        isLoadingModels={isLoadingModels}
+                        modelGroups={modelGroups}
+                        updateDraft={updateDraft}
+                        updateVoiceDraft={updateVoiceDraft}
+                        handleTaskAgentModelChange={handleTaskAgentModelChange}
+                      />
+                    ) : null
+                  ) : (
+                    <ChatTaskAgentEditor
+                      t={t}
+                      activeTab={activeWorkspaceTab}
+                      draft={draft}
+                      previewDraft={previewDraft}
+                      draftPayload={draftPayload}
+                      taskAgentModelSelectValue={taskAgentModelSelectValue}
+                      selectedTaskAgentModelOption={selectedTaskAgentModelOption}
+                      unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}
+                      isLoadingModels={isLoadingModels}
+                      modelGroups={modelGroups}
+                      bindingCatalog={bindingCatalog}
+                      bindingsLoading={bindingsLoading}
+                      localAssets={localAssets}
+                      assetsLoading={assetsLoading}
+                      filteredBindingTools={filteredBindingTools}
+                      filteredBindingSkills={filteredBindingSkills}
+                      toolQuery={toolQuery}
+                      skillQuery={skillQuery}
+                      showSelectedToolsOnly={showSelectedToolsOnly}
+                      showSelectedSkillsOnly={showSelectedSkillsOnly}
+                      updateDraft={updateDraft}
+                      handleTaskAgentModelChange={handleTaskAgentModelChange}
+                      setToolQuery={setToolQuery}
+                      setSkillQuery={setSkillQuery}
+                      setShowSelectedToolsOnly={setShowSelectedToolsOnly}
+                      setShowSelectedSkillsOnly={setShowSelectedSkillsOnly}
+                      toggleBinding={toggleBinding}
+                    />
+                  )}
 
-                    {/* Dynamic Viewport */}
-                    <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-                      {activeWorkspaceTab === "config" && (
-                          <div className="space-y-12">
-                            {isImageWorkspace ? (
-                                <ImageTaskAgentEditor
-                                  t={t}
-                                  draft={draft}
-                                  previewDraft={previewDraft}
-                                  draftPayload={draftPayload}
-                                  parsedImageExtraParamsError={parsedImageExtraParams.error}
-                                  taskAgentModelSelectValue={taskAgentModelSelectValue}
-                                  selectedTaskAgentModelOption={selectedTaskAgentModelOption}
-                                  unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}
-                                  isLoadingModels={isLoadingModels}
-                                  modelGroups={modelGroups}
-                                  updateDraft={updateDraft}
-                                  updateImageDraft={updateImageDraft}
-                                  handleTaskAgentModelChange={handleTaskAgentModelChange}
-                                />
-                              ) : isVoiceWorkspace ? (
-                                <VoiceTaskAgentEditor
-                                  t={t}
-                                  draft={draft}
-                                  parsedVoiceExtraParamsError={parsedVoiceExtraParams.error}
-                                  taskAgentModelSelectValue={taskAgentModelSelectValue}
-                                  selectedTaskAgentModelOption={selectedTaskAgentModelOption}
-                                  unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}
-                                  isLoadingModels={isLoadingModels}
-                                  modelGroups={modelGroups}
-                                  updateDraft={updateDraft}
-                                  updateVoiceDraft={updateVoiceDraft}
-                                  handleTaskAgentModelChange={handleTaskAgentModelChange}
-                                />
-                              ) : (
-                                <ChatTaskAgentEditor
-                                  t={t}
-                                  draft={draft}
-                                  previewDraft={previewDraft}
-                                  draftPayload={draftPayload}
-                                  taskAgentModelSelectValue={taskAgentModelSelectValue}
-                                  selectedTaskAgentModelOption={selectedTaskAgentModelOption}
-                                  unknownTaskAgentModelLabel={unknownTaskAgentModelLabel}
-                                  isLoadingModels={isLoadingModels}
-                                  modelGroups={modelGroups}
-                                  bindingCatalog={bindingCatalog}
-                                  bindingsLoading={bindingsLoading}
-                                  localAssets={localAssets}
-                                  assetsLoading={assetsLoading}
-                                  filteredBindingTools={filteredBindingTools}
-                                  filteredBindingSkills={filteredBindingSkills}
-                                  toolQuery={toolQuery}
-                                  skillQuery={skillQuery}
-                                  showSelectedToolsOnly={showSelectedToolsOnly}
-                                  showSelectedSkillsOnly={showSelectedSkillsOnly}
-                                  updateDraft={updateDraft}
-                                  handleTaskAgentModelChange={handleTaskAgentModelChange}
-                                  setToolQuery={setToolQuery}
-                                  setSkillQuery={setSkillQuery}
-                                  setShowSelectedToolsOnly={setShowSelectedToolsOnly}
-                                  setShowSelectedSkillsOnly={setShowSelectedSkillsOnly}
-                                  toggleBinding={toggleBinding}
-                                />
-                              )}
-                          </div>
-                      )}
-                      
-                      {activeWorkspaceTab === "bindings" && showBindingsWorkspace && (
-                          <div className="p-12 border-2 border-dashed border-[var(--hairline)] rounded-3xl text-center bg-[var(--panel-bg-inset)]/20">
-                              <Layers className="size-12 mx-auto mb-4 text-[var(--ink-4)] opacity-30" />
-                              <h4 className="ws-pane-title text-[14px] text-[var(--ink-3)] mb-1">Binding Console</h4>
-                              <p className="ws-body text-xs opacity-40">Manage tool-to-model neuro-connections.</p>
-                          </div>
-                      )}
-
-                      {activeWorkspaceTab === "preview" && (
-                          <TaskAgentPreviewPanel
-                            t={t}
-                            selectedAgent={selectedAgent}
-                            previewDraft={previewDraft}
-                            previewResult={previewResult}
-                            previewError={previewError}
-                            isPreviewing={isPreviewing}
-                            setPreviewDraft={setPreviewDraft}
-                            handleRunPreview={handleRunPreview}
-                          />
-                      )}
+                  {activeWorkspaceTab === "preview" && (
+                    <div className="py-8">
+                      <TaskAgentPreviewPanel
+                        t={t}
+                        selectedAgent={selectedAgent}
+                        previewDraft={previewDraft}
+                        previewResult={previewResult}
+                        previewError={previewError}
+                        isPreviewing={isPreviewing}
+                        setPreviewDraft={setPreviewDraft}
+                        handleRunPreview={handleRunPreview}
+                      />
                     </div>
-                  </div>
+                  )}
                 </div>
-              </>
-            )}
-          </Tabs>
-        </main>
+              </div>
+            </div>
+          )}
+        </Tabs>
 
-        {/* Diagnostic Inspector Sidebar (toggleable) */}
+        {/* Floating Inspector (Diagnostic) */}
         {inspectorOpen && (
-          <aside className="w-[300px] flex-none border-l border-[var(--hairline)] bg-[var(--panel-bg-inset)]/30 p-6 overflow-y-auto animate-in slide-in-from-right-4 fade-in duration-200">
-             <div className="flex items-center justify-between mb-6">
-                <h3 className="ws-meta text-[10px] font-bold uppercase tracking-widest opacity-60 flex items-center gap-2">
-                   <Activity className="size-3 text-[var(--accent-strong)]" />
-                   Inspector
+          <div className="absolute top-20 right-10 w-[320px] bg-[var(--window-bg)] border border-[var(--hairline-strong)] p-8 shadow-2xl animate-in fade-in slide-in-from-right-8 duration-500 z-50">
+             <div className="flex items-center justify-between mb-10">
+                <h3 className="font-mono text-[10px] font-bold uppercase tracking-[0.4em] text-[var(--accent-strong)]">
+                   Diagnostic.log
                 </h3>
                 <button
                   onClick={() => setInspectorOpen(false)}
-                  className="flex size-6 items-center justify-center rounded-md text-[var(--ink-4)] hover:bg-[var(--panel-bg-inset)]/60 hover:text-[var(--ink-2)] transition"
-                  aria-label="Close inspector"
+                  className="text-[var(--ink-4)] hover:text-[var(--ink)]"
                 >
-                  <X className="size-3.5" />
+                  <X className="size-4" />
                 </button>
              </div>
 
-             <div className="space-y-8">
-              <div>
-                 <h4 className="ws-meta text-[10px] font-bold uppercase tracking-widest opacity-60 mb-3">
-                    Intelligence Metrics
+             <div className="space-y-12">
+              <section className="space-y-4">
+                 <h4 className="text-[9px] font-bold uppercase tracking-[0.2em] text-[var(--ink-4)] border-b border-[var(--hairline)] pb-2">
+                    Neural Efficiency
                  </h4>
-                 <div className="ws-bezel rounded-2xl overflow-hidden bg-[var(--panel-bg)]/50">
-                    <div className="ws-bezel-inner p-4 space-y-4">
-                       <div className="flex justify-between items-center">
-                          <span className="ws-body text-[11px] font-medium opacity-60">Success Rate</span>
-                          <span className="ws-num text-[11px] font-bold text-[var(--ok)]">98.4%</span>
+                 <div className="space-y-6">
+                    <div className="flex justify-between items-end">
+                       <span className="text-[11px] font-bold uppercase tracking-widest text-[var(--ink-3)]">Precision</span>
+                       <span className="font-mono text-2xl font-bold text-[var(--ok)] tracking-tighter">98.4</span>
+                    </div>
+                    <div className="flex justify-between items-end">
+                       <span className="text-[11px] font-bold uppercase tracking-widest text-[var(--ink-3)]">Latency</span>
+                       <span className="font-mono text-2xl font-bold tracking-tighter">2.4<span className="text-xs ml-1 opacity-40">ms</span></span>
+                    </div>
+                    <div className="space-y-2">
+                       <div className="flex justify-between text-[9px] font-bold tracking-widest text-[var(--ink-4)] uppercase">
+                         <span>Load Distribution</span>
+                         <span>65%</span>
                        </div>
-                       <div className="flex justify-between items-center">
-                          <span className="ws-body text-[11px] font-medium opacity-60">Avg. Latency</span>
-                          <span className="ws-num text-[11px] font-bold">2.4s</span>
-                       </div>
-                       <div className="flex justify-between items-center">
-                          <span className="ws-body text-[11px] font-medium opacity-60">Resource Load</span>
-                          <div className="w-16 h-1.5 bg-[var(--panel-bg-inset)] rounded-full overflow-hidden">
-                             <div className="h-full bg-[var(--accent-strong)] w-[65%]" />
-                          </div>
+                       <div className="w-full h-[1px] bg-[var(--hairline-strong)]">
+                          <div className="h-full bg-[var(--ink)] w-[65%] transition-all duration-1000" />
                        </div>
                     </div>
                  </div>
-              </div>
+              </section>
 
-              <div>
-                 <h4 className="ws-meta text-[10px] font-bold uppercase tracking-widest opacity-60 mb-3">Neuro-Registry</h4>
-                 <div className="space-y-2">
+              <section className="space-y-4">
+                 <h4 className="text-[9px] font-bold uppercase tracking-[0.2em] text-[var(--ink-4)] border-b border-[var(--hairline)] pb-2">
+                    Registry Hooks
+                 </h4>
+                 <div className="space-y-1">
                     {[
-                      { label: "Tokenization", status: "Active" },
-                      { label: "Vector Search", status: "Enabled" },
-                      { label: "Function Call", status: "Optimized" }
+                      { label: "Tokenization", status: "STABLE" },
+                      { label: "Vector Index", status: "SYNCED" },
+                      { label: "Function Call", status: "OPTIMIZED" }
                     ].map(item => (
-                       <div key={item.label} className="flex items-center justify-between px-3 py-2 rounded-lg bg-[var(--panel-bg-inset)]/40 border border-[var(--hairline)]">
-                          <span className="ws-body text-[10px] font-semibold">{item.label}</span>
-                          <span className="ws-meta text-[8px] font-bold text-[var(--accent-strong)]">{item.status}</span>
+                       <div key={item.label} className="flex items-center justify-between py-2 group">
+                          <span className="text-[10px] font-bold tracking-widest text-[var(--ink-3)] group-hover:text-[var(--ink)] transition-colors">{item.label.toUpperCase()}</span>
+                          <span className="font-mono text-[9px] font-bold text-[var(--accent-strong)] opacity-60">{item.status}</span>
                        </div>
                     ))}
                  </div>
-              </div>
+              </section>
              </div>
-          </aside>
+          </div>
         )}
-      </div>
+      </main>
 
       <AgentDialogs
         t={t}

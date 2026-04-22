@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { type ReactNode, useMemo, useState } from "react"
 import { AlertTriangle, ArrowRight, Clock3, Coins, Copy, Database, Layers3, Workflow } from "lucide-react"
@@ -11,6 +11,16 @@ import {
 } from "@/lib/gateway-log/cache-metrics"
 import { cn } from "@/lib/utils"
 import type { GatewayLogDTO } from "@/types/gateway_log"
+
+import {
+  formatCurrency,
+  formatDateTime,
+  formatRelativeTime,
+  getStatusLabel,
+  getStatusTone,
+  shortId,
+  type StatusTone,
+} from "./logs-shared"
 
 interface LogsDetailPanelProps {
   log: GatewayLogDTO | null
@@ -52,8 +62,8 @@ export function LogsDetailPanel({ log }: LogsDetailPanelProps) {
           created_at: log.created_at,
         },
         null,
-        2,
-      ),
+        2
+      )
     )
     setCopied(true)
     window.setTimeout(() => setCopied(false), 1200)
@@ -71,7 +81,7 @@ export function LogsDetailPanel({ log }: LogsDetailPanelProps) {
         <Button
           variant="outline"
           size="sm"
-          className="border-[var(--hairline)] bg-[var(--panel-bg)] text-[var(--ink-2)] shadow-none"
+          className="h-9 rounded-[12px] border-[var(--hairline)] bg-[var(--panel-bg)] text-[var(--ink-2)] shadow-none"
           onClick={() => void handleCopy()}
           disabled={!log}
         >
@@ -81,8 +91,8 @@ export function LogsDetailPanel({ log }: LogsDetailPanelProps) {
       </header>
 
       {!log ? (
-        <div className="flex min-h-0 flex-1 items-center justify-center px-6">
-          <div className="w-full max-w-md rounded-[26px] border border-dashed border-[var(--hairline)] bg-[var(--panel-bg-inset)]/42 px-6 py-10 text-center">
+        <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+          <div className="w-full max-w-md rounded-[26px] border border-dashed border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-6 py-10 text-center">
             <div className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-[var(--hairline)] bg-[var(--panel-bg)] text-[var(--ink-3)]">
               <Workflow className="size-5" />
             </div>
@@ -94,46 +104,63 @@ export function LogsDetailPanel({ log }: LogsDetailPanelProps) {
         </div>
       ) : (
         <Tabs defaultValue="overview" className="flex min-h-0 flex-1 flex-col gap-0">
-          <div className="flex flex-none flex-col gap-4 border-b border-[var(--hairline)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--panel-bg)_94%,white_6%)_0%,var(--panel-bg)_100%)] px-4 py-4">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <StatusBadge label={`${statusLabel} · ${log.status_code}`} tone={tone} />
-                  {log.is_cached ? <SoftChip label="Cache Hit" /> : null}
+          <div className="flex flex-none flex-col gap-4 border-b border-[var(--hairline)] px-4 py-4">
+            <section className="rounded-[24px] border border-[var(--hairline)] bg-[var(--panel-bg-inset)] p-4">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge label={`${statusLabel} · ${log.status_code}`} tone={tone} />
+                    {log.is_cached ? <SoftChip label="Cache Hit" /> : null}
+                  </div>
+
+                  <div className="mt-3 truncate font-[var(--font-display)] text-[24px] font-semibold tracking-[-0.04em] text-[var(--ink)]">
+                    {log.model}
+                  </div>
+                  <p className="mt-1 ws-num text-[12px] text-[var(--ink-3)]">{shortId(log.id)}</p>
+
+                  <div className="mt-4 rounded-[18px] border border-[var(--hairline)] bg-[var(--panel-bg)] px-3 py-3">
+                    <div className="ws-meta mb-2">请求链路</div>
+                    <div className="flex flex-wrap items-center gap-2 text-[12px] text-[var(--ink-2)]">
+                      <RouteNode label="Client" />
+                      <ArrowRight className="size-3.5 text-[var(--ink-4)]" />
+                      <RouteNode label="Gateway" />
+                      <ArrowRight className="size-3.5 text-[var(--ink-4)]" />
+                      <RouteNode label={log.is_cached ? "Cache" : "Upstream"} />
+                      <ArrowRight className="size-3.5 text-[var(--ink-4)]" />
+                      <RouteNode label={log.error_code ? `Error · ${log.error_code}` : "Response"} tone={tone} />
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-3 ws-num text-[24px] font-semibold tracking-[-0.04em] text-[var(--ink)]">
-                  {shortId(log.id)}
+
+                <div className="grid gap-3 sm:grid-cols-2 xl:w-[320px]">
+                  <HeroMetric icon={<Clock3 className="size-4" />} label="总时长" value={`${log.duration_ms}ms`} />
+                  <HeroMetric
+                    icon={<Layers3 className="size-4" />}
+                    label="Token 总量"
+                    value={log.total_tokens.toLocaleString()}
+                  />
+                  <HeroMetric
+                    icon={<Database className="size-4" />}
+                    label="缓存状态"
+                    value={log.is_cached ? "命中" : "未命中"}
+                  />
+                  <HeroMetric
+                    icon={<Coins className="size-4" />}
+                    label="用户成本"
+                    value={`$${formatCurrency(log.cost_user)}`}
+                  />
                 </div>
-                <p className="mt-1 truncate text-sm text-[var(--ink-3)]">{log.model}</p>
               </div>
 
-              <div className="text-right">
-                <div className="ws-num text-[18px] font-semibold text-[var(--ink)]">{log.duration_ms}ms</div>
-                <div className="ws-caption mt-1">{formatRelativeTime(log.created_at)}</div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <FactCard label="缓存来源" value={cacheSource} />
+                <FactCard label="创建时间" value={formatDateTime(log.created_at, true)} />
+                <FactCard label="相对时间" value={formatRelativeTime(log.created_at)} />
+                <FactCard label="Preset" value={log.preset_id ?? "直接调用"} />
+                <FactCard label="Usage" value={log.usage_source ?? "-"} />
+                <FactCard label="错误码" value={log.error_code ?? "-"} />
               </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Fact label="模型" value={log.model} />
-              <Fact label="缓存来源" value={cacheSource} />
-              <Fact label="创建时间" value={formatDateTime(log.created_at)} />
-              <Fact label="错误码" value={log.error_code ?? "-"} />
-              <Fact label="Preset" value={log.preset_id ?? "直接调用"} />
-              <Fact label="Usage" value={log.usage_source ?? "-"} />
-            </div>
-
-            <div className="rounded-[18px] border border-[var(--hairline)] bg-[var(--panel-bg-inset)]/72 px-3 py-3">
-              <div className="ws-meta mb-2">请求链路</div>
-              <div className="flex flex-wrap items-center gap-2 text-[12px] text-[var(--ink-2)]">
-                <RouteNode label="Client" />
-                <ArrowRight className="size-3.5 text-[var(--ink-4)]" />
-                <RouteNode label="Gateway" />
-                <ArrowRight className="size-3.5 text-[var(--ink-4)]" />
-                <RouteNode label={log.is_cached ? "Cache" : "Upstream"} />
-                <ArrowRight className="size-3.5 text-[var(--ink-4)]" />
-                <RouteNode label={log.error_code ? `Error · ${log.error_code}` : "Response"} tone={tone} />
-              </div>
-            </div>
+            </section>
 
             <TabsList className="h-auto w-full justify-start gap-1 rounded-[16px] border border-[var(--hairline)] bg-[var(--panel-bg-inset)] p-1">
               <TabsTrigger
@@ -163,15 +190,8 @@ export function LogsDetailPanel({ log }: LogsDetailPanelProps) {
             </TabsList>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 custom-scrollbar">
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-4 custom-scrollbar">
             <TabsContent value="overview" className="space-y-4">
-              <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <OverviewMetric icon={<Clock3 className="size-4" />} label="TTFT" value={log.ttft_ms == null ? "-" : `${log.ttft_ms}ms`} />
-                <OverviewMetric icon={<Layers3 className="size-4" />} label="Token 总量" value={log.total_tokens.toLocaleString()} />
-                <OverviewMetric icon={<Database className="size-4" />} label="缓存状态" value={log.is_cached ? "命中" : "未命中"} />
-                <OverviewMetric icon={<Coins className="size-4" />} label="用户成本" value={`$${formatCurrency(log.cost_user)}`} />
-              </section>
-
               <div className="grid gap-4 xl:grid-cols-2">
                 <InfoSection title="Token 消耗">
                   <KeyValue label="输入" value={log.input_tokens.toLocaleString()} />
@@ -181,29 +201,29 @@ export function LogsDetailPanel({ log }: LogsDetailPanelProps) {
                   <KeyValue label="缓存写入" value={cacheWriteTokens == null ? "-" : cacheWriteTokens.toLocaleString()} />
                 </InfoSection>
 
-                <InfoSection title="成本与缓存">
+                <InfoSection title="计费与返回">
                   <KeyValue label="用户成本" value={`$${formatCurrency(log.cost_user)}`} />
                   <KeyValue label="上游成本" value={`$${formatCurrency(log.cost_upstream)}`} />
-                  <KeyValue label="缓存来源" value={cacheSource} />
                   <KeyValue label="状态码" value={String(log.status_code)} strong />
+                  <KeyValue label="TTFT" value={log.ttft_ms == null ? "-" : `${log.ttft_ms}ms`} />
                 </InfoSection>
               </div>
 
               {log.error_code ? (
-                <div className="rounded-[20px] border border-[var(--danger-border)] bg-[var(--danger-soft)] px-4 py-4 text-[var(--danger)]">
+                <section className="rounded-[20px] border border-[var(--danger-border)] bg-[var(--danger-soft)] px-4 py-4 text-[var(--danger)]">
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <AlertTriangle className="size-4" />
                     当前请求包含错误信息
                   </div>
                   <p className="mt-2 text-sm">{log.error_code}</p>
-                </div>
+                </section>
               ) : null}
 
               <section className="grid gap-3 md:grid-cols-2">
                 <DetailCard label="Request ID" value={log.id} />
                 <DetailCard label="用户 ID" value={log.user_id ?? "匿名"} />
-                <DetailCard label="Preset ID" value={log.preset_id ?? "直接调用"} />
-                <DetailCard label="创建时间" value={formatDateTime(log.created_at)} />
+                <DetailCard label="模型" value={log.model} />
+                <DetailCard label="创建时间" value={formatDateTime(log.created_at, true)} />
               </section>
             </TabsContent>
 
@@ -236,7 +256,12 @@ function StatusBadge({ label, tone }: { label: string; tone: StatusTone }) {
           : "border-[var(--ok-border)] bg-[var(--ok-soft)] text-[var(--ok)]"
 
   return (
-    <span className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium", toneClass)}>
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium",
+        toneClass
+      )}
+    >
       <span className="ws-dot" data-tone={tone} />
       {label}
     </span>
@@ -248,15 +273,6 @@ function SoftChip({ label }: { label: string }) {
     <span className="rounded-full border border-[var(--hairline)] bg-[var(--panel-bg)] px-2 py-1 text-[11px] text-[var(--ink-3)]">
       {label}
     </span>
-  )
-}
-
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[18px] border border-[var(--hairline)] bg-[var(--panel-bg)] px-3 py-3">
-      <div className="ws-meta">{label}</div>
-      <div className="mt-2 break-all text-sm text-[var(--ink)]">{value}</div>
-    </div>
   )
 }
 
@@ -279,7 +295,7 @@ function RouteNode({ label, tone = "accent" }: { label: string; tone?: StatusTon
   )
 }
 
-function OverviewMetric({
+function HeroMetric({
   icon,
   label,
   value,
@@ -289,12 +305,21 @@ function OverviewMetric({
   value: string
 }) {
   return (
-    <div className="rounded-[20px] border border-[var(--hairline)] bg-[var(--panel-bg-inset)]/60 px-4 py-3">
+    <div className="rounded-[18px] border border-[var(--hairline)] bg-[var(--panel-bg)] px-3 py-3">
       <div className="flex items-center gap-2 text-[var(--ink-3)]">
         {icon}
         <span className="ws-caption">{label}</span>
       </div>
       <div className="ws-num mt-3 text-[17px] font-semibold text-[var(--ink)]">{value}</div>
+    </div>
+  )
+}
+
+function FactCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[18px] border border-[var(--hairline)] bg-[var(--panel-bg)] px-3 py-3">
+      <div className="ws-meta">{label}</div>
+      <div className="mt-2 break-all text-sm text-[var(--ink)]">{value}</div>
     </div>
   )
 }
@@ -307,7 +332,7 @@ function InfoSection({
   children: ReactNode
 }) {
   return (
-    <section className="rounded-[22px] border border-[var(--hairline)] bg-[var(--panel-bg-inset)]/52 p-4">
+    <section className="rounded-[22px] border border-[var(--hairline)] bg-[var(--panel-bg-inset)] p-4">
       <h3 className="ws-pane-title">{title}</h3>
       <div className="mt-4 space-y-3 text-sm">{children}</div>
     </section>
@@ -343,7 +368,7 @@ function JsonSurface({
 }) {
   if (value == null) {
     return (
-      <div className="rounded-[22px] border border-dashed border-[var(--hairline)] bg-[var(--panel-bg-inset)]/40 px-4 py-10 text-center">
+      <div className="rounded-[22px] border border-dashed border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-4 py-10 text-center">
         <p className="ws-pane-title">{title}</p>
         <p className="ws-caption mt-2">{emptyText}</p>
       </div>
@@ -360,67 +385,4 @@ function JsonSurface({
       </pre>
     </section>
   )
-}
-
-function formatCurrency(value: number) {
-  return value.toLocaleString(undefined, {
-    minimumFractionDigits: 4,
-    maximumFractionDigits: 6,
-  })
-}
-
-function formatDateTime(iso: string) {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(date)
-}
-
-function shortId(value: string) {
-  if (value.length <= 12) return value
-  return `${value.slice(0, 8)}...${value.slice(-4)}`
-}
-
-type StatusTone = "ok" | "warn" | "danger" | "accent"
-
-function getStatusTone(statusCode: number, errorCode?: string | null): StatusTone {
-  if (statusCode <= 0 && errorCode) return "danger"
-  if (statusCode >= 500) return "danger"
-  if (statusCode >= 400) return "warn"
-  if (statusCode >= 300) return "accent"
-  return "ok"
-}
-
-function getStatusLabel(statusCode: number, errorCode?: string | null) {
-  if (statusCode <= 0 && errorCode) return "执行失败"
-  if (statusCode >= 500) return "上游错误"
-  if (statusCode >= 400) return "请求异常"
-  if (statusCode >= 300) return "重定向"
-  return "请求成功"
-}
-
-function formatRelativeTime(iso: string) {
-  const date = new Date(iso)
-  const deltaMs = date.getTime() - Date.now()
-
-  if (Number.isNaN(date.getTime())) return iso
-
-  const minutes = Math.round(deltaMs / 60000)
-  if (Math.abs(minutes) < 60) {
-    return new Intl.RelativeTimeFormat("zh-CN", { numeric: "auto" }).format(minutes, "minute")
-  }
-
-  const hours = Math.round(deltaMs / 3_600_000)
-  if (Math.abs(hours) < 24) {
-    return new Intl.RelativeTimeFormat("zh-CN", { numeric: "auto" }).format(hours, "hour")
-  }
-
-  const days = Math.round(deltaMs / 86_400_000)
-  return new Intl.RelativeTimeFormat("zh-CN", { numeric: "auto" }).format(days, "day")
 }

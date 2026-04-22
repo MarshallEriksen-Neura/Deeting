@@ -1,202 +1,22 @@
-/* =========================================================================
-   AgentCanvas — editorial layout for the task-agent editor.
-   All colors, radii, and timings reference globals.css design tokens.
-   ========================================================================= */
-
 .root {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 40px;
 }
 
-/* ── Hero ─────────────────────────────────────────────────────────── */
+/* ── Typography ─────────────────────────────────────────────────── */
 
-.hero {
-  display: flex;
-  align-items: flex-start;
-  gap: 20px;
-}
-
-.avatar {
-  flex: none;
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  height: 56px;
-  border-radius: var(--r-14);
-  border: 1px solid var(--accent-border);
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-  overflow: hidden;
-}
-
-.avatar::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(
-    140% 140% at 25% 0%,
-    rgba(255, 255, 255, 0.5),
-    transparent 55%
-  );
-  pointer-events: none;
-}
-
-.avatar svg {
-  position: relative;
-  z-index: 1;
-  width: 26px;
-  height: 26px;
-  stroke-width: 1.8;
-}
-
-.heroBody {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-top: 2px;
-}
-
-.heroHead {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 36px;
-}
-
-/* Inline name input */
-
-.nameWrap {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-}
-
-.nameInput {
-  width: 100%;
-  margin: 0;
-  padding: 2px 0;
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid transparent;
-  outline: none;
-  font-family: var(--font-display);
-  font-size: 24px;
-  font-weight: 600;
-  letter-spacing: -0.4px;
-  line-height: 1.2;
-  color: var(--ink);
-  transition: border-color var(--dur-fast) var(--ease-standard);
-}
-
-.nameInput::placeholder {
-  color: var(--ink-4);
-  font-weight: 500;
-}
-
-.nameWrap:hover .nameInput {
-  border-bottom-color: var(--hairline-strong);
-}
-
-.nameInput:focus {
-  border-bottom-color: var(--accent-strong);
-}
-
-.requiredHint {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  font-family: var(--font-text);
+.metaLabel {
+  font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.3em;
   text-transform: uppercase;
-  color: var(--danger);
-  opacity: 0.75;
-  pointer-events: none;
-}
-
-/* Status cluster */
-
-.statusCluster {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.togglePill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 11px 0 9px;
-  border-radius: 999px;
-  border: 1px solid var(--hairline);
-  background: transparent;
   color: var(--ink-4);
-  font-family: var(--font-text);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition:
-    color var(--dur-fast) var(--ease-standard),
-    background-color var(--dur-fast) var(--ease-standard),
-    border-color var(--dur-fast) var(--ease-standard),
-    box-shadow var(--dur-fast) var(--ease-standard);
+  margin-bottom: 4px;
 }
 
-.togglePill:hover {
-  color: var(--ink-2);
-  border-color: var(--hairline-strong);
-}
-
-.togglePill[data-checked="true"][data-tone="ok"] {
-  color: var(--ok);
-  background: var(--ok-soft);
-  border-color: var(--ok-border);
-}
-
-.togglePill[data-checked="true"][data-tone="accent"] {
-  color: var(--accent-ink);
-  background: var(--accent-soft);
-  border-color: var(--accent-border);
-}
-
-.toggleDot {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--ink-4);
-  transition:
-    background-color var(--dur-fast) var(--ease-standard),
-    box-shadow var(--dur-fast) var(--ease-standard);
-}
-
-.togglePill[data-checked="true"][data-tone="ok"] .toggleDot {
-  background: var(--ok);
-  box-shadow: 0 0 0 3px var(--ok-soft);
-}
-
-.togglePill[data-checked="true"][data-tone="accent"] .toggleDot {
-  background: var(--accent-strong);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-
-.toggleIcon {
-  width: 12px;
-  height: 12px;
-}
-
-/* Description */
+/* ── Description ───────────────────────────────────────────────── */
 
 .description {
   margin: 0;
@@ -204,189 +24,137 @@
   background: transparent;
   border: 0;
   font-family: var(--font-text);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 400;
-  line-height: 1.55;
-  color: var(--ink-3);
+  line-height: 1.6;
+  color: var(--ink-2);
   text-align: left;
   cursor: text;
-  transition: color var(--dur-fast) var(--ease-standard);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.description:hover {
-  color: var(--ink-2);
+  display: block;
+  max-width: 640px;
 }
 
 .descriptionEmpty {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
   color: var(--ink-4);
-  font-size: 12px;
+  font-style: italic;
+  font-size: 13px;
 }
 
 .descriptionEmpty:hover {
   color: var(--accent-strong);
 }
 
-.descriptionEmptyIcon {
-  width: 12px;
-  height: 12px;
-}
-
 .descriptionTextarea {
   width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-10);
-  background: var(--panel-bg-inset);
+  max-width: 640px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--accent-strong);
   outline: none;
   resize: none;
   font-family: var(--font-text);
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: 15px;
+  line-height: 1.6;
   color: var(--ink);
-  transition:
-    border-color var(--dur-fast) var(--ease-standard),
-    box-shadow var(--dur-fast) var(--ease-standard);
 }
 
-.descriptionTextarea::placeholder {
-  color: var(--ink-4);
-}
-
-.descriptionTextarea:focus {
-  border-color: var(--accent-border);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-
-/* Rule — editorial hairline separator */
-
-.rule {
-  height: 1px;
-  background: var(--hairline-subtle);
-}
-
-/* ── Meta ─────────────────────────────────────────────────────────── */
-
-.meta {
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-}
-
-.metaSplit {
-  display: grid;
-  grid-template-columns: minmax(160px, 200px) minmax(0, 1fr);
-  gap: 24px 40px;
-  align-items: start;
-}
-
-@media (max-width: 720px) {
-  .metaSplit {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 20px;
-  }
-}
+/* ── Meta ───────────────────────────────────────────────────────── */
 
 .metaField {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  min-width: 0;
+  gap: 12px;
 }
 
-.metaLabel {
-  font-family: var(--font-text);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--ink-4);
+.statusCluster {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-.metaEngine {
-  width: 100%;
-  max-width: 560px;
-}
-
-.typePill {
+.togglePill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid var(--hairline);
-  background: var(--panel-bg);
+  gap: 8px;
+  height: 24px;
+  background: transparent;
+  border: none;
+  color: var(--ink-4);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.toggleDot {
+  width: 4px;
+  height: 4px;
+  background: var(--ink-4);
+}
+
+.togglePill[data-checked="true"] {
   color: var(--ink);
-  font-family: var(--font-text);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  width: fit-content;
 }
 
-.typePill svg {
-  width: 13px;
-  height: 13px;
-  color: var(--ink-3);
+.togglePill[data-checked="true"][data-tone="ok"] .toggleDot {
+  background: var(--ok);
+  box-shadow: 0 0 8px var(--ok);
 }
 
-/* Tag chips */
+.togglePill[data-checked="true"][data-tone="accent"] .toggleDot {
+  background: var(--accent-strong);
+  box-shadow: 0 0 8px var(--accent-strong);
+}
+
+.toggleIcon {
+  display: none; /* Icon-less look for cleaner typography */
+}
+
+/* ── Rule ────────────────────────────────────────────────────────── */
+
+.rule {
+  height: 1px;
+  background: var(--hairline-strong);
+  opacity: 0.1;
+}
+
+/* ── Tags ────────────────────────────────────────────────────────── */
 
 .tagList {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  min-height: 30px;
+  gap: 8px;
 }
 
 .tagChip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 24px;
-  padding: 0 4px 0 10px;
-  border-radius: 999px;
-  border: 1px solid var(--hairline);
-  background: var(--panel-bg-inset);
-  color: var(--ink-2);
-  font-family: var(--font-text);
-  font-size: 10px;
-  font-weight: 600;
+  padding: 4px 10px;
+  background: var(--ink);
+  color: var(--window-bg);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  transition:
-    background-color var(--dur-fast) var(--ease-standard),
-    border-color var(--dur-fast) var(--ease-standard);
-}
-
-.tagChip:hover {
-  background: var(--panel-bg);
-  border-color: var(--hairline-strong);
 }
 
 .tagRemove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: 0;
-  border-radius: 999px;
   background: transparent;
-  color: var(--ink-4);
+  border: none;
+  color: inherit;
+  padding: 0;
+  margin-left: 4px;
   cursor: pointer;
-  transition:
-    color var(--dur-fast) var(--ease-standard),
-    background-color var(--dur-fast) var(--ease-standard);
+  opacity: 0.6;
+}
+
+.tagRemove:hover {
+  opacity: 1;
 }
 
 .tagRemove svg {
@@ -394,26 +162,15 @@
   height: 10px;
 }
 
-.tagRemove:hover {
-  color: var(--danger);
-  background: var(--danger-soft);
-}
-
 .tagInput {
-  flex: 1;
-  min-width: 80px;
-  height: 24px;
-  padding: 0 4px;
   background: transparent;
-  border: 0;
-  outline: none;
-  font-family: var(--font-text);
-  font-size: 12px;
+  border: none;
+  border-bottom: 1px solid var(--hairline);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  padding: 2px 4px;
   color: var(--ink);
-}
-
-.tagInput::placeholder {
-  color: var(--ink-4);
+  outline: none;
 }
 
 /* ── Prompt ───────────────────────────────────────────────────────── */
@@ -421,81 +178,46 @@
 .prompt {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .promptHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
 }
 
 .promptLabel {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--font-text);
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.3em;
   text-transform: uppercase;
-  color: var(--ink-2);
-}
-
-.promptLabelIcon {
-  width: 14px;
-  height: 14px;
-  color: var(--accent-strong);
-}
-
-.promptRequired {
-  color: var(--danger);
-  font-size: 11px;
-  margin-left: 2px;
+  color: var(--ink);
 }
 
 .promptCount {
   font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0;
-  color: var(--ink-3);
-  font-variant-numeric: tabular-nums;
-}
-
-.promptCountEmpty {
-  color: var(--danger);
-  opacity: 0.7;
+  font-size: 9px;
+  color: var(--ink-4);
+  letter-spacing: 0.1em;
 }
 
 .promptTextarea {
   width: 100%;
-  min-height: 340px;
-  padding: 18px 20px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-12);
-  background: var(--panel-bg);
+  min-height: 400px;
+  padding: 32px;
+  background: var(--panel-bg-inset);
+  border: 1px solid var(--hairline-strong);
   color: var(--ink);
   font-family: var(--font-mono);
   font-size: 13px;
-  line-height: 1.7;
+  line-height: 1.8;
   outline: none;
   resize: vertical;
-  transition:
-    border-color var(--dur-fast) var(--ease-standard),
-    background-color var(--dur-fast) var(--ease-standard),
-    box-shadow var(--dur-fast) var(--ease-standard);
-}
-
-.promptTextarea::placeholder {
-  color: var(--ink-4);
 }
 
 .promptTextarea:focus {
-  border-color: var(--accent-border);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-
-.promptTextareaEmpty {
-  border-color: var(--danger-border);
+  border-color: var(--accent-strong);
+  background: var(--window-bg);
 }
