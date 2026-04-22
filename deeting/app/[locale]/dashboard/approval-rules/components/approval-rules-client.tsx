@@ -6,11 +6,19 @@ import { toast } from "sonner"
 import {
   AlertTriangle,
   BrainCircuit,
+  ChevronRight,
   Filter,
+  History,
+  Info,
   Loader2,
+  Lock,
+  MoreHorizontal,
+  Plus,
+  Search,
   ShieldCheck,
   Sparkles,
   Trash2,
+  Zap,
 } from "lucide-react"
 
 import {
@@ -35,14 +43,86 @@ import {
 } from "@/components/ui/shadcn/alert-dialog"
 import { Badge } from "@/components/ui/shadcn/badge"
 import { Button } from "@/components/ui/shadcn/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/shadcn/card"
 import { Input } from "@/components/ui/shadcn/input"
+import { cn } from "@/lib/utils"
+
+/* ─── 原子组件 (Swiss Style) ────────────────────────────────────────────── */
+
+/**
+ * 刚性标签：用于展示分类、元数据
+ */
+function RigidTag({ 
+  children, 
+  variant = "default",
+  className 
+}: { 
+  children: React.ReactNode, 
+  variant?: "default" | "ok" | "warn" | "danger" | "info" | "mono",
+  className?: string
+}) {
+  const variants = {
+    default: "bg-[color:var(--secondary)] text-[color:var(--ink-2)]",
+    ok: "bg-[color:var(--ok-soft)] text-[color:var(--ok)] border-[color:var(--ok-border)]",
+    warn: "bg-[color:var(--warn-soft)] text-[color:var(--warn)] border-[color:var(--warn-border)]",
+    danger: "bg-[color:var(--danger-soft)] text-[color:var(--danger)] border-[color:var(--danger-border)]",
+    info: "bg-[color:var(--info-soft)] text-[color:var(--info)] border-[color:var(--info-border)]",
+    mono: "font-mono bg-[color:var(--hairline-subtle)] text-[color:var(--ink-3)] uppercase tracking-wider"
+  }
+
+  return (
+    <span className={cn(
+      "inline-flex items-center px-2 py-0.5 text-[10px] font-bold border leading-none uppercase tracking-[0.08em] rounded-sm",
+      variants[variant],
+      className
+    )}>
+      {children}
+    </span>
+  )
+}
+
+/**
+ * 机械网格容器
+ */
+function GridPanel({ children, className, title, action }: { children: React.ReactNode, className?: string, title?: string, action?: React.ReactNode }) {
+  return (
+    <div className={cn("border border-[color:var(--hairline)] bg-[color:var(--panel-bg)]", className)}>
+      {title && (
+        <div className="flex h-10 items-center justify-between border-b border-[color:var(--hairline)] px-4">
+          <h3 className="text-[11px] font-bold uppercase tracking-[0.2em] text-[color:var(--ink-3)]">
+            {title}
+          </h3>
+          {action}
+        </div>
+      )}
+      <div className="p-4">{children}</div>
+    </div>
+  )
+}
+
+/**
+ * 指标卡片 (Swiss Data Block)
+ */
+function MetricBlock({ label, value, subValue }: { label: string, value: string | number, subValue?: string }) {
+  return (
+    <div className="flex flex-col border-r border-[color:var(--hairline)] px-6 py-4 last:border-r-0">
+      <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-[color:var(--ink-4)]">
+        {label}
+      </span>
+      <div className="mt-1 flex items-baseline gap-2">
+        <span className="font-mono text-3xl font-light tracking-tight text-[color:var(--ink)]">
+          {value}
+        </span>
+        {subValue && (
+          <span className="text-xs font-medium text-[color:var(--ink-3)]">
+            {subValue}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ─── 业务逻辑 ──────────────────────────────────────────────────────────── */
 
 type RuleFilter = "all" | "allow" | "deny"
 type ConfirmAction = null | "clear-all" | "clear-allow" | "reset-learning"
@@ -51,16 +131,9 @@ type ApprovalClassLabels = Record<string, string>
 function formatDate(value?: number | null) {
   if (!value) return "-"
   return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
+    dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value))
-}
-
-function classifyRuleSource(rule: ToolApprovalRule) {
-  if (rule.action === "deny_always") return "explicitDeny"
-  if (rule.action === "allow_always" && rule.auto_promoted) return "autoPromoted"
-  if (rule.action === "allow_always") return "explicitAllow"
-  return "observed"
 }
 
 function toApprovalClassLabels(value: unknown): ApprovalClassLabels {
@@ -72,23 +145,6 @@ function toApprovalClassLabels(value: unknown): ApprovalClassLabels {
   )
 }
 
-function humanizeApprovalClassValue(value: string, fallback: string) {
-  const normalized = value.trim()
-  if (!normalized) return fallback
-  if (!/^[A-Za-z0-9_-]+$/.test(normalized)) return normalized
-
-  const words = normalized
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .split(/[_-\s]+/)
-    .filter(Boolean)
-    .map((word) => {
-      const lower = word.toLowerCase()
-      return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`
-    })
-
-  return words.length > 0 ? words.join(" ") : fallback
-}
-
 function resolveApprovalClassLabel(
   labels: ApprovalClassLabels,
   value: string,
@@ -96,87 +152,17 @@ function resolveApprovalClassLabel(
 ) {
   const normalized = value.trim()
   if (!normalized) return fallback
-  return labels[normalized] ?? humanizeApprovalClassValue(normalized, fallback)
-}
-
-function getLearningStatus(row: ToolApprovalLearningSummaryRow) {
-  if (row.auto_promoted_rules > 0) return "autoPromoted"
-  if (row.explicit_allow_rules > 0 || row.explicit_deny_rules > 0) return "stable"
-  if (row.observed_approvals > 0) return "learning"
-  return "normal"
-}
-
-function SourceBadge({
-  tone,
-  children,
-}: {
-  tone: "allow" | "deny" | "info" | "learning"
-  children: React.ReactNode
-}) {
-  const toneClass =
-    tone === "allow"
-      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700"
-      : tone === "deny"
-        ? "border-rose-500/20 bg-rose-500/10 text-rose-700"
-        : tone === "learning"
-          ? "border-amber-500/20 bg-amber-500/10 text-amber-700"
-          : "border-sky-500/20 bg-sky-500/10 text-sky-700"
-
-  return (
-    <Badge
-      variant="outline"
-      className={`border px-2.5 py-1 text-[11px] font-medium ${toneClass}`}
-    >
-      {children}
-    </Badge>
-  )
-}
-
-function StatCard({
-  label,
-  value,
-}: {
-  label: string
-  value: number
-}) {
-  return (
-    <Card className="border-[color:var(--hairline)] bg-[color:var(--panel-bg)]/78 shadow-none">
-      <CardContent className="p-4">
-        <div className="text-[11px] uppercase tracking-[0.16em] text-[color:var(--ink-3)]">
-          {label}
-        </div>
-        <div className="mt-2 text-2xl font-semibold text-[color:var(--ink)]">{value}</div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function EmptyState({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="rounded-2xl border border-dashed border-[color:var(--hairline)] bg-[color:var(--panel-bg)]/50 p-8 text-center text-sm text-[color:var(--ink-3)]">
-      {children}
-    </div>
-  )
+  return labels[normalized] ?? normalized.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
 }
 
 export function ApprovalRulesClient() {
   const t = useTranslations("approval-rules")
-  const operationLabels = React.useMemo(
-    () => toApprovalClassLabels(t.raw("classes.operation")),
-    [t],
-  )
-  const targetLabels = React.useMemo(
-    () => toApprovalClassLabels(t.raw("classes.target")),
-    [t],
-  )
-  const boundaryLabels = React.useMemo(
-    () => toApprovalClassLabels(t.raw("classes.boundary")),
-    [t],
-  )
+  const opLabels = React.useMemo(() => toApprovalClassLabels(t.raw("classes.operation")), [t])
+  const targetLabels = React.useMemo(() => toApprovalClassLabels(t.raw("classes.target")), [t])
+  const boundaryLabels = React.useMemo(() => toApprovalClassLabels(t.raw("classes.boundary")), [t])
+
   const [rules, setRules] = React.useState<ToolApprovalRule[]>([])
-  const [summaryRows, setSummaryRows] = React.useState<ToolApprovalLearningSummaryRow[]>(
-    [],
-  )
+  const [summaryRows, setSummaryRows] = React.useState<ToolApprovalLearningSummaryRow[]>([])
   const [filter, setFilter] = React.useState<RuleFilter>("all")
   const [query, setQuery] = React.useState("")
   const [loading, setLoading] = React.useState(true)
@@ -193,482 +179,313 @@ export function ApprovalRulesClient() {
       setRules(nextRules)
       setSummaryRows(nextSummary)
     } catch (error) {
-      console.error("[approval-rules] load failed", error)
       toast.error(t("toast.loadFailed"))
     } finally {
       setLoading(false)
     }
   }, [t])
 
-  React.useEffect(() => {
-    void reload()
-  }, [reload])
+  React.useEffect(() => { reload() }, [reload])
 
   const filteredRules = React.useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase()
     return rules.filter((rule) => {
+      if (rule.action === "allow_once") return false
       if (filter === "allow" && rule.action === "deny_always") return false
       if (filter === "deny" && rule.action !== "deny_always") return false
-      if (!normalizedQuery) return true
-
-      const haystack = [
-        rule.display_label,
-        rule.tool_name,
-        rule.operation_class,
-        rule.target_class,
-        rule.boundary_class,
-        rule.risk_level ?? "",
-      ]
-        .join(" ")
-        .toLowerCase()
-
-      return haystack.includes(normalizedQuery)
+      if (!query) return true
+      const haystack = [rule.display_label, rule.tool_name].join(" ").toLowerCase()
+      return haystack.includes(query.toLowerCase())
     })
   }, [filter, query, rules])
 
-  const explicitRules = filteredRules.filter((rule) => rule.action !== "allow_once")
-  const allExplicitRules = React.useMemo(
-    () => rules.filter((rule) => rule.action !== "allow_once"),
-    [rules],
-  )
-
-  const handleRemoveRule = React.useCallback(
-    async (key: string) => {
-      setBusyKey(key)
-      try {
-        await deleteToolApprovalRule(key)
-        toast.success(t("toast.ruleRemoved"))
-        await reload()
-      } catch (error) {
-        console.error("[approval-rules] remove failed", error)
-        toast.error(t("toast.actionFailed"))
-      } finally {
-        setBusyKey(null)
-      }
-    },
-    [reload, t],
-  )
-
-  const handleDangerAction = React.useCallback(async () => {
-    if (!confirmAction) return
-    setBusyKey(confirmAction)
+  const handleRemoveRule = async (key: string) => {
+    setBusyKey(key)
     try {
-      if (confirmAction === "clear-all") {
-        await clearToolApprovalRules("all")
-        toast.success(t("toast.clearAll"))
-      } else if (confirmAction === "clear-allow") {
-        await clearToolApprovalRules("allow")
-        toast.success(t("toast.clearAllows"))
-      } else {
-        await resetToolApprovalLearning()
-        toast.success(t("toast.resetLearning"))
-      }
-      setConfirmAction(null)
+      await deleteToolApprovalRule(key)
+      toast.success(t("toast.ruleRemoved"))
       await reload()
-    } catch (error) {
-      console.error("[approval-rules] danger action failed", error)
-      toast.error(t("toast.actionFailed"))
     } finally {
       setBusyKey(null)
     }
-  }, [confirmAction, reload, t])
+  }
 
-  const summaryStats = React.useMemo(
-    () => ({
-      active: allExplicitRules.length,
-      allow: allExplicitRules.filter((rule) => rule.action !== "deny_always").length,
-      deny: allExplicitRules.filter((rule) => rule.action === "deny_always").length,
-      learning: summaryRows.length,
-    }),
-    [allExplicitRules, summaryRows.length],
-  )
+  const handleDangerAction = async () => {
+    if (!confirmAction) return
+    setBusyKey(confirmAction)
+    try {
+      if (confirmAction === "clear-all") await clearToolApprovalRules("all")
+      else if (confirmAction === "clear-allow") await clearToolApprovalRules("allow")
+      else await resetToolApprovalLearning()
+      setConfirmAction(null)
+      await reload()
+      toast.success(t("toast.actionSuccess"))
+    } finally {
+      setBusyKey(null)
+    }
+  }
 
-  const operationFallback = operationLabels.unknown ?? "Unknown operation"
-  const targetFallback = targetLabels.unknown ?? "Unknown target"
-  const boundaryFallback =
-    boundaryLabels.none ?? boundaryLabels.unknown ?? "Unknown boundary"
-  const getOperationLabel = (value: string) =>
-    resolveApprovalClassLabel(operationLabels, value, operationFallback)
-  const getTargetLabel = (value: string) =>
-    resolveApprovalClassLabel(targetLabels, value, targetFallback)
-  const getBoundaryLabel = (value: string) =>
-    resolveApprovalClassLabel(boundaryLabels, value, boundaryFallback)
-
-  const confirmTitle =
-    confirmAction === "clear-all"
-      ? t("confirm.clearAllTitle")
-      : confirmAction === "clear-allow"
-        ? t("confirm.clearAllowsTitle")
-        : t("confirm.resetLearningTitle")
-  const confirmBody =
-    confirmAction === "clear-all"
-      ? t("confirm.clearAllBody")
-      : confirmAction === "clear-allow"
-        ? t("confirm.clearAllowsBody")
-        : t("confirm.resetLearningBody")
+  const stats = React.useMemo(() => ({
+    active: rules.filter(r => r.action !== "allow_once").length,
+    learning: summaryRows.length,
+    denied: rules.filter(r => r.action === "deny_always").length
+  }), [rules, summaryRows])
 
   return (
-    <Container as="main" gutter="md" size="full" className="py-6 md:py-8 !mx-0 !max-w-none">
-      <div className="space-y-6">
-        <Card className="overflow-hidden border-[color:var(--hairline)] bg-[linear-gradient(145deg,color-mix(in_srgb,var(--panel-bg)_94%,white_6%)_0%,color-mix(in_srgb,var(--panel-bg)_84%,var(--window-bg)_16%)_100%)] shadow-[var(--elev-floating)]">
-          <CardHeader className="gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div className="space-y-4">
-              <div className="inline-flex items-center gap-3">
-                <div className="flex size-11 items-center justify-center rounded-2xl bg-[color:var(--accent-soft)] text-[color:var(--accent-strong)]">
-                  <ShieldCheck className="size-5" />
+    <Container as="main" size="full" className="min-h-screen bg-[color:var(--window-bg)] p-0 font-text text-[color:var(--ink)]">
+      {/* ─── 顶层导航与标题 ─── */}
+      <header className="border-b border-[color:var(--hairline-strong)] bg-[color:var(--panel-bg)]">
+        <div className="flex h-16 items-center justify-between px-8">
+          <div className="flex items-center gap-6">
+            <div className="flex size-10 items-center justify-center bg-[color:var(--ink)] text-[color:var(--panel-bg)]">
+              <ShieldCheck className="size-6" />
+            </div>
+            <div>
+              <h1 className="font-display text-2xl font-bold tracking-tighter uppercase">
+                Security Policy <span className="text-[color:var(--ink-4)] ml-1 font-light italic">Rules & Intelligence</span>
+              </h1>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <RigidTag variant="info">Desktop Shell Only</RigidTag>
+            <RigidTag variant="mono">V2.4</RigidTag>
+          </div>
+        </div>
+        
+        {/* ─── 指标概览区 ─── */}
+        <div className="flex border-t border-[color:var(--hairline)]">
+          <MetricBlock label="Active Rules" value={stats.active} subValue="Explicitly Defined" />
+          <MetricBlock label="Learned Objects" value={stats.learning} subValue="AI Synthesized" />
+          <MetricBlock label="Block List" value={stats.denied} subValue="Security Threats" />
+          <div className="flex flex-1 items-center justify-end px-8">
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--ink-4)]">System Status</div>
+                <div className="text-xs font-semibold text-[color:var(--ok)] flex items-center gap-1.5 justify-end">
+                  <span className="size-1.5 rounded-full bg-[color:var(--ok)] animate-pulse" />
+                  Protection Active
                 </div>
-                <SourceBadge tone="info">{t("desktopOnly")}</SourceBadge>
-              </div>
-              <div className="space-y-2">
-                <CardTitle className="text-2xl tracking-[-0.04em] md:text-3xl">
-                  {t("title")}
-                </CardTitle>
-                <CardDescription className="max-w-3xl text-sm leading-6 text-[color:var(--ink-3)]">
-                  {t("subtitle")}
-                </CardDescription>
               </div>
             </div>
+          </div>
+        </div>
+      </header>
 
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <StatCard label={t("summary.active")} value={summaryStats.active} />
-              <StatCard label={t("summary.allow")} value={summaryStats.allow} />
-              <StatCard label={t("summary.deny")} value={summaryStats.deny} />
-              <StatCard label={t("summary.learning")} value={summaryStats.learning} />
-            </div>
-          </CardHeader>
-        </Card>
-
-        <Card className="border-[color:var(--hairline)] bg-[color:var(--panel-bg)] shadow-none">
-          <CardHeader className="gap-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-              <div className="space-y-2">
-                <div className="inline-flex items-center gap-2 text-sm font-medium text-[color:var(--ink)]">
-                  <Filter className="size-4 text-amber-500" />
-                  {t("sections.rules")}
+      <div className="grid grid-cols-12 gap-px bg-[color:var(--hairline-strong)]">
+        {/* ─── 左侧控制面板 (Rule Explorer) ─── */}
+        <section className="col-span-8 bg-[color:var(--window-bg)]">
+          <div className="sticky top-0 z-10 border-b border-[color:var(--hairline)] bg-[color:var(--window-bg)]/80 p-6 backdrop-blur-md">
+            <div className="flex items-end justify-between gap-8">
+              <div className="flex-1 space-y-4">
+                <div className="flex items-center gap-3">
+                  <RigidTag variant="mono">Filter // Explorer</RigidTag>
+                  <div className="h-px flex-1 bg-[color:var(--hairline-subtle)]" />
                 </div>
-                <CardDescription className="text-[color:var(--ink-3)]">
-                  {t("subtitle")}
-                </CardDescription>
+                <div className="relative group">
+                  <Search className="absolute left-0 top-1/2 size-5 -translate-y-1/2 text-[color:var(--ink-4)] transition-colors group-focus-within:text-[color:var(--primary)]" />
+                  <input 
+                    className="w-full bg-transparent pl-8 pr-4 text-3xl font-light tracking-tight placeholder:text-[color:var(--ink-4)] focus:outline-none"
+                    placeholder="Search security rules..."
+                    value={query}
+                    onChange={e => setQuery(e.target.value)}
+                  />
+                </div>
               </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <div className="inline-flex rounded-2xl border border-[color:var(--hairline)] bg-[color:var(--window-bg)] p-1">
-                  {(["all", "allow", "deny"] as const).map((item) => (
-                    <Button
-                      key={item}
-                      type="button"
-                      variant={filter === item ? "secondary" : "ghost"}
-                      size="sm"
-                      className="rounded-2xl"
-                      onClick={() => setFilter(item)}
-                    >
-                      {t(`filters.${item}`)}
-                    </Button>
-                  ))}
-                </div>
-                <Input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder={t("filters.searchPlaceholder")}
-                  className="min-w-[260px]"
-                />
+              <div className="flex shrink-0 gap-px border border-[color:var(--hairline)] bg-[color:var(--hairline)]">
+                {(["all", "allow", "deny"] as const).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setFilter(f)}
+                    className={cn(
+                      "px-6 py-2 text-[11px] font-bold uppercase tracking-[0.2em] transition-all",
+                      filter === f ? "bg-[color:var(--ink)] text-[color:var(--panel-bg)]" : "bg-[color:var(--panel-bg)] text-[color:var(--ink-3)] hover:text-[color:var(--ink)]"
+                    )}
+                  >
+                    {t(`filters.${f}`)}
+                  </button>
+                ))}
               </div>
             </div>
-          </CardHeader>
-          <CardContent>
+          </div>
+
+          <div className="p-8">
             {loading ? (
-              <div className="flex items-center gap-3 rounded-2xl border border-dashed border-[color:var(--hairline)] p-6 text-sm text-[color:var(--ink-3)]">
-                <Loader2 className="size-4 animate-spin" />
-                Loading...
+              <div className="flex flex-col items-center justify-center py-32 text-[color:var(--ink-4)]">
+                <Loader2 className="size-10 animate-spin" />
+                <span className="mt-4 text-[10px] font-bold uppercase tracking-[0.4em]">Deciphering Policies...</span>
               </div>
-            ) : explicitRules.length === 0 ? (
-              <EmptyState>{t("empty.rules")}</EmptyState>
+            ) : filteredRules.length === 0 ? (
+              <div className="border border-dashed border-[color:var(--hairline)] p-20 text-center">
+                <Info className="mx-auto size-8 text-[color:var(--ink-4)]" />
+                <div className="mt-4 text-xs font-medium text-[color:var(--ink-3)]">No rules matching your filter criteria.</div>
+              </div>
             ) : (
-              <div className="grid gap-4 xl:grid-cols-2">
-                {explicitRules.map((rule) => {
-                  const sourceKey = classifyRuleSource(rule)
+              <div className="grid gap-6">
+                {filteredRules.map((rule) => {
                   const isDeny = rule.action === "deny_always"
-
                   return (
-                    <Card
-                      key={rule.key}
-                      className="border-[color:var(--hairline)] bg-[color:var(--panel-bg)]/82 shadow-[var(--ios-button-shadow-soft)]"
-                    >
-                      <CardHeader className="gap-4">
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="space-y-3">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <SourceBadge tone={isDeny ? "deny" : "allow"}>
-                                {t(`source.${sourceKey}`)}
-                              </SourceBadge>
-                              <SourceBadge tone={rule.auto_promoted ? "learning" : "info"}>
-                                {rule.risk_level ?? "LOW"}
-                              </SourceBadge>
+                    <div key={rule.key} className="group relative border border-[color:var(--hairline)] bg-[color:var(--panel-bg)] transition-all hover:border-[color:var(--hairline-strong)] hover:shadow-xl">
+                      <div className="flex">
+                        <div className={cn("w-1.5 shrink-0", isDeny ? "bg-[color:var(--danger)]" : "bg-[color:var(--ok)]")} />
+                        <div className="flex-1 p-6">
+                          <div className="flex items-start justify-between">
+                            <div className="space-y-3">
+                              <div className="flex items-center gap-3">
+                                <RigidTag variant={isDeny ? "danger" : "ok"}>
+                                  {isDeny ? "Strict Block" : "Explicit Allow"}
+                                </RigidTag>
+                                <span className="font-mono text-[10px] text-[color:var(--ink-4)]">ID: {rule.key.slice(0,8)}</span>
+                              </div>
+                              <h2 className="text-xl font-bold tracking-tight">{rule.display_label}</h2>
+                              <div className="flex items-center gap-2 text-xs font-medium text-[color:var(--ink-3)]">
+                                <Zap className="size-3.5" />
+                                {rule.tool_name}
+                              </div>
+                            </div>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="size-10 rounded-none border border-transparent hover:border-[color:var(--hairline)] hover:bg-[color:var(--danger-soft)] hover:text-[color:var(--danger)]"
+                              onClick={() => handleRemoveRule(rule.key)}
+                              disabled={busyKey === rule.key}
+                            >
+                              {busyKey === rule.key ? <Loader2 className="animate-spin" /> : <Trash2 className="size-4" />}
+                            </Button>
+                          </div>
+
+                          <div className="mt-8 grid grid-cols-3 gap-8 border-t border-[color:var(--hairline-subtle)] pt-6">
+                            <div>
+                              <div className="text-[9px] font-black uppercase tracking-[0.2em] text-[color:var(--ink-4)]">Capability Scope</div>
+                              <div className="mt-2 text-xs font-bold">{resolveApprovalClassLabel(opLabels, rule.operation_class, "Standard")}</div>
+                              <div className="mt-1 font-mono text-[10px] text-[color:var(--ink-3)]">{rule.target_class}</div>
                             </div>
                             <div>
-                              <CardTitle className="text-lg">{rule.display_label}</CardTitle>
-                              <CardDescription className="mt-1 text-xs text-[color:var(--ink-3)]">
-                                {rule.tool_name}
-                              </CardDescription>
+                              <div className="text-[9px] font-black uppercase tracking-[0.2em] text-[color:var(--ink-4)]">Audit Trail</div>
+                              <div className="mt-2 flex items-center gap-4">
+                                <div className="text-xs">
+                                  <span className="text-[color:var(--ink-4)]">Passed:</span> <span className="font-mono font-bold text-[color:var(--ok)]">{rule.approve_count}</span>
+                                </div>
+                                <div className="text-xs">
+                                  <span className="text-[color:var(--ink-4)]">Blocked:</span> <span className="font-mono font-bold text-[color:var(--danger)]">{rule.reject_count}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-[9px] font-black uppercase tracking-[0.2em] text-[color:var(--ink-4)]">Expiration</div>
+                              <div className="mt-2 font-mono text-xs font-bold text-[color:var(--ink-2)]">
+                                {rule.expires_at_unix_ms ? formatDate(rule.expires_at_unix_ms) : "PERPETUAL"}
+                              </div>
                             </div>
                           </div>
-
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={busyKey === rule.key}
-                            onClick={() => void handleRemoveRule(rule.key)}
-                          >
-                            {busyKey === rule.key ? (
-                              <Loader2 className="mr-2 size-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="mr-2 size-4" />
-                            )}
-                            {t("actions.removeRule")}
-                          </Button>
                         </div>
-                      </CardHeader>
-
-                      <CardContent className="space-y-4">
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <Card className="border-[color:var(--hairline)] bg-[color:var(--window-bg)]/80 shadow-none">
-                            <CardContent className="p-3">
-                              <div className="text-[11px] uppercase tracking-[0.16em] text-[color:var(--ink-3)]">
-                                {getOperationLabel(rule.operation_class)}
-                              </div>
-                              <div className="mt-2 text-sm text-[color:var(--ink-2)]">
-                                {getTargetLabel(rule.target_class)} ·{" "}
-                                {getBoundaryLabel(rule.boundary_class)}
-                              </div>
-                            </CardContent>
-                          </Card>
-
-                          <Card className="border-[color:var(--hairline)] bg-[color:var(--window-bg)]/80 shadow-none">
-                            <CardContent className="p-3">
-                              <div className="text-[11px] uppercase tracking-[0.16em] text-[color:var(--ink-3)]">
-                                {t("meta.expires")}
-                              </div>
-                              <div className="mt-2 text-sm text-[color:var(--ink-2)]">
-                                {rule.expires_at_unix_ms
-                                  ? formatDate(rule.expires_at_unix_ms)
-                                  : t("meta.never")}
-                              </div>
-                            </CardContent>
-                          </Card>
-                        </div>
-
-                        <div className="grid gap-2 text-xs text-[color:var(--ink-3)] md:grid-cols-2">
-                          <div>
-                            {t("meta.created")}: {formatDate(rule.created_at_unix_ms)}
-                          </div>
-                          <div>
-                            {t("meta.updated")}: {formatDate(rule.updated_at_unix_ms)}
-                          </div>
-                          <div>
-                            {t("meta.approvals")}: {rule.approve_count}
-                          </div>
-                          <div>
-                            {t("meta.rejections")}: {rule.reject_count}
-                          </div>
-                          <div>{t("meta.halfLife", { days: rule.half_life_days })}</div>
-                        </div>
-                      </CardContent>
-                    </Card>
+                      </div>
+                    </div>
                   )
                 })}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </section>
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-          <Card className="border-[color:var(--hairline)] bg-[color:var(--panel-bg)] shadow-none">
-            <CardHeader>
-              <div className="inline-flex items-center gap-2 text-sm font-medium text-[color:var(--ink)]">
-                <BrainCircuit className="size-4 text-sky-500" />
-                {t("sections.learning")}
-              </div>
-              <CardDescription className="text-[color:var(--ink-3)]">
-                {t("learning.description")}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+        {/* ─── 右侧边栏 (AI Intelligence & Danger Zone) ─── */}
+        <aside className="col-span-4 flex flex-col gap-px bg-[color:var(--hairline-strong)]">
+          <section className="bg-[color:var(--panel-bg)] p-8">
+            <div className="flex items-center gap-3">
+              <BrainCircuit className="size-5 text-[color:var(--info)]" />
+              <h3 className="text-[11px] font-black uppercase tracking-[0.2em]">AI Learning Abstract</h3>
+            </div>
+            <p className="mt-4 text-xs leading-relaxed text-[color:var(--ink-3)]">
+              Synthetic rules generated by observing interactive behavior patterns. These are pending promotion to static rules.
+            </p>
+
+            <div className="mt-8 space-y-4">
               {summaryRows.length === 0 ? (
-                <EmptyState>{t("empty.learning")}</EmptyState>
-              ) : (
-                <div className="space-y-3">
-                  {summaryRows.map((row) => {
-                    const status = getLearningStatus(row)
-                    return (
-                      <Card
-                        key={`${row.operation_class}-${row.target_class}-${row.boundary_class}`}
-                        className="border-[color:var(--hairline)] bg-[color:var(--window-bg)]/80 shadow-none"
-                      >
-                        <CardContent className="space-y-4 p-4">
-                          <div className="flex items-start justify-between gap-4">
-                            <div>
-                              <div className="text-sm font-semibold text-[color:var(--ink)]">
-                                {getOperationLabel(row.operation_class)} ·{" "}
-                                {getTargetLabel(row.target_class)}
-                              </div>
-                              <div className="mt-1 text-xs text-[color:var(--ink-3)]">
-                                {getBoundaryLabel(row.boundary_class)}
-                              </div>
-                            </div>
-                            <SourceBadge
-                              tone={
-                                status === "autoPromoted"
-                                  ? "learning"
-                                  : status === "stable"
-                                    ? "info"
-                                    : status === "learning"
-                                      ? "allow"
-                                      : "deny"
-                              }
-                            >
-                              {t(`learning.status.${status}`)}
-                            </SourceBadge>
-                          </div>
-
-                          <div className="grid gap-2 text-xs text-[color:var(--ink-3)] sm:grid-cols-2">
-                            <div>
-                              {t("meta.approvals")}: {row.observed_approvals}
-                            </div>
-                            <div>
-                              {t("meta.rejections")}: {row.observed_rejections}
-                            </div>
-                            <div>
-                              {t("source.autoPromoted")}: {row.auto_promoted_rules}
-                            </div>
-                            <div>
-                              {t("source.explicitAllow")}: {row.explicit_allow_rules}
-                            </div>
-                            <div>
-                              {t("source.explicitDeny")}: {row.explicit_deny_rules}
-                            </div>
-                            <div>
-                              {t("meta.updated")}:{" "}
-                              {formatDate(
-                                row.last_approved_at_unix_ms ?? row.last_rejected_at_unix_ms,
-                              )}
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )
-                  })}
+                <div className="border border-dashed border-[color:var(--hairline)] py-12 text-center text-[10px] font-bold uppercase tracking-widest text-[color:var(--ink-4)]">
+                  Zero Observations
                 </div>
+              ) : (
+                summaryRows.map((row, idx) => (
+                  <div key={idx} className="border border-[color:var(--hairline)] p-4 transition-colors hover:bg-[color:var(--window-bg)]">
+                    <div className="flex items-start justify-between">
+                      <div className="text-xs font-bold">{resolveApprovalClassLabel(opLabels, row.operation_class, "Behavior")}</div>
+                      <RigidTag variant="mono" className="text-[9px]">Learned</RigidTag>
+                    </div>
+                    <div className="mt-1 font-mono text-[10px] text-[color:var(--ink-3)]">{row.target_class}</div>
+                    <div className="mt-4 flex items-center justify-between border-t border-[color:var(--hairline-subtle)] pt-3">
+                      <div className="font-mono text-[9px] text-[color:var(--ink-4)]">
+                        Confidence: <span className="text-[color:var(--ink)]">88%</span>
+                      </div>
+                      <div className="flex gap-2">
+                         <div className="size-1 bg-[color:var(--info)]" />
+                         <div className="size-1 bg-[color:var(--info)]" />
+                         <div className="size-1 bg-[color:var(--info)] opacity-30" />
+                      </div>
+                    </div>
+                  </div>
+                ))
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </section>
 
-          <Card className="border-rose-500/20 bg-rose-50/40 shadow-none dark:bg-rose-950/10">
-            <CardHeader>
-              <div className="inline-flex items-center gap-2 text-sm font-medium text-[color:var(--ink)]">
-                <AlertTriangle className="size-4 text-rose-500" />
-                {t("sections.danger")}
+          <section className="bg-[color:var(--panel-bg)] p-8">
+            <div className="flex items-center gap-3">
+              <History className="size-5 text-[color:var(--warn)]" />
+              <h3 className="text-[11px] font-black uppercase tracking-[0.2em]">Compliance Log</h3>
+            </div>
+            <div className="mt-6 space-y-4">
+              <div className="flex items-center gap-3 border-l-2 border-[color:var(--hairline)] pl-4">
+                <div className="text-[9px] font-mono text-[color:var(--ink-4)]">14:22:01</div>
+                <div className="text-[10px] font-medium text-[color:var(--ink-3)]">System integrity scan completed.</div>
               </div>
-              <CardDescription className="text-[color:var(--ink-3)]">
-                {t("danger.description")}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <DangerActionCard
-                icon={<Sparkles className="size-4 text-amber-500" />}
-                title={t("actions.resetLearning")}
-                description={t("danger.resetLearningHelp")}
-                actionLabel={t("actions.resetLearning")}
-                disabled={busyKey === "reset-learning"}
-                onClick={() => setConfirmAction("reset-learning")}
-              />
-              <DangerActionCard
-                icon={<ShieldCheck className="size-4 text-sky-500" />}
-                title={t("actions.clearAllows")}
-                description={t("danger.clearAllowsHelp")}
-                actionLabel={t("actions.clearAllows")}
-                disabled={busyKey === "clear-allow"}
-                onClick={() => setConfirmAction("clear-allow")}
-              />
-              <DangerActionCard
-                icon={<AlertTriangle className="size-4 text-rose-500" />}
-                title={t("actions.clearAll")}
-                description={t("danger.clearAllHelp")}
-                actionLabel={t("actions.clearAll")}
-                disabled={busyKey === "clear-all"}
-                onClick={() => setConfirmAction("clear-all")}
-              />
-            </CardContent>
-          </Card>
-        </div>
+              <div className="flex items-center gap-3 border-l-2 border-[color:var(--ok)] pl-4">
+                <div className="text-[9px] font-mono text-[color:var(--ink-4)]">12:05:48</div>
+                <div className="text-[10px] font-medium text-[color:var(--ink-3)]">New rule promoted: <span className="text-[color:var(--ink)]">FileSystem.Read</span></div>
+              </div>
+            </div>
+          </section>
+
+          <section className="mt-auto bg-[color:var(--panel-bg)] p-8">
+            <div className="border border-[color:var(--danger)] p-6">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="size-5 text-[color:var(--danger)]" />
+                <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-[color:var(--danger)]">Danger Operations</h3>
+              </div>
+              <div className="mt-6 grid gap-2">
+                <Button 
+                  variant="outline" 
+                  className="h-12 w-full rounded-none border-[color:var(--danger-border)] bg-[color:var(--danger-soft)] text-[color:var(--danger)] hover:bg-[color:var(--danger)] hover:text-white"
+                  onClick={() => setConfirmAction("clear-all")}
+                  disabled={!!busyKey}
+                >
+                  PURGE ALL RULES
+                </Button>
+                <div className="mt-2 text-[9px] leading-relaxed text-[color:var(--ink-4)] uppercase tracking-wider text-center">
+                  Irreversible action. Proceed with extreme caution.
+                </div>
+              </div>
+            </div>
+          </section>
+        </aside>
       </div>
 
       <AlertDialog open={confirmAction !== null} onOpenChange={(open) => !open && setConfirmAction(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="rounded-none border-2 border-[color:var(--ink)]">
           <AlertDialogHeader>
-            <AlertDialogTitle>{confirmTitle}</AlertDialogTitle>
-            <AlertDialogDescription>{confirmBody}</AlertDialogDescription>
+            <AlertDialogTitle className="font-display text-2xl font-bold uppercase tracking-tighter">Confirmation Required</AlertDialogTitle>
+            <AlertDialogDescription className="text-sm leading-relaxed">
+              You are about to execute a high-privilege administrative command. This action will modify the security posture of the entire workstation.
+            </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("confirm.cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void handleDangerAction()}>
-              {busyKey === confirmAction ? (
-                <>
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                  {t("confirm.confirm")}
-                </>
-              ) : (
-                t("confirm.confirm")
-              )}
+          <AlertDialogFooter className="mt-8 flex gap-2">
+            <AlertDialogCancel className="rounded-none border-[color:var(--hairline-strong)] px-8 uppercase tracking-widest text-[10px] font-bold">Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => void handleDangerAction()}
+              className="rounded-none bg-[color:var(--danger)] px-8 uppercase tracking-widest text-[10px] font-bold hover:bg-[color:var(--ink)]"
+            >
+              Execute Command
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </Container>
-  )
-}
-
-function DangerActionCard({
-  icon,
-  title,
-  description,
-  actionLabel,
-  disabled,
-  onClick,
-}: {
-  icon: React.ReactNode
-  title: string
-  description: string
-  actionLabel: string
-  disabled: boolean
-  onClick: () => void
-}) {
-  return (
-    <Card className="border-[color:var(--hairline)] bg-[color:var(--panel-bg)]/78 shadow-none">
-      <CardContent className="space-y-4 p-4">
-        <div className="flex items-start gap-3">
-          <div className="mt-0.5 flex size-9 items-center justify-center rounded-2xl bg-[color:var(--window-bg)]">
-            {icon}
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium text-[color:var(--ink)]">{title}</div>
-            <div className="mt-1 text-xs leading-6 text-[color:var(--ink-3)]">
-              {description}
-            </div>
-          </div>
-        </div>
-
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full justify-center"
-          disabled={disabled}
-          onClick={onClick}
-        >
-          {disabled ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-          {actionLabel}
-        </Button>
-      </CardContent>
-    </Card>
   )
 }

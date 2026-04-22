@@ -113,57 +113,80 @@ export function MonitorsClient() {
   )
 
   return (
-    <Container as="main" gutter="md" size="full" className="py-6 md:py-8 !mx-0 !max-w-none">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 rounded-full border border-[color:var(--ios-pill-border)] bg-[color:var(--ios-pill-muted)] px-3 py-1 text-xs text-muted-foreground">
-            <Crosshair className="size-3.5" />
-            桌面端本地主动寻猎
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">自动化与观测</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              这里仅保留桌面端主动寻猎任务、手动触发和执行日志，不引入旧项目的云端监控页。
+    <Container as="main" gutter="none" size="full" className="min-h-screen bg-[color:var(--background)]">
+      <div className="flex flex-col border-b border-[color:var(--border)] bg-[color:var(--card)] px-6 py-8 md:px-10">
+        <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <div className="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary">
+                <Crosshair className="size-3.5" />
+              </div>
+              <span className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+                Active Hunting System
+              </span>
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+              主动巡猎与自动化
+            </h1>
+            <p className="max-w-2xl text-[13px] leading-relaxed text-muted-foreground">
+              集成桌面端深度侦察任务。系统将根据配置的启发式规则自动运行，并在发现质变信号时通过预设渠道推送研判结果。
             </p>
           </div>
+          <div className="flex shrink-0 items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refreshAll}
+              className="h-9 border-[color:var(--border)] bg-transparent px-4 font-medium transition-colors hover:bg-muted"
+            >
+              <RefreshCw className="mr-2 size-3.5" />
+              刷新状态
+            </Button>
+            <Button
+              variant="ios-primary"
+              size="sm"
+              onClick={() => setCreateOpen(true)}
+              className="h-9 px-5 font-medium shadow-none"
+            >
+              <Plus className="mr-2 size-4" />
+              部署新任务
+            </Button>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={refreshAll}>
-            <RefreshCw className="size-4" />
-            刷新
-          </Button>
-          <Button variant="ios-primary" onClick={() => setCreateOpen(true)}>
-            <Plus className="size-4" />
-            新建任务
-          </Button>
+
+        <div className="mt-8 flex flex-wrap items-center gap-1.5">
+          {STATUS_FILTERS.map((filter) => (
+            <button
+              key={filter.value}
+              onClick={() => setStatusFilter(filter.value)}
+              className={`
+                px-3 py-1.5 text-xs font-medium transition-all
+                ${
+                  statusFilter === filter.value
+                    ? "rounded-md bg-foreground text-background"
+                    : "rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                }
+              `}
+            >
+              {filter.label}
+            </button>
+          ))}
+          <div className="ml-auto flex items-center gap-2 text-[11px] font-medium text-muted-foreground uppercase tracking-widest">
+            <span className="inline-block size-1.5 rounded-full bg-primary" />
+            Total Scanners: {data?.total ?? 0}
+          </div>
         </div>
       </div>
 
-      <div className="mt-6 flex flex-wrap items-center gap-2">
-        {STATUS_FILTERS.map((filter) => (
-          <Button
-            key={filter.value}
-            variant={statusFilter === filter.value ? "ios-primary" : "secondary"}
-            size="sm"
-            onClick={() => setStatusFilter(filter.value)}
-          >
-            {filter.label}
-          </Button>
-        ))}
-        <Badge variant="outline" className="ml-auto">
-          共 {data?.total ?? 0} 个任务
-        </Badge>
-      </div>
-
-      <div className="mt-6">
+      <div className="px-6 py-8 md:px-10">
         {isLoading ? (
-          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+          <div className="grid gap-px overflow-hidden rounded-xl border border-[color:var(--border)] bg-[color:var(--border)] md:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, index) => (
-              <div key={index} className="h-72 animate-pulse rounded-2xl border bg-card" />
+              <div key={index} className="h-80 animate-pulse bg-card" />
             ))}
           </div>
         ) : data?.items?.length ? (
-          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+          <div className="grid gap-px overflow-hidden rounded-xl border border-[color:var(--border)] bg-[color:var(--border)] md:grid-cols-2 lg:grid-cols-3">
             {data.items.map((task) => (
               <MonitorTaskCard
                 key={task.id}

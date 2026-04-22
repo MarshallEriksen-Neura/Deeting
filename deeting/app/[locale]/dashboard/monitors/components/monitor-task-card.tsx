@@ -114,103 +114,132 @@ export function MonitorTaskCard({
     }
   }
 
+  const ledColor =
+    task.display_status === "active"
+      ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"
+      : task.display_status === "paused"
+        ? "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]"
+        : "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]"
+
   return (
     <>
-      <Card className="h-full justify-between">
-        <CardHeader>
-          <CardTitle className="flex items-start gap-3 text-base leading-6">
-            <div className="min-w-0 flex-1">
-              <div className="truncate">{task.title}</div>
-              <CardDescription className="mt-2 line-clamp-2">{task.objective}</CardDescription>
-            </div>
-          </CardTitle>
-          <CardAction className="flex flex-wrap justify-end gap-2">
-            <Badge variant="secondary" className={statusMeta.tone}>
+      <div className="group flex h-full flex-col bg-[color:var(--card)] p-6 transition-colors hover:bg-muted/30">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-2">
+            <div className={cn("size-1.5 rounded-full", ledColor)} />
+            <span className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">
               {statusMeta.label}
-            </Badge>
-            <Badge variant="outline">{ANALYSIS_MODE_LABEL[task.analysis_mode]}</Badge>
-          </CardAction>
-        </CardHeader>
-
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            {task.task_agent_name || task.assistant_name || task.task_agent_id || task.assistant_id ? (
-              <Badge variant="secondary">
-                <Bot className="mr-1 size-3.5" />
-                {task.task_agent_name || task.assistant_name || task.task_agent_id || task.assistant_id}
-              </Badge>
-            ) : null}
-            <Badge variant={bindingReady ? "secondary" : "outline"}>
-              {bindingReady ? "绑定正常" : task.binding_state === "binding_required" ? "等待绑定" : "绑定失效"}
+            </span>
+          </div>
+          <div className="flex gap-1.5">
+            <Badge
+              variant="outline"
+              className="rounded-sm border-[color:var(--border)] px-1.5 py-0 text-[10px] font-medium"
+            >
+              {ANALYSIS_MODE_LABEL[task.analysis_mode]}
             </Badge>
           </div>
+        </div>
 
-          {task.binding_error ? (
-            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-300">
-              {task.binding_error}
+        <div className="mt-4 flex-1">
+          <h3 className="line-clamp-1 text-sm font-semibold tracking-tight text-foreground">
+            {task.title}
+          </h3>
+          <p className="mt-1.5 line-clamp-2 text-[12px] leading-relaxed text-muted-foreground">
+            {task.objective}
+          </p>
+
+          <div className="mt-5 grid grid-cols-2 gap-x-8 gap-y-4 border-t border-[color:var(--border)] pt-4">
+            <div className="space-y-1">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                Frequency
+              </span>
+              <p className="text-xs font-medium">{formatInterval(task.current_interval_minutes)}</p>
             </div>
-          ) : null}
-
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Metric label="频率" value={formatInterval(task.current_interval_minutes)} icon={Clock3} />
-            <Metric label="累计 tokens" value={formatNumber(task.total_tokens)} icon={RotateCw} />
-            <Metric label="失败次数" value={String(task.error_count)} icon={Wrench} />
-          </div>
-
-          <div className="space-y-2 text-sm">
-            <div className="flex items-center justify-between text-muted-foreground">
-              <span>下次执行</span>
-              <span>{task.next_run_at ? formatDateTime(task.next_run_at) : "等待调度"}</span>
+            <div className="space-y-1">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                Tokens Used
+              </span>
+              <p className="text-xs font-medium">{formatNumber(task.total_tokens)}</p>
             </div>
-            {deliverySummary.length ? (
-              <div className="flex flex-wrap gap-2">
-                {deliverySummary.map((item) => (
-                  <Badge key={item} variant="outline">
-                    {item}
-                  </Badge>
-                ))}
+            <div className="space-y-1">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                Agent Binding
+              </span>
+              <div className="flex items-center gap-1.5">
+                <span className={cn("size-1 rounded-full", bindingReady ? "bg-emerald-500" : "bg-amber-500")} />
+                <p className="truncate text-xs font-medium">
+                  {task.task_agent_name || task.assistant_name || "System Base"}
+                </p>
               </div>
-            ) : null}
+            </div>
+            <div className="space-y-1">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                Next Scheduled
+              </span>
+              <p className="text-xs font-medium">
+                {task.next_run_at ? formatDateTime(task.next_run_at) : "Pending"}
+              </p>
+            </div>
           </div>
-        </CardContent>
+        </div>
 
-        <CardFooter className="flex flex-wrap justify-between gap-2 border-t">
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={() => onViewLogs(task.id)}>
-              <FileText className="size-4" />
-              日志
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => onEdit(task)}>
-              <Wrench className="size-4" />
-              编辑
-            </Button>
+        <div className="mt-6 flex items-center justify-between border-t border-[color:var(--border)] pt-4">
+          <div className="flex gap-1">
+            <button
+              onClick={() => onViewLogs(task.id)}
+              className="flex size-7 items-center justify-center rounded border border-[color:var(--border)] transition-colors hover:bg-muted"
+              title="日志"
+            >
+              <FileText className="size-3.5" />
+            </button>
+            <button
+              onClick={() => onEdit(task)}
+              className="flex size-7 items-center justify-center rounded border border-[color:var(--border)] transition-colors hover:bg-muted"
+              title="编辑"
+            >
+              <Wrench className="size-3.5" />
+            </button>
+            <button
+              onClick={() => setDeleteOpen(true)}
+              className="flex size-7 items-center justify-center rounded border border-[color:var(--border)] text-destructive transition-colors hover:bg-destructive/10"
+              title="删除"
+            >
+              <Trash2 className="size-3.5" />
+            </button>
           </div>
-          <div className="flex flex-wrap gap-2">
+
+          <div className="flex gap-2">
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
               onClick={() => void onTrigger(task)}
               disabled={acting || isTriggering || task.status !== "active" || !bindingReady}
+              className="h-8 border-[color:var(--border)] px-3 text-[11px] font-medium"
             >
-              <RotateCw className={cn("size-4", isTriggering && "animate-spin")} />
+              <RotateCw className={cn("mr-1.5 size-3", isTriggering && "animate-spin")} />
               立即触发
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
+            <button
               onClick={() => void handleToggle()}
               disabled={acting || isTriggering || (!bindingReady && task.status !== "active")}
+              className="flex items-center gap-1.5 px-2 text-[11px] font-bold tracking-wider text-primary uppercase transition-opacity hover:opacity-80 disabled:opacity-50"
             >
-              {task.status === "active" ? <Pause className="size-4" /> : <Play className="size-4" />}
-              {task.status === "active" ? "暂停" : "恢复"}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => setDeleteOpen(true)} disabled={acting}>
-              <Trash2 className="size-4" />
-              删除
-            </Button>
+              {task.status === "active" ? (
+                <>
+                  <Pause className="size-3" />
+                  PAUSE
+                </>
+              ) : (
+                <>
+                  <Play className="size-3" />
+                  RESUME
+                </>
+              )}
+            </button>
           </div>
-        </CardFooter>
-      </Card>
+        </div>
+      </div>
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>

@@ -2,11 +2,8 @@
 
 import * as React from "react"
 import { useTranslations } from "next-intl"
-import { Download, RefreshCw, Plus, Search, Layers, Terminal, MessageSquare, BrainCircuit, X, Activity } from "lucide-react"
+import { RefreshCw, Plus, Search, X, Activity } from "lucide-react"
 
-import { Button } from "@/components/ui/shadcn/button"
-import { Badge } from "@/components/ui/shadcn/badge"
-import { Input } from "@/components/ui/shadcn/input"
 import { cn } from "@/lib/utils"
 import { Tabs } from "@/components/ui/shadcn/tabs"
 
@@ -22,11 +19,13 @@ import { TaskAgentImportDialog } from "./task-agent-import-dialog"
 import { AgentDialogs } from "./agent-dialogs"
 
 type Translation = (key: string, values?: Record<string, string | number>) => string
+type WorkspaceTab = "config" | "bindings" | "preview" | "debug"
 
 export function TaskAgentsClient() {
   const t = useTranslations("task-agents") as unknown as Translation
   const [importDialogOpen, setImportDialogOpen] = React.useState(false)
-  const [activeWorkspaceTab, setActiveWorkspaceTab] = React.useState<"config" | "bindings" | "preview" | "debug">("config")
+  const [activeWorkspaceTab, setActiveWorkspaceTab] =
+    React.useState<WorkspaceTab>("config")
   const [inspectorOpen, setInspectorOpen] = React.useState(false)
 
   const {
@@ -110,12 +109,12 @@ export function TaskAgentsClient() {
   if (!isDesktop) return <TaskAgentsUnsupported t={t} />
 
   return (
-    <div className="flex bg-[var(--window-bg)] overflow-hidden -mx-[var(--shell-canvas-px)] -mt-[var(--shell-canvas-pt)] -mb-[var(--shell-canvas-pb)] h-[calc(100dvh-var(--desktop-title-bar-height,0px)-var(--shell-toolbar-h))] select-none">
+    <div className="flex min-h-0 min-w-0 bg-[var(--window-bg)] overflow-hidden -mx-[var(--shell-canvas-px)] -mt-[var(--shell-canvas-pt)] -mb-[var(--shell-canvas-pb)] h-[calc(100dvh-var(--desktop-title-bar-height,0px)-var(--shell-toolbar-h))] select-none">
       {/* 
           LEFT COLUMN: THE INDEX 
           Rational, borderless typographic navigation
       */}
-      <aside className="w-[380px] flex-none flex flex-col pt-16 pb-8 px-12 overflow-hidden">
+      <aside className="flex min-h-0 w-[380px] flex-none flex-col overflow-hidden px-12 pt-16 pb-8">
         <header className="flex-none mb-16 space-y-2">
           <h1 className="text-4xl font-bold tracking-tighter text-[var(--ink)] uppercase">
             {t("title").split('').map((char, i) => (
@@ -219,8 +218,14 @@ export function TaskAgentsClient() {
           RIGHT COLUMN: THE CANVAS
           Extreme whitespace, massive type, no panels
       */}
-      <main className="flex-1 flex flex-col bg-[var(--window-bg)] relative border-l border-[var(--hairline)]">
-        <Tabs value={activeWorkspaceTab} onValueChange={(v) => setActiveWorkspaceTab(v as any)} className="flex-1 flex flex-col">
+      <main className="relative flex min-h-0 min-w-0 flex-1 flex-col border-l border-[var(--hairline)] bg-[var(--window-bg)]">
+        <Tabs
+          value={activeWorkspaceTab}
+          onValueChange={(value) =>
+            setActiveWorkspaceTab(value as WorkspaceTab)
+          }
+          className="flex min-h-0 min-w-0 flex-1 flex-col"
+        >
           {isStarterState ? (
             <div className="flex-1 flex items-center justify-center p-24 animate-in fade-in zoom-in-95 duration-1000">
               <div className="max-w-xl w-full">
@@ -228,7 +233,7 @@ export function TaskAgentsClient() {
               </div>
             </div>
           ) : (
-            <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
               {/* Massive Header Section */}
               <div className="flex-none pt-20 pb-12 px-20 space-y-4">
                 <div className="flex items-start justify-between">
@@ -285,7 +290,9 @@ export function TaskAgentsClient() {
                       return (
                         <button
                           key={tab.id}
-                          onClick={() => setActiveWorkspaceTab(tab.id as any)}
+                            onClick={() =>
+                              setActiveWorkspaceTab(tab.id as WorkspaceTab)
+                            }
                           className={cn(
                             "relative pb-2 text-[10px] font-bold tracking-[0.25em] uppercase transition-all",
                             active ? "text-[var(--ink)]" : "text-[var(--ink-4)] hover:text-[var(--ink-2)]"
@@ -303,7 +310,7 @@ export function TaskAgentsClient() {
               </div>
 
               {/* Content Area */}
-              <div className="flex-1 overflow-y-auto px-20 pb-32 custom-scrollbar mask-linear-b">
+              <div className="custom-scrollbar mask-linear-b flex-1 min-h-0 overflow-y-auto px-20 pb-32">
                 <div className="max-w-[800px] animate-in fade-in slide-in-from-bottom-8 duration-700 delay-150">
                   {isImageWorkspace ? (
                     activeWorkspaceTab === "config" ? (
@@ -479,7 +486,7 @@ export function TaskAgentsClient() {
   )
 }
 
-function agentVersion(agent: any) {
+function agentVersion(agent: { version?: string | number } | null | undefined) {
   if (!agent) return "001";
   return String(agent.version || "1").padStart(3, '0');
 }
