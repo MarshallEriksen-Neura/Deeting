@@ -1,12 +1,14 @@
-﻿"use client"
+"use client"
 
 import Link from "next/link"
+import { useTranslations } from "next-intl"
 import { ShieldAlert } from "lucide-react"
 
 import { useUserProfile } from "@/hooks/use-user"
 import { Button } from "@/ui/shadcn/button"
 
 export function AdminAccessGate({ children }: { children: React.ReactNode }) {
+  const t = useTranslations("admin.accessGate")
   const { profile, isLoading, isAuthenticated } = useUserProfile()
 
   if (isLoading) {
@@ -27,13 +29,15 @@ export function AdminAccessGate({ children }: { children: React.ReactNode }) {
               <ShieldAlert className="size-6" />
             </div>
             <div className="space-y-2">
-              <h1 className="text-3xl font-semibold tracking-[-0.04em] text-[var(--ink)]">Admin access required</h1>
+              <h1 className="text-3xl font-semibold tracking-[-0.04em] text-[var(--ink)]">
+                {t("title")}
+              </h1>
               <p className="text-sm leading-6 text-[var(--ink-2)]">
-                This console is only visible to superuser accounts. The sidebar entry is hidden for normal users, and direct access is blocked here.
+                {t("description")}
               </p>
             </div>
             <Button asChild>
-              <Link href="/">Return to workspace</Link>
+              <Link href="/">{t("returnToWorkspace")}</Link>
             </Button>
           </div>
         </section>

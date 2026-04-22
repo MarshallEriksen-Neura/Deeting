@@ -26,6 +26,7 @@ export async function runInlineApproval({
   removePendingByToken,
   upsertMessageToolResult,
   appendMessageBlocks,
+  approvalMode = "allow_once",
 }: {
   approval: BridgeToolPendingApproval;
   messageId: string;
@@ -35,6 +36,7 @@ export async function runInlineApproval({
   removePendingByToken: (approvalToken: string) => void;
   upsertMessageToolResult: (messageId: string, block: ToolResultBlock) => void;
   appendMessageBlocks: (messageId: string, blocks: MessageBlock[]) => void;
+  approvalMode?: "allow_once" | "allow_always";
 }) {
   applyOptimisticExecutionState();
   announceBridgeApprovalExecution(approval);
@@ -45,7 +47,7 @@ export async function runInlineApproval({
     const result = await streamDesktopApproveTool(
       {
         approvalToken: approval.approval_token,
-        approvalMode: "allow_once",
+        approvalMode,
         callId: approval.meta.call_id,
         executionToken: approval.meta.execution_token,
         executionGraphExecutionId: approval.meta.execution_graph_execution_id,

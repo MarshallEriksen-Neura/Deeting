@@ -188,6 +188,11 @@
       "title": "User Management",
       "description": "Manage system users and permissions"
     },
+    "accessGate": {
+      "title": "Admin Access Required",
+      "description": "This console is only visible to superuser accounts. The sidebar entry is hidden for normal users, and direct access is blocked here.",
+      "returnToWorkspace": "Return to workspace"
+    },
     "usersPage": {
       "consoleLabel": "Identity Control",
       "consoleTitle": "Users Console",

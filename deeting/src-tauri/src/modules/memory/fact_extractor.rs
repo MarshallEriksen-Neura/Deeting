@@ -23,7 +23,6 @@ Conversation:
 Respond with ONLY a JSON array of fact strings, no other text."#;
 
 const FACT_EXTRACTION_CONVERSATION_MAX_CHARS: usize = 4000;
-const FACT_EXTRACTION_MAX_TOKENS: u32 = 512;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct FactExtractionWriteSummary {
@@ -81,7 +80,7 @@ pub(crate) async fn extract_and_store_facts(
             provider_model_id,
             model_id,
             &prompt,
-            FACT_EXTRACTION_MAX_TOKENS,
+            None,
             Some(session_id),
         )
         .await

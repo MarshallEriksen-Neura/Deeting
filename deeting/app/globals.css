@@ -1855,7 +1855,7 @@ html:not(.dark) [data-tauri-drag-region] {
 .atelier-diff-num { text-align: right; opacity: 0.55; }
 .atelier-diff-text { white-space: pre-wrap; word-break: break-word; }
 
-/* ©¤©¤©¤ 16. Diagnosis & Scanning (Blueprint Extension) ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤ */
+/* â”€â”€â”€ 16. Diagnosis & Scanning (Blueprint Extension) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 @keyframes ws-scan-line {
   from { transform: translateY(-100%); }
   to { transform: translateY(1000%); }

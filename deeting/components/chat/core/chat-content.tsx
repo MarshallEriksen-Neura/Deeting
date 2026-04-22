@@ -1,5 +1,4 @@
 "use client"
-import { ToolApprovalDialog } from "@/components/bridge/tool-approval-dialog"
 import { ChatMessageList } from "../messages"
 import { useChatStore, type ChatAssistant } from "@/store/chat-store"
 import { useChatRuntimeStore } from "@/store/chat-runtime-store"
@@ -38,25 +37,22 @@ export function ChatContent({ agent }: ChatContentProps) {
   useBrowserModeToolActivity(messages)
 
   return (
-    <>
-      <div className="flex flex-1 min-h-0 h-full w-full">
-        <ChatMessageList
-          messages={messages}
-          agent={agent}
-          isTyping={isTyping}
-          statusMessageId={statusMessageId}
-          streamEnabled={streamEnabled}
-          statusStage={statusStage}
-          statusCode={statusCode}
-          statusMeta={statusMeta}
-          onRegenerate={regenerateMessage}
-          onLike={(id) => void sendFeedback(id, 1)}
-          onDislike={(id) => void sendFeedback(id, -1)}
-          onCompareWithModel={compareWithModel}
-          onFinalizeCompare={finalizeCompareWinner}
-        />
-      </div>
-      <ToolApprovalDialog />
-    </>
+    <div className="flex flex-1 min-h-0 h-full w-full">
+      <ChatMessageList
+        messages={messages}
+        agent={agent}
+        isTyping={isTyping}
+        statusMessageId={statusMessageId}
+        streamEnabled={streamEnabled}
+        statusStage={statusStage}
+        statusCode={statusCode}
+        statusMeta={statusMeta}
+        onRegenerate={regenerateMessage}
+        onLike={(id) => void sendFeedback(id, 1)}
+        onDislike={(id) => void sendFeedback(id, -1)}
+        onCompareWithModel={compareWithModel}
+        onFinalizeCompare={finalizeCompareWinner}
+      />
+    </div>
   )
 }

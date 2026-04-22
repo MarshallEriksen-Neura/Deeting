@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useTranslations } from "next-intl"
 import {
   AlertDialog,
@@ -39,8 +39,18 @@ import {
 } from "@/lib/chat/tool-approval"
 
 export function ToolApprovalDialog() {
-  const { pending, queue, clear, focusPendingByToken } = useBridgeApprovalStore()
-  if (!pending) return null
+  const { pending, queue, clear, focusPendingByToken } = useBridgeApprovalStore();
+  
+  // 核心逻辑：如果审批项有关联的 message_id，我们假设它会由内联 UI 处理，
+  // 此时不弹出全局对话框。
+  const shouldShowDialog = useMemo(() => {
+    if (!pending) return false;
+    // 如果有 message_id，说明它已经在聊天流中了
+    if (pending.meta.message_id) return false;
+    return true;
+  }, [pending]);
+
+  if (!shouldShowDialog || !pending) return null;
 
   return (
     <ToolApprovalDialogContent
@@ -50,7 +60,7 @@ export function ToolApprovalDialog() {
       clear={clear}
       focusPendingByToken={focusPendingByToken}
     />
-  )
+  );
 }
 
 function ToolApprovalDialogContent({

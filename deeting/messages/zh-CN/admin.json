@@ -188,9 +188,14 @@
       "title": "用户管理",
       "description": "管理系统用户与权限"
     },
+    "accessGate": {
+      "title": "需要管理员权限",
+      "description": "此控制台仅对超级管理员账号可见。普通用户不会在侧边栏看到入口，直接访问也会在此被拦截。",
+      "returnToWorkspace": "返回工作台"
+    },
     "usersPage": {
-      "consoleLabel": "Identity Control",
-      "consoleTitle": "Users Console",
+      "consoleLabel": "身份控制",
+      "consoleTitle": "用户控制台",
       "consoleDescription": "在这里完成系统用户创建、权限调整与账号巡检。列表负责批量操作，右侧抽屉负责查看单个账号上下文。",
       "loadingDescription": "正在加载用户数据",
       "status": {
@@ -1243,8 +1248,8 @@
       }
     },
     "providerPresetsPage": {
-      "consoleLabel": "Provider Registry",
-      "consoleTitle": "Provider Presets Console",
+      "consoleLabel": "Provider 注册表",
+      "consoleTitle": "Provider 预设控制台",
       "managementHint": "从这里进入预设编辑页，管理员可以直接修改配置并验证请求。",
       "status": {
         "active": "启用",

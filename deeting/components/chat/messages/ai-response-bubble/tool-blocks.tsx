@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import dynamic from "next/dynamic";
 
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Collapsible,
   CollapsibleContent,
@@ -417,7 +418,7 @@ function ToolStateGlyph({ state }: { state: ToolVisualState }) {
   return (
     <span
       className={cn(
-        "flex h-5 w-5 items-center justify-center rounded-full border",
+        "flex h-4 w-4 items-center justify-center rounded-full border",
         state === "running" &&
           "border-blue-200 bg-blue-100/90 text-blue-600 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300",
         state === "success" &&
@@ -425,17 +426,17 @@ function ToolStateGlyph({ state }: { state: ToolVisualState }) {
         state === "error" &&
           "border-red-200 bg-red-100/90 text-red-600 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300",
         state === "pending" &&
-          "border-slate-200 bg-white/90 text-slate-400 dark:border-zinc-800 dark:bg-zinc-900/80 dark:text-zinc-500",
+          "border-[var(--hairline)] bg-transparent text-[var(--ink-3)]",
       )}
     >
       {state === "running" ? (
-        <Zap size={11} className="animate-pulse" />
+        <Zap size={10} className="animate-pulse" />
       ) : state === "success" ? (
-        <Check size={11} />
+        <Check size={10} />
       ) : state === "error" ? (
-        <AlertTriangle size={11} />
+        <AlertTriangle size={10} />
       ) : (
-        <Terminal size={11} />
+        <Terminal size={10} />
       )}
     </span>
   );
@@ -1041,34 +1042,42 @@ export const ToolCallBlock = memo<{
     }
   }, [inlineApproval, messageId, setMessageBlocks]);
 
-  const handleApprove = useCallback(async () => {
-    if (!inlineApproval || !messageId) return;
-    if (!beginBridgeApprovalExecution(inlineApproval.approval_token)) return;
-    setApprovalAction("allow_once");
-    try {
-      await runInlineApproval({
-        approval: inlineApproval,
-        messageId,
-        sessionId,
-        resolveMessages: () => useChatStore.getState().messages,
-        applyOptimisticExecutionState,
-        removePendingByToken,
-        upsertMessageToolResult,
-        appendMessageBlocks,
-      });
-    } finally {
-      finishBridgeApprovalExecution(inlineApproval.approval_token);
-      setApprovalAction(null);
-    }
-  }, [
-    appendMessageBlocks,
-    applyOptimisticExecutionState,
-    inlineApproval,
-    messageId,
-    sessionId,
-    removePendingByToken,
-    upsertMessageToolResult,
-  ]);
+  const handleApprove = useCallback(
+    async (mode: "allow_once" | "allow_always" = "allow_once") => {
+      if (!inlineApproval || !messageId) return;
+      if (!beginBridgeApprovalExecution(inlineApproval.approval_token)) return;
+      setApprovalAction(mode);
+      try {
+        await runInlineApproval({
+          approval: inlineApproval,
+          messageId,
+          sessionId,
+          resolveMessages: () => useChatStore.getState().messages,
+          applyOptimisticExecutionState,
+          removePendingByToken,
+          upsertMessageToolResult,
+          appendMessageBlocks,
+          approvalMode: mode,
+        });
+      } finally {
+        finishBridgeApprovalExecution(inlineApproval.approval_token);
+        setApprovalAction(null);
+      }
+    },
+    [
+      appendMessageBlocks,
+      applyOptimisticExecutionState,
+      inlineApproval,
+      messageId,
+      sessionId,
+      removePendingByToken,
+      upsertMessageToolResult,
+    ],
+  );
+
+  const handleApproveAlways = useCallback(async () => {
+    return handleApprove("allow_always");
+  }, [handleApprove]);
 
   const handleReject = useCallback(async () => {
     if (!inlineApproval || !messageId) return;
@@ -1093,232 +1102,177 @@ export const ToolCallBlock = memo<{
   ]);
 
   const card = (
-    <div ref={cardRef} className="w-full">
-      <div className="flex items-stretch gap-3">
-        <div className="flex w-5 shrink-0 flex-col items-center">
-          <div className="pt-0.5">
-            <ToolStateGlyph state={visualState} />
-          </div>
-          {hasExpandableContent ? (
-            <span
-              className={cn(
-                "mt-1 w-px flex-1 min-h-4",
-                visualState === "error"
-                  ? "bg-red-200 dark:bg-red-900"
-                  : visualState === "success"
-                    ? "bg-emerald-200 dark:bg-emerald-900"
-                    : visualState === "pending"
-                      ? "bg-amber-200 dark:bg-amber-900"
-                      : "bg-blue-200 dark:bg-blue-900",
-              )}
-            />
-          ) : null}
-        </div>
-
-        <div
-          className={cn(
-            "min-w-0 flex-1 rounded-2xl border px-3 py-2.5 text-sm transition-all duration-300",
-            visualState === "running" &&
-              "border-blue-200/80 bg-blue-50/55 dark:border-blue-900 dark:bg-blue-950/20",
-            visualState === "success" &&
-              "border-slate-200/80 bg-white/85 dark:border-zinc-800 dark:bg-zinc-900/70",
-            visualState === "pending" &&
-              "border-slate-200/80 bg-white/80 dark:border-zinc-800 dark:bg-zinc-900/65",
-            visualState === "error" &&
-              "border-red-200/80 bg-red-50/55 dark:border-red-900 dark:bg-red-950/20",
-            isRecentlyApproved &&
-              "border-emerald-300 bg-emerald-50/80 shadow-[0_0_0_3px_rgba(16,185,129,0.14)] dark:border-emerald-700 dark:bg-emerald-950/25",
-            hasExpandableContent &&
-              "cursor-pointer select-none hover:bg-muted/30",
+    <div ref={cardRef} className="w-full group/tool mb-2">
+      <div 
+        onClick={() => hasExpandableContent && setIsOpen(!isOpen)}
+        className={cn(
+          "inline-flex items-center gap-2 py-1.5 px-3 rounded-full border transition-all select-none cursor-pointer",
+          visualState === "running" 
+            ? "border-blue-200 bg-blue-50/30 dark:border-blue-900/50" 
+            : "border-[var(--hairline)] bg-transparent hover:border-[var(--ink-2)]"
+        )}
+      >
+        <ToolStateGlyph state={visualState} />
+        <div className="flex items-center gap-2 overflow-hidden">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--ink)] whitespace-nowrap">
+            {sharedHumanizeToolName(name) ?? name ?? "Tool"}
+          </span>
+          {preview && (
+            <span className="text-[11px] font-mono text-[var(--ink-3)] truncate opacity-70 max-w-[120px] sm:max-w-[200px]">
+              / {toInlinePreview(preview, 48)}
+            </span>
           )}
-        >
-          <div className="flex items-start gap-3">
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="truncate text-sm font-semibold text-foreground">
-                  {sharedHumanizeToolName(name) ?? name ?? "Tool"}
-                </span>
-                <Badge
-                  variant="outline"
-                  className="h-5 text-[10px] font-normal text-muted-foreground"
-                >
-                  {sharedIsInternalTool(name) ? "Skill" : "MCP"}
-                </Badge>
-                {isRecentlyApproved ? (
-                  <Badge
-                    variant="outline"
-                    className="h-5 border-emerald-300 text-[10px] font-normal text-emerald-700 dark:border-emerald-700 dark:text-emerald-300"
-                  >
-                    {t("approvalDialog.badges.approved")}
-                  </Badge>
-                ) : null}
-              </div>
-              {preview ? (
-                <div className="mt-1 truncate text-[12px] leading-5 text-muted-foreground">
-                  {preview}
-                </div>
-              ) : null}
-              {inlineApproval ? (
-                <div
-                  className="mt-2 flex flex-wrap items-center gap-2"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={approvalAction !== null}
-                    onClick={() => void handleReject()}
-                  >
-                    {approvalAction === "reject_once" ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : null}
-                    {t("approvalDialog.actions.reject")}
-                  </Button>
-                  <Button
-                    size="sm"
-                    disabled={approvalAction !== null}
-                    onClick={() => void handleApprove()}
-                  >
-                    {approvalAction === "allow_once" ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : null}
-                    {t("approvalDialog.actions.approve")}
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-
-            {hasExpandableContent ? (
-              <div className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-muted-foreground">
-                <span>
-                  {t(isOpen ? "toolGroup.collapse" : "toolGroup.expand")}
-                </span>
-                <ChevronDown
-                  size={14}
-                  className={cn(
-                    "transition-transform duration-200",
-                    !isOpen && "-rotate-90",
-                  )}
-                />
-              </div>
-            ) : null}
-          </div>
         </div>
+        {hasExpandableContent && (
+          <ChevronDown
+            size={12}
+            className={cn(
+              "text-[var(--ink-3)] transition-transform duration-200",
+              !isOpen && "-rotate-90",
+            )}
+          />
+        )}
       </div>
     </div>
   );
 
-  if (!hasExpandableContent) return card;
+  const approvalActions = inlineApproval ? (
+    <motion.div
+      initial={{ opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="flex flex-wrap items-center gap-2 mt-2 ml-4"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        disabled={approvalAction !== null}
+        onClick={() => void handleReject()}
+        className={cn(
+          "px-3 py-1 rounded-full border border-[var(--hairline)] text-[10px] font-bold uppercase tracking-wider transition-all",
+          "hover:bg-red-500/10 hover:border-red-500/50 hover:text-red-600 dark:hover:text-red-400",
+          "disabled:opacity-50 disabled:cursor-not-allowed"
+        )}
+      >
+        {approvalAction === "reject_once" ? (
+          <Loader2 size={10} className="animate-spin mr-1 inline" />
+        ) : null}
+        {t("approvalDialog.actions.reject")}
+      </button>
+      <button
+        type="button"
+        disabled={approvalAction !== null}
+        onClick={() => void handleApprove()}
+        className={cn(
+          "px-3 py-1 rounded-full border border-[var(--ink)] bg-[var(--ink)] text-[var(--panel-bg)] text-[10px] font-bold uppercase tracking-wider transition-all",
+          "hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-white"
+        )}
+      >
+        {approvalAction === "allow_once" ? (
+          <Loader2 size={10} className="animate-spin mr-1 inline text-white" />
+        ) : null}
+        {t("approvalDialog.actions.approve")}
+      </button>
+      <button
+        type="button"
+        disabled={approvalAction !== null}
+        onClick={() => {
+          // 在 ToolCallBlock 中，handleApprove 默认调用时没有传参，
+          // 我需要确保它能处理 allow_always
+          void handleApproveAlways();
+        }}
+        className={cn(
+          "px-3 py-1 rounded-full border border-amber-500/30 text-amber-600 dark:text-amber-400 text-[10px] font-bold uppercase tracking-wider transition-all",
+          "hover:bg-amber-500/10 hover:border-amber-500/60",
+          "disabled:opacity-50 disabled:cursor-not-allowed"
+        )}
+      >
+        {approvalAction === "allow_always" ? (
+          <Loader2 size={10} className="animate-spin mr-1 inline" />
+        ) : null}
+        {t("approvalDialog.actions.approveAlways")}
+      </button>
+    </motion.div>
+  ) : null;
 
   return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
-      <CollapsibleTrigger asChild>{card}</CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="mt-2 ml-8">
-          {taskLiveId ? (
-            <TaskLiveBlock taskId={taskLiveId} />
-          ) : skillInstallInsight ? (
-            <SkillInstallStatusCard insight={skillInstallInsight} />
-          ) : localCodeSnippetInsight ? (
-            <div
-              className={cn(
-                "rounded-2xl border p-3 text-sm overflow-hidden",
-                isResultError
-                  ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20"
-                  : isResultPendingApproval
-                    ? "border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-900/20"
-                    : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-900/20",
-              )}
-            >
-              <LocalCodeSnippetResultCard insight={localCodeSnippetInsight} />
-              <ToolDebugPanel debug={resultBlock?.debug} />
-            </div>
-          ) : shellExecutionInsight ? (
-            <div
-              className={cn(
-                "rounded-2xl border p-3 text-sm overflow-hidden",
-                isResultError
-                  ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20"
-                  : isResultPendingApproval
-                    ? "border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-900/20"
-                    : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-900/20",
-              )}
-            >
-              <ShellExecutionResultCard insight={shellExecutionInsight} />
-              <ToolDebugPanel debug={resultBlock?.debug} />
-            </div>
-          ) : hasUi ? (
-            <div className="space-y-3">
-              {uiBlocks.map((uiBlock, index) => (
-                <div
-                  key={uiBlock.id || `${callId || name || "tool"}-ui-${index}`}
-                  className={cn(
-                    "overflow-hidden rounded-2xl",
-                    uiBlock.viewType === "html.v1"
-                      ? "border-transparent bg-transparent p-0"
-                      : "border border-border/80 bg-background/80 p-2",
-                  )}
-                >
-                  <ViewBlock
-                    viewType={uiBlock.viewType}
-                    payload={uiBlock.payload}
-                    title={uiBlock.title}
-                    metadata={uiBlock.metadata}
-                  />
+    <div className="w-full mb-3">
+      {card}
+      {approvalActions}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="mb-4 p-4 rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg)]">
+              {taskLiveId ? (
+                <TaskLiveBlock taskId={taskLiveId} />
+              ) : skillInstallInsight ? (
+                <SkillInstallStatusCard insight={skillInstallInsight} />
+              ) : localCodeSnippetInsight ? (
+                <div className="space-y-3">
+                  <LocalCodeSnippetResultCard insight={localCodeSnippetInsight} />
+                  <ToolDebugPanel debug={resultBlock?.debug} />
                 </div>
-              ))}
-              <ToolDebugPanel debug={resultBlock?.debug} />
-            </div>
-          ) : (
-            <div
-              className={cn(
-                "rounded-2xl border p-3 text-sm overflow-hidden",
-                isResultError
-                  ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20"
-                  : isResultPendingApproval
-                    ? "border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-900/20"
-                    : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-900/20",
-              )}
-            >
-              <div className="mb-2 flex items-center justify-between">
-                <div className="font-mono text-xs font-semibold truncate">
-                  {resultBlock?.toolName || resultBlock?.callId || "result"}
+              ) : shellExecutionInsight ? (
+                <div className="space-y-3">
+                  <ShellExecutionResultCard insight={shellExecutionInsight} />
+                  <ToolDebugPanel debug={resultBlock?.debug} />
                 </div>
-                <Badge
-                  variant="outline"
-                  className="h-5 text-[10px] font-normal shrink-0"
-                >
-                  {isResultError
-                    ? "ERROR"
-                    : isResultPendingApproval
-                      ? "APPROVAL"
-                      : "OUTPUT"}
-                </Badge>
-              </div>
-              {preview ? (
-                <div className="mb-3 rounded-xl bg-background/70 px-3 py-2 text-xs text-muted-foreground">
-                  {preview}
-                </div>
-              ) : null}
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                Raw output
-              </div>
-              {resultContent ? (
-                <div className="overflow-x-auto">
-                  <MarkdownViewer
-                    content={resultContent}
-                    className="chat-markdown chat-markdown-assistant text-sm"
-                  />
+              ) : hasUi ? (
+                <div className="space-y-3">
+                  {uiBlocks.map((uiBlock, index) => (
+                    <div
+                      key={uiBlock.id || `${callId || name || "tool"}-ui-${index}`}
+                      className={cn(
+                        "overflow-hidden rounded-xl",
+                        uiBlock.viewType === "html.v1"
+                          ? "border-transparent bg-transparent p-0"
+                          : "border border-[var(--hairline)] bg-background/80 p-2",
+                      )}
+                    >
+                      <ViewBlock
+                        viewType={uiBlock.viewType}
+                        payload={uiBlock.payload}
+                        title={uiBlock.title}
+                        metadata={uiBlock.metadata}
+                      />
+                    </div>
+                  ))}
+                  <ToolDebugPanel debug={resultBlock?.debug} />
                 </div>
               ) : (
-                <div className="text-xs text-muted-foreground">No output</div>
+                <div className="space-y-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <div className="font-mono text-xs font-semibold truncate">
+                      {resultBlock?.toolName || resultBlock?.callId || "result"}
+                    </div>
+                  </div>
+                  {preview ? (
+                    <div className="mb-3 rounded-lg bg-[var(--panel-bg)] px-3 py-2 text-xs text-[var(--ink-3)] border border-[var(--hairline)]">
+                      {preview}
+                    </div>
+                  ) : null}
+                  {resultContent ? (
+                    <div className="overflow-x-auto">
+                      <MarkdownViewer
+                        content={resultContent}
+                        className="chat-markdown chat-markdown-assistant text-sm"
+                      />
+                    </div>
+                  ) : (
+                    <div className="text-xs text-[var(--ink-3)]">No output</div>
+                  )}
+                  <ToolDebugPanel debug={resultBlock?.debug} />
+                </div>
               )}
-              <ToolDebugPanel debug={resultBlock?.debug} />
             </div>
-          )}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 });
 
@@ -1410,80 +1364,65 @@ export const ToolCallGroup = memo<{
         : "pending";
 
   return (
-    <Collapsible
-      open={isOpen}
-      onOpenChange={() => dispatchOpen("toggle")}
-      className="w-full"
-    >
-      <CollapsibleTrigger asChild>
-        <div
-          ref={groupRef}
-          className={cn(
-            "w-full rounded-2xl border px-3 py-2.5 text-sm transition-all cursor-pointer select-none hover:bg-muted/30",
-            groupState === "running" &&
-              "border-blue-200/80 bg-blue-50/55 dark:border-blue-900 dark:bg-blue-950/20",
-            groupState === "success" &&
-              "border-slate-200/80 bg-white/82 dark:border-zinc-800 dark:bg-zinc-900/70",
-            groupState === "pending" &&
-              "border-slate-200/80 bg-white/80 dark:border-zinc-800 dark:bg-zinc-900/65",
-            containsRecentApproval &&
-              "border-emerald-300 bg-emerald-50/70 shadow-[0_0_0_3px_rgba(16,185,129,0.14)] dark:border-emerald-700 dark:bg-emerald-950/20",
+    <div className="w-full mb-2">
+      <div
+        ref={groupRef}
+        onClick={() => dispatchOpen("toggle")}
+        className={cn(
+          "inline-flex items-center gap-2 py-1.5 px-3 rounded-full border transition-all cursor-pointer select-none",
+          groupState === "running"
+            ? "border-blue-200 bg-blue-50/30 dark:border-blue-900/50"
+            : "border-[var(--hairline)] bg-transparent hover:border-[var(--ink-2)]",
+          containsRecentApproval &&
+            "border-emerald-300 bg-emerald-50/70 shadow-[0_0_0_3px_rgba(16,185,129,0.14)] dark:border-emerald-700 dark:bg-emerald-950/20",
+        )}
+      >
+        <ToolStateGlyph state={groupState} />
+        <div className="flex items-center gap-2 overflow-hidden">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--ink)] whitespace-nowrap">
+            {t(summaryKey, { count: toolCalls.length })}
+          </span>
+          {summary?.highlights && (
+            <span className="text-[11px] font-mono text-[var(--ink-3)] truncate opacity-70 max-w-[120px] sm:max-w-[200px]">
+              / {summary.highlights}
+            </span>
           )}
-        >
-          <div className="flex items-start gap-3">
-            <div className="pt-0.5">
-              <ToolStateGlyph state={groupState} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-semibold text-foreground">
-                  {t(summaryKey, { count: toolCalls.length })}
-                </span>
-                <Badge
-                  variant="outline"
-                  className="h-5 text-[10px] font-normal text-muted-foreground"
-                >
-                  {summary?.allInternal ? "Skill" : "MCP"}
-                </Badge>
-              </div>
-              <div className="mt-1 truncate text-[12px] text-muted-foreground">
-                {summary?.highlights || "-"}
-              </div>
-            </div>
-            <div className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-muted-foreground">
-              <span>
-                {t(isOpen ? "toolGroup.collapse" : "toolGroup.expand")}
-              </span>
-              <ChevronDown
-                size={14}
-                className={cn(
-                  "transition-transform duration-200",
-                  !isOpen && "-rotate-90",
-                )}
+        </div>
+        <ChevronDown
+          size={12}
+          className={cn(
+            "text-[var(--ink-3)] transition-transform duration-200",
+            !isOpen && "-rotate-90",
+          )}
+        />
+      </div>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden mt-2 space-y-1 pl-4 border-l border-[var(--hairline)]"
+          >
+            {toolCalls.map(({ part, index }) => (
+              <ToolCallBlock
+                key={`tool-${index}`}
+                messageId={messageId}
+                callId={part.callId}
+                name={part.toolName}
+                args={part.toolArgs}
+                status={part.status}
+                resultBlock={part.callId ? resultMap.get(part.callId) : undefined}
+                uiBlocks={
+                  part.callId ? uiBlocksByCallId.get(part.callId) : undefined
+                }
               />
-            </div>
-          </div>
-        </div>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="mt-3 space-y-2">
-          {toolCalls.map(({ part, index }) => (
-            <ToolCallBlock
-              key={`tool-${index}`}
-              messageId={messageId}
-              callId={part.callId}
-              name={part.toolName}
-              args={part.toolArgs}
-              status={part.status}
-              resultBlock={part.callId ? resultMap.get(part.callId) : undefined}
-              uiBlocks={
-                part.callId ? uiBlocksByCallId.get(part.callId) : undefined
-              }
-            />
-          ))}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 });
 
@@ -1555,117 +1494,73 @@ export const ToolResultBlock = memo<{
       : "success";
 
   return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
-      <CollapsibleTrigger asChild>
-        <div className="w-full">
-          <div className="flex items-stretch gap-3">
-            <div className="flex w-5 shrink-0 flex-col items-center">
-              <div className="pt-0.5">
-                <ToolStateGlyph state={visualState} />
-              </div>
-              <span
-                className={cn(
-                  "mt-1 w-px flex-1 min-h-4",
-                  isError
-                    ? "bg-red-200 dark:bg-red-900"
-                    : isPendingApproval
-                      ? "bg-amber-200 dark:bg-amber-900"
-                      : "bg-emerald-200 dark:bg-emerald-900",
-                )}
-              />
-            </div>
-            <div
-              className={cn(
-                "min-w-0 flex-1 rounded-2xl border px-3 py-2.5 text-sm transition-all cursor-pointer select-none hover:bg-muted/30",
-                isError
-                  ? "border-red-200/80 bg-red-50/55 dark:border-red-900 dark:bg-red-950/20"
-                  : isPendingApproval
-                    ? "border-amber-200/80 bg-amber-50/55 dark:border-amber-900 dark:bg-amber-950/20"
-                    : "border-slate-200/80 bg-white/85 dark:border-zinc-800 dark:bg-zinc-900/70",
-              )}
-            >
-              <div className="flex items-start gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="truncate text-sm font-semibold text-foreground">
-                      {title}
-                    </span>
-                    <Badge
-                      variant="outline"
-                      className="h-5 text-[10px] font-normal text-muted-foreground shrink-0"
-                    >
-                      {isError
-                        ? "ERROR"
-                        : isPendingApproval
-                          ? "APPROVAL"
-                          : "OUTPUT"}
-                    </Badge>
-                  </div>
+    <div className="w-full mb-2">
+      <div 
+        onClick={() => setIsOpen(!isOpen)}
+        className={cn(
+          "inline-flex items-center gap-2 py-1.5 px-3 rounded-full border transition-all select-none cursor-pointer",
+          isError
+            ? "border-red-200 bg-red-50/30 dark:border-red-900/50"
+            : "border-[var(--hairline)] bg-transparent hover:border-[var(--ink-2)]"
+        )}
+      >
+        <ToolStateGlyph state={visualState} />
+        <div className="flex items-center gap-2 overflow-hidden">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--ink)] whitespace-nowrap">
+            {title}
+          </span>
+          {preview && (
+            <span className="text-[11px] font-mono text-[var(--ink-3)] truncate opacity-70 max-w-[120px] sm:max-w-[200px]">
+              / {toInlinePreview(preview, 48)}
+            </span>
+          )}
+        </div>
+        <ChevronDown
+          size={12}
+          className={cn(
+            "text-[var(--ink-3)] transition-transform duration-200",
+            !isOpen && "-rotate-90",
+          )}
+        />
+      </div>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="mt-2 ml-4 p-4 rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg)]">
+              {skillInstallInsight ? (
+                <SkillInstallStatusCard insight={skillInstallInsight} />
+              ) : localCodeSnippetInsight ? (
+                <LocalCodeSnippetResultCard insight={localCodeSnippetInsight} />
+              ) : shellExecutionInsight ? (
+                <ShellExecutionResultCard insight={shellExecutionInsight} />
+              ) : content ? (
+                <div className="space-y-3">
                   {preview ? (
-                    <div className="mt-1 truncate text-[12px] text-muted-foreground">
+                    <div className="mb-3 rounded-lg bg-[var(--panel-bg)] px-3 py-2 text-xs text-[var(--ink-3)] border border-[var(--hairline)]">
                       {preview}
                     </div>
                   ) : null}
-                </div>
-                <div className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-muted-foreground">
-                  <span>
-                    {t(isOpen ? "toolGroup.collapse" : "toolGroup.expand")}
-                  </span>
-                  <ChevronDown
-                    size={14}
-                    className={cn(
-                      "transition-transform duration-200",
-                      !isOpen && "-rotate-90",
-                    )}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="mt-2 ml-8">
-          <div
-            className={cn(
-              "rounded-2xl border p-3 text-sm overflow-hidden",
-              isError
-                ? "border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-900/20"
-                : isPendingApproval
-                  ? "border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-900/20"
-                  : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-900/20",
-            )}
-          >
-            {skillInstallInsight ? (
-              <SkillInstallStatusCard insight={skillInstallInsight} />
-            ) : localCodeSnippetInsight ? (
-              <LocalCodeSnippetResultCard insight={localCodeSnippetInsight} />
-            ) : shellExecutionInsight ? (
-              <ShellExecutionResultCard insight={shellExecutionInsight} />
-            ) : content ? (
-              <>
-                {preview ? (
-                  <div className="mb-3 rounded-xl bg-background/70 px-3 py-2 text-xs text-muted-foreground">
-                    {preview}
+                  <div className="overflow-x-auto">
+                    <MarkdownViewer
+                      content={content}
+                      className="chat-markdown chat-markdown-assistant text-sm"
+                    />
                   </div>
-                ) : null}
-                <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                  Raw output
                 </div>
-                <div className="overflow-x-auto">
-                  <MarkdownViewer
-                    content={content}
-                    className="chat-markdown chat-markdown-assistant text-sm"
-                  />
-                </div>
-              </>
-            ) : (
-              <div className="text-xs text-muted-foreground">No output</div>
-            )}
-            <ToolDebugPanel debug={debug} />
-          </div>
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
+              ) : (
+                <div className="text-xs text-[var(--ink-3)]">No output</div>
+              )}
+              <ToolDebugPanel debug={debug} />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 });

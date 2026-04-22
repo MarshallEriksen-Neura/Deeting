@@ -53,7 +53,7 @@ pub(crate) async fn request_local_auxiliary_text(
     provider_model_id: &str,
     model_id: &str,
     prompt: &str,
-    max_tokens: u32,
+    max_tokens: Option<u32>,
     session_id: Option<&str>,
 ) -> Result<Option<String>, String> {
     let response = request_provider_chat_completion(
@@ -69,7 +69,7 @@ pub(crate) async fn request_local_auxiliary_text(
         }],
         None,
         Some(LOCAL_CONVERSATION_AUXILIARY_TEMPERATURE),
-        Some(max_tokens),
+        max_tokens,
         None,
         session_id,
     )
@@ -95,7 +95,7 @@ pub(crate) async fn generate_local_conversation_title_with_model(
         provider_model_id,
         model_id,
         &prompt,
-        LOCAL_CONVERSATION_TOPIC_NAMING_MAX_TOKENS,
+        Some(LOCAL_CONVERSATION_TOPIC_NAMING_MAX_TOKENS),
         session_id,
     )
     .await?;
@@ -137,7 +137,7 @@ pub(crate) async fn generate_local_conversation_summary_with_model(
         provider_model_id,
         model_id,
         &prompt,
-        LOCAL_CONVERSATION_SUMMARY_MAX_TOKENS,
+        Some(LOCAL_CONVERSATION_SUMMARY_MAX_TOKENS),
         session_id,
     )
     .await?;

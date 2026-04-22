@@ -261,7 +261,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
             shouldRevealCallChain={shouldRevealCallChain}
           />
 
-          {hasContent ? (
+          {(hasContent || hasToolActivity) && (
             <motion.div
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
@@ -436,7 +436,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                 </motion.div>
               ) : null}
             </motion.div>
-          ) : null}
+          )}
         </div>
       </div>
     );

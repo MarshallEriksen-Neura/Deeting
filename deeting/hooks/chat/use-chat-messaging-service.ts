@@ -877,6 +877,14 @@ export function useChatMessagingService() {
     const trimmedInput = draft.input.trim()
     if (!trimmedInput && draft.attachments.length === 0) return false
 
+    // ==========================================
+    // 关键并发保护：如果当前正在请求，先取消旧请求
+    // ==========================================
+    if (useChatRuntimeStore.getState().isLoading) {
+      console.log("[ChatRuntime] Interrupting active request for new message");
+      await cancelActiveRequest();
+    }
+
     const currentMessages = useChatStore.getState().messages
     let dispatchedToConversation = false
     const selectedModel =
