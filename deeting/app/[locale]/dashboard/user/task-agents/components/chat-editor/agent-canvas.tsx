@@ -13,7 +13,7 @@ import styles from "./agent-canvas.module.css"
 type Translation = (key: string, values?: Record<string, string | number>) => string
 
 /* ------------------------------------------------------------------ */
-/*  Inline name input — transparent, editable in place                 */
+/*  Inline name input — editorial display face                         */
 /* ------------------------------------------------------------------ */
 function InlineNameInput({
   value,
@@ -39,7 +39,7 @@ function InlineNameInput({
 }
 
 /* ------------------------------------------------------------------ */
-/*  Toggle pill — Live / Public indicator with dot                    */
+/*  Status pill — dot + icon + label                                   */
 /* ------------------------------------------------------------------ */
 function TogglePill({
   checked,
@@ -79,7 +79,7 @@ function TogglePill({
 }
 
 /* ------------------------------------------------------------------ */
-/*  Description strip — collapsed by default, click to expand         */
+/*  Description — inline paragraph, click to edit                      */
 /* ------------------------------------------------------------------ */
 function DescriptionStrip({
   t,
@@ -132,7 +132,7 @@ function DescriptionStrip({
 }
 
 /* ------------------------------------------------------------------ */
-/*  Tag chips — preview parsed tags + a single inline input           */
+/*  Tag chips                                                          */
 /* ------------------------------------------------------------------ */
 function TagChips({
   t,
@@ -209,7 +209,7 @@ function TagChips({
 }
 
 /* ------------------------------------------------------------------ */
-/*  Main canvas                                                       */
+/*  Main canvas                                                        */
 /* ------------------------------------------------------------------ */
 type AgentCanvasProps = {
   t: Translation
@@ -247,20 +247,20 @@ export function AgentCanvas({
 
   return (
     <div className={styles.root}>
-      {/* ── Identity ─────────────────────────────────────────── */}
-      <section className={styles.identity}>
+      {/* Hero — avatar, name, status cluster, description */}
+      <section className={styles.hero}>
         <div className={styles.avatar}>
           <Bot />
         </div>
 
-        <div className={styles.identityBody}>
-          <div className={styles.nameRow}>
+        <div className={styles.heroBody}>
+          <div className={styles.heroHead}>
             <InlineNameInput
               value={draft.name}
               onChange={(next) => updateDraft("name", next)}
               placeholder={t("editor.placeholders.name")}
             />
-            <div className={styles.toggleGroup}>
+            <div className={styles.statusCluster}>
               <TogglePill
                 checked={draft.is_enabled}
                 onChange={(next) => updateDraft("is_enabled", next)}
@@ -290,11 +290,13 @@ export function AgentCanvas({
         </div>
       </section>
 
-      {/* ── Meta rail ────────────────────────────────────────── */}
+      <div className={styles.rule} />
+
+      {/* Meta — engine owns its own row, type + tags share the next */}
       <section className={styles.meta}>
-        <div className={styles.metaCell}>
+        <div className={styles.metaField}>
           <span className={styles.metaLabel}>Engine</span>
-          <div className={styles.metaValue}>
+          <div className={styles.metaEngine}>
             <TaskAgentModelPickerField
               t={t}
               taskAgentModelSelectValue={taskAgentModelSelectValue}
@@ -307,19 +309,17 @@ export function AgentCanvas({
           </div>
         </div>
 
-        <div className={styles.metaCell}>
-          <span className={styles.metaLabel}>Type</span>
-          <div className={styles.metaValue}>
+        <div className={styles.metaSplit}>
+          <div className={styles.metaField}>
+            <span className={styles.metaLabel}>Type</span>
             <span className={styles.typePill}>
               <MessageSquare />
               {t("badges.chat")}
             </span>
           </div>
-        </div>
 
-        <div className={styles.metaCell}>
-          <span className={styles.metaLabel}>Tags</span>
-          <div className={styles.metaValue}>
+          <div className={styles.metaField}>
+            <span className={styles.metaLabel}>Tags</span>
             <TagChips
               t={t}
               value={draft.tags_input}
@@ -329,7 +329,9 @@ export function AgentCanvas({
         </div>
       </section>
 
-      {/* ── Prompt hero ──────────────────────────────────────── */}
+      <div className={styles.rule} />
+
+      {/* Prompt */}
       <section className={styles.prompt}>
         <header className={styles.promptHead}>
           <span className={styles.promptLabel}>

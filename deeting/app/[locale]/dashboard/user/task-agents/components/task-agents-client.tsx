@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import * as React from "react"
 import { useTranslations } from "next-intl"
@@ -202,10 +202,10 @@ export function TaskAgentsClient() {
         </aside>
 
         {/* Central Workspace: Terminal Editor */}
-        <main className="flex-1 flex flex-col min-w-0 bg-[var(--panel-bg)] overflow-hidden relative">
+        <main className="flex-1 flex flex-col min-w-0 bg-[var(--window-bg)] overflow-hidden relative">
           <Tabs value={activeWorkspaceTab} onValueChange={(v) => setActiveWorkspaceTab(v as any)} className="flex-1 flex flex-col min-h-0">
             {isStarterState ? (
-              <div className="flex-1 overflow-y-auto p-12 flex items-center justify-center bg-[var(--panel-bg-inset)]/10">
+              <div className="flex-1 overflow-y-auto p-12 flex items-center justify-center bg-[var(--panel-bg-inset)]/20">
                 <div className="max-w-3xl w-full">
                   <TaskAgentTypeStarter t={t} onSelect={handleSelectNewAgentType} />
                 </div>
@@ -213,7 +213,7 @@ export function TaskAgentsClient() {
             ) : (
               <>
                 {/* Workspace Tabs Header */}
-                <div className="flex h-[48px] flex-none items-center justify-between border-b border-[var(--hairline)] bg-[var(--panel-bg)] px-6">
+                <div className="flex h-[48px] flex-none items-center justify-between border-b border-[var(--hairline)] bg-[var(--panel-bg-inset)]/30 backdrop-blur-md px-6">
                   <nav className="flex items-center gap-1">
                     {[
                       { id: "config", label: t("tabs.config"), icon: Terminal },
@@ -269,14 +269,20 @@ export function TaskAgentsClient() {
                 {/* Editor Surface */}
                 <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-[var(--panel-bg-inset)]/40">
                   <div className="max-w-[960px] mx-auto space-y-8">
-                    {/* Revision meta — compact strip (identity lives in AgentCanvas) */}
+                    {/* Revision eyebrow — editorial masthead strip */}
                     {selectedAgent ? (
-                      <div className="flex items-center gap-3 opacity-40">
-                        <span className="ws-num text-[10px] uppercase font-medium">REV-{agentVersion(selectedAgent)}</span>
-                        <div className="size-1 rounded-full bg-[var(--ink-4)]" />
-                        <span className="ws-meta text-[9px] font-medium uppercase tracking-tighter">
-                          Last Sync: {dateFormatter.format(new Date(selectedAgent.updated_at))}
+                      <div className="flex items-center gap-2 text-[var(--ink-4)]">
+                        <span className="font-mono text-[10px] font-bold tabular-nums tracking-[0.16em]">
+                          REV-{agentVersion(selectedAgent)}
                         </span>
+                        <span className="size-[3px] rounded-full bg-current opacity-60" />
+                        <span className="text-[9px] font-semibold uppercase tracking-[0.22em]">
+                          Last Sync
+                        </span>
+                        <span className="font-mono text-[10px] font-medium tabular-nums tracking-tight text-[var(--ink-3)]">
+                          {dateFormatter.format(new Date(selectedAgent.updated_at))}
+                        </span>
+                        <div className="ml-auto h-px flex-1 bg-[var(--hairline-subtle)]" />
                       </div>
                     ) : null}
 
@@ -466,3 +472,4 @@ function agentVersion(agent: any) {
   if (!agent) return "001";
   return String(agent.version || "1").padStart(3, '0');
 }
+

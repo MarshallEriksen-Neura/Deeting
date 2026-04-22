@@ -1,7 +1,7 @@
-"use client"
+﻿"use client"
 
 import { useMemo, useState } from "react"
-import { Check, Coins, Search } from "lucide-react"
+import { Check, Search } from "lucide-react"
 import { Button } from "@/components/ui/shadcn/button"
 import { Input } from "@/components/ui/shadcn/input"
 import { ScrollArea } from "@/components/ui/shadcn/scroll-area"
@@ -158,9 +158,6 @@ export function ModelPicker({
                 >
                   <div className="flex items-center justify-between px-3 py-2 text-[10px] uppercase tracking-[0.18em] text-[var(--ink-3)]">
                     <span className="flex items-center gap-1.5 font-black">
-                      {group.is_platform && (
-                        <Coins className="h-3 w-3 text-amber-500" />
-                      )}
                       {group.instance_name}
                     </span>
                     {group.provider ? (
@@ -206,12 +203,7 @@ export function ModelPicker({
                             </span>
                             <span className="flex min-w-0 flex-col text-left leading-tight">
                               <span className="truncate text-[11px] font-semibold">{model.id}</span>
-                              {model.is_platform && model.pricing ? (
-                                <span className="truncate text-[9px] text-amber-600 dark:text-amber-400">
-                                  {model.pricing.input_per_1k != null ? `in ${model.pricing.input_per_1k}` : ""}{model.pricing.input_per_1k != null && model.pricing.output_per_1k != null ? " / " : ""}{model.pricing.output_per_1k != null ? `out ${model.pricing.output_per_1k}` : ""}
-                                  <span className="ml-0.5 text-[var(--ink-4)]">/1K</span>
-                                </span>
-                              ) : model.owned_by ? (
+                              {model.owned_by ? (
                                 <span className="truncate text-[9px] text-[var(--ink-4)]">
                                   {model.owned_by}
                                 </span>
@@ -236,3 +228,6 @@ export function ModelPicker({
     </div>
   )
 }
+
+
+

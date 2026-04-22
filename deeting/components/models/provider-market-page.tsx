@@ -182,19 +182,10 @@ export function ProviderMarketPage() {
               );
             })}
           </nav>
-          
-          <div className="mt-8 px-2">
-             <div className="rounded-xl border border-dashed border-[var(--hairline-strong)] p-4 text-center">
-                <p className="ws-caption mb-3">{t("grid.requestProvider")}</p>
-                <button className="ws-control text-xs text-[var(--accent-ink)] hover:underline">
-                   Request
-                </button>
-             </div>
-          </div>
         </aside>
 
         {/* Content Area */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar bg-[var(--panel-bg)]">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar bg-[var(--window-bg)]">
           <div className="p-6">
             {isLoading ? (
               <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">

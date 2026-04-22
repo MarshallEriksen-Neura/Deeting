@@ -1,38 +1,53 @@
 "use client";
 
 import * as React from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Play, Pencil, Check, X, AlertTriangle, Lock, Loader2, ShoppingCart, Copy, Eye, Zap } from "lucide-react";
+import { Play, Lock, Eye, Zap } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/shadcn/badge";
 import { Switch } from "@/components/ui/shadcn/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
 import type { ProviderModel, ModelCapability } from "./types";
-import { CAPABILITY_META, formatContextWindow, formatPrice, getPriceColor } from "./types";
+import { CAPABILITY_META, formatPrice } from "./types";
 
 interface ModelDataStripProps {
   model: ProviderModel;
-  index: number;
   onTest: (model: ProviderModel) => void;
   onToggleActive: (model: ProviderModel, active: boolean) => void;
-  onUpdateAlias: (model: ProviderModel, alias: string) => void;
-  onPurchase?: (model: ProviderModel) => void;
   onRowClick?: (model: ProviderModel) => void;
   isExpanded?: boolean;
   readOnly?: boolean;
-  isPurchasing?: boolean;
+}
+
+function getModelStatusTone(model: ProviderModel) {
+  if (model.is_locked) {
+    return {
+      label: "Locked",
+      className: "border-[var(--warn-border)] bg-[var(--warn-soft)] text-[var(--warn)]",
+    };
+  }
+
+  if (model.is_active) {
+    return {
+      label: "Active",
+      className: "border-[var(--ok-border)] bg-[var(--ok-soft)] text-[var(--ok)]",
+    };
+  }
+
+  return {
+    label: "Disabled",
+    className: "border-[var(--hairline)] bg-[var(--panel-bg-inset)] text-[var(--ink-3)]",
+  };
 }
 
 function CapabilityIcons({ capabilities }: { capabilities: ModelCapability[] }) {
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex flex-wrap items-center gap-1.5">
       {capabilities.slice(0, 3).map((capability) => (
         <TooltipProvider key={capability}>
           <Tooltip>
             <TooltipTrigger asChild>
               <span 
-                className="flex size-6 items-center justify-center rounded-lg bg-[var(--panel-bg-inset)] border border-[var(--hairline)] text-[10px] font-bold text-[var(--ink-3)] transition-colors hover:border-[var(--hairline-strong)] hover:text-[var(--ink)]"
+                className="flex h-6 min-w-0 items-center justify-center rounded-full border border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-2.5 text-[10px] font-semibold text-[var(--ink-3)] transition-colors hover:border-[var(--hairline-strong)] hover:text-[var(--ink)]"
               >
                 {CAPABILITY_META[capability].icon}
               </span>
@@ -50,110 +65,93 @@ function CapabilityIcons({ capabilities }: { capabilities: ModelCapability[] }) 
   );
 }
 
-function ContextWindowBar({ tokens, maxTokens = 200000 }: { tokens: number; maxTokens?: number }) {
-  const percentage = Math.min((tokens / maxTokens) * 100, 100);
-  return (
-    <div className="flex min-w-[100px] items-center gap-3">
-      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--panel-bg-inset)] border border-[var(--hairline-subtle)]">
-        <motion.div 
-          initial={{ width: 0 }}
-          animate={{ width: `${percentage}%` }}
-          className="h-full bg-[var(--accent-strong)] opacity-60 rounded-full" 
-        />
-      </div>
-      <span className="ws-num text-[11px] text-[var(--ink-2)] font-medium w-10 text-right">{formatContextWindow(tokens)}</span>
-    </div>
-  );
-}
-
 export function ModelDataStrip({ 
   model, 
-  index, 
   onTest, 
   onToggleActive, 
-  onUpdateAlias, 
-  onPurchase, 
   onRowClick, 
   isExpanded, 
-  readOnly = false, 
-  isPurchasing = false 
+  readOnly = false 
 }: ModelDataStripProps) {
-  const t = useTranslations("models");
   const isLocked = model.is_locked === true;
   const stopPropagation = React.useCallback((e: React.SyntheticEvent) => e.stopPropagation(), []);
+  const statusTone = getModelStatusTone(model);
 
   return (
     <div 
       onClick={() => onRowClick?.(model)}
       className={cn(
-        "group relative flex items-center gap-6 px-6 py-3 transition-all cursor-pointer border-b border-[var(--hairline-subtle)]",
+        "group relative grid cursor-pointer grid-cols-[minmax(0,1.9fr)_minmax(120px,0.95fr)_minmax(148px,1fr)_auto] items-center gap-4 px-5 py-4 transition-all md:px-6",
         !model.is_active && "bg-[var(--panel-bg-inset)]/20",
-        isExpanded ? "bg-[var(--accent-soft)]/40 shadow-[inset_0_0_0_1px_var(--accent-border)]" : "hover:bg-[var(--panel-bg-inset)]/40"
+        isExpanded ? "bg-[var(--accent-soft)]/36 shadow-[inset_0_0_0_1px_var(--accent-border)]" : "hover:bg-[var(--panel-bg-inset)]/42"
       )}
     >
       {/* Indicator Rail */}
-      {isExpanded && <div className="absolute left-0 top-3 bottom-3 w-1 bg-[var(--accent-strong)] rounded-r-full shadow-[0_0_8px_var(--accent-strong)]" />}
+      {isExpanded && <div className="absolute left-0 top-3 bottom-3 w-1 rounded-r-full bg-[var(--accent-strong)] shadow-[0_0_8px_var(--accent-strong)]" />}
 
       {/* Primary Info */}
-      <div className="flex flex-1 items-center gap-4 min-w-0">
-        <div className="flex flex-col min-w-0">
-          <div className="flex items-center gap-2">
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
             <span className={cn(
-               "ws-num text-[13px] font-bold truncate transition-colors",
+               "ws-num truncate text-[14px] font-semibold transition-colors",
                model.is_active ? "text-[var(--ink)]" : "text-[var(--ink-3)]"
             )}>{model.id}</span>
             {isLocked && <Lock className="size-3 text-[var(--warn)]" />}
             {model.weight > 0 && <Zap className="size-3 text-[var(--ok)] fill-[var(--ok)] opacity-60" />}
+            </div>
+            <div className="mt-1 flex min-w-0 items-center gap-2">
+              <span className="truncate text-[11px] font-medium text-[var(--ink-3)]">{model.display_name || "-"}</span>
+              <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", statusTone.className)}>
+                {statusTone.label}
+              </span>
+            </div>
           </div>
-          <span className="ws-caption truncate text-[11px] font-medium opacity-70">{model.display_name || "-"}</span>
         </div>
       </div>
 
       {/* Metrics Columns */}
-      <div className="hidden w-28 md:block flex-none">
+      <div className="hidden md:block">
         <CapabilityIcons capabilities={model.capabilities} />
       </div>
-      
-      <div className="hidden w-36 lg:block flex-none">
-        <ContextWindowBar tokens={model.context_window} />
-      </div>
 
-      <div className="hidden w-24 md:block flex-none">
-         <div className="flex flex-col items-end gap-0.5">
-            <div className="flex items-center gap-1">
-               <span className="ws-meta text-[8px] opacity-40">IN</span>
-               <span className="ws-num text-[11px] font-bold text-[var(--ok)]">{formatPrice(model.pricing.input)}</span>
+      <div className="hidden md:block">
+         <div className="flex flex-col gap-1 rounded-2xl border border-[var(--hairline-subtle)] bg-[var(--panel-bg-inset)]/55 px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+               <span className="ws-meta text-[8px] uppercase tracking-[0.16em] opacity-45">In</span>
+               <span className="ws-num text-[11px] font-semibold text-[var(--ok)]">{formatPrice(model.pricing.input)}</span>
             </div>
-            <div className="flex items-center gap-1">
-               <span className="ws-meta text-[8px] opacity-40">OUT</span>
-               <span className="ws-num text-[11px] font-bold text-[var(--warn)]">{formatPrice(model.pricing.output)}</span>
+            <div className="flex items-center justify-between gap-2">
+               <span className="ws-meta text-[8px] uppercase tracking-[0.16em] opacity-45">Out</span>
+               <span className="ws-num text-[11px] font-semibold text-[var(--warn)]">{formatPrice(model.pricing.output)}</span>
             </div>
          </div>
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-3 flex-none ml-auto">
-        <div onClick={stopPropagation} className="flex items-center">
+      <div className="ml-auto flex items-center gap-2 self-center">
+        <div onClick={stopPropagation} className="hidden items-center sm:flex">
           <Switch 
             checked={model.is_active} 
             onCheckedChange={(checked) => onToggleActive(model, checked)}
-            className="data-[state=checked]:bg-[var(--accent-strong)] scale-90"
+            className="scale-90 data-[state=checked]:bg-[var(--accent-strong)]"
             disabled={readOnly || isLocked}
           />
         </div>
         
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+        <div className="flex items-center gap-1 opacity-100 transition-all md:opacity-0 md:group-hover:opacity-100">
           <button 
             onClick={(e) => { stopPropagation(e); onTest(model); }}
-            className="p-1.5 rounded-lg hover:bg-[var(--accent-soft)] text-[var(--accent-ink)] transition-colors"
+            className="rounded-xl p-2 text-[var(--accent-ink)] transition-colors hover:bg-[var(--accent-soft)]"
           >
-            <Play className="size-4" />
+            <Play className="size-3.5" />
           </button>
 
           <button 
-            className="p-1.5 rounded-lg hover:bg-[var(--panel-bg-inset)] text-[var(--ink-3)] transition-colors"
+            className="rounded-xl p-2 text-[var(--ink-3)] transition-colors hover:bg-[var(--panel-bg-inset)]"
           >
-            <Eye className="size-4" />
+            <Eye className="size-3.5" />
           </button>
         </div>
       </div>
@@ -165,10 +163,8 @@ interface ModelMatrixProps {
   models: ProviderModel[];
   onTest: (model: ProviderModel) => void;
   onToggleActive: (model: ProviderModel, active: boolean) => void;
-  onUpdateAlias: (model: ProviderModel, alias: string) => void;
-  onPurchase?: (model: ProviderModel) => void;
   readOnly?: boolean;
-  purchasingModelUuid?: string | null;
+  selectedModelId?: string | null;
   className?: string;
   onRowClick?: (model: ProviderModel) => void;
 }
@@ -177,38 +173,32 @@ export function ModelMatrix({
   models, 
   onTest, 
   onToggleActive, 
-  onUpdateAlias, 
-  onPurchase, 
   readOnly = false, 
-  purchasingModelUuid = null, 
+  selectedModelId = null,
   onRowClick,
   className 
 }: ModelMatrixProps) {
   const t = useTranslations("models");
   
   return (
-    <div className={cn("flex flex-col bg-[var(--panel-bg)] rounded-xl overflow-hidden border border-[var(--hairline)]", className)}>
+    <div className={cn("flex flex-col overflow-hidden rounded-[24px] border border-[var(--hairline)] bg-[var(--panel-bg)]", className)}>
       {/* Header */}
-      <div className="flex items-center gap-6 px-6 py-2.5 bg-[var(--panel-bg-inset)]/50 border-b border-[var(--hairline)]">
-        <div className="flex-1 ws-meta text-[10px] tracking-wider">{t("list.header.id")}</div>
-        <div className="hidden w-28 md:block ws-meta text-[10px] tracking-wider">{t("list.header.capabilities")}</div>
-        <div className="hidden w-36 lg:block ws-meta text-[10px] tracking-wider">{t("list.header.context")}</div>
-        <div className="hidden w-24 md:block ws-meta text-[10px] tracking-wider text-right">{t("list.header.pricing")}</div>
-        <div className="w-24 ws-meta text-[10px] tracking-wider text-right">OPERATIONS</div>
+      <div className="grid grid-cols-[minmax(0,1.9fr)_minmax(120px,0.95fr)_minmax(148px,1fr)_auto] items-center gap-4 border-b border-[var(--hairline)] bg-[var(--panel-bg-inset)]/55 px-5 py-3 md:px-6">
+        <div className="ws-meta text-[10px] tracking-[0.18em]">{t("list.header.id")}</div>
+        <div className="hidden ws-meta text-[10px] tracking-[0.18em] md:block">{t("list.header.capabilities")}</div>
+        <div className="hidden ws-meta text-[10px] tracking-[0.18em] md:block">{t("list.header.pricing")}</div>
+        <div className="ws-meta text-right text-[10px] tracking-[0.18em]">Status</div>
       </div>
 
       <div className="flex flex-col divide-y divide-[var(--hairline-subtle)]">
-        {models.map((model, index) => (
+        {models.map((model) => (
           <ModelDataStrip 
             key={model.id} 
             model={model} 
-            index={index} 
             onTest={onTest} 
             onToggleActive={onToggleActive} 
-            onUpdateAlias={onUpdateAlias} 
-            onPurchase={onPurchase} 
             readOnly={readOnly} 
-            isPurchasing={purchasingModelUuid === model.uuid}
+            isExpanded={selectedModelId === model.id}
             onRowClick={onRowClick}
           />
         ))}

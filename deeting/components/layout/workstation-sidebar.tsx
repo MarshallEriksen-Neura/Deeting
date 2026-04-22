@@ -73,12 +73,12 @@ const NAV_GROUPS: NavGroup[] = [
     titleKey: "nav.automationAndObservability",
     items: [
       { id: "security-policy", labelKey: "nav.securityPolicy", icon: Activity, disabled: true },
-      { id: "monitors", labelKey: "nav.monitors", icon: Activity, disabled: true },
-      { id: "notification-channels", labelKey: "nav.notificationChannels", icon: Bell, disabled: true },
+      { id: "monitors", href: "/dashboard/monitors", labelKey: "nav.monitors", icon: Activity },
+      { id: "notification-channels", href: "/dashboard/notification-channels", labelKey: "nav.notificationChannels", icon: Bell },
       { id: "monitoring", labelKey: "nav.monitoring", icon: Activity, disabled: true },
-      { id: "bandit", labelKey: "nav.bandit", icon: Activity, disabled: true },
-      { id: "task-learning", labelKey: "nav.taskLearning", icon: Activity, disabled: true },
-      { id: "logs", labelKey: "nav.logs", icon: Activity, disabled: true },
+      { id: "bandit", href: "/dashboard/bandit", labelKey: "nav.bandit", icon: Activity },
+      { id: "task-learning", href: "/dashboard/task-learning", labelKey: "nav.taskLearning", icon: Activity },
+      { id: "logs", href: "/dashboard/logs", labelKey: "nav.logs", icon: Activity },
     ],
   },
   {

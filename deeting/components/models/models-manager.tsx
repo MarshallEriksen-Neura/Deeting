@@ -2,11 +2,10 @@
 
 import * as React from "react"
 import { useTranslations } from "next-intl"
-import { RefreshCw, AlertCircle, Sparkles, X, Settings2, Database, Zap } from "lucide-react"
+import { RefreshCw, Sparkles, X, Database, Zap } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
 
 import { useProviderModels, useSyncProviderModels, useProviderInstances, useUpdateProviderModel, useTestProviderModel, useQuickAddProviderModels, useProviderModelPurchase } from "@/hooks/use-providers"
-import { GlassButton } from "@/components/ui/common/glass-button"
 import {
   hasVersionedPath,
   resolveOpenAICompatibleBaseUrl,
@@ -56,7 +55,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
   
   // Data Fetching
   const { instances, mutate: mutateInstance } = useProviderInstances()
-  const { models, isLoading, isError, error, mutate: mutateModels } = useProviderModels(instanceId)
+  const { models, isLoading, mutate: mutateModels } = useProviderModels(instanceId)
   
   // Actions
   const { sync } = useSyncProviderModels()
@@ -248,6 +247,11 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
     [filteredModels, selectedModelId]
   )
 
+  const providerHost = React.useMemo(() => {
+    if (!instance?.base_url) return ""
+    return instance.base_url.replace(/^https?:\/\//, "").split("/")[0] ?? ""
+  }, [instance?.base_url])
+
   const handleToggleActive = React.useCallback(async (model: ProviderModel, active: boolean) => {
     try {
       await updateModel(model.uuid, { is_active: active })
@@ -364,7 +368,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden py-6 gap-6">
+    <div className="flex h-full flex-col gap-6 overflow-hidden px-5 py-6 xl:px-6">
       {/* Dashboard Stats */}
       <div className="flex-none">
         {instance && (
@@ -376,7 +380,6 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
               last_sync: instance.last_synced_at ?? null,
               error: null,
             }}
-            onSync={handleSync}
             onSettings={() => setEditDrawerOpen(true)}
           />
         )}
@@ -385,37 +388,43 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
       {/* Main Workspace with Filter & Matrix */}
       <div className="flex-1 flex flex-col min-h-0">
         {/* Workspace Toolbar */}
-        <div className="flex-none flex items-center justify-between mb-4 px-2">
-          <div className="flex items-center gap-3">
-            <div className="size-8 rounded-xl bg-[var(--accent-soft)] flex items-center justify-center border border-[var(--accent-border)] shadow-sm">
-               <Database className="size-4 text-[var(--accent-strong)]" />
-            </div>
-            <div className="flex flex-col">
-               <h2 className="ws-pane-title text-[14px]">NEURAL CORE MATRIX</h2>
-               <div className="flex items-center gap-2">
-                  <span className="ws-meta text-[9px] tracking-tight opacity-50">MANAGING BRAIN MODEL REGISTRY</span>
-                  <Badge variant="secondary" className="ws-num text-[10px] h-4 bg-[var(--panel-bg-inset)] text-[var(--ink-4)] border-[var(--hairline)]">
+        <div className="mb-3 flex-none rounded-[24px] border border-[var(--hairline)] bg-[var(--panel-bg)]/88 px-4 py-4 shadow-[0_18px_40px_-28px_rgba(15,17,28,0.28)] backdrop-blur-xl">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="mt-0.5 flex size-10 flex-none items-center justify-center rounded-2xl border border-[var(--accent-border)] bg-[var(--accent-soft)] shadow-sm">
+                 <Database className="size-4.5 text-[var(--accent-strong)]" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="ws-pane-title text-[18px] tracking-tight">{t("title")}</h2>
+                  <Badge variant="secondary" className="h-6 rounded-full border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-2.5 text-[10px] font-medium text-[var(--ink-3)]">
                     {filteredModels.length} / {normalizedModels.length}
                   </Badge>
-               </div>
+                </div>
+                <p className="ws-body mt-1 truncate text-xs text-[var(--ink-3)]">
+                  {instance?.name}
+                  {providerHost ? ` · ${providerHost}` : ""}
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
+
+            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
             <button 
               onClick={() => setQuickAddOpen(true)} 
-              className="ws-control h-8 px-4 rounded-lg bg-[var(--panel-bg)] border border-[var(--hairline)] text-[11px] font-bold flex items-center gap-2 hover:bg-[var(--panel-bg-inset)] hover:border-[var(--hairline-strong)] transition-all active:scale-95"
+              className="ws-control inline-flex h-9 items-center gap-2 rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg)] px-4 text-[12px] font-semibold text-[var(--ink-2)] transition-all hover:border-[var(--hairline-strong)] hover:bg-[var(--panel-bg-inset)] active:scale-[0.98]"
             >
               <Sparkles className="size-3.5 text-[var(--accent-strong)]" />
-              {t("quickAdd.cta").toUpperCase()}
+              {t("quickAdd.cta")}
             </button>
             <button 
               onClick={handleSync} 
               disabled={isSyncing}
-              className="ws-control h-8 px-4 rounded-lg bg-[var(--panel-bg)] border border-[var(--hairline)] text-[11px] font-bold flex items-center gap-2 hover:bg-[var(--panel-bg-inset)] hover:border-[var(--hairline-strong)] transition-all active:scale-95 disabled:opacity-50"
+              className="ws-control inline-flex h-9 items-center gap-2 rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg)] px-4 text-[12px] font-semibold text-[var(--ink)] transition-all hover:border-[var(--hairline-strong)] hover:bg-[var(--panel-bg-inset)] active:scale-[0.98] disabled:opacity-50"
             >
               <RefreshCw className={cn("size-3.5 text-[var(--ok)]", isSyncing && "animate-spin")} />
-              SYNC REGISTRY
+              {t("instance.syncModels")}
             </button>
+            </div>
           </div>
         </div>
 
@@ -425,14 +434,11 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
           onFiltersChange={setFilters}
           totalModels={normalizedModels.length}
           filteredCount={filteredModels.length}
-          onBatchUpdateCapabilities={async (caps) => {
-             toast.info("Batch update not implemented in this view refactor")
-          }}
-          className="mb-2"
+          className="mb-3"
         />
 
         {/* Scrollable Model Grid */}
-        <div className="flex-1 overflow-y-auto relative custom-scrollbar pr-1 mt-2">
+        <div className="relative mt-1 flex-1 overflow-y-auto custom-scrollbar">
           {normalizedModels.length > 0 ? (
             <ModelMatrix
               models={filteredModels}
@@ -442,8 +448,9 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
               onPurchase={handlePurchaseModel}
               readOnly={instance?.is_public === true}
               purchasingModelUuid={purchasingModelUuid}
+              selectedModelId={selectedModelId}
               onRowClick={(model) => setSelectedModelId(model.id)}
-              className="mb-6 shadow-xl shadow-black/5 border-none" 
+              className="mb-6 shadow-[0_20px_45px_-30px_rgba(15,17,28,0.25)]" 
             />
           ) : (
             <ModelEmptyState 
