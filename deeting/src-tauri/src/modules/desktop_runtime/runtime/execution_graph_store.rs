@@ -2,6 +2,15 @@ use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::McpStore;
 use sqlx::Row;
 
+const SQLITE_BUSY_RETRY_DELAYS_MS: [u64; 3] = [150, 400, 900];
+
+fn is_sqlite_busy_error(err: &McpError) -> bool {
+    let text = err.to_string().to_ascii_lowercase();
+    text.contains("database is locked")
+        || text.contains("sqlite_busy")
+        || text.contains("(code: 5)")
+}
+
 pub(crate) const DESKTOP_EXECUTION_GRAPH_SCHEMA_VERSION_KEY: &str =
     "desktop.runtime.execution_graph.schema_version";
 pub(crate) const DESKTOP_EXECUTION_GRAPH_BOOTSTRAP_KEY: &str =
@@ -137,6 +146,48 @@ pub(crate) async fn migrate_execution_graph_runtime_bootstrap(
 }
 
 pub(crate) async fn persist_execution_graph_snapshot(
+    store: &McpStore,
+    execution_graph: &serde_json::Value,
+    session_id: &str,
+    source_kind: &str,
+    request_id: Option<&str>,
+    status: Option<&str>,
+) -> Result<(), McpError> {
+    let execution_id = execution_graph
+        .get("execution_id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("unknown")
+        .to_string();
+    let mut attempt = 0usize;
+    loop {
+        match persist_execution_graph_snapshot_once(
+            store, execution_graph, session_id, source_kind, request_id, status,
+        )
+        .await
+        {
+            Ok(()) => return Ok(()),
+            Err(err)
+                if is_sqlite_busy_error(&err)
+                    && attempt < SQLITE_BUSY_RETRY_DELAYS_MS.len() =>
+            {
+                let delay_ms = SQLITE_BUSY_RETRY_DELAYS_MS[attempt];
+                attempt += 1;
+                log::warn!(
+                    "persist_execution_graph_snapshot busy retry execution_id={} attempt={} delay_ms={}",
+                    execution_id,
+                    attempt,
+                    delay_ms
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+            }
+            Err(err) => return Err(err),
+        }
+    }
+}
+
+async fn persist_execution_graph_snapshot_once(
     store: &McpStore,
     execution_graph: &serde_json::Value,
     session_id: &str,
@@ -384,6 +435,38 @@ pub(crate) async fn persist_execution_graph_runtime_context(
     if normalized_execution_id.is_empty() {
         return Err(McpError::validation("execution_id is required"));
     }
+    let mut attempt = 0usize;
+    loop {
+        match persist_execution_graph_runtime_context_once(
+            store, normalized_execution_id, context,
+        )
+        .await
+        {
+            Ok(()) => return Ok(()),
+            Err(err)
+                if is_sqlite_busy_error(&err)
+                    && attempt < SQLITE_BUSY_RETRY_DELAYS_MS.len() =>
+            {
+                let delay_ms = SQLITE_BUSY_RETRY_DELAYS_MS[attempt];
+                attempt += 1;
+                log::warn!(
+                    "persist_execution_graph_runtime_context busy retry execution_id={} attempt={} delay_ms={}",
+                    normalized_execution_id,
+                    attempt,
+                    delay_ms
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+            }
+            Err(err) => return Err(err),
+        }
+    }
+}
+
+async fn persist_execution_graph_runtime_context_once(
+    store: &McpStore,
+    normalized_execution_id: &str,
+    context: &serde_json::Value,
+) -> Result<(), McpError> {
     let context_json =
         serde_json::to_string(context).map_err(|err| McpError::Storage(err.to_string()))?;
     let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
@@ -441,6 +524,33 @@ pub(crate) async fn delete_execution_graph_runtime_context(
     if normalized_execution_id.is_empty() {
         return Ok(());
     }
+    let mut attempt = 0usize;
+    loop {
+        match delete_execution_graph_runtime_context_once(store, normalized_execution_id).await {
+            Ok(()) => return Ok(()),
+            Err(err)
+                if is_sqlite_busy_error(&err)
+                    && attempt < SQLITE_BUSY_RETRY_DELAYS_MS.len() =>
+            {
+                let delay_ms = SQLITE_BUSY_RETRY_DELAYS_MS[attempt];
+                attempt += 1;
+                log::warn!(
+                    "delete_execution_graph_runtime_context busy retry execution_id={} attempt={} delay_ms={}",
+                    normalized_execution_id,
+                    attempt,
+                    delay_ms
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+            }
+            Err(err) => return Err(err),
+        }
+    }
+}
+
+async fn delete_execution_graph_runtime_context_once(
+    store: &McpStore,
+    normalized_execution_id: &str,
+) -> Result<(), McpError> {
     sqlx::query("DELETE FROM local_execution_graph_runtime_context WHERE execution_id = ?")
         .bind(normalized_execution_id)
         .execute(&store.write_pool)

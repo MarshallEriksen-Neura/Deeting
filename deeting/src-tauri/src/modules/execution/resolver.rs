@@ -58,6 +58,7 @@ pub fn resolve_request(
         ExecutionMode::Shell => {
             let command = match (command, program) {
                 (Some(command), _) => {
+                    let command = flatten_bash_continuations(&command);
                     if request.args.is_empty() {
                         command
                     } else {
@@ -156,7 +157,10 @@ fn resolve_shell(request: &ExecutionRequest, text: &str) -> ExecutionShell {
 
 #[cfg(target_os = "windows")]
 fn auto_shell_for_text(text: &str) -> ExecutionShell {
-    if looks_like_powershell(text) || contains_non_ascii(text) {
+    if looks_like_powershell(text)
+        || contains_non_ascii(text)
+        || looks_like_bash(text)
+    {
         ExecutionShell::Powershell
     } else {
         ExecutionShell::Cmd
@@ -196,9 +200,59 @@ fn contains_non_ascii(text: &str) -> bool {
     text.chars().any(|ch| !ch.is_ascii())
 }
 
+#[cfg(target_os = "windows")]
+fn looks_like_bash(text: &str) -> bool {
+    let t = text.trim();
+    // bash 风格的行继续符（\ 后跟换行）
+    if t.contains("\\\n") || t.contains("\\\r\n") {
+        return true;
+    }
+    // 单引号字符串：bash 常用，但 cmd 不支持单引号作为引号
+    if t.contains('\'') && !t.contains('"') {
+        return true;
+    }
+    false
+}
+
+/// 将 bash 风格的 \ 行继续符扁平化为单行。
+/// 例如 `"curl ... \\\n  -H ..."` → `"curl ... -H ..."`
+fn flatten_bash_continuations(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            // 跳过 \ 后面的空格/Tab
+            while matches!(chars.peek(), Some(' ') | Some('\t')) {
+                chars.next();
+            }
+            // 如果遇到换行，说明是续行符
+            if matches!(chars.peek(), Some('\n') | Some('\r')) {
+                if chars.peek() == Some(&'\r') {
+                    chars.next();
+                }
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                // 跳过新行前面的缩进
+                while matches!(chars.peek(), Some(' ') | Some('\t')) {
+                    chars.next();
+                }
+                if !result.is_empty() && !result.ends_with(' ') {
+                    result.push(' ');
+                }
+                continue;
+            }
+        }
+        result.push(ch);
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
-    use super::resolve_request;
+    use super::{flatten_bash_continuations, resolve_request};
+    #[cfg(target_os = "windows")]
+    use super::looks_like_bash;
     use crate::modules::execution::{ExecutionMode, ExecutionRequest, ExecutionShell};
 
     #[test]
@@ -232,5 +286,75 @@ mod tests {
         };
         let plan = resolve_request(&request).expect("resolve shell plan");
         assert_eq!(plan.shell_family, Some(ExecutionShell::Powershell));
+    }
+
+    #[test]
+    fn flatten_bash_continuations_removes_backslash_newline() {
+        assert_eq!(
+            flatten_bash_continuations("curl hello \\\n  -H foo"),
+            "curl hello -H foo"
+        );
+    }
+
+    #[test]
+    fn flatten_bash_continuations_handles_crlf() {
+        assert_eq!(
+            flatten_bash_continuations("curl hello \\\r\n  -H foo"),
+            "curl hello -H foo"
+        );
+    }
+
+    #[test]
+    fn flatten_bash_continuations_preserves_non_continuation_backslash() {
+        assert_eq!(
+            flatten_bash_continuations("echo path\\to\\file"),
+            "echo path\\to\\file"
+        );
+    }
+
+    #[test]
+    fn flatten_bash_continuations_handles_multiple_continuations() {
+        assert_eq!(
+            flatten_bash_continuations("a \\\n  b \\\n  c"),
+            "a b c"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn looks_like_bash_detects_continuation() {
+        assert!(looks_like_bash("curl \\\n  -H foo"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn looks_like_bash_detects_single_quotes() {
+        assert!(looks_like_bash("echo 'hello world'"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn looks_like_bash_ignores_double_quoted_text() {
+        // 包含双引号时认为不是纯 bash 单引号风格
+        assert!(!looks_like_bash("echo \"hello world\""));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn resolve_request_prefers_powershell_for_bash_curl_command() {
+        let request = ExecutionRequest {
+            command: Some("curl -s -X POST https://example.com/hello \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"k\":\"v\"}'".to_string()),
+            ..ExecutionRequest::default()
+        };
+        let plan = resolve_request(&request).expect("resolve shell plan");
+        assert_eq!(plan.mode, ExecutionMode::Shell);
+        assert_eq!(plan.shell_family, Some(ExecutionShell::Powershell));
+        // 验证续行被扁平化
+        if let super::ResolvedInvocation::Shell { command, .. } = &plan.invocation {
+            assert!(!command.contains('\\'));
+            assert!(command.contains("-H 'Content-Type: application/json'"));
+        } else {
+            panic!("expected Shell invocation");
+        }
     }
 }

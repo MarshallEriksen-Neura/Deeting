@@ -104,6 +104,7 @@
       "download": "下载"
     },
     "nav": {
+      "admin": "管理后台",
       "main": "主要",
       "workspace": "当前工作区",
       "modelsAndAgents": "模型与智能体",

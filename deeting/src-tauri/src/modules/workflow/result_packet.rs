@@ -6,7 +6,7 @@ use crate::modules::workflow::types::{
     FollowupHints, ResultJson, ResultOutputs, ResultPacket, WorkerExecutionResult,
 };
 
-const MAX_SUMMARY_CHARS: usize = 2000;
+const MAX_SUMMARY_CHARS: usize = usize::MAX;
 
 pub fn build_result_summary(content: &str) -> String {
     if content.chars().count() <= MAX_SUMMARY_CHARS {

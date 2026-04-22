@@ -4,7 +4,7 @@ use crate::modules::mcp::commands::support::*;
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) const LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE: &str =
     "LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED";
-const LOCAL_TOOL_LOOP_RESULTS_MAX_CHARS: usize = 8000;
+const LOCAL_TOOL_LOOP_RESULTS_MAX_CHARS: usize = usize::MAX;
 
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn build_local_tool_call_install_gate_error_meta(

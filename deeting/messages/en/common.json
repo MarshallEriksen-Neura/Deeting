@@ -104,6 +104,7 @@
       "download": "Download"
     },
     "nav": {
+      "admin": "Admin",
       "main": "Main",
       "workspace": "Current Workspace",
       "modelsAndAgents": "Models & Agents",
