@@ -7,10 +7,11 @@ import sharp from "sharp";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
-const sourceIcon = path.resolve(projectRoot, "public/images/app-icon.svg");
+const sourceIcon = path.resolve(projectRoot, "app/icon0.svg");
 const tauriIconsDir = path.resolve(projectRoot, "src-tauri/icons");
 const publicDir = path.resolve(projectRoot, "public");
 const tempDir = path.resolve(projectRoot, ".tmp/icon-build");
+const normalizedSourceIcon = path.join(tempDir, "source-icon.png");
 const isWindows = process.platform === "win32";
 
 function resolveTauriCommand() {
@@ -24,7 +25,17 @@ function resolveTauriCommand() {
 }
 
 function runCommand(command, args) {
-  const result = spawnSync(command, args, {
+  let executable = command;
+  let spawnArgs = args;
+
+  if (isWindows && /\.(cmd|bat)$/i.test(command)) {
+    const quote = (value) =>
+      /[\s"]/u.test(value) ? `"${value.replaceAll("\"", "\"\"")}"` : value;
+    executable = "cmd.exe";
+    spawnArgs = ["/d", "/s", "/c", [command, ...args].map(quote).join(" ")];
+  }
+
+  const result = spawnSync(executable, spawnArgs, {
     cwd: projectRoot,
     stdio: "inherit",
     shell: false,
@@ -32,8 +43,18 @@ function runCommand(command, args) {
 
   if (result.error) throw result.error;
   if (result.status !== 0) {
-    throw new Error(`Command failed: ${command} ${args.join(" ")}`);
+    throw new Error(`Command failed: ${executable} ${spawnArgs.join(" ")}`);
   }
+}
+
+async function normalizeSourceIcon() {
+  await sharp(sourceIcon)
+    .resize(1024, 1024, {
+      fit: "contain",
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
+    .png()
+    .toFile(normalizedSourceIcon);
 }
 
 function brandBackgroundSvg(width, height) {
@@ -155,13 +176,14 @@ async function main() {
 
   rmSync(tempDir, { recursive: true, force: true });
   mkdirSync(tempDir, { recursive: true });
+  await normalizeSourceIcon();
 
   const tauri = resolveTauriCommand();
-  runCommand(tauri, ["icon", sourceIcon, "-o", tauriIconsDir]);
+  runCommand(tauri, ["icon", normalizedSourceIcon, "-o", tauriIconsDir]);
 
   const pwaDir = path.join(tempDir, "pwa");
   mkdirSync(pwaDir, { recursive: true });
-  runCommand(tauri, ["icon", sourceIcon, "-o", pwaDir, "-p", "192", "-p", "512"]);
+  runCommand(tauri, ["icon", normalizedSourceIcon, "-o", pwaDir, "-p", "192", "-p", "512"]);
 
   copyFileSync(path.join(pwaDir, "192x192.png"), path.join(publicDir, "web-app-manifest-192x192.png"));
   copyFileSync(path.join(pwaDir, "512x512.png"), path.join(publicDir, "web-app-manifest-512x512.png"));
@@ -175,7 +197,7 @@ async function main() {
   }
 
   rmSync(tempDir, { recursive: true, force: true });
-  console.log("[desktop:icon] Generated desktop, PWA, and NSIS icons from public/images/app-icon.svg");
+  console.log("[desktop:icon] Generated desktop, PWA, and NSIS icons from app/icon0.svg");
 }
 
 main().catch((error) => {
