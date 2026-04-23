@@ -548,51 +548,114 @@ export function ExternalSourceCard({
 
           <Separator className="bg-border/40" />
 
-          {/* Records footer */}
-          <div className="relative overflow-hidden rounded-xl border border-border/40 bg-gradient-to-br from-muted/30 via-muted/10 to-background px-4 py-4 transition-colors group-hover:from-muted/40">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <p className="text-sm font-semibold text-foreground">
-                    {t("ecosystem.records.title")}
-                  </p>
-                  <Badge
-                    variant="outline"
-                    className="rounded-full border-border/50 px-2 py-0 text-[11px] font-normal text-muted-foreground"
-                  >
-                    {t("ecosystem.records.count", { count: records.length })}
-                  </Badge>
-                </div>
-                <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                  {isLoadingRecords ? (
-                    <>
-                      <RefreshCcw className="h-3 w-3 animate-spin" />
-                      {t("ecosystem.records.loading")}
-                    </>
-                  ) : source.last_synced_at ? (
-                    <>
-                      <span className="inline-block h-1 w-1 rounded-full bg-emerald-500" />
-                      {t("ecosystem.records.lastSynced", {
-                        timestamp: source.last_synced_at,
-                      })}
-                    </>
-                  ) : (
-                    t("ecosystem.records.notSynced")
-                  )}
-                </p>
-              </div>
-              <Button
+          {/* Records collapsible */}
+          <Collapsible
+            open={recordsExpanded}
+            onOpenChange={setRecordsExpanded}
+          >
+            <CollapsibleTrigger asChild>
+              <button
                 type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setRecordsDrawerOpen(true)}
-                className="rounded-xl border-border/60 bg-background/70"
+                className="flex w-full items-center justify-between gap-4 rounded-xl border border-border/40 bg-gradient-to-br from-muted/30 via-muted/10 to-background px-4 py-3.5 text-left transition-all hover:from-muted/40"
               >
-                <ClipboardList className="mr-2 h-4 w-4" />
-                {t("ecosystem.records.viewRecords")}
-              </Button>
-            </div>
-          </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <p className="text-sm font-semibold text-foreground">
+                      {t("ecosystem.records.title")}
+                    </p>
+                    <Badge
+                      variant="outline"
+                      className="rounded-full border-border/50 px-2 py-0 text-[11px] font-normal text-muted-foreground"
+                    >
+                      {t("ecosystem.records.count", { count: records.length })}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    {isLoadingRecords ? (
+                      <>
+                        <RefreshCcw className="h-3 w-3 animate-spin" />
+                        {t("ecosystem.records.loading")}
+                      </>
+                    ) : source.last_synced_at ? (
+                      <>
+                        <span className="inline-block h-1 w-1 rounded-full bg-emerald-500" />
+                        {t("ecosystem.records.lastSynced", {
+                          timestamp: source.last_synced_at,
+                        })}
+                      </>
+                    ) : (
+                      t("ecosystem.records.notSynced")
+                    )}
+                  </p>
+                </div>
+                <div
+                  className={cn(
+                    "flex shrink-0 items-center justify-center rounded-lg border border-border/50 bg-background/70 p-1.5 text-muted-foreground transition-transform duration-300",
+                    recordsExpanded && "rotate-180",
+                  )}
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </div>
+              </button>
+            </CollapsibleTrigger>
+
+            <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+              <div className="mt-3 space-y-2">
+                {isLoadingRecords ? (
+                  <div className="flex items-center gap-2 rounded-xl border border-dashed border-border/50 px-4 py-6 text-xs text-muted-foreground">
+                    <RefreshCcw className="h-3.5 w-3.5 animate-spin" />
+                    {t("ecosystem.records.loading")}
+                  </div>
+                ) : records.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border/50 px-4 py-6 text-center text-xs text-muted-foreground">
+                    {t("ecosystem.records.empty")}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {records.slice(0, 5).map((record) => (
+                      <div
+                        key={record.id}
+                        className="flex items-center justify-between gap-3 rounded-xl border border-border/30 bg-background/60 px-3.5 py-2.5 transition-colors hover:bg-muted/30"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-foreground">
+                            {record.source_asset_id}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {record.asset_family} · {formatObservedAt(record.observed_at_unix_ms)}
+                          </p>
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 rounded-full text-[10px] font-normal"
+                        >
+                          {record.translation_status}
+                        </Badge>
+                      </div>
+                    ))}
+                    {records.length > 5 && (
+                      <p className="px-1 text-xs text-muted-foreground">
+                        {t("ecosystem.records.andMore", {
+                          count: records.length - 5,
+                        })}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRecordsDrawerOpen(true)}
+                  className="w-full rounded-xl border-border/60 bg-background/70"
+                >
+                  <ClipboardList className="mr-2 h-4 w-4" />
+                  {t("ecosystem.records.viewRecords")}
+                </Button>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
         </div>
       </div>
       <Sheet
