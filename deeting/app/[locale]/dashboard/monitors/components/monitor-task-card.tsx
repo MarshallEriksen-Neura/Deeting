@@ -9,6 +9,10 @@ import {
   RotateCw,
   Trash2,
   Wrench,
+  Clock,
+  Cpu,
+  CalendarClock,
+  Zap,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -57,20 +61,67 @@ export function MonitorTaskCard({
 
   const statusMeta = useMemo(
     () => ({
-      active: { label: t("monitors.taskCard.status.active"), tone: "text-emerald-700" },
-      paused: { label: t("monitors.taskCard.status.paused"), tone: "text-amber-700" },
-      failed_suspended: { label: t("monitors.taskCard.status.failedSuspended"), tone: "text-red-700" },
-      binding_required: { label: t("monitors.taskCard.status.bindingRequired"), tone: "text-amber-700" },
-      binding_invalid: { label: t("monitors.taskCard.status.bindingInvalid"), tone: "text-red-700" },
+      active: {
+        label: t("monitors.taskCard.status.active"),
+        tone: "text-emerald-700",
+        bg: "bg-emerald-50",
+        border: "border-emerald-200",
+        dot: "bg-emerald-500",
+        glow: "shadow-[0_0_10px_rgba(16,185,129,0.45)]",
+      },
+      paused: {
+        label: t("monitors.taskCard.status.paused"),
+        tone: "text-amber-700",
+        bg: "bg-amber-50",
+        border: "border-amber-200",
+        dot: "bg-amber-500",
+        glow: "shadow-[0_0_10px_rgba(245,158,11,0.45)]",
+      },
+      failed_suspended: {
+        label: t("monitors.taskCard.status.failedSuspended"),
+        tone: "text-red-700",
+        bg: "bg-red-50",
+        border: "border-red-200",
+        dot: "bg-red-500",
+        glow: "shadow-[0_0_10px_rgba(239,68,68,0.45)]",
+      },
+      binding_required: {
+        label: t("monitors.taskCard.status.bindingRequired"),
+        tone: "text-amber-700",
+        bg: "bg-amber-50",
+        border: "border-amber-200",
+        dot: "bg-amber-500",
+        glow: "shadow-[0_0_10px_rgba(245,158,11,0.45)]",
+      },
+      binding_invalid: {
+        label: t("monitors.taskCard.status.bindingInvalid"),
+        tone: "text-red-700",
+        bg: "bg-red-50",
+        border: "border-red-200",
+        dot: "bg-red-500",
+        glow: "shadow-[0_0_10px_rgba(239,68,68,0.45)]",
+      },
     }),
     [t],
   )
 
-  const analysisModeLabel = useMemo(
+  const analysisModeMeta = useMemo(
     () => ({
-      concise: t("monitors.modal.analysisModes.concise.label"),
-      deep: t("monitors.modal.analysisModes.deep.label"),
-      alert_first: t("monitors.modal.analysisModes.alertFirst.label"),
+      concise: {
+        label: t("monitors.modal.analysisModes.concise.label"),
+        icon: Zap,
+        tone: "text-sky-700 bg-sky-50 border-sky-200",
+      },
+      deep: {
+        label: t("monitors.modal.analysisModes.deep.label"),
+        icon: Cpu,
+        tone: "text-violet-700 bg-violet-50 border-violet-200",
+      },
+      alert_first: {
+        label: t("monitors.modal.analysisModes.alertFirst.label"),
+        icon: Clock,
+        tone: "text-rose-700 bg-rose-50 border-rose-200",
+      },
     }),
     [t],
   )
@@ -103,116 +154,135 @@ export function MonitorTaskCard({
     }
   }
 
-  const ledColor =
-    task.display_status === "active"
-      ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"
-      : task.display_status === "paused"
-        ? "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]"
-        : "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]"
+  const meta = statusMeta[task.display_status]
+  const modeMeta = analysisModeMeta[task.analysis_mode]
+  const ModeIcon = modeMeta.icon
 
   return (
     <>
-      <div className="group flex h-full flex-col bg-[color:var(--card)] p-6 transition-colors hover:bg-muted/30">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-2">
-            <div className={cn("size-1.5 rounded-full", ledColor)} />
-            <span className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">
-              {statusMeta[task.display_status].label}
-            </span>
-          </div>
-          <div className="flex gap-1.5">
-            <Badge
-              variant="outline"
-              className="rounded-sm border-[color:var(--border)] px-1.5 py-0 text-[10px] font-medium"
+      <div className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md">
+        {/* Top accent bar */}
+        <div
+          className={cn(
+            "h-1 w-full transition-colors duration-500",
+            meta.dot,
+            task.display_status === "active" && "opacity-80",
+          )}
+        />
+
+        <div className="flex flex-1 flex-col p-5">
+          {/* Header */}
+          <div className="flex items-start justify-between">
+            <div
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold tracking-wider uppercase",
+                meta.bg,
+                meta.border,
+                meta.tone,
+              )}
             >
-              {analysisModeLabel[task.analysis_mode]}
-            </Badge>
+              <span className={cn("size-1.5 rounded-full", meta.dot, meta.glow)} />
+              {meta.label}
+            </div>
+            <div
+              className={cn(
+                "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-semibold",
+                modeMeta.tone,
+              )}
+            >
+              <ModeIcon className="size-3" />
+              {modeMeta.label}
+            </div>
+          </div>
+
+          {/* Title & Objective */}
+          <div className="mt-4">
+            <h3 className="line-clamp-1 text-[15px] font-semibold leading-snug tracking-tight text-foreground">
+              {task.title}
+            </h3>
+            <p className="mt-1.5 line-clamp-2 text-[12px] leading-relaxed text-muted-foreground">
+              {task.objective}
+            </p>
+          </div>
+
+          {/* Meta Grid */}
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <MetaItem
+              icon={<CalendarClock className="size-3" />}
+              label={t("monitors.taskCard.labels.frequency")}
+              value={formatInterval(task.current_interval_minutes, t)}
+            />
+            <MetaItem
+              icon={<Zap className="size-3" />}
+              label={t("monitors.taskCard.labels.tokens")}
+              value={formatNumber(task.total_tokens)}
+            />
+            <MetaItem
+              icon={
+                <span
+                  className={cn(
+                    "size-2 rounded-full",
+                    bindingReady ? "bg-emerald-500" : "bg-amber-500",
+                  )}
+                />
+              }
+              label={t("monitors.taskCard.labels.agentBinding")}
+              value={task.task_agent_name || task.assistant_name || t("monitors.taskCard.systemBase")}
+            />
+            <MetaItem
+              icon={<Clock className="size-3" />}
+              label={t("monitors.taskCard.labels.nextScheduled")}
+              value={
+                task.next_run_at
+                  ? formatDateTime(task.next_run_at, locale)
+                  : t("monitors.taskCard.pending")
+              }
+            />
           </div>
         </div>
 
-        <div className="mt-4 flex-1">
-          <h3 className="line-clamp-1 text-sm font-semibold tracking-tight text-foreground">
-            {task.title}
-          </h3>
-          <p className="mt-1.5 line-clamp-2 text-[12px] leading-relaxed text-muted-foreground">
-            {task.objective}
-          </p>
-
-          <div className="mt-5 grid grid-cols-2 gap-x-8 gap-y-4 border-t border-[color:var(--border)] pt-4">
-            <div className="space-y-1">
-              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                {t("monitors.taskCard.labels.frequency")}
-              </span>
-              <p className="text-xs font-medium">{formatInterval(task.current_interval_minutes, t)}</p>
-            </div>
-            <div className="space-y-1">
-              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                {t("monitors.taskCard.labels.tokens")}
-              </span>
-              <p className="text-xs font-medium">{formatNumber(task.total_tokens)}</p>
-            </div>
-            <div className="space-y-1">
-              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                {t("monitors.taskCard.labels.agentBinding")}
-              </span>
-              <div className="flex items-center gap-1.5">
-                <span className={cn("size-1 rounded-full", bindingReady ? "bg-emerald-500" : "bg-amber-500")} />
-                <p className="truncate text-xs font-medium">
-                  {task.task_agent_name || task.assistant_name || t("monitors.taskCard.systemBase")}
-                </p>
-              </div>
-            </div>
-            <div className="space-y-1">
-              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                {t("monitors.taskCard.labels.nextScheduled")}
-              </span>
-              <p className="text-xs font-medium">
-                {task.next_run_at ? formatDateTime(task.next_run_at, locale) : t("monitors.taskCard.pending")}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6 flex items-center justify-between border-t border-[color:var(--border)] pt-4">
-          <div className="flex gap-1">
-            <button
+        {/* Footer Actions */}
+        <div className="flex items-center justify-between border-t border-[color:var(--border)] bg-muted/20 px-5 py-3">
+          <div className="flex items-center gap-1">
+            <IconButton
               onClick={() => onViewLogs(task.id)}
-              className="flex size-7 items-center justify-center rounded border border-[color:var(--border)] transition-colors hover:bg-muted"
               title={t("monitors.taskCard.actions.logs")}
-            >
-              <FileText className="size-3.5" />
-            </button>
-            <button
+              icon={<FileText className="size-3.5" />}
+            />
+            <IconButton
               onClick={() => onEdit(task)}
-              className="flex size-7 items-center justify-center rounded border border-[color:var(--border)] transition-colors hover:bg-muted"
               title={t("monitors.taskCard.actions.edit")}
-            >
-              <Wrench className="size-3.5" />
-            </button>
-            <button
+              icon={<Wrench className="size-3.5" />}
+            />
+            <IconButton
               onClick={() => setDeleteOpen(true)}
-              className="flex size-7 items-center justify-center rounded border border-[color:var(--border)] text-destructive transition-colors hover:bg-destructive/10"
               title={t("monitors.taskCard.actions.delete")}
-            >
-              <Trash2 className="size-3.5" />
-            </button>
+              icon={<Trash2 className="size-3.5" />}
+              destructive
+            />
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="sm"
               onClick={() => void onTrigger(task)}
               disabled={acting || isTriggering || task.status !== "active" || !bindingReady}
-              className="h-8 border-[color:var(--border)] px-3 text-[11px] font-medium"
+              className="h-8 gap-1.5 rounded-lg border-[color:var(--border)] bg-[color:var(--card)] px-3 text-[11px] font-semibold shadow-sm transition-all hover:bg-muted hover:shadow"
             >
-              <RotateCw className={cn("mr-1.5 size-3", isTriggering && "animate-spin")} />
+              <RotateCw className={cn("size-3", isTriggering && "animate-spin")} />
               {t("monitors.taskCard.actions.triggerNow")}
             </Button>
             <button
               onClick={() => void handleToggle()}
               disabled={acting || isTriggering || (!bindingReady && task.status !== "active")}
-              className="flex items-center gap-1.5 px-2 text-[11px] font-bold tracking-wider text-primary uppercase transition-opacity hover:opacity-80 disabled:opacity-50"
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold tracking-wider uppercase transition-all",
+                task.status === "active"
+                  ? "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200"
+                  : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200",
+                "disabled:opacity-40",
+              )}
             >
               {task.status === "active" ? (
                 <>
@@ -247,6 +317,54 @@ export function MonitorTaskCard({
         </AlertDialogContent>
       </AlertDialog>
     </>
+  )
+}
+
+function MetaItem({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string
+}) {
+  return (
+    <div className="flex items-start gap-2.5 rounded-lg bg-muted/40 p-2.5 transition-colors group-hover:bg-muted/60">
+      <div className="mt-0.5 flex shrink-0 text-muted-foreground">{icon}</div>
+      <div className="min-w-0">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          {label}
+        </p>
+        <p className="mt-0.5 truncate text-[11px] font-medium text-foreground">{value}</p>
+      </div>
+    </div>
+  )
+}
+
+function IconButton({
+  onClick,
+  title,
+  icon,
+  destructive,
+}: {
+  onClick: () => void
+  title: string
+  icon: React.ReactNode
+  destructive?: boolean
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={cn(
+        "flex size-8 items-center justify-center rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] text-muted-foreground transition-all duration-200",
+        "hover:scale-105 hover:text-foreground hover:shadow-sm",
+        destructive && "hover:border-red-300 hover:bg-red-50 hover:text-red-600",
+      )}
+    >
+      {icon}
+    </button>
   )
 }
 

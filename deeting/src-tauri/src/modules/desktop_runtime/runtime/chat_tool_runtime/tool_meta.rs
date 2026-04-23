@@ -6,17 +6,46 @@ pub(super) fn enrich_response_with_tool_trace(
     tool_trace_streamed: bool,
     runtime_metrics: &RuntimeMetricsAccumulator,
 ) -> serde_json::Value {
-    if !tool_call_meta.is_empty() {
-        response["tool_trace_blocks"] =
-            serde_json::Value::Array(build_local_tool_trace_blocks(tool_call_meta));
-    } else if response.get("tool_trace_blocks").is_none() {
-        if let Some(execution_graph) = response.get("execution_graph") {
-            let graph_blocks = project_execution_graph_blocks_from_value(execution_graph);
-            if !graph_blocks.is_empty() {
-                response["tool_trace_blocks"] = serde_json::Value::Array(graph_blocks);
-            }
+    let mut trace_blocks = if !tool_call_meta.is_empty() {
+        build_local_tool_trace_blocks(tool_call_meta)
+    } else {
+        response
+            .get("tool_trace_blocks")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_else(|| {
+                if let Some(execution_graph) = response.get("execution_graph") {
+                    project_execution_graph_blocks_from_value(execution_graph)
+                } else {
+                    Vec::new()
+                }
+            })
+    };
+
+    if let Some(reasoning) = response
+        .get("reasoning_content")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        let has_thought_block = trace_blocks
+            .iter()
+            .any(|block| block.get("type").and_then(|v| v.as_str()) == Some("thought"));
+        if !has_thought_block {
+            trace_blocks.insert(
+                0,
+                serde_json::json!({
+                    "type": "thought",
+                    "content": reasoning,
+                }),
+            );
         }
     }
+
+    if !trace_blocks.is_empty() {
+        response["tool_trace_blocks"] = serde_json::Value::Array(trace_blocks);
+    }
+
     if tool_trace_streamed {
         response["tool_trace_streamed"] = serde_json::json!(true);
     }

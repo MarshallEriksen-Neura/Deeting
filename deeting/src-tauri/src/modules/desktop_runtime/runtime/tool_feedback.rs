@@ -67,6 +67,55 @@ pub(crate) fn extract_chat_tool_calls(response: &serde_json::Value) -> Vec<Local
             }
         }
     }
+
+    // Fallback: Parse tool calls from reasoning_content if official tool_calls is empty
+    if calls.is_empty() {
+        if let Some(reasoning) = response.get("reasoning_content").and_then(|v| v.as_str()) {
+            let mut current_pos = 0;
+            while let Some(begin_idx) = reasoning[current_pos..].find("<|tool_call_begin|>") {
+                let absolute_begin = current_pos + begin_idx;
+                let name_start = absolute_begin + "<|tool_call_begin|>".len();
+
+                let Some(arg_begin_idx) =
+                    reasoning[name_start..].find("<|tool_call_argument_begin|>")
+                else {
+                    break;
+                };
+                let absolute_arg_begin = name_start + arg_begin_idx;
+                let raw_name = reasoning[name_start..absolute_arg_begin].trim();
+
+                let arg_json_start = absolute_arg_begin + "<|tool_call_argument_begin|>".len();
+                let Some(end_idx) = reasoning[arg_json_start..].find("<|tool_call_end|>") else {
+                    break;
+                };
+                let absolute_end = arg_json_start + end_idx;
+                let arg_json = reasoning[arg_json_start..absolute_end].trim();
+
+                current_pos = absolute_end + "<|tool_call_end|>".len();
+
+                if !raw_name.is_empty() {
+                    let (name, id) = if let Some(colon_idx) = raw_name.find(':') {
+                        (
+                            raw_name[..colon_idx].to_string(),
+                            Some(raw_name[colon_idx + 1..].to_string()),
+                        )
+                    } else {
+                        (raw_name.to_string(), None)
+                    };
+
+                    let arguments =
+                        serde_json::from_str(arg_json).unwrap_or_else(|_| serde_json::json!({}));
+                    calls.push(LocalChatToolCall {
+                        id,
+                        name,
+                        arguments,
+                        extra_content: None,
+                    });
+                }
+            }
+        }
+    }
+
     calls
 }
 

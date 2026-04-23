@@ -185,13 +185,13 @@ export function MonitorsClient() {
 
       <div className="px-6 py-8 md:px-10">
         {isLoading ? (
-          <div className="grid gap-px overflow-hidden rounded-xl border border-[color:var(--border)] bg-[color:var(--border)] md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, index) => (
-              <div key={index} className="h-80 animate-pulse bg-card" />
+              <div key={index} className="h-80 animate-pulse rounded-2xl bg-card" />
             ))}
           </div>
         ) : data?.items?.length ? (
-          <div className="grid gap-px overflow-hidden rounded-xl border border-[color:var(--border)] bg-[color:var(--border)] md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {data.items.map((task) => (
               <MonitorTaskCard
                 key={task.id}

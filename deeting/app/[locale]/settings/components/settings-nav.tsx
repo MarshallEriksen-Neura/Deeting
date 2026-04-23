@@ -7,6 +7,7 @@ import {
   Bot,
   Database,
   Globe,
+  Network,
   Rocket,
   Server,
 } from "lucide-react"
@@ -23,6 +24,7 @@ export interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: "models", icon: Boxes, desktopOnly: false },
+  { id: "ecosystem", icon: Network, desktopOnly: true },
   { id: "storage", icon: Database, desktopOnly: true },
   { id: "agent", icon: Bot, desktopOnly: true },
   { id: "browser", icon: Globe, desktopOnly: true },

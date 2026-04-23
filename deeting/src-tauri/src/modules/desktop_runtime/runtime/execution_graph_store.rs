@@ -163,14 +163,18 @@ pub(crate) async fn persist_execution_graph_snapshot(
     let mut attempt = 0usize;
     loop {
         match persist_execution_graph_snapshot_once(
-            store, execution_graph, session_id, source_kind, request_id, status,
+            store,
+            execution_graph,
+            session_id,
+            source_kind,
+            request_id,
+            status,
         )
         .await
         {
             Ok(()) => return Ok(()),
             Err(err)
-                if is_sqlite_busy_error(&err)
-                    && attempt < SQLITE_BUSY_RETRY_DELAYS_MS.len() =>
+                if is_sqlite_busy_error(&err) && attempt < SQLITE_BUSY_RETRY_DELAYS_MS.len() =>
             {
                 let delay_ms = SQLITE_BUSY_RETRY_DELAYS_MS[attempt];
                 attempt += 1;
@@ -437,15 +441,12 @@ pub(crate) async fn persist_execution_graph_runtime_context(
     }
     let mut attempt = 0usize;
     loop {
-        match persist_execution_graph_runtime_context_once(
-            store, normalized_execution_id, context,
-        )
-        .await
+        match persist_execution_graph_runtime_context_once(store, normalized_execution_id, context)
+            .await
         {
             Ok(()) => return Ok(()),
             Err(err)
-                if is_sqlite_busy_error(&err)
-                    && attempt < SQLITE_BUSY_RETRY_DELAYS_MS.len() =>
+                if is_sqlite_busy_error(&err) && attempt < SQLITE_BUSY_RETRY_DELAYS_MS.len() =>
             {
                 let delay_ms = SQLITE_BUSY_RETRY_DELAYS_MS[attempt];
                 attempt += 1;
@@ -529,8 +530,7 @@ pub(crate) async fn delete_execution_graph_runtime_context(
         match delete_execution_graph_runtime_context_once(store, normalized_execution_id).await {
             Ok(()) => return Ok(()),
             Err(err)
-                if is_sqlite_busy_error(&err)
-                    && attempt < SQLITE_BUSY_RETRY_DELAYS_MS.len() =>
+                if is_sqlite_busy_error(&err) && attempt < SQLITE_BUSY_RETRY_DELAYS_MS.len() =>
             {
                 let delay_ms = SQLITE_BUSY_RETRY_DELAYS_MS[attempt];
                 attempt += 1;

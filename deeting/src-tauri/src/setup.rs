@@ -342,6 +342,8 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .await;
     });
 
+    crate::modules::external_sources::sync::start_external_source_sync_worker(sync_state.clone());
+
     crate::modules::llm_wiki::watcher::start_local_llm_wiki_watcher(sync_state.clone());
 
     let periodic_worker_state = sync_state.clone();

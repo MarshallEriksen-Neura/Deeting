@@ -157,10 +157,7 @@ fn resolve_shell(request: &ExecutionRequest, text: &str) -> ExecutionShell {
 
 #[cfg(target_os = "windows")]
 fn auto_shell_for_text(text: &str) -> ExecutionShell {
-    if looks_like_powershell(text)
-        || contains_non_ascii(text)
-        || looks_like_bash(text)
-    {
+    if looks_like_powershell(text) || contains_non_ascii(text) || looks_like_bash(text) {
         ExecutionShell::Powershell
     } else {
         ExecutionShell::Cmd
@@ -250,9 +247,9 @@ fn flatten_bash_continuations(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{flatten_bash_continuations, resolve_request};
     #[cfg(target_os = "windows")]
     use super::looks_like_bash;
+    use super::{flatten_bash_continuations, resolve_request};
     use crate::modules::execution::{ExecutionMode, ExecutionRequest, ExecutionShell};
 
     #[test]
@@ -314,10 +311,7 @@ mod tests {
 
     #[test]
     fn flatten_bash_continuations_handles_multiple_continuations() {
-        assert_eq!(
-            flatten_bash_continuations("a \\\n  b \\\n  c"),
-            "a b c"
-        );
+        assert_eq!(flatten_bash_continuations("a \\\n  b \\\n  c"), "a b c");
     }
 
     #[cfg(target_os = "windows")]

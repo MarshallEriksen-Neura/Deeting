@@ -196,70 +196,70 @@
         "taskDeleted": "Task Deleted"
       },
       "header": {
-        "eyebrow": "Eyebrow",
-        "title": "Title",
-        "description": "Description",
-        "totalScanners": "Total Scanners"
+        "eyebrow": "Active Monitoring",
+        "title": "Monitors",
+        "description": "Create and manage recurring monitor tasks that proactively scout for information, run analysis, and deliver insights on schedule.",
+        "totalScanners": "{count} monitor(s)"
       },
       "actions": {
         "refresh": "Refresh",
-        "create": "Create"
+        "create": "New Monitor"
       },
       "empty": {
-        "title": "Title",
-        "description": "Description",
-        "create": "Create"
+        "title": "No monitors yet",
+        "description": "Set up your first monitor to start proactive scouting. Monitors run on schedule and keep you informed automatically.",
+        "create": "Create Monitor"
       },
       "modal": {
         "cronPresets": {
           "highFreq": {
-            "label": "Label",
-            "description": "Description"
+            "label": "High Frequency",
+            "description": "Check every 15 minutes for near real-time awareness"
           },
           "balanced": {
-            "label": "Label",
-            "description": "Description"
+            "label": "Balanced",
+            "description": "Check every hour for a good balance of freshness and cost"
           },
           "light": {
-            "label": "Label",
-            "description": "Description"
+            "label": "Light",
+            "description": "Check once a day for low-cost background monitoring"
           },
           "custom": {
-            "label": "Label",
-            "description": "Description"
+            "label": "Custom",
+            "description": "Define your own schedule with a cron expression"
           }
         },
         "analysisModes": {
           "concise": {
-            "label": "Label",
-            "description": "Description"
+            "label": "Concise",
+            "description": "Brief summary focusing on key changes only"
           },
           "deep": {
-            "label": "Label",
-            "description": "Description"
+            "label": "Deep",
+            "description": "Thorough analysis with full context and reasoning"
           },
           "alertFirst": {
-            "label": "Label",
-            "description": "Description"
+            "label": "Alert First",
+            "description": "Prioritize alerts and anomalies over routine summaries"
           }
         },
-        "titleEdit": "Title Edit",
-        "titleCreate": "Title Create",
-        "description": "Description",
-        "taskAgentLabel": "Task Agent Label",
-        "taskAgentPlaceholder": "Task Agent Placeholder",
-        "taskAgentHint": "Task Agent Hint",
-        "titleLabel": "Title Label",
-        "titlePlaceholder": "Title Placeholder",
-        "objectiveLabel": "Objective Label",
-        "objectivePlaceholder": "Objective Placeholder",
-        "frequencyLabel": "Frequency Label",
-        "customCronPlaceholder": "Custom Cron Placeholder",
-        "analysisModeLabel": "Analysis Mode Label",
+        "titleEdit": "Edit Monitor",
+        "titleCreate": "Create Monitor",
+        "description": "Configure a recurring task to scout information and deliver insights.",
+        "taskAgentLabel": "Agent",
+        "taskAgentPlaceholder": "Select an agent",
+        "taskAgentHint": "The agent that will execute this monitor task.",
+        "titleLabel": "Name",
+        "titlePlaceholder": "e.g. Daily Tech News",
+        "objectiveLabel": "Objective",
+        "objectivePlaceholder": "Describe what this monitor should look for and how to report findings...",
+        "frequencyLabel": "Frequency",
+        "customCronPlaceholder": "e.g. 0 9 * * * (daily at 9am)",
+        "analysisModeLabel": "Analysis Mode",
         "current": "Current",
-        "channelLabel": "Channel Label",
+        "channelLabel": "Notification Channel",
         "selected": "Selected",
-        "noChannels": "No Channels",
+        "noChannels": "No channels configured",
         "cancel": "Cancel",
         "save": "Save",
         "create": "Create"
@@ -270,13 +270,13 @@
           "failure": "Failure",
           "skipped": "Skipped"
         },
-        "title": "Title",
-        "description": "Description",
-        "deliveryTitle": "Delivery Title",
-        "empty": "Empty",
-        "channelFallback": "Channel Fallback",
-        "significantChange": "Significant Change",
-        "tokensUsed": "Tokens Used",
+        "title": "Execution Log",
+        "description": "History of monitor executions and their outcomes.",
+        "deliveryTitle": "Delivery",
+        "empty": "No executions yet",
+        "channelFallback": "Fallback channel used",
+        "significantChange": "Significant change detected",
+        "tokensUsed": "Tokens used",
         "feedback": {
           "useful": "Useful",
           "notUseful": "Not Useful"
@@ -292,20 +292,20 @@
         "status": {
           "active": "Active",
           "paused": "Paused",
-          "failedSuspended": "Failed Suspended",
+          "failedSuspended": "Failed",
           "bindingRequired": "Binding Required",
           "bindingInvalid": "Binding Invalid"
         },
         "labels": {
           "frequency": "Frequency",
           "tokens": "Tokens",
-          "agentBinding": "Agent Binding",
-          "nextScheduled": "Next Scheduled"
+          "agentBinding": "Agent",
+          "nextScheduled": "Next Run"
         },
-        "systemBase": "System Base",
-        "pending": "Pending",
+        "systemBase": "System",
+        "pending": "—",
         "actions": {
-          "logs": "Logs",
+          "logs": "View logs",
           "edit": "Edit",
           "delete": "Delete",
           "triggerNow": "Trigger Now",
@@ -313,16 +313,16 @@
           "resume": "Resume"
         },
         "deleteDialog": {
-          "title": "Title",
-          "description": "Description",
+          "title": "Delete Monitor",
+          "description": "This action cannot be undone. The monitor and its execution history will be permanently removed.",
           "cancel": "Cancel",
-          "confirm": "Confirm"
+          "confirm": "Delete"
         },
         "interval": {
-          "notSet": "Not Set",
-          "days": "{value} days",
-          "hours": "{value} hours",
-          "minutes": "{value} minutes"
+          "notSet": "Not set",
+          "days": "{count}d",
+          "hours": "{count}h",
+          "minutes": "{count}m"
         }
       }
     },

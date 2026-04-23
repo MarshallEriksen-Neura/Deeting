@@ -48,6 +48,7 @@ import { isBrowserAgentPanelEnabled } from "./browser-agent-panel-flags";
 import {
   DeferredAgentSettingsCard,
   DeferredDesktopBrowserAgentPanelCard,
+  DeferredExternalEcosystemSettingsCard,
   DeferredDesktopNetworkSettingsCard,
   DeferredDesktopObjectStorageSettingsCard,
   DeferredDesktopSandboxSettingsCard,
@@ -395,7 +396,6 @@ export function SettingsForm({
     setIsSaving(true);
     try {
       let desktopEmbeddingChanged = false;
-      let desktopMultimodalChanged = false;
       let desktopProxyChanged = false;
       let scoutSettingsChanged = false;
       let objectStorageChanged = false;
@@ -445,8 +445,6 @@ export function SettingsForm({
             multimodal_provider_model_id: nextMultimodalProviderModelId || null,
           });
           desktopEmbeddingChanged = nextProviderModelId !== currentProviderModelId;
-          desktopMultimodalChanged =
-            nextMultimodalProviderModelId !== currentMultimodalProviderModelId;
         }
 
         // Desktop-local settings are only meaningful in Tauri runtime.
@@ -794,6 +792,15 @@ export function SettingsForm({
           )}
 
           {/* Storage section */}
+          {activeSection === "ecosystem" && (
+            <div className="flex flex-col gap-5 md:gap-6">
+              <DeferredExternalEcosystemSettingsCard
+                isTauriRuntime={isTauriRuntime}
+              />
+            </div>
+          )}
+
+          {/* Storage section */}
           {activeSection === "storage" && (
             <div className="flex flex-col gap-5 md:gap-6">
               <DeferredDesktopObjectStorageSettingsCard
@@ -821,6 +828,7 @@ export function SettingsForm({
           )}
 
           {activeSection !== "agent" &&
+            activeSection !== "ecosystem" &&
             activeSection !== "window" &&
             activeSection !== "version" &&
             (activeSection !== "browser" || !isBrowserSectionVisible) && (

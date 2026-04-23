@@ -4,22 +4,30 @@ import * as React from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import {
-  Activity,
-  Bell,
+  BellRing,
+  Blocks,
   BookOpen,
+  BookMarked,
+  Bot,
+  Boxes,
+  BrainCircuit,
+  ChartNoAxesCombined,
+  ChartSpline,
   ChevronDown,
-  Cpu,
-  FileSearch,
-  FolderOpen,
-  Gauge,
-  KeyRound,
   LayoutDashboard,
+  ListTree,
+  Logs,
   MessageSquare,
+  PlugZap,
+  Radar,
+  Route,
+  ScanSearch,
+  ServerCog,
   Settings,
-  Shield,
-  Terminal,
+  ShieldCheck,
+  SlidersHorizontal,
+  Store,
   Users,
-  Workflow,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Link, usePathname } from "@/i18n/routing";
@@ -36,6 +44,11 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/shadcn/sidebar";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/shadcn/tooltip";
 
 type NavItem = {
   id: string;
@@ -64,48 +77,48 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "chat", href: "/chat", labelKey: "nav.chat", icon: MessageSquare },
       { id: "overview", href: "/", labelKey: "nav.dashboard", icon: LayoutDashboard },
-      { id: "mcp", href: "/mcp", labelKey: "nav.mcp", icon: Terminal },
-      { id: "skills", href: "/skills", labelKey: "nav.skills", icon: Workflow },
+      { id: "mcp", href: "/mcp", labelKey: "nav.mcp", icon: PlugZap },
+      { id: "skills", href: "/skills", labelKey: "nav.skills", icon: Blocks },
     ],
   },
   {
     id: "models-and-agents",
     titleKey: "nav.modelsAndAgents",
     items: [
-      { id: "providers", href: "/models/providers", labelKey: "nav.providers", icon: Cpu },
-      { id: "provider-market", href: "/models/market", labelKey: "nav.providerMarket", icon: Cpu },
-      { id: "model-pools", href: "/models/pools", labelKey: "nav.modelPools", icon: Activity },
-      { id: "task-agents", href: "/agents/task-agents", labelKey: "nav.taskAgents", icon: Workflow },
+      { id: "providers", href: "/models/providers", labelKey: "nav.providers", icon: ServerCog },
+      { id: "provider-market", href: "/models/market", labelKey: "nav.providerMarket", icon: Store },
+      { id: "model-pools", href: "/models/pools", labelKey: "nav.modelPools", icon: Boxes },
+      { id: "task-agents", href: "/agents/task-agents", labelKey: "nav.taskAgents", icon: Bot },
     ],
   },
   {
     id: "automation-and-observability",
     titleKey: "nav.automationAndObservability",
     items: [
-      { id: "security-policy", href: "/dashboard/approval-rules", labelKey: "nav.securityPolicy", icon: Shield },
-      { id: "monitors", href: "/dashboard/monitors", labelKey: "nav.monitors", icon: Activity },
-      { id: "notification-channels", href: "/dashboard/notification-channels", labelKey: "nav.notificationChannels", icon: Bell },
-      { id: "monitoring", href: "/dashboard/monitoring", labelKey: "nav.monitoring", icon: Gauge },
-      { id: "bandit", href: "/dashboard/bandit", labelKey: "nav.bandit", icon: Activity },
-      { id: "task-learning", href: "/dashboard/task-learning", labelKey: "nav.taskLearning", icon: Activity },
-      { id: "logs", href: "/dashboard/logs", labelKey: "nav.logs", icon: Activity },
+      { id: "security-policy", href: "/dashboard/approval-rules", labelKey: "nav.securityPolicy", icon: ShieldCheck },
+      { id: "monitors", href: "/dashboard/monitors", labelKey: "nav.monitors", icon: Radar },
+      { id: "notification-channels", href: "/dashboard/notification-channels", labelKey: "nav.notificationChannels", icon: BellRing },
+      { id: "monitoring", href: "/dashboard/monitoring", labelKey: "nav.monitoring", icon: ChartSpline },
+      { id: "bandit", href: "/dashboard/bandit", labelKey: "nav.bandit", icon: Route },
+      { id: "task-learning", href: "/dashboard/task-learning", labelKey: "nav.taskLearning", icon: ChartNoAxesCombined },
+      { id: "logs", href: "/dashboard/logs", labelKey: "nav.logs", icon: Logs },
     ],
   },
   {
     id: "knowledge-and-storage",
     titleKey: "nav.knowledgeAndStorage",
     items: [
-      { id: "knowledge", href: "/knowledge", labelKey: "nav.knowledge", icon: FolderOpen },
-      { id: "llm-wiki", href: "/llm-wiki", labelKey: "nav.llmWiki", icon: FolderOpen },
-      { id: "memory", href: "/memory", labelKey: "nav.memory", icon: FolderOpen },
-      { id: "scan-reviews", href: "/scan-reviews", labelKey: "nav.scanReviews", icon: FileSearch },
+      { id: "knowledge", href: "/knowledge", labelKey: "nav.knowledge", icon: BookMarked },
+      { id: "llm-wiki", href: "/llm-wiki", labelKey: "nav.llmWiki", icon: ListTree },
+      { id: "memory", href: "/memory", labelKey: "nav.memory", icon: BrainCircuit },
+      { id: "scan-reviews", href: "/scan-reviews", labelKey: "nav.scanReviews", icon: ScanSearch },
     ],
   },
   {
     id: "admin",
     titleKey: "nav.admin",
     items: [
-      { id: "admin-provider-presets", href: "/admin/provider-presets", labelKey: "nav.providerPresets", icon: KeyRound, adminOnly: true },
+      { id: "admin-provider-presets", href: "/admin/provider-presets", labelKey: "nav.providerPresets", icon: SlidersHorizontal, adminOnly: true },
       { id: "admin-users", href: "/admin/users", labelKey: "nav.userManagement", icon: Users, adminOnly: true },
     ],
   },];
@@ -179,6 +192,32 @@ function SidebarChrome({
   );
 }
 
+function CollapsedSidebarTooltip({
+  children,
+  label,
+  unavailableLabel,
+}: {
+  children: React.ReactElement;
+  label: string;
+  unavailableLabel?: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="right" sideOffset={12} className="rounded-[10px] px-2.5 py-2">
+        <div className="flex items-center gap-2 text-[12px] font-medium">
+          <span>{label}</span>
+          {unavailableLabel ? (
+            <span className="rounded-full bg-background/15 px-1.5 py-0.5 text-[10px] font-semibold">
+              {unavailableLabel}
+            </span>
+          ) : null}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function WorkstationSidebarLinkItem({
   item,
   isActive,
@@ -214,23 +253,29 @@ function WorkstationSidebarLinkItem({
       ) : null}
     </>
   );
+  const control = isDisabled ? (
+    <div className={className} aria-disabled="true">
+      {content}
+    </div>
+  ) : (
+    <Link
+      href={href}
+      data-active={isActive}
+      className={className}
+      aria-current={isActive ? "page" : undefined}
+    >
+      {content}
+    </Link>
+  );
 
   return (
     <SidebarMenuItem className="relative list-none">
-      {isDisabled ? (
-        <div className={className} title={isCollapsed ? `${label} - ${unavailableLabel}` : undefined} aria-disabled="true">
-          {content}
-        </div>
+      {isCollapsed ? (
+        <CollapsedSidebarTooltip label={label} unavailableLabel={isDisabled ? unavailableLabel : undefined}>
+          {control}
+        </CollapsedSidebarTooltip>
       ) : (
-        <Link
-          href={href}
-          data-active={isActive}
-          className={className}
-          title={isCollapsed ? label : undefined}
-          aria-current={isActive ? "page" : undefined}
-        >
-          {content}
-        </Link>
+        control
       )}
     </SidebarMenuItem>
   );
@@ -249,20 +294,27 @@ function SidebarFooterCluster({ isCollapsed }: { isCollapsed: boolean }) {
       {FOOTER_ACTIONS.map((item) => {
         const Icon = item.icon;
         const label = tCommon(item.labelKey as never);
-
-        return (
+        const link = (
           <Link
-            key={item.id}
             href={item.href}
             className={cn(
               "flex h-9 w-full items-center rounded-[12px] text-[15px] font-medium text-[var(--ink-2)] outline-none transition-colors duration-[var(--dur-fast)] ease-[var(--ease-standard)] hover:bg-[color-mix(in_srgb,var(--ink)_4%,transparent)] hover:text-[var(--ink)] focus-visible:shadow-[var(--focus-ring)]",
               isCollapsed ? "justify-center px-0" : "gap-4 px-2"
             )}
-            title={isCollapsed ? label : undefined}
           >
             <Icon className="size-5 shrink-0 text-[var(--ink-3)]" />
             {!isCollapsed ? <span className="truncate">{label}</span> : null}
           </Link>
+        );
+
+        return (
+          <React.Fragment key={item.id}>
+            {isCollapsed ? (
+              <CollapsedSidebarTooltip label={label}>{link}</CollapsedSidebarTooltip>
+            ) : (
+              link
+            )}
+          </React.Fragment>
         );
       })}
     </div>

@@ -13,6 +13,7 @@ pub mod custom_task_agents;
 pub mod desktop_config;
 pub mod desktop_runtime;
 pub mod execution;
+pub mod external_sources;
 pub mod im;
 pub mod image_generation;
 pub mod island_window;

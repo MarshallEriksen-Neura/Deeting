@@ -10,6 +10,7 @@ use crate::modules::assistants::store::init_assistant_tables;
 use crate::modules::conversations::store::init_conversation_tables;
 use crate::modules::desktop_config::store_init::init_desktop_config_table;
 use crate::modules::desktop_runtime::runtime::execution_graph_store::init_execution_graph_tables;
+use crate::modules::external_sources::store_init::init_external_source_tables;
 use crate::modules::llm_wiki::store::init_llm_wiki_tables;
 use crate::modules::mcp::commands::runtime::capability_registry_cache::CapabilityRegistryBaseCache;
 use crate::modules::mcp::error::McpError;
@@ -813,6 +814,7 @@ impl McpStore {
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
         init_desktop_config_table(self).await?;
+        init_external_source_tables(self).await?;
         init_llm_wiki_tables(self).await?;
         init_execution_graph_tables(self).await?;
         init_render_runtime_tables(self).await?;
@@ -1746,7 +1748,11 @@ impl McpStore {
         .bind(request_id.map(str::trim).filter(|value| !value.is_empty()))
         .bind(trace_id.map(str::trim).filter(|value| !value.is_empty()))
         .bind(normalized_fingerprint_key)
-        .bind(task_preview_text.map(str::trim).filter(|value| !value.is_empty()))
+        .bind(
+            task_preview_text
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        )
         .bind(normalized_task_fingerprint_json)
         .bind(
             route_decision_json
@@ -1888,21 +1894,21 @@ impl McpStore {
             task_preview_select_expr("tlr")
         );
         let rows = sqlx::query(&query)
-        .bind(normalized_session_id)
-        .bind(normalized_session_id)
-        .bind(normalized_fingerprint_key)
-        .bind(normalized_fingerprint_key)
-        .bind(normalized_decision_point)
-        .bind(normalized_decision_point)
-        .bind(normalized_user_response_signal)
-        .bind(normalized_user_response_signal)
-        .bind(learning_eligible_flag)
-        .bind(learning_eligible_flag)
-        .bind(limit.max(1) as i64)
-        .bind(skip as i64)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
+            .bind(normalized_session_id)
+            .bind(normalized_session_id)
+            .bind(normalized_fingerprint_key)
+            .bind(normalized_fingerprint_key)
+            .bind(normalized_decision_point)
+            .bind(normalized_decision_point)
+            .bind(normalized_user_response_signal)
+            .bind(normalized_user_response_signal)
+            .bind(learning_eligible_flag)
+            .bind(learning_eligible_flag)
+            .bind(limit.max(1) as i64)
+            .bind(skip as i64)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
 
         rows.into_iter()
             .map(|row| {
@@ -2003,10 +2009,10 @@ impl McpStore {
             task_preview_select_expr("tlr")
         );
         let row = sqlx::query(&query)
-        .bind(normalized_run_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
+            .bind(normalized_run_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
 
         row.map(|row| {
             Ok(TaskLearningRunRow {
@@ -2107,10 +2113,10 @@ impl McpStore {
             task_preview_select_expr("tlr")
         );
         let row = sqlx::query(&query)
-        .bind(normalized_trace_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|err| McpError::Storage(err.to_string()))?;
+            .bind(normalized_trace_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
 
         row.map(|row| {
             Ok(TaskLearningRunRow {

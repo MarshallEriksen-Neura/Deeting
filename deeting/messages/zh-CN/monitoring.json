@@ -196,133 +196,133 @@
         "taskDeleted": "Task Deleted"
       },
       "header": {
-        "eyebrow": "Eyebrow",
-        "title": "Title",
-        "description": "Description",
-        "totalScanners": "Total Scanners"
+        "eyebrow": "主动巡猎",
+        "title": "巡猎任务",
+        "description": "创建并管理定时巡猎任务，让 AI 按设定频率主动侦察信息、执行分析并推送洞察。",
+        "totalScanners": "{count} 个巡猎器"
       },
       "actions": {
-        "refresh": "Refresh",
-        "create": "Create"
+        "refresh": "刷新",
+        "create": "新建巡猎"
       },
       "empty": {
-        "title": "Title",
-        "description": "Description",
-        "create": "Create"
+        "title": "暂无巡猎任务",
+        "description": "创建第一个巡猎任务，开启主动侦察。巡猎器会按设定频率自动运行，持续为你收集关键信息。",
+        "create": "创建巡猎"
       },
       "modal": {
         "cronPresets": {
           "highFreq": {
-            "label": "Label",
-            "description": "Description"
+            "label": "高频",
+            "description": "每 15 分钟检查一次，接近实时感知变化"
           },
           "balanced": {
-            "label": "Label",
-            "description": "Description"
+            "label": "均衡",
+            "description": "每小时检查一次，在时效与成本间取得平衡"
           },
           "light": {
-            "label": "Label",
-            "description": "Description"
+            "label": "轻量",
+            "description": "每天检查一次，低成本后台持续监控"
           },
           "custom": {
-            "label": "Label",
-            "description": "Description"
+            "label": "自定义",
+            "description": "使用 Cron 表达式精确定义调度规则"
           }
         },
         "analysisModes": {
           "concise": {
-            "label": "Label",
-            "description": "Description"
+            "label": "精简",
+            "description": "仅总结关键变化，内容简短聚焦"
           },
           "deep": {
-            "label": "Label",
-            "description": "Description"
+            "label": "深度",
+            "description": "全面分析，附带完整上下文与推理过程"
           },
           "alertFirst": {
-            "label": "Label",
-            "description": "Description"
+            "label": "告警优先",
+            "description": "优先识别异常与告警，常规摘要次之"
           }
         },
-        "titleEdit": "Title Edit",
-        "titleCreate": "Title Create",
-        "description": "Description",
-        "taskAgentLabel": "Task Agent Label",
-        "taskAgentPlaceholder": "Task Agent Placeholder",
-        "taskAgentHint": "Task Agent Hint",
-        "titleLabel": "Title Label",
-        "titlePlaceholder": "Title Placeholder",
-        "objectiveLabel": "Objective Label",
-        "objectivePlaceholder": "Objective Placeholder",
-        "frequencyLabel": "Frequency Label",
-        "customCronPlaceholder": "Custom Cron Placeholder",
-        "analysisModeLabel": "Analysis Mode Label",
-        "current": "Current",
-        "channelLabel": "Channel Label",
-        "selected": "Selected",
-        "noChannels": "No Channels",
-        "cancel": "Cancel",
-        "save": "Save",
-        "create": "Create"
+        "titleEdit": "编辑巡猎",
+        "titleCreate": "创建巡猎",
+        "description": "配置一个定时任务，让 AI 主动侦察信息并输出洞察报告。",
+        "taskAgentLabel": "执行 Agent",
+        "taskAgentPlaceholder": "选择执行 Agent",
+        "taskAgentHint": "负责执行此巡猎任务的 Agent。",
+        "titleLabel": "任务名称",
+        "titlePlaceholder": "例如：每日科技热点",
+        "objectiveLabel": "巡猎目标",
+        "objectivePlaceholder": "描述此巡猎应关注什么、如何整理和报告结果...",
+        "frequencyLabel": "执行频率",
+        "customCronPlaceholder": "例如：0 9 * * *（每天上午 9 点）",
+        "analysisModeLabel": "分析模式",
+        "current": "当前",
+        "channelLabel": "通知渠道",
+        "selected": "已选择",
+        "noChannels": "尚未配置通知渠道",
+        "cancel": "取消",
+        "save": "保存",
+        "create": "创建"
       },
       "log": {
         "status": {
-          "success": "Success",
-          "failure": "Failure",
-          "skipped": "Skipped"
+          "success": "成功",
+          "failure": "失败",
+          "skipped": "跳过"
         },
-        "title": "Title",
-        "description": "Description",
-        "deliveryTitle": "Delivery Title",
-        "empty": "Empty",
-        "channelFallback": "Channel Fallback",
-        "significantChange": "Significant Change",
-        "tokensUsed": "Tokens Used",
+        "title": "执行记录",
+        "description": "巡猎任务的执行历史与结果。",
+        "deliveryTitle": "投递状态",
+        "empty": "暂无执行记录",
+        "channelFallback": "已使用备用渠道",
+        "significantChange": "检测到显著变化",
+        "tokensUsed": "消耗 Token",
         "feedback": {
-          "useful": "Useful",
-          "notUseful": "Not Useful"
+          "useful": "有用",
+          "notUseful": "无用"
         },
         "deliveryStatus": {
-          "anchored": "Anchored",
-          "contextReady": "Context Ready",
-          "waitingForContact": "Waiting For Contact",
-          "pending": "Pending"
+          "anchored": "已锚定",
+          "contextReady": "上下文就绪",
+          "waitingForContact": "等待联系人",
+          "pending": "待投递"
         }
       },
       "taskCard": {
         "status": {
-          "active": "Active",
-          "paused": "Paused",
-          "failedSuspended": "Failed Suspended",
-          "bindingRequired": "Binding Required",
-          "bindingInvalid": "Binding Invalid"
+          "active": "运行中",
+          "paused": "已暂停",
+          "failedSuspended": "失败",
+          "bindingRequired": "待绑定",
+          "bindingInvalid": "绑定失效"
         },
         "labels": {
-          "frequency": "Frequency",
-          "tokens": "Tokens",
-          "agentBinding": "Agent Binding",
-          "nextScheduled": "Next Scheduled"
+          "frequency": "频率",
+          "tokens": "Token 消耗",
+          "agentBinding": "绑定 Agent",
+          "nextScheduled": "下次执行"
         },
-        "systemBase": "System Base",
-        "pending": "Pending",
+        "systemBase": "系统默认",
+        "pending": "待定",
         "actions": {
-          "logs": "Logs",
-          "edit": "Edit",
-          "delete": "Delete",
-          "triggerNow": "Trigger Now",
-          "pause": "Pause",
-          "resume": "Resume"
+          "logs": "查看日志",
+          "edit": "编辑",
+          "delete": "删除",
+          "triggerNow": "立即执行",
+          "pause": "暂停",
+          "resume": "恢复"
         },
         "deleteDialog": {
-          "title": "Title",
-          "description": "Description",
-          "cancel": "Cancel",
-          "confirm": "Confirm"
+          "title": "删除巡猎",
+          "description": "此操作不可撤销。巡猎任务及其执行记录将被永久删除。",
+          "cancel": "取消",
+          "confirm": "删除"
         },
         "interval": {
-          "notSet": "Not Set",
-          "days": "{value} 天",
-          "hours": "{value} 小时",
-          "minutes": "{value} 分钟"
+          "notSet": "未设置",
+          "days": "{count} 天",
+          "hours": "{count} 小时",
+          "minutes": "{count} 分钟"
         }
       }
     },

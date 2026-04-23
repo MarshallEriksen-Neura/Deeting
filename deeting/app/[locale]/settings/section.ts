@@ -1,5 +1,6 @@
 export type SettingsSection =
   | "models"
+  | "ecosystem"
   | "storage"
   | "agent"
   | "browser"
@@ -9,6 +10,7 @@ export type SettingsSection =
 
 const SETTINGS_SECTIONS = new Set<SettingsSection>([
   "models",
+  "ecosystem",
   "storage",
   "agent",
   "browser",

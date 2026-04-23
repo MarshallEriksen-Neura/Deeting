@@ -84,16 +84,17 @@ export function ModelManagementProvidersPage() {
               instances.map((instance) => {
                 const selected = instance.id === selectedInstanceId;
                 return (
-                  <button
-                    key={instance.id}
-                    onClick={() => setSelectedInstanceId(instance.id)}
-                    className={cn(
-                      "ws-rail group relative flex w-full flex-col gap-2 rounded-[24px] border p-4 text-left transition-all duration-500",
-                      selected
-                        ? "border-[var(--accent-border)] bg-gradient-to-br from-[var(--accent-soft)]/60 to-transparent shadow-[0_30px_60px_-20px_rgba(0,0,0,0.4)]"
-                        : "border-transparent bg-transparent hover:border-[var(--hairline)] hover:bg-[var(--panel-bg-inset)]/50"
-                    )}
-                  >
+                  <div key={instance.id} className="group relative">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedInstanceId(instance.id)}
+                      className={cn(
+                        "ws-rail relative flex w-full flex-col gap-2 rounded-[24px] border p-4 pr-12 text-left transition-all duration-500",
+                        selected
+                          ? "border-[var(--accent-border)] bg-gradient-to-br from-[var(--accent-soft)]/60 to-transparent shadow-[0_30px_60px_-20px_rgba(0,0,0,0.4)]"
+                          : "border-transparent bg-transparent hover:border-[var(--hairline)] hover:bg-[var(--panel-bg-inset)]/50"
+                      )}
+                    >
                     {/* Active Link Energy Guide */}
                     {selected && (
                        <div className="absolute left-[-16px] top-1/4 bottom-1/4 w-1 bg-[var(--accent-strong)] rounded-r-full shadow-[6px_0_15px_var(--accent-strong)]" />
@@ -128,7 +129,7 @@ export function ModelManagementProvidersPage() {
                       </div>
                     </div>
                     
-                    <div className="flex items-center justify-between pl-[54px] mt-1">
+                    <div className="flex items-center pl-[54px] mt-1">
                        <div className={cn(
                          "rounded-md px-2 py-0.5 text-[9px] font-black uppercase tracking-widest border transition-all",
                          instance.is_enabled
@@ -137,20 +138,30 @@ export function ModelManagementProvidersPage() {
                        )}>
                           {instance.is_enabled ? t("workstation.linkedOnline") : t("workstation.nodeOffline")}
                        </div>
-                       
-                       <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                             <button className="rounded-xl p-1.5 opacity-0 transition-all hover:bg-[var(--panel-bg)] group-hover:opacity-100">
-                                <MoreHorizontal className="size-4 text-[var(--ink-3)]" />
-                             </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="ws-bezel-inner min-w-[170px] shadow-[0_40px_80px_rgba(0,0,0,0.5)] border-[var(--hairline-strong)] backdrop-blur-2xl p-1.5">
-                             <DropdownMenuItem className="ws-control text-[12px] py-2.5 px-4 font-black tracking-tight cursor-pointer rounded-xl focus:bg-[var(--accent-soft)] focus:text-[var(--accent-ink)] transition-colors transition-all mb-1">{t("edit").toUpperCase()}</DropdownMenuItem>
-                             <DropdownMenuItem className="ws-control text-[12px] py-2.5 px-4 font-black tracking-tight cursor-pointer rounded-xl text-[var(--danger)] focus:bg-[var(--danger-soft)] focus:text-[var(--danger)] transition-all">{t("disconnect").toUpperCase()}</DropdownMenuItem>
-                          </DropdownMenuContent>
-                       </DropdownMenu>
                     </div>
-                  </button>
+                    </button>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label={`${instance.name} actions`}
+                          onClick={(event) => event.stopPropagation()}
+                          className="absolute bottom-4 right-4 z-20 rounded-xl p-1.5 opacity-0 transition-all hover:bg-[var(--panel-bg)] group-hover:opacity-100 data-[state=open]:opacity-100 data-[state=open]:bg-[var(--panel-bg)]"
+                        >
+                          <MoreHorizontal className="size-4 text-[var(--ink-3)]" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        className="ws-bezel-inner min-w-[170px] shadow-[0_40px_80px_rgba(0,0,0,0.5)] border-[var(--hairline-strong)] backdrop-blur-2xl p-1.5"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <DropdownMenuItem className="ws-control text-[12px] py-2.5 px-4 font-black tracking-tight cursor-pointer rounded-xl focus:bg-[var(--accent-soft)] focus:text-[var(--accent-ink)] transition-colors transition-all mb-1">{t("edit").toUpperCase()}</DropdownMenuItem>
+                        <DropdownMenuItem className="ws-control text-[12px] py-2.5 px-4 font-black tracking-tight cursor-pointer rounded-xl text-[var(--danger)] focus:bg-[var(--danger-soft)] focus:text-[var(--danger)] transition-all">{t("disconnect").toUpperCase()}</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 );
               })
             ) : (

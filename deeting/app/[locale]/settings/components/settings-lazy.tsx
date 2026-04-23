@@ -71,6 +71,14 @@ export const DeferredDesktopScoutSettingsCard = dynamic(
   { ssr: false }
 )
 
+export const DeferredExternalEcosystemSettingsCard = dynamic(
+  () =>
+    import("./external-ecosystem-settings-card").then(
+      (mod) => mod.ExternalEcosystemSettingsCard
+    ),
+  { ssr: false }
+)
+
 export const DeferredSettingsModelPicker = dynamic(
   () => import("@/components/models/model-picker").then((mod) => mod.ModelPicker),
   { ssr: false }
