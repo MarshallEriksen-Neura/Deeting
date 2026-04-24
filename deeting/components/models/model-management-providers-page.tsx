@@ -32,113 +32,90 @@ export function ModelManagementProvidersPage() {
 
   return (
     <div className="flex flex-col bg-[var(--window-bg)] overflow-hidden -mx-[var(--shell-canvas-px)] -mt-[var(--shell-canvas-pt)] -mb-[var(--shell-canvas-pb)] h-[calc(100vh-var(--shell-toolbar-h))] relative">
-      {/* Workstation Command Header */}
-      <header className="flex h-[56px] flex-none items-center justify-between border-b border-[var(--hairline)] bg-[var(--panel-bg-inset)]/30 px-6 backdrop-blur-xl relative z-30">
-        <div className="flex items-center gap-5">
-          <div className="flex items-center gap-3">
-            <div className="flex size-8 items-center justify-center rounded-xl bg-[var(--accent-strong)] text-white shadow-[0_0_20px_var(--accent-soft)] transition-transform hover:scale-110 active:rotate-12">
-              <Layers className="size-4.5" />
-            </div>
-            <h1 className="ws-view-title text-lg tracking-tighter">{t("title")}</h1>
+      {/* Header */}
+      <header className="relative z-30 flex h-[48px] flex-none items-center justify-between border-b border-[var(--hairline)] bg-[var(--panel-bg-inset)]/30 px-5 backdrop-blur-xl">
+        <div className="flex items-center gap-3">
+          <div className="flex size-7 items-center justify-center rounded-lg bg-[var(--accent-strong)] text-white shadow-sm shadow-[var(--accent-soft)]">
+            <Layers className="size-4" />
           </div>
-          <div className="h-4 w-px bg-[var(--hairline-strong)]" />
-          <div className="flex items-center gap-3">
-             <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--window-bg)] border border-[var(--hairline)] shadow-inner">
-                <div className="w-1.5 h-1.5 rounded-full bg-[var(--ok)] shadow-[0_0_8px_var(--ok)] animate-pulse" />
-                <span className="ws-num text-[10px] font-black text-[var(--ink-2)] tracking-widest uppercase">
-                   {t("workstation.liveNodes", { count: instances.length })}
-                </span>
-             </div>
+          <h1 className="text-[15px] font-semibold tracking-tight text-[var(--ink)]">{t("title")}</h1>
+          <div className="h-4 w-px bg-[var(--hairline)]" />
+          <div className="flex items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--window-bg)] px-2.5 py-0.5">
+            <div className="size-1.5 rounded-full bg-[var(--ok)]" />
+            <span className="font-mono text-[10px] font-semibold tracking-wider text-[var(--ink-2)]">
+              {t("workstation.liveNodes", { count: instances.length })}
+            </span>
           </div>
-        </div>
-        
-        <div className="flex items-center gap-6">
-           <div className="hidden lg:flex items-center gap-4 text-[9px] font-mono font-bold text-[var(--ink-4)] uppercase tracking-[0.2em]">
-              <div className="flex items-center gap-1.5">
-                 <span className="opacity-40">{t("workstation.latencyMetric")}</span>
-                 <span className="text-[var(--ok)]">{t("workstation.stable")}</span>
-              </div>
-              <div className="h-2 w-px bg-[var(--hairline)]" />
-              <div className="flex items-center gap-1.5">
-                 <span className="opacity-40">{t("workstation.versionMetric")}</span>
-                 <span className="text-[var(--ink-2)]">0.1.1-3</span>
-              </div>
-           </div>
         </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden relative z-20">
-        {/* Sidebar: Neural Link Navigator */}
-        <aside className="flex w-[310px] flex-none flex-col overflow-hidden border-r border-[var(--hairline)] bg-[var(--sidebar-bg)]/30 backdrop-blur-md relative">
-          <div className="flex-none px-6 pb-4 pt-6">
-            <p className="ws-meta text-[9px] uppercase tracking-[0.3em] font-black opacity-30">{t("workstation.channelRegistry")}</p>
+        {/* Sidebar: Node Navigator */}
+        <aside className="relative flex w-[240px] flex-none flex-col overflow-hidden border-r border-[var(--hairline)] bg-[var(--sidebar-bg)]/30 backdrop-blur-md">
+          <div className="flex-none px-5 pb-3 pt-5">
+            <p className="ws-meta text-[9px] font-black uppercase tracking-[0.3em] opacity-30">{t("workstation.channelRegistry")}</p>
           </div>
-          
-          <div className="flex-1 space-y-2 overflow-y-auto px-4 pb-12 custom-scrollbar">
+
+          <div className="flex-1 space-y-1 overflow-y-auto px-3 pb-12 custom-scrollbar">
             {isLoading ? (
-              <div className="space-y-4 px-2">
-                <Skeleton className="h-20 rounded-2xl bg-[var(--panel-bg-inset)] opacity-40" />
-                <Skeleton className="h-20 rounded-2xl bg-[var(--panel-bg-inset)] opacity-40" />
+              <div className="space-y-3 px-1">
+                <Skeleton className="h-16 rounded-[var(--r-14)] bg-[var(--panel-bg-inset)] opacity-40" />
+                <Skeleton className="h-16 rounded-[var(--r-14)] bg-[var(--panel-bg-inset)] opacity-40" />
               </div>
             ) : instances.length ? (
               instances.map((instance) => {
                 const selected = instance.id === selectedInstanceId;
+                const host = instance.base_url.replace(/^https?:\/\//, '').split('/')[0] ?? '';
                 return (
                   <div key={instance.id} className="group relative">
                     <button
                       type="button"
                       onClick={() => setSelectedInstanceId(instance.id)}
                       className={cn(
-                        "ws-rail relative flex w-full flex-col gap-2 rounded-[24px] border p-4 pr-12 text-left transition-all duration-500",
+                        "relative flex w-full items-center gap-3 rounded-[var(--r-14)] border px-3 py-2.5 pr-8 text-left transition-all",
                         selected
-                          ? "border-[var(--accent-border)] bg-gradient-to-br from-[var(--accent-soft)]/60 to-transparent shadow-[0_30px_60px_-20px_rgba(0,0,0,0.4)]"
-                          : "border-transparent bg-transparent hover:border-[var(--hairline)] hover:bg-[var(--panel-bg-inset)]/50"
+                          ? "border-[var(--accent-border)] bg-[var(--accent-soft)]/50 shadow-sm"
+                          : "border-transparent hover:border-[var(--hairline)] hover:bg-[var(--panel-bg-inset)]/50"
                       )}
                     >
-                    {/* Active Link Energy Guide */}
-                    {selected && (
-                       <div className="absolute left-[-16px] top-1/4 bottom-1/4 w-1 bg-[var(--accent-strong)] rounded-r-full shadow-[6px_0_15px_var(--accent-strong)]" />
-                    )}
+                      {/* Left status rail */}
+                      <div
+                        className={cn(
+                          "absolute left-0 top-1/2 h-[14px] w-[2.5px] -translate-y-1/2 rounded-r-full",
+                          instance.is_enabled
+                            ? "bg-[var(--ok)] shadow-[0_0_0_1px_color-mix(in_oklch,var(--ok)_18%,transparent)]"
+                            : "bg-[var(--ink-4)]"
+                        )}
+                      />
 
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-3.5 min-w-0">
-                        <div className={cn(
-                          "flex size-10 flex-none items-center justify-center rounded-2xl border transition-all duration-700",
-                          selected 
-                            ? "border-[var(--accent-border)] bg-[var(--panel-bg)] shadow-[inset_0_2px_10px_rgba(0,0,0,0.1)] scale-110 rotate-[-4deg]" 
-                            : "border-[var(--hairline)] bg-[var(--panel-bg-inset)] opacity-60"
+                      <div className={cn(
+                        "flex size-8 flex-none items-center justify-center rounded-xl border transition-all",
+                        selected
+                          ? "border-[var(--accent-border)] bg-[var(--panel-bg)]"
+                          : "border-[var(--hairline)] bg-[var(--panel-bg-inset)] opacity-70"
+                      )}>
+                        <ProviderIcon
+                          src={instance.icon}
+                          className="size-4 flex-none"
+                          fallback={<Server className={cn("size-3.5 flex-none", selected ? "text-[var(--accent-strong)]" : "text-[var(--ink-4)]")} />}
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className={cn(
+                          "block truncate text-[13px] leading-tight transition-colors",
+                          selected ? "font-semibold text-[var(--ink)]" : "font-medium text-[var(--ink-2)]"
                         )}>
-                          <ProviderIcon
-                            src={instance.icon}
-                            className="size-5.5 flex-none transition-transform group-hover:scale-110"
-                            fallback={<Server className={cn("size-4.5 flex-none", selected ? "text-[var(--accent-strong)]" : "text-[var(--ink-4)]")} />}
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          <span className={cn(
-                            "ws-control block truncate text-[14px] transition-colors leading-tight",
-                            selected ? "font-black text-[var(--ink)] tracking-tighter" : "font-bold text-[var(--ink-2)]"
-                          )}>{instance.name}</span>
-                          <span className="mt-1 block truncate font-mono text-[9px] font-black text-[var(--ink-4)] opacity-50 tracking-widest uppercase">
-                            {instance.base_url.replace(/^https?:\/\//, '').split('/')[0]}
-                          </span>
-                        </div>
+                          {instance.name}
+                        </span>
+                        <span className="mt-0.5 block truncate font-mono text-[9px] text-[var(--ink-4)] opacity-50 tracking-wider">
+                          {host}
+                        </span>
                       </div>
-                      <div className="flex flex-col items-end gap-1">
-                        <div className={cn("ws-dot transition-all duration-700", instance.is_enabled ? "bg-[var(--ok)] shadow-[0_0_10px_var(--ok)]" : "bg-[var(--ink-4)]")} data-live={instance.is_enabled && selected} />
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center pl-[54px] mt-1">
-                       <div className={cn(
-                         "rounded-md px-2 py-0.5 text-[9px] font-black uppercase tracking-widest border transition-all",
-                         instance.is_enabled
-                           ? "bg-[var(--ok-soft)] text-[var(--ok)] border-[var(--ok-border)]"
-                           : "bg-[var(--panel-bg-inset)] text-[var(--ink-4)] border-transparent"
-                       )}>
-                          {instance.is_enabled ? t("workstation.linkedOnline") : t("workstation.nodeOffline")}
-                       </div>
-                    </div>
+
+                      <div className={cn(
+                        "size-1.5 rounded-full",
+                        instance.is_enabled ? "bg-[var(--ok)]" : "bg-[var(--ink-4)]"
+                      )} />
                     </button>
 
                     <DropdownMenu>
@@ -148,40 +125,34 @@ export function ModelManagementProvidersPage() {
                           aria-label={`${instance.name} actions`}
                           onPointerDown={(event) => event.stopPropagation()}
                           onClick={(event) => event.stopPropagation()}
-                          className="absolute bottom-4 right-4 z-20 rounded-xl p-1.5 opacity-0 transition-all hover:bg-[var(--panel-bg)] group-hover:opacity-100 data-[state=open]:opacity-100 data-[state=open]:bg-[var(--panel-bg)]"
+                          className="absolute right-2 top-1/2 z-20 -translate-y-1/2 rounded-lg p-1.5 opacity-0 transition-all hover:bg-[var(--panel-bg)] group-hover:opacity-100 data-[state=open]:opacity-100 data-[state=open]:bg-[var(--panel-bg)]"
                         >
-                          <MoreHorizontal className="size-4 text-[var(--ink-3)]" />
+                          <MoreHorizontal className="size-3.5 text-[var(--ink-3)]" />
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent
                         align="end"
-                        className="ws-bezel-inner min-w-[170px] shadow-[0_40px_80px_rgba(0,0,0,0.5)] border-[var(--hairline-strong)] backdrop-blur-2xl p-1.5"
+                        className="ws-bezel-inner min-w-[160px] border-[var(--hairline-strong)] p-1"
                         onClick={(event) => event.stopPropagation()}
                       >
-                        <DropdownMenuItem className="ws-control text-[12px] py-2.5 px-4 font-black tracking-tight cursor-pointer rounded-xl focus:bg-[var(--accent-soft)] focus:text-[var(--accent-ink)] transition-colors transition-all mb-1">{t("edit").toUpperCase()}</DropdownMenuItem>
-                        <DropdownMenuItem className="ws-control text-[12px] py-2.5 px-4 font-black tracking-tight cursor-pointer rounded-xl text-[var(--danger)] focus:bg-[var(--danger-soft)] focus:text-[var(--danger)] transition-all">{t("disconnect").toUpperCase()}</DropdownMenuItem>
+                        <DropdownMenuItem className="ws-control cursor-pointer rounded-lg px-3 py-2 text-[12px] font-semibold tracking-tight transition-colors focus:bg-[var(--accent-soft)] focus:text-[var(--accent-ink)]">{t("edit")}</DropdownMenuItem>
+                        <DropdownMenuItem className="ws-control cursor-pointer rounded-lg px-3 py-2 text-[12px] font-semibold tracking-tight text-[var(--danger)] transition-colors focus:bg-[var(--danger-soft)] focus:text-[var(--danger)]">{t("disconnect")}</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
                 );
               })
             ) : (
-              <div className="mx-2 mt-8 rounded-[32px] border border-dashed border-[var(--hairline-strong)] p-10 text-center bg-white/[0.02] backdrop-blur-md">
-                <Bot className="size-10 text-[var(--ink-4)] mx-auto mb-4 opacity-10 animate-pulse" />
-                <p className="ws-caption text-xs font-black uppercase tracking-widest opacity-40">{t("empty")}</p>
+              <div className="mx-1 mt-8 rounded-[var(--r-14)] border border-dashed border-[var(--hairline-strong)] p-8 text-center">
+                <Bot className="mx-auto mb-3 size-8 text-[var(--ink-4)] opacity-10" />
+                <p className="ws-caption text-xs font-semibold uppercase tracking-widest opacity-40">{t("empty")}</p>
               </div>
             )}
           </div>
         </aside>
 
-        {/* Main Workspace: Neural Matrix */}
-        <main className="flex-1 overflow-hidden bg-[var(--window-bg)] relative">
-          {/* Subtle Dynamic Mesh Background */}
-          <div className="absolute inset-0 pointer-events-none overflow-hidden">
-             <div className="absolute inset-0 opacity-[0.03] mesh-grid" />
-             <div className="absolute top-[20%] right-[-10%] w-[600px] h-[600px] rounded-full bg-[radial-gradient(circle,var(--accent-soft)_0%,transparent_70%)] blur-3xl opacity-10" />
-          </div>
-          
+        {/* Main Workspace */}
+        <main className="relative flex-1 overflow-hidden bg-[var(--window-bg)]">
           <div className="relative z-10 h-full">
             {selectedInstanceId ? (
               <div className="h-full overflow-y-auto custom-scrollbar">

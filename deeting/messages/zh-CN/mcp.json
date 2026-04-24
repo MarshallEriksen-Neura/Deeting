@@ -5,6 +5,12 @@
     "description": "在 Deeting OS 运行时中管理 MCP 服务与上游同步源。",
     "addManual": "添加手动服务"
   },
+  "kpi": {
+    "total": "总数",
+    "running": "运行中",
+    "stopped": "已停止",
+    "conflicts": "待处理"
+  },
   "supplyChain": {
     "title": "供应链",
     "addSource": "添加来源"

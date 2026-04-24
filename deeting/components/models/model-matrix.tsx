@@ -29,7 +29,7 @@ function getModelStatusTone(model: ProviderModel, t: (key: string) => string) {
   if (model.is_active) {
     return {
       label: t("list.status.active"),
-      className: "border-[var(--ok-border)] bg-[var(--ok-soft)] text-[var(--ok)]",
+      className: "border-[var(--ok-border)] bg-[var(--ok)]/15 text-[var(--ok)]",
     };
   }
 
@@ -79,36 +79,42 @@ export function ModelDataStrip({
   const statusTone = getModelStatusTone(model, t);
 
   return (
-    <div 
+    <div
       onClick={() => onRowClick?.(model)}
       className={cn(
-        "group relative grid cursor-pointer grid-cols-[minmax(0,1.9fr)_minmax(120px,0.95fr)_minmax(148px,1fr)_auto] items-center gap-4 px-5 py-4 transition-all md:px-6",
+        "group relative grid cursor-pointer grid-cols-[minmax(0,1.9fr)_minmax(120px,0.95fr)_minmax(148px,1fr)_auto] items-center gap-4 px-5 py-3.5 transition-all md:px-6",
         !model.is_active && "bg-[var(--panel-bg-inset)]/20",
         isExpanded ? "bg-[var(--accent-soft)]/36 shadow-[inset_0_0_0_1px_var(--accent-border)]" : "hover:bg-[var(--panel-bg-inset)]/42"
       )}
     >
-      {/* Indicator Rail */}
-      {isExpanded && <div className="absolute left-0 top-3 bottom-3 w-1 rounded-r-full bg-[var(--accent-strong)] shadow-[0_0_8px_var(--accent-strong)]" />}
+      {/* Left status rail */}
+      <div
+        className={cn(
+          "absolute left-0 top-1/2 h-[16px] w-[3px] -translate-y-1/2 rounded-r-full",
+          model.is_locked
+            ? "bg-[var(--warn)] shadow-[0_0_0_1px_color-mix(in_oklch,var(--warn)_18%,transparent)]"
+            : model.is_active
+              ? "bg-[var(--ok)] shadow-[0_0_0_1px_color-mix(in_oklch,var(--ok)_18%,transparent)]"
+              : "bg-[var(--ink-4)]"
+        )}
+      />
+      {isExpanded && <div className="absolute left-0 top-3 bottom-3 w-[2px] rounded-r-full bg-[var(--accent-strong)]" />}
 
       {/* Primary Info */}
-      <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-2">
-            <span className={cn(
-               "ws-num truncate text-[14px] font-semibold transition-colors",
-               model.is_active ? "text-[var(--ink)]" : "text-[var(--ink-3)]"
-            )}>{model.id}</span>
-            {isLocked && <Lock className="size-3 text-[var(--warn)]" />}
-            {model.weight > 0 && <Zap className="size-3 text-[var(--ok)] fill-[var(--ok)] opacity-60" />}
-            </div>
-            <div className="mt-1 flex min-w-0 items-center gap-2">
-              <span className="truncate text-[11px] font-medium text-[var(--ink-3)]">{model.display_name || "-"}</span>
-              <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", statusTone.className)}>
-                {statusTone.label}
-              </span>
-            </div>
-          </div>
+      <div className="min-w-0 pl-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className={cn(
+            "truncate text-[13px] font-semibold transition-colors",
+            model.is_active ? "text-[var(--ink)]" : "text-[var(--ink-3)]"
+          )}>{model.id}</span>
+          {isLocked && <Lock className="size-3 text-[var(--warn)]" />}
+          {model.weight > 0 && <Zap className="size-3 text-[var(--ok)] fill-[var(--ok)] opacity-60" />}
+        </div>
+        <div className="mt-0.5 flex min-w-0 items-center gap-2">
+          <span className="truncate text-[11px] text-[var(--ink-3)]">{model.display_name || "-"}</span>
+          <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", statusTone.className)}>
+            {statusTone.label}
+          </span>
         </div>
       </div>
 
@@ -118,39 +124,40 @@ export function ModelDataStrip({
       </div>
 
       <div className="hidden md:block">
-         <div className="flex flex-col gap-1 rounded-2xl border border-[var(--hairline-subtle)] bg-[var(--panel-bg-inset)]/55 px-3 py-2">
-            <div className="flex items-center justify-between gap-2">
-               <span className="ws-meta text-[8px] uppercase tracking-[0.16em] opacity-45">{t("list.header.inputShort")}</span>
-               <span className="ws-num text-[11px] font-semibold text-[var(--ok)]">{formatPrice(model.pricing.input)}</span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-               <span className="ws-meta text-[8px] uppercase tracking-[0.16em] opacity-45">{t("list.header.outputShort")}</span>
-               <span className="ws-num text-[11px] font-semibold text-[var(--warn)]">{formatPrice(model.pricing.output)}</span>
-            </div>
-         </div>
+        <div className="flex items-center gap-3">
+          <div className="flex flex-col items-end">
+            <span className="text-[9px] text-[var(--ink-4)]">{t("list.header.inputShort")}</span>
+            <span className="font-mono text-[11px] font-semibold text-[var(--ok)]">{formatPrice(model.pricing.input)}</span>
+          </div>
+          <div className="h-6 w-px bg-[var(--hairline-subtle)]" />
+          <div className="flex flex-col items-end">
+            <span className="text-[9px] text-[var(--ink-4)]">{t("list.header.outputShort")}</span>
+            <span className="font-mono text-[11px] font-semibold text-[var(--warn)]">{formatPrice(model.pricing.output)}</span>
+          </div>
+        </div>
       </div>
 
       {/* Actions */}
       <div className="ml-auto flex items-center gap-2 self-center">
         <div onClick={stopPropagation} className="hidden items-center sm:flex">
-          <Switch 
-            checked={model.is_active} 
+          <Switch
+            checked={model.is_active}
             onCheckedChange={(checked) => onToggleActive(model, checked)}
             className="scale-90 data-[state=checked]:bg-[var(--accent-strong)]"
             disabled={readOnly || isLocked}
           />
         </div>
-        
-        <div className="flex items-center gap-1 opacity-100 transition-all md:opacity-0 md:group-hover:opacity-100">
-          <button 
+
+        <div className="flex items-center gap-0.5 opacity-100 transition-all md:opacity-0 md:group-hover:opacity-100">
+          <button
             onClick={(e) => { stopPropagation(e); onTest(model); }}
-            className="rounded-xl p-2 text-[var(--accent-ink)] transition-colors hover:bg-[var(--accent-soft)]"
+            className="rounded-lg p-1.5 text-[var(--accent-ink)] transition-colors hover:bg-[var(--accent-soft)]"
           >
             <Play className="size-3.5" />
           </button>
 
-          <button 
-            className="rounded-xl p-2 text-[var(--ink-3)] transition-colors hover:bg-[var(--panel-bg-inset)]"
+          <button
+            className="rounded-lg p-1.5 text-[var(--ink-3)] transition-colors hover:bg-[var(--panel-bg-inset)]"
           >
             <Eye className="size-3.5" />
           </button>
@@ -182,23 +189,23 @@ export function ModelMatrix({
   const t = useTranslations("models");
   
   return (
-    <div className={cn("flex flex-col overflow-hidden rounded-[24px] border border-[var(--hairline)] bg-[var(--panel-bg)]", className)}>
+    <div className={cn("flex flex-col overflow-hidden rounded-[var(--r-14)] border border-[var(--hairline)] bg-[var(--panel-bg)]", className)}>
       {/* Header */}
-      <div className="grid grid-cols-[minmax(0,1.9fr)_minmax(120px,0.95fr)_minmax(148px,1fr)_auto] items-center gap-4 border-b border-[var(--hairline)] bg-[var(--panel-bg-inset)]/55 px-5 py-3 md:px-6">
-        <div className="ws-meta text-[10px] tracking-[0.18em]">{t("list.header.id")}</div>
-        <div className="hidden ws-meta text-[10px] tracking-[0.18em] md:block">{t("list.header.capabilities")}</div>
-        <div className="hidden ws-meta text-[10px] tracking-[0.18em] md:block">{t("list.header.pricing")}</div>
-        <div className="ws-meta text-right text-[10px] tracking-[0.18em]">{t("list.header.status")}</div>
+      <div className="grid grid-cols-[minmax(0,1.9fr)_minmax(120px,0.95fr)_minmax(148px,1fr)_auto] items-center gap-4 border-b border-[var(--hairline)] bg-[var(--panel-bg-inset)]/40 px-5 py-2.5 md:px-6">
+        <div className="pl-2 text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">{t("list.header.id")}</div>
+        <div className="hidden text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)] md:block">{t("list.header.capabilities")}</div>
+        <div className="hidden text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)] md:block">{t("list.header.pricing")}</div>
+        <div className="text-right text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">{t("list.header.status")}</div>
       </div>
 
       <div className="flex flex-col divide-y divide-[var(--hairline-subtle)]">
         {models.map((model) => (
-          <ModelDataStrip 
-            key={model.id} 
-            model={model} 
-            onTest={onTest} 
-            onToggleActive={onToggleActive} 
-            readOnly={readOnly} 
+          <ModelDataStrip
+            key={model.id}
+            model={model}
+            onTest={onTest}
+            onToggleActive={onToggleActive}
+            readOnly={readOnly}
             isExpanded={selectedModelId === model.id}
             onRowClick={onRowClick}
           />

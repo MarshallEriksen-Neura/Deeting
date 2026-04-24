@@ -14,15 +14,23 @@
   "stats": {
     "totalRuns": "Task Records",
     "totalRunsHint": "How many tasks AI has completed and logged",
+    "pendingRuns": "Pending Review",
+    "pendingRunsHint": "Tasks still waiting for your feedback",
+    "reviewedRuns": "Reviewed",
+    "reviewedRunsHint": "Tasks you have already given feedback on",
     "revisedRuns": "Reviewed",
     "revisedRunsHint": "Tasks you have already given feedback on",
     "signaledRuns": "With Verdict",
     "signaledRunsHint": "Tasks marked as \"good\" or \"needs work\"",
     "activePriors": "Lessons Learned",
-    "activePriorsHint": "Decision rules AI has learned from your feedback"
+    "activePriorsHint": "Decision rules AI has learned from your feedback",
+    "todayTrend": "Today's Learning Trend",
+    "todayTrendHint": "New or updated lessons from the last ten days",
+    "todayTrendDelta": "lessons vs yesterday"
   },
   "filters": {
     "sessionPlaceholder": "Search by session…",
+    "searchPlaceholder": "Search by task title, session, or fingerprint…",
     "signal": {
       "all": "All statuses",
       "accepted": "Got it right",
@@ -33,17 +41,21 @@
   },
   "actions": {
     "refresh": "Refresh",
+    "refreshRecords": "Refresh Records",
+    "exportRecords": "Export Records",
     "markAccepted": "Got it right",
     "markCorrected": "Needs improvement",
     "markRejected": "Got it wrong",
     "acceptedHint": "This was handled well — keep it up",
     "correctedHint": "Right direction, but some parts need tweaking",
     "rejectedHint": "This wasn't right — don't do it this way",
-    "replay": "Re-evaluate"
+    "replay": "Re-evaluate",
+    "submitFeedback": "Submit Feedback"
   },
   "runs": {
     "title": "Task Records",
     "description": "Click any record to see how AI handled it.",
+    "emptyTitle": "No matching task records",
     "empty": "No task records found for the current filter.",
     "revisions": "{count} reviews",
     "taskLabel": "Task #{id}",
@@ -60,16 +72,35 @@
   "detail": {
     "title": "Review Panel",
     "description": "Select a task record, then follow three steps to review it.",
+    "summaryTitle": "Task Detail",
+    "processTitle": "How AI processed this task",
+    "feedbackTitle": "Give a verdict",
+    "feedbackHint": "Tell AI how this run performed. Your feedback directly shapes its next decision.",
     "loading": "Loading…",
     "emptyTitle": "No task selected",
     "empty": "Pick a task record from the list on the left to see what AI did and give your feedback.",
+    "runId": "Task #{id}",
     "status": "Status",
     "signal": "Your Verdict",
     "current": "Current Snapshot",
     "revisions": "Revision History",
+    "revisionHistoryTitle": "Revision History",
     "noRevisions": "This task hasn't received any feedback yet.",
     "notePlaceholder": "Want to add a comment? Share your thoughts or suggestions (optional)",
+    "submitHint": "Choose a verdict before submitting feedback.",
     "toggleSnapshot": "View full technical details",
+    "snapshotTitle": "Technical Snapshot",
+    "metricUnits": {
+      "toolCalls": "tool calls"
+    },
+    "metrics": {
+      "route": "Route",
+      "plane": "Execution Plane",
+      "verification": "Verification",
+      "confidence": "Confidence",
+      "toolCalls": "Tool Calls",
+      "decision": "Decision Point"
+    },
     "revisionSource": "Source: {source}"
   },
   "meta": {
@@ -92,6 +123,17 @@
     "applied": "Applied",
     "superseded": "Updated",
     "rejected": "Rejected"
+  },
+  "timeline": {
+    "profile": "Parse task profile",
+    "profileDesc": "Identify the task goal, output shape, and risk profile.",
+    "route": "Choose execution path",
+    "routeDesc": "Pick the most suitable route based on the detected task shape.",
+    "execution": "Execute and verify",
+    "executionDesc": "Evaluate the result using execution outcome, verification strength, and tool usage.",
+    "learning": "Persist lesson update",
+    "learningDesc": "Decide whether this run should update the policy layer.",
+    "fallback": "No further details available"
   },
   "snapshot": {
     "title": "How AI handled this task",
@@ -133,6 +175,8 @@
   "priors": {
     "title": "What AI Has Learned",
     "description": "These are decision rules AI has learned from your feedback. The more experience and confidence it has, the better it handles similar tasks next time.",
+    "summary": "{count} total lessons",
+    "emptyTitle": "No lessons to show yet",
     "empty": "AI hasn't gathered enough experience yet. Give it a few more reviews and it will start recognizing patterns.",
     "columns": {
       "fingerprint": "Fingerprint",
@@ -145,6 +189,12 @@
     "actionLabel": "Action taken: {action}",
     "confidence": "Confidence",
     "evidenceCount": "Based on {count} experiences",
+    "tabs": {
+      "all": "All",
+      "provisional": "Provisional",
+      "confirmed": "Active",
+      "low": "Low Confidence"
+    },
     "maturityLabels": {
       "mature": "Mature",
       "developing": "Developing",

@@ -4,11 +4,17 @@
   "hero": {
     "eyebrow": "自适应控制层",
     "title": "实时看见策略偏置正在往哪边移动。",
-    "description": "这个页面把原始的 bandit arm 状态翻译成可读的运营视角：谁在领先、探索是否还在继续、以及冷却或低置信度正在怎样影响下一次决策。"
+    "description": "自适应 bandit 控制层实时观察与决策系统。通过持续探索与利用，动态优化模型路由、任务分发与资源选择。",
+    "runtimeTag": "自适应控制层",
+    "selectorScene": "当前 Scene",
+    "selectorLeader": "领先 Arm",
+    "selectorStrategy": "策略"
   },
   "actions": {
     "refresh": "刷新",
-    "openTaskLearning": "打开任务学习"
+    "openTaskLearning": "查看诊断详情",
+    "viewDetails": "查看详情",
+    "viewAll": "查看全部"
   },
   "stats": {
     "scenes": "场景数",
@@ -37,7 +43,7 @@
   },
   "overview": {
     "title": "Scene 脉冲",
-    "description": "用一组简洁指标判断当前 scene 的学习状态。",
+    "description": "LLM 路由 · 运行快照",
     "totalTrials": "总试验数",
     "leaderShare": "领先占比",
     "exploration": "探索强度",
@@ -45,8 +51,8 @@
     "lastUpdated": "最近更新时间"
   },
   "effect": {
-    "title": "观测到的效果",
-    "description": "这里总结当前 scene 正在偏向哪里，以及这种偏向看起来是健康学习还是还在漂移。",
+    "title": "当前推荐 Arm",
+    "description": "系统当前最偏向的 arm，以及这种偏向是否已经进入稳定学习区间。",
     "leadingArm": "当前领先 arm",
     "strategy": "策略",
     "confidence": "后验均值",
@@ -54,7 +60,7 @@
   },
   "arms": {
     "title": "Arm 排行",
-    "description": "每个 arm 都会展示证据量、后验置信度、成本、延迟，以及运行时是否正在主动降温。",
+    "description": "按当前 scene 的成功率与后验均值展示 Top 5 arm。",
     "trials": "试验次数",
     "successRate": "成功率",
     "posteriorMean": "后验均值",
@@ -72,6 +78,35 @@
     "cooling": "冷却中",
     "live": "活跃",
     "idle": "空闲"
+  },
+  "sceneState": {
+    "balanced": "均衡",
+    "exploring": "探索中",
+    "cooling": "冷却中",
+    "idle": "待激活"
+  },
+  "sceneCards": {
+    "activity": "活跃度",
+    "successRate": "成功率",
+    "exploration": "探索强度",
+    "leader": "领先 Arm"
+  },
+  "pulse": {
+    "snapshot": "运行快照",
+    "chartTitle": "成功率走势（即时轮廓）",
+    "chartWindow": "当前快照"
+  },
+  "recommend": {
+    "adviceTitle": "系统建议"
+  },
+  "leaderboard": {
+    "trials": "试验 {count} · 平均延迟 {latency}",
+    "posterior": "后验均值 {value}"
+  },
+  "health": {
+    "healthy": "状态健康",
+    "watch": "重点观察",
+    "idle": "待激活"
   },
   "strategy": {
     "epsilonGreedy": "Epsilon Greedy",

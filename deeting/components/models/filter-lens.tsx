@@ -1,11 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { Search, X, Filter, ChevronDown, Check, LayoutGrid } from "lucide-react";
+import { X, Filter, ChevronDown, Check, LayoutGrid } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
-import { useDebounce } from "@/hooks/use-debounce";
-import { Input } from "@/components/ui/shadcn/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/popover";
 import { Switch } from "@/components/ui/shadcn/switch";
 import { Label } from "@/components/ui/shadcn/label";
@@ -69,16 +67,8 @@ function CapabilityFilter({ selected, onToggle }: { selected: ModelCapability[];
 
 export function FilterLens({ filters, onFiltersChange, totalModels, filteredCount, className }: FilterLensProps) {
   const t = useTranslations("models");
-  const [localSearch, setLocalSearch] = React.useState(filters.search);
-  const debouncedSearch = useDebounce(localSearch, 300);
 
-  React.useEffect(() => {
-    if (debouncedSearch !== filters.search) {
-      onFiltersChange({ ...filters, search: debouncedSearch });
-    }
-  }, [debouncedSearch, filters, onFiltersChange]);
-
-  const hasActiveFilters = filters.search || filters.capabilities.length > 0 || filters.min_context_window !== null || filters.active_only || filters.price_tier !== null;
+  const hasActiveFilters = filters.capabilities.length > 0 || filters.min_context_window !== null || filters.active_only || filters.price_tier !== null;
 
   const handleCapabilityToggle = (capability: ModelCapability) => {
     const newCapabilities = filters.capabilities.includes(capability)
@@ -88,31 +78,15 @@ export function FilterLens({ filters, onFiltersChange, totalModels, filteredCoun
   };
 
   const handleClearFilters = () => {
-    setLocalSearch("");
     onFiltersChange({ search: "", capabilities: [], min_context_window: null, active_only: false, price_tier: null });
   };
 
   return (
     <div className={cn(
-      "sticky top-0 z-30 rounded-[20px] border border-[var(--hairline)] bg-[var(--panel-bg)]/88 px-3 py-3 shadow-[0_18px_40px_-32px_rgba(15,17,28,0.22)] backdrop-blur-xl", 
+      "rounded-[var(--r-14)] border border-[var(--hairline)] bg-[var(--panel-bg)] px-3 py-2.5 shadow-sm",
       className
     )}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-        <div className="relative group min-w-0 flex-1 lg:max-w-md">
-          <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-[var(--ink-4)] transition-colors group-focus-within:text-[var(--accent-strong)]" />
-          <Input 
-            placeholder={t("filter.searchPlaceholder")} 
-            value={localSearch} 
-            onChange={(event) => setLocalSearch(event.target.value)} 
-            className="ws-control h-10 rounded-xl border-[var(--hairline)] bg-[var(--panel-bg-inset)]/55 pl-9 pr-8 text-xs transition-all focus:border-[var(--accent-border)] focus:ring-1 focus:ring-[var(--accent-soft)]" 
-          />
-          {localSearch && (
-            <button onClick={() => { setLocalSearch(""); onFiltersChange({ ...filters, search: "" }); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ink-4)] transition-colors hover:text-[var(--danger)]">
-              <X className="size-3.5" />
-            </button>
-          )}
-        </div>
-
         <div className="flex flex-wrap items-center gap-2">
           <CapabilityFilter selected={filters.capabilities} onToggle={handleCapabilityToggle} />
           
@@ -189,17 +163,17 @@ export function FilterLens({ filters, onFiltersChange, totalModels, filteredCoun
           )}
         </div>
 
-        <div className="flex items-center gap-3 lg:ml-auto lg:pl-2">
-          <div className="rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-3 py-2">
-            <div className="flex items-baseline gap-2">
-              <span className="ws-num text-[14px] font-bold leading-none text-[var(--ink)]">{filteredCount}</span>
-              <span className="ws-meta text-[9px] uppercase tracking-[0.18em] opacity-45">{t("filter.visible")}</span>
+        <div className="flex items-center gap-2 lg:ml-auto">
+          <div className="rounded-lg border border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-2.5 py-1.5">
+            <div className="flex items-baseline gap-1.5">
+              <span className="font-mono text-[13px] font-bold leading-none text-[var(--ink)]">{filteredCount}</span>
+              <span className="text-[9px] font-medium uppercase tracking-[0.14em] text-[var(--ink-4)]">{t("filter.visible")}</span>
             </div>
           </div>
-          <div className="rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg)] px-3 py-2">
-            <div className="flex items-baseline gap-2">
-              <span className="ws-num text-[14px] font-medium leading-none text-[var(--ink-3)]">{totalModels}</span>
-              <span className="ws-meta text-[9px] uppercase tracking-[0.18em] opacity-35">{t("filter.total")}</span>
+          <div className="rounded-lg border border-[var(--hairline)] bg-[var(--panel-bg)] px-2.5 py-1.5">
+            <div className="flex items-baseline gap-1.5">
+              <span className="font-mono text-[13px] font-medium leading-none text-[var(--ink-3)]">{totalModels}</span>
+              <span className="text-[9px] font-medium uppercase tracking-[0.14em] text-[var(--ink-4)]">{t("filter.total")}</span>
             </div>
           </div>
         </div>

@@ -226,6 +226,12 @@
       "128k": "> 128k",
       "200k": "> 200k"
     },
+    "kpi": {
+      "total": "Total Models",
+      "active": "Active",
+      "free": "Free",
+      "locked": "Locked"
+    },
     "quickAdd": {
       "cta": "Quick Add",
       "subtitle": "Lazy mode: paste model names, we fill defaults automatically.",

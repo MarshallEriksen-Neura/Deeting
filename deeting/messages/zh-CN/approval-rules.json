@@ -4,11 +4,16 @@
     "subtitle": "查看显式允许与阻止规则，理解中等级别学到了什么，并在行为漂移时重置本地审批状态。",
     "backToSettings": "返回设置",
     "desktopOnly": "仅桌面本地",
+    "tabs": {
+      "logs": "操作记录"
+    },
     "sections": {
       "rules": "显式规则",
       "learning": "学习信号",
       "danger": "危险操作"
     },
+    "autoPromoteEnabled": "自动晋升开启",
+    "lastUpdated": "最近更新",
     "filters": {
       "all": "全部规则",
       "allow": "允许规则",
@@ -23,7 +28,9 @@
       "removeRule": "撤销规则",
       "clearAllows": "清除允许规则",
       "clearAll": "清除全部规则",
-      "resetLearning": "重置学习数据"
+      "resetLearning": "重置学习数据",
+      "reset": "重置",
+      "clear": "清除"
     },
     "meta": {
       "created": "创建时间",
@@ -48,6 +55,16 @@
     },
     "learning": {
       "description": "中等级别会记录一次性批准，自动晋升稳定模式，并在批准历史变旧后逐步降低信任度。",
+      "viewAll": "查看全部",
+      "table": {
+        "signalDesc": "信号描述",
+        "approvals": "批准次数",
+        "autoPromoted": "自动晋升",
+        "explicitAllow": "显式允许",
+        "explicitDeny": "显式阻止",
+        "lastUpdated": "最近更新",
+        "status": "状态"
+      },
       "status": {
         "autoPromoted": "已自动晋升",
         "stable": "稳定显式规则",
@@ -100,6 +117,10 @@
       "resetLearning": "学习数据已重置",
       "loadFailed": "加载审批控制失败",
       "actionFailed": "操作失败"
+    },
+    "logs": {
+      "empty": "暂无操作记录。",
+      "description": "审批操作的完整历史记录。"
     },
     "status": {
       "loading": "正在加载审批控制...",

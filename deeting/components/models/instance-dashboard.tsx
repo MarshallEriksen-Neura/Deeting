@@ -71,59 +71,66 @@ export function InstanceDashboard({ instance, syncState, onSettings, className }
   }, [safeSyncState.is_syncing, safeSyncState.last_sync, t]);
 
   return (
-    <div className={cn("ws-bezel group", className)}>
-      <div className="ws-bezel-inner flex items-center justify-between gap-6 px-5 py-5">
-        <div className="flex min-w-0 items-center gap-4">
-          <div 
-            className="flex size-12 flex-none items-center justify-center rounded-2xl border border-[var(--hairline-strong)] shadow-sm transition-transform group-hover:scale-105" 
-            style={{ 
-              backgroundColor: `color-mix(in oklch, ${theme.color} 8%, var(--panel-bg))`, 
+    <div className={cn("relative overflow-hidden rounded-[var(--r-14)] bg-[var(--panel-bg)] ring-1 ring-[var(--hairline)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] group", className)}>
+      {/* Top status bar */}
+      <div className={cn(
+        "absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r",
+        instance.status === "online" ? "from-[var(--ok)] to-transparent" :
+        instance.status === "degraded" ? "from-[var(--warn)] to-transparent" :
+        instance.status === "offline" ? "from-[var(--danger)] to-transparent" :
+        "from-[var(--accent-strong)] to-transparent"
+      )} />
+      <div className="flex items-center justify-between gap-5 px-5 py-4">
+        <div className="flex min-w-0 items-center gap-3.5">
+          <div
+            className="flex size-10 flex-none items-center justify-center rounded-xl border border-[var(--hairline-strong)] shadow-sm transition-transform group-hover:scale-105"
+            style={{
+              backgroundColor: `color-mix(in oklch, ${theme.color} 8%, var(--panel-bg))`,
               color: theme.color,
-              boxShadow: `0 8px 16px -8px color-mix(in oklch, ${theme.color} 25%, transparent)`
             }}
           >
-            <ProviderIcon src={instance.icon} className="size-6" fallback={theme.icon} />
+            <ProviderIcon src={instance.icon} className="size-5" fallback={theme.icon} />
           </div>
-          
+
           <div className="flex min-w-0 flex-col">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <h1 className="ws-pane-title text-[15px] tracking-tight">{instance.name}</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-[14px] font-semibold tracking-tight text-[var(--ink)]">{instance.name}</h1>
               {instance.is_public && (
-                <div className="flex items-center gap-1 rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 text-blue-500">
+                <div className="flex items-center gap-1 rounded-full border border-[var(--info-border)] bg-[var(--info-soft)] px-2 py-0.5 text-[var(--info)]">
                   <Globe className="size-2.5" />
-                  <span className="ws-meta text-[8px] tracking-tighter">{t("instance.publicBadge")}</span>
+                  <span className="text-[8px] font-medium tracking-tighter">{t("instance.publicBadge")}</span>
                 </div>
               )}
               {!instance.is_enabled && (
                 <Badge variant="outline" className="h-5 rounded-full border-[var(--warn-border)] bg-[var(--warn-soft)] px-2 text-[9px] font-bold text-[var(--warn)]">{t("instance.pausedBadge")}</Badge>
               )}
             </div>
-            
-            <div className="mt-2 flex flex-wrap items-center gap-3">
-               <StatusIndicator status={instance.status} latency={instance.latency} />
-               
-               <div className="flex items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--panel-bg)] px-2.5 py-1 opacity-70">
-                  <Activity className="size-3 text-[var(--ink-4)]" />
-                  <span className="ws-num text-[11px] font-medium text-[var(--ink-2)]">
-                    {t("instance.modelCount", { count: instance.model_count ?? 0 })}
-                  </span>
-               </div>
-               
-               <div className="hidden min-w-0 items-center gap-1.5 opacity-45 sm:flex">
-                  <ShieldCheck className="size-3 text-[var(--ink-4)]" />
-                  <span className="ws-num max-w-[240px] truncate text-[10px] text-[var(--ink-3)]">{resolvedHost}</span>
-               </div>
+
+            <div className="mt-1.5 flex flex-wrap items-center gap-2.5">
+              <StatusIndicator status={instance.status} latency={instance.latency} />
+
+              <div className="flex items-center gap-1 rounded-full border border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-2 py-0.5">
+                <Activity className="size-2.5 text-[var(--ink-4)]" />
+                <span className="text-[10px] font-medium text-[var(--ink-2)]">
+                  {t("instance.modelCount", { count: instance.model_count ?? 0 })}
+                </span>
+              </div>
+
+              <div className="hidden min-w-0 items-center gap-1.5 sm:flex">
+                <ShieldCheck className="size-2.5 text-[var(--ink-4)]" />
+                <span className="max-w-[200px] truncate font-mono text-[10px] text-[var(--ink-3)]">{resolvedHost}</span>
+              </div>
             </div>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-3">
-          <div className="hidden min-w-[148px] rounded-2xl border border-[var(--hairline)] bg-[var(--panel-bg-inset)]/65 px-3 py-2 lg:block">
+          <div className="hidden min-w-[140px] rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg-inset)]/60 px-3 py-2 lg:block">
             <div className="flex items-center justify-between gap-3">
-              <span className="ws-meta text-[8px] uppercase tracking-[0.18em] opacity-50">{t("instance.registry")}</span>
-              <span className="ws-num text-[11px] font-semibold text-[var(--ink-2)]">{safeSyncState.is_syncing ? `${safeSyncState.progress}%` : syncLabel}</span>
+              <span className="text-[8px] font-medium uppercase tracking-[0.18em] text-[var(--ink-4)]">{t("instance.registry")}</span>
+              <span className="font-mono text-[11px] font-semibold text-[var(--ink-2)]">{safeSyncState.is_syncing ? `${safeSyncState.progress}%` : syncLabel}</span>
             </div>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--accent-strong)]/12">
+            <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-[var(--accent-strong)]/10">
               <motion.div
                 initial={{ width: 0 }}
                 animate={{ width: `${safeSyncState.is_syncing ? Math.max(safeSyncState.progress, 12) : 100}%` }}
@@ -135,12 +142,12 @@ export function InstanceDashboard({ instance, syncState, onSettings, className }
               />
             </div>
           </div>
-          
-          <GlassButton 
-            variant="ghost" 
-            size="icon" 
-            onClick={onSettings} 
-            className="size-9 rounded-xl border-[var(--hairline)] hover:bg-[var(--panel-bg-inset)] hover:border-[var(--hairline-strong)]"
+
+          <GlassButton
+            variant="ghost"
+            size="icon"
+            onClick={onSettings}
+            className="size-8 rounded-lg ring-1 ring-[var(--hairline)] hover:bg-[var(--panel-bg-inset)]"
           >
             <Settings className="size-4 text-[var(--ink-3)]" />
           </GlassButton>

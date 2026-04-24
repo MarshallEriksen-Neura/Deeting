@@ -6,30 +6,22 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 /**
- * iOS-style Glass Card
+ * Workstation Card — 统一卡片封装
  *
- * 设计理念:
- * - iOS 磨砂玻璃效果 (Frosted Glass / Glassmorphism)
- * - 多层次的光影效果
- * - 微妙的边框和内阴影
- * - 悬停时的浮动效果
- * - 支持不同模糊强度和颜色主题
+ * 基于 globals.css 设计 token，所有页面复用。
+ * 保持向后兼容的 props 接口，内部样式全部使用标准 token。
  */
 
 const glassCardVariants = cva(
-  // Base styles - iOS 磨砂玻璃基础
   [
     "relative overflow-hidden",
-    "rounded-2xl", // iOS 风格圆角
-    "transition-all duration-300 ease-out",
-    // 边框 - 模拟光线折射
+    "rounded-[var(--r-14)]",
+    "transition-all duration-[var(--dur-medium)] ease-[var(--ease-standard)]",
     "border border-white/10",
-    // 基础阴影
     "shadow-[0_8px_32px_-8px_rgba(0,0,0,0.1)]",
   ],
   {
     variants: {
-      // 模糊强度
       blur: {
         none: "backdrop-blur-none bg-[var(--card)]",
         sm: "backdrop-blur-sm bg-[var(--card)]/80",
@@ -37,27 +29,26 @@ const glassCardVariants = cva(
         lg: "backdrop-blur-2xl bg-[var(--card)]/50",
         xl: "backdrop-blur-3xl bg-[var(--card)]/40",
       },
-      // 颜色主题
       theme: {
         default: [
           "bg-[var(--card)]/60",
-          "[--glass-border:rgba(255,255,255,0.08)]",
-          "[--glass-shine:rgba(255,255,255,0.05)]",
+          "[--glass-border:color-mix(in_oklch,white_8%,transparent)]",
+          "[--glass-shine:color-mix(in_oklch,white_5%,transparent)]",
         ],
         primary: [
-          "bg-[var(--primary)]/10",
-          "[--glass-border:rgba(124,109,255,0.2)]",
-          "[--glass-shine:rgba(124,109,255,0.05)]",
+          "bg-[var(--accent-soft)]",
+          "[--glass-border:color-mix(in_oklch,var(--accent-strong)_20%,transparent)]",
+          "[--glass-shine:color-mix(in_oklch,var(--accent-strong)_5%,transparent)]",
         ],
         teal: [
-          "bg-[var(--teal-accent)]/10",
-          "[--glass-border:rgba(33,201,195,0.2)]",
-          "[--glass-shine:rgba(33,201,195,0.05)]",
+          "bg-[var(--info-soft)]",
+          "[--glass-border:color-mix(in_oklch,var(--info)_20%,transparent)]",
+          "[--glass-shine:color-mix(in_oklch,var(--info)_5%,transparent)]",
         ],
         surface: [
-          "bg-[var(--surface)]/70",
-          "[--glass-border:rgba(255,255,255,0.05)]",
-          "[--glass-shine:rgba(255,255,255,0.03)]",
+          "bg-[var(--panel-bg)]/70",
+          "[--glass-border:color-mix(in_oklch,white_5%,transparent)]",
+          "[--glass-shine:color-mix(in_oklch,white_3%,transparent)]",
         ],
         blueprint: [
           "rounded-none",
@@ -68,14 +59,12 @@ const glassCardVariants = cva(
           "[--glass-shine:transparent]",
         ],
       },
-      // 悬停效果
       hover: {
         none: "",
         lift: "hover:-translate-y-1 hover:shadow-[0_16px_48px_-12px_rgba(0,0,0,0.15)]",
-        glow: "hover:shadow-[0_8px_32px_-8px_rgba(124,109,255,0.2)]",
+        glow: "hover:shadow-[0_8px_32px_-8px_color-mix(in_oklch,var(--accent-strong)_20%,transparent)]",
         scale: "hover:scale-[1.02]",
       },
-      // 内边距
       padding: {
         none: "p-0",
         sm: "p-4",
@@ -95,9 +84,7 @@ const glassCardVariants = cva(
 export interface GlassCardProps
   extends React.HTMLAttributes<HTMLDivElement>,
     VariantProps<typeof glassCardVariants> {
-  /** 是否显示顶部高光效果 */
   shine?: boolean
-  /** 是否显示内边框 */
   innerBorder?: boolean
 }
 
@@ -113,7 +100,6 @@ const GlassCard = React.forwardRef<HTMLDivElement, GlassCardProps>(
         className={cn(glassCardVariants({ blur, theme, hover, padding, className }))}
         {...props}
       >
-        {/* Blueprint corner decorations */}
         {isBlueprint && (
           <>
             <div className="pointer-events-none absolute -top-px -left-px size-3 border-l-2 border-t-2 border-[var(--muted-foreground)] opacity-30" />
@@ -121,7 +107,6 @@ const GlassCard = React.forwardRef<HTMLDivElement, GlassCardProps>(
           </>
         )}
 
-        {/* Blueprint background grid */}
         {isBlueprint && (
           <div
             className="pointer-events-none absolute inset-0 z-0 opacity-[0.03]"
@@ -132,7 +117,6 @@ const GlassCard = React.forwardRef<HTMLDivElement, GlassCardProps>(
           />
         )}
 
-        {/* 顶部高光 - 模拟光线效果 */}
         {shine && !isBlueprint && (
           <div
             className="pointer-events-none absolute inset-x-0 top-0 h-px"
@@ -142,17 +126,15 @@ const GlassCard = React.forwardRef<HTMLDivElement, GlassCardProps>(
           />
         )}
 
-        {/* 内边框 - 增加层次感 */}
         {innerBorder && !isBlueprint && (
           <div
-            className="pointer-events-none absolute inset-0 rounded-2xl"
+            className="pointer-events-none absolute inset-0 rounded-[var(--r-14)]"
             style={{
               boxShadow: "inset 0 0 0 1px var(--glass-border, rgba(255,255,255,0.05))",
             }}
           />
         )}
 
-        {/* 内容 */}
         {children}
       </div>
     )
@@ -160,7 +142,6 @@ const GlassCard = React.forwardRef<HTMLDivElement, GlassCardProps>(
 )
 GlassCard.displayName = "GlassCard"
 
-// GlassCard 子组件
 const GlassCardHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement> & { blueprint?: boolean }>(
   ({ className, blueprint, ...props }, ref) => (
     <div
@@ -237,7 +218,6 @@ const GlassCardFooter = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HT
 )
 GlassCardFooter.displayName = "GlassCardFooter"
 
-// 统计卡片变体 - 用于 Dashboard
 interface GlassStatCardProps extends Omit<GlassCardProps, "children"> {
   label: string
   value: string | number
@@ -263,7 +243,7 @@ const GlassStatCard = React.forwardRef<HTMLDivElement, GlassStatCardProps>(
             <span
               className={cn(
                 "flex items-center gap-1 text-xs font-medium",
-                trend.isPositive ? "text-emerald-400" : "text-red-400"
+                trend.isPositive ? "text-[var(--ok)]" : "text-[var(--danger)]"
               )}
             >
               <svg
@@ -284,7 +264,7 @@ const GlassStatCard = React.forwardRef<HTMLDivElement, GlassStatCardProps>(
           )}
         </div>
         {icon && (
-          <div className="flex size-10 items-center justify-center rounded-xl bg-[var(--primary)]/10 text-[var(--primary)]">
+          <div className="flex size-10 items-center justify-center rounded-[var(--r-10)] bg-[var(--accent-soft)] text-[var(--accent-strong)]">
             {icon}
           </div>
         )}

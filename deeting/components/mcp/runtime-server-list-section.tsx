@@ -366,7 +366,7 @@ export function RuntimeServerListSection({
               <motion.div
                 layout
                 key={group.id}
-                className="group relative rounded-[var(--r-18)] p-[6px] bg-[var(--panel-bg-inset)] ring-1 ring-[var(--hairline)] transition-all duration-[220ms] ease-[cubic-bezier(0.32,0.72,0,1)] hover:ring-[var(--hairline-strong)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                className="group relative transition-all duration-[220ms] ease-[cubic-bezier(0.32,0.72,0,1)]"
               >
                 <Card className="relative overflow-hidden rounded-[calc(var(--r-18)-6px)] bg-[var(--panel-bg)] border-0 py-0 ring-1 ring-[var(--hairline)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition-colors hover:bg-[var(--panel-bg-inset)]">
                   <button
@@ -376,7 +376,18 @@ export function RuntimeServerListSection({
                   >
                     <div className={cn("absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r", tone.bar)} />
 
-                    <div className="flex w-full items-start gap-3 p-4">
+                    {/* Left status rail */}
+                    <div
+                      className={cn(
+                        "absolute left-0 top-1/2 h-[18px] w-[3px] -translate-y-1/2 rounded-r-full",
+                        toneKey === "healthy" && "bg-[var(--ok)] shadow-[0_0_0_1px_color-mix(in_oklch,var(--ok)_18%,transparent)]",
+                        toneKey === "partial" && "bg-[var(--info)] shadow-[0_0_0_1px_color-mix(in_oklch,var(--info)_18%,transparent)]",
+                        toneKey === "attention" && "bg-[var(--warn)] shadow-[0_0_0_1px_color-mix(in_oklch,var(--warn)_18%,transparent)]",
+                        toneKey === "idle" && "bg-[var(--ink-4)]"
+                      )}
+                    />
+
+                    <div className="flex w-full items-start gap-3 p-4 pl-5">
                       <div className={cn("flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-[var(--r-10)] border shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]", tone.icon)}>
                         <Folder size={16} className={tone.iconText} />
                       </div>
@@ -418,7 +429,7 @@ export function RuntimeServerListSection({
                     </div>
 
                     <div className="relative w-full px-4 pb-4 space-y-1.5">
-                      <div className="h-[4px] w-full overflow-hidden rounded-full bg-[var(--panel-bg-inset)] ring-1 ring-[var(--hairline)]">
+                      <div className="h-[6px] w-full overflow-hidden rounded-full bg-[var(--panel-bg-inset)] ring-1 ring-[var(--hairline)]">
                         <div
                           className={cn("h-full rounded-full bg-gradient-to-r transition-all duration-500", tone.progress)}
                           style={{ width: `${runningPercent}%` }}

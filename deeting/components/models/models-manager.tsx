@@ -2,10 +2,11 @@
 
 import * as React from "react"
 import { useTranslations } from "next-intl"
-import { RefreshCw, Sparkles, X, Database, Zap } from "lucide-react"
+import { RefreshCw, Sparkles, X, Database, Zap, Search } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
 
 import { useProviderModels, useSyncProviderModels, useProviderInstances, useUpdateProviderModel, useTestProviderModel, useQuickAddProviderModels, useProviderModelPurchase } from "@/hooks/use-providers"
+import { useDebounce } from "@/hooks/use-debounce"
 import {
   hasVersionedPath,
   resolveOpenAICompatibleBaseUrl,
@@ -20,6 +21,7 @@ import { resolveModelCapabilities } from "@/lib/providers/model-capabilities"
 import type { ProviderModel, ModelCapability, ModelFilterState, ProviderStatus } from "./types"
 import { getPriceTier } from "./types"
 import { toast } from "sonner"
+import { GlassCard } from "@/components/ui/common/glass-card"
 import ConnectProviderDrawer from "@/components/providers/connect-provider-drawer"
 import {
   Dialog,
@@ -73,6 +75,8 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
   const [quickAddLoading, setQuickAddLoading] = React.useState(false)
   const [purchasingModelUuid, setPurchasingModelUuid] = React.useState<string | null>(null)
   const [selectedModelId, setSelectedModelId] = React.useState<string | null>(null)
+  const [localSearch, setLocalSearch] = React.useState("")
+  const debouncedSearch = useDebounce(localSearch, 300)
   const [filters, setFilters] = React.useState<ModelFilterState>({
     search: "",
     capabilities: [],
@@ -80,6 +84,13 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
     active_only: false,
     price_tier: null,
   })
+
+  // Sync debounced search to filters
+  React.useEffect(() => {
+    if (debouncedSearch !== filters.search) {
+      setFilters(prev => ({ ...prev, search: debouncedSearch }))
+    }
+  }, [debouncedSearch])
 
   const normalizeStatus = React.useCallback((value?: string | null): ProviderStatus => {
     const status = (value ?? "").toLowerCase()
@@ -384,8 +395,8 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
       {/* Dashboard Stats */}
       <div className="flex-none">
         {instance && (
-          <InstanceDashboard 
-            instance={instance} 
+          <InstanceDashboard
+            instance={instance}
             syncState={{
               is_syncing: isSyncing,
               progress: isSyncing ? 20 : 0,
@@ -397,23 +408,54 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
         )}
       </div>
 
+      {/* KPI Row */}
+      {normalizedModels.length > 0 && (
+        <div className="grid grid-cols-4 gap-3">
+          {(() => {
+            const activeCount = normalizedModels.filter(m => m.is_active).length
+            const lockedCount = normalizedModels.filter(m => m.is_locked).length
+            const freeCount = normalizedModels.filter(m => m.pricing.input === 0).length
+            return (
+              <>
+                <GlassCard padding="sm" hover="none" className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">{t("kpi.total")}</span>
+                  <span className="font-mono text-[22px] font-semibold leading-none tracking-[-0.5px] text-[var(--ink)]">{normalizedModels.length}</span>
+                </GlassCard>
+                <GlassCard padding="sm" hover="none" theme="primary" className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">{t("kpi.active")}</span>
+                  <span className="font-mono text-[22px] font-semibold leading-none tracking-[-0.5px] text-[var(--ok)]">{activeCount}</span>
+                </GlassCard>
+                <GlassCard padding="sm" hover="none" className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">{t("kpi.free")}</span>
+                  <span className="font-mono text-[22px] font-semibold leading-none tracking-[-0.5px] text-[var(--info)]">{freeCount}</span>
+                </GlassCard>
+                <GlassCard padding="sm" hover="none" theme={lockedCount > 0 ? "primary" : "default"} className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">{t("kpi.locked")}</span>
+                  <span className="font-mono text-[22px] font-semibold leading-none tracking-[-0.5px] text-[var(--warn)]">{lockedCount}</span>
+                </GlassCard>
+              </>
+            )
+          })()}
+        </div>
+      )}
+
       {/* Main Workspace with Filter & Matrix */}
-      <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex min-h-0 flex-1 flex-col">
         {/* Workspace Toolbar */}
-        <div className="mb-3 flex-none rounded-[24px] border border-[var(--hairline)] bg-[var(--panel-bg)]/88 px-4 py-4 shadow-[0_18px_40px_-28px_rgba(15,17,28,0.28)] backdrop-blur-xl">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="flex min-w-0 items-start gap-3">
-              <div className="mt-0.5 flex size-10 flex-none items-center justify-center rounded-2xl border border-[var(--accent-border)] bg-[var(--accent-soft)] shadow-sm">
-                 <Database className="size-4.5 text-[var(--accent-strong)]" />
+        <div className="mb-3 flex-none rounded-[var(--r-14)] border border-[var(--hairline)] bg-[var(--panel-bg)] px-4 py-3 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex size-8 flex-none items-center justify-center rounded-xl border border-[var(--accent-border)] bg-[var(--accent-soft)]">
+                <Database className="size-4 text-[var(--accent-strong)]" />
               </div>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="ws-pane-title text-[18px] tracking-tight">{t("title")}</h2>
-                  <Badge variant="secondary" className="h-6 rounded-full border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-2.5 text-[10px] font-medium text-[var(--ink-3)]">
+                  <h2 className="text-[15px] font-semibold tracking-tight text-[var(--ink)]">{t("title")}</h2>
+                  <Badge variant="secondary" className="h-5 rounded-full border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-2 text-[10px] font-medium text-[var(--ink-3)]">
                     {filteredModels.length} / {normalizedModels.length}
                   </Badge>
                 </div>
-                <p className="ws-body mt-1 truncate text-xs text-[var(--ink-3)]">
+                <p className="mt-0.5 truncate text-[11px] text-[var(--ink-3)]">
                   {instance?.name}
                   {providerHost ? ` · ${providerHost}` : ""}
                 </p>
@@ -421,21 +463,30 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
             </div>
 
             <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-            <button 
-              onClick={() => setQuickAddOpen(true)} 
-              className="ws-control inline-flex h-9 items-center gap-2 rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg)] px-4 text-[12px] font-semibold text-[var(--ink-2)] transition-all hover:border-[var(--hairline-strong)] hover:bg-[var(--panel-bg-inset)] active:scale-[0.98]"
-            >
-              <Sparkles className="size-3.5 text-[var(--accent-strong)]" />
-              {t("quickAdd.cta")}
-            </button>
-            <button 
-              onClick={handleSync} 
-              disabled={isSyncing}
-              className="ws-control inline-flex h-9 items-center gap-2 rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg)] px-4 text-[12px] font-semibold text-[var(--ink)] transition-all hover:border-[var(--hairline-strong)] hover:bg-[var(--panel-bg-inset)] active:scale-[0.98] disabled:opacity-50"
-            >
-              <RefreshCw className={cn("size-3.5 text-[var(--ok)]", isSyncing && "animate-spin")} />
-              {t("instance.syncModels")}
-            </button>
+              <div className="relative min-w-0 flex-1 lg:w-[220px] lg:flex-none">
+                <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--ink-4)]" />
+                <input
+                  value={localSearch}
+                  onChange={(e) => setLocalSearch(e.target.value)}
+                  placeholder={t("filter.searchPlaceholder")}
+                  className="h-8 w-full rounded-[var(--r-8)] bg-[var(--panel-bg-inset)] pl-8 pr-3 text-[12px] ring-1 ring-[var(--hairline)] outline-none transition-all placeholder:text-[var(--ink-4)] focus:ring-[var(--hairline-strong)]"
+                />
+              </div>
+              <button
+                onClick={() => setQuickAddOpen(true)}
+                className="inline-flex h-8 items-center gap-1.5 rounded-[var(--r-8)] border border-[var(--hairline)] bg-[var(--panel-bg)] px-3 text-[12px] font-medium text-[var(--ink-2)] transition-all hover:border-[var(--hairline-strong)] hover:bg-[var(--panel-bg-inset)] active:scale-[0.98]"
+              >
+                <Sparkles className="size-3.5 text-[var(--accent-strong)]" />
+                {t("quickAdd.cta")}
+              </button>
+              <button
+                onClick={handleSync}
+                disabled={isSyncing}
+                className="inline-flex h-8 items-center gap-1.5 rounded-[var(--r-8)] border border-[var(--hairline)] bg-[var(--panel-bg)] px-3 text-[12px] font-medium text-[var(--ink)] transition-all hover:border-[var(--hairline-strong)] hover:bg-[var(--panel-bg-inset)] active:scale-[0.98] disabled:opacity-50"
+              >
+                <RefreshCw className={cn("size-3.5 text-[var(--ok)]", isSyncing && "animate-spin")} />
+                {t("instance.syncModels")}
+              </button>
             </div>
           </div>
         </div>

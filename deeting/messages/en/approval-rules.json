@@ -4,11 +4,16 @@
     "subtitle": "Review explicit allow and block rules, inspect what the medium profile has learned, and reset local approval state when behavior drifts.",
     "backToSettings": "Back to Settings",
     "desktopOnly": "Desktop local only",
+    "tabs": {
+      "logs": "Operation Logs"
+    },
     "sections": {
       "rules": "Explicit Rules",
       "learning": "Learning Signals",
       "danger": "Danger Zone"
     },
+    "autoPromoteEnabled": "Auto-promote enabled",
+    "lastUpdated": "Last updated",
     "filters": {
       "all": "All rules",
       "allow": "Allow rules",
@@ -23,7 +28,9 @@
       "removeRule": "Remove rule",
       "clearAllows": "Clear allow rules",
       "clearAll": "Clear all rules",
-      "resetLearning": "Reset learning data"
+      "resetLearning": "Reset learning data",
+      "reset": "Reset",
+      "clear": "Clear"
     },
     "meta": {
       "created": "Created",
@@ -48,6 +55,16 @@
     },
     "learning": {
       "description": "Medium mode records one-off approvals, auto-promotes stable patterns, and slows down trust when approval history gets old.",
+      "viewAll": "View all",
+      "table": {
+        "signalDesc": "Signal description",
+        "approvals": "Approvals",
+        "autoPromoted": "Auto-promoted",
+        "explicitAllow": "Explicit allow",
+        "explicitDeny": "Explicit deny",
+        "lastUpdated": "Last updated",
+        "status": "Status"
+      },
       "status": {
         "autoPromoted": "Auto-promoted",
         "stable": "Stable explicit rule",
@@ -100,6 +117,10 @@
       "resetLearning": "Learning data reset",
       "loadFailed": "Failed to load approval controls",
       "actionFailed": "Action failed"
+    },
+    "logs": {
+      "empty": "No operation logs yet.",
+      "description": "Complete history of approval operations."
     },
     "status": {
       "loading": "Loading approval controls...",

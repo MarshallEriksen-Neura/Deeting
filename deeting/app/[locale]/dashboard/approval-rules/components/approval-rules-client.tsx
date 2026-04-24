@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import * as React from "react"
 import { useTranslations } from "next-intl"
@@ -6,8 +6,13 @@ import { toast } from "sonner"
 import {
   AlertTriangle,
   BrainCircuit,
+  CheckCircle2,
+  ChevronRight,
+  Clock,
   Filter,
   Loader2,
+  Monitor,
+  Search,
   ShieldCheck,
   ShieldOff,
   Sparkles,
@@ -23,6 +28,7 @@ import {
   type ToolApprovalLearningSummaryRow,
   type ToolApprovalRule,
 } from "@/lib/api/approval-rules"
+import { cn } from "@/lib/utils"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,13 +39,21 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/shadcn/alert-dialog"
-import { Button } from "@/components/ui/shadcn/button"
 import { Input } from "@/components/ui/shadcn/input"
 import { Container } from "@/components/ui/common/container"
+import { GlassButton } from "@/components/ui/common/glass-button"
+import {
+  GlassCard,
+  GlassCardContent,
+  GlassCardDescription,
+  GlassCardHeader,
+  GlassCardTitle,
+} from "@/components/ui/common/glass-card"
 
 type RuleFilter = "all" | "allow" | "deny"
 type ConfirmAction = null | "clear-all" | "clear-allow" | "reset-learning"
 type ApprovalClassLabels = Record<string, string>
+type TabKey = "explicit" | "learning" | "logs"
 
 function formatDate(value?: number | null) {
   if (!value) return "-"
@@ -99,25 +113,138 @@ function getLearningStatus(row: ToolApprovalLearningSummaryRow) {
 function RuleChip({
   tone,
   children,
+  className,
 }: {
   tone: "allow" | "deny" | "info" | "learning"
   children: React.ReactNode
+  className?: string
 }) {
-  const toneClass =
-    tone === "allow"
-      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-      : tone === "deny"
-      ? "border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-300"
-      : tone === "learning"
-      ? "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-      : "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300"
+  const toneClass = {
+    allow: "border-[var(--ok-border)] bg-[var(--ok-soft)] text-[var(--ok)]",
+    deny: "border-[var(--danger-border)] bg-[var(--danger-soft)] text-[var(--danger)]",
+    learning: "border-[var(--warn-border)] bg-[var(--warn-soft)] text-[var(--warn)]",
+    info: "border-[var(--info-border)] bg-[var(--info-soft)] text-[var(--info)]",
+  } satisfies Record<"allow" | "deny" | "info" | "learning", string>
 
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium ${toneClass}`}
+      className={cn(
+        "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
+        toneClass[tone],
+        className
+      )}
     >
       {children}
     </span>
+  )
+}
+
+function EmptyState({
+  icon: Icon,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex min-h-40 flex-col items-center justify-center gap-3 rounded-[var(--r-12)] border border-dashed border-[var(--hairline)] bg-[var(--panel-bg)]/45 px-6 py-10 text-center">
+      <div className="flex size-11 items-center justify-center rounded-full bg-[var(--panel-bg)] text-[var(--ink-3)]">
+        <Icon className="size-5" />
+      </div>
+      <p className="max-w-md text-sm leading-6 text-[var(--ink-2)]">{children}</p>
+    </div>
+  )
+}
+
+function StatPill({
+  icon: Icon,
+  value,
+  label,
+  colorClass,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  value: string | number
+  label: string
+  colorClass: string
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-[var(--r-12)] border border-[var(--hairline)] bg-[var(--panel-bg)]/60 py-4 px-3 text-center">
+      <Icon className={cn("size-5 mb-2", colorClass)} />
+      <span className="text-2xl font-bold text-[var(--ink)] leading-none">{value}</span>
+      <span className="mt-1.5 text-[11px] text-[var(--ink-3)]">{label}</span>
+    </div>
+  )
+}
+
+function LearningTable({
+  rows,
+  getOperationLabel,
+  getTargetLabel,
+  getBoundaryLabel,
+  t,
+  maxRows,
+}: {
+  rows: ToolApprovalLearningSummaryRow[]
+  getOperationLabel: (v: string) => string
+  getTargetLabel: (v: string) => string
+  getBoundaryLabel: (v: string) => string
+  t: (key: string, values?: Record<string, unknown>) => string
+  maxRows?: number
+}) {
+  const displayRows = maxRows ? rows.slice(0, maxRows) : rows
+
+  return (
+    <div className="overflow-hidden rounded-[var(--r-10)] border border-[var(--hairline)]">
+      <table className="w-full text-left text-xs">
+        <thead>
+          <tr className="border-b border-[var(--hairline)] bg-[var(--panel-bg)]/50 text-[var(--ink-3)]">
+            <th className="px-3 py-2.5 font-medium">{t("learning.table.signalDesc")}</th>
+            <th className="px-3 py-2.5 font-medium text-center">{t("learning.table.approvals")}</th>
+            <th className="px-3 py-2.5 font-medium text-center">{t("learning.table.autoPromoted")}</th>
+            <th className="px-3 py-2.5 font-medium text-center">{t("learning.table.explicitAllow")}</th>
+            <th className="px-3 py-2.5 font-medium text-center">{t("learning.table.explicitDeny")}</th>
+            <th className="px-3 py-2.5 font-medium">{t("learning.table.lastUpdated")}</th>
+            <th className="px-3 py-2.5 font-medium text-right">{t("learning.table.status")}</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-[var(--hairline)]">
+          {displayRows.map((row) => {
+            const status = getLearningStatus(row)
+            const statusTone =
+              status === "autoPromoted"
+                ? "learning"
+                : status === "stable"
+                ? "info"
+                : status === "learning"
+                ? "allow"
+                : "deny"
+            return (
+              <tr
+                key={`${row.operation_class}-${row.target_class}-${row.boundary_class}`}
+                className="hover:bg-[var(--panel-bg)]/30 transition-colors"
+              >
+                <td className="px-3 py-2.5">
+                  <div className="font-medium text-[var(--ink)]">
+                    {getOperationLabel(row.operation_class)} · {getTargetLabel(row.target_class)}
+                  </div>
+                  <div className="text-[var(--ink-3)]">{getBoundaryLabel(row.boundary_class)}</div>
+                </td>
+                <td className="px-3 py-2.5 text-center text-[var(--ink-2)]">{row.observed_approvals}</td>
+                <td className="px-3 py-2.5 text-center text-[var(--ink-2)]">{row.auto_promoted_rules}</td>
+                <td className="px-3 py-2.5 text-center text-[var(--ink-2)]">{row.explicit_allow_rules}</td>
+                <td className="px-3 py-2.5 text-center text-[var(--ink-2)]">{row.explicit_deny_rules}</td>
+                <td className="px-3 py-2.5 text-[var(--ink-2)]">
+                  {formatDate(row.last_approved_at_unix_ms ?? row.last_rejected_at_unix_ms)}
+                </td>
+                <td className="px-3 py-2.5 text-right">
+                  <RuleChip tone={statusTone}>{t(`learning.status.${status}`)}</RuleChip>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -142,6 +269,7 @@ export function ApprovalRulesClient() {
   const [loading, setLoading] = React.useState(true)
   const [busyKey, setBusyKey] = React.useState<string | null>(null)
   const [confirmAction, setConfirmAction] = React.useState<ConfirmAction>(null)
+  const [activeTab, setActiveTab] = React.useState<TabKey>("explicit")
 
   const reload = React.useCallback(async () => {
     setLoading(true)
@@ -232,9 +360,11 @@ export function ApprovalRulesClient() {
     deny: explicitRules.filter((rule) => rule.action === "deny_always").length,
     learning: summaryRows.length,
   }
+
   const operationFallback = operationLabels.unknown ?? t("classes.operation.unknown")
   const targetFallback = targetLabels.unknown ?? t("classes.target.unknown")
-  const boundaryFallback = boundaryLabels.none ?? boundaryLabels.unknown ?? t("classes.boundary.none")
+  const boundaryFallback =
+    boundaryLabels.none ?? boundaryLabels.unknown ?? t("classes.boundary.none")
   const getOperationLabel = (value: string) =>
     resolveApprovalClassLabel(operationLabels, value, operationFallback)
   const getTargetLabel = (value: string) =>
@@ -242,390 +372,487 @@ export function ApprovalRulesClient() {
   const getBoundaryLabel = (value: string) =>
     resolveApprovalClassLabel(boundaryLabels, value, boundaryFallback)
 
-  const content = (
-    <>
-      <div className="relative overflow-hidden rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.12),transparent_34%),radial-gradient(circle_at_80%_20%,rgba(14,165,233,0.12),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.92),rgba(249,250,251,0.88))] p-6 shadow-[0_30px_80px_-32px_rgba(15,23,42,0.35)] dark:bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.14),transparent_34%),radial-gradient(circle_at_80%_20%,rgba(14,165,233,0.14),transparent_30%),linear-gradient(180deg,rgba(10,10,15,0.96),rgba(8,8,12,0.96))]">
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,transparent_0%,rgba(255,255,255,0.08)_48%,transparent_100%)] dark:bg-[linear-gradient(135deg,transparent_0%,rgba(255,255,255,0.04)_48%,transparent_100%)]" />
+  const lastUpdated = React.useMemo(() => {
+    if (rules.length === 0) return null
+    const maxUpdated = Math.max(...rules.map((r) => r.updated_at_unix_ms))
+    return formatDate(maxUpdated)
+  }, [rules])
 
-        <div className="relative flex flex-col gap-8">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl space-y-4">
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,rgba(245,158,11,0.16),rgba(14,165,233,0.18))] text-amber-600 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] dark:text-amber-300">
-                    <ShieldCheck className="h-6 w-6" />
-                  </div>
-                  <RuleChip tone="info">{t("desktopOnly")}</RuleChip>
+  const tabs = [
+    { key: "explicit" as const, label: t("sections.rules") },
+    { key: "learning" as const, label: t("sections.learning") },
+    { key: "logs" as const, label: t("tabs.logs") },
+  ]
+
+  return (
+    <Container as="main" gutter="md" size="full" className="py-6 md:py-8 !mx-0 !max-w-none">
+      <div className="space-y-6">
+        {/* Hero */}
+        <GlassCard theme="surface" hover="none" padding="lg">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.9fr)] xl:items-center">
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="flex size-10 items-center justify-center rounded-[var(--r-10)] bg-amber-50 text-amber-500">
+                  <ShieldCheck className="size-5" />
                 </div>
                 <div>
-                  <h1 className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-white md:text-4xl">
-                    {t("title")}
-                  </h1>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-                    {t("subtitle")}
-                  </p>
+                  <h1 className="text-xl font-bold text-[var(--ink)]">{t("title")}</h1>
+                  <p className="text-sm text-[var(--ink-2)]">{t("subtitle")}</p>
                 </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--panel-bg)] px-3 py-1 text-xs text-[var(--ink-2)]">
+                  <Monitor className="size-3.5" />
+                  {t("desktopOnly")}
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--ok-border)] bg-[var(--ok-soft)] px-3 py-1 text-xs text-[var(--ok)]">
+                  <CheckCircle2 className="size-3.5" />
+                  {t("autoPromoteEnabled")}
+                </span>
+                {lastUpdated && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--hairline)] bg-[var(--panel-bg)] px-3 py-1 text-xs text-[var(--ink-3)]">
+                    <Clock className="size-3.5" />
+                    {t("lastUpdated")} {lastUpdated}
+                  </span>
+                )}
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              {([
-                ["active", summaryStats.active],
-                ["allow", summaryStats.allow],
-                ["deny", summaryStats.deny],
-                ["learning", summaryStats.learning],
-              ] as const).map(([key, value]) => (
-                <div
-                  key={key}
-                  className="rounded-2xl border border-white/20 bg-white/75 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur dark:border-white/10 dark:bg-white/5 dark:shadow-none"
-                >
-                  <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-                    {t(`summary.${key}`)}
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
-                    {value}
-                  </div>
-                </div>
-              ))}
+            <div className="grid grid-cols-4 gap-3">
+              <StatPill
+                icon={ShieldCheck}
+                value={summaryStats.active}
+                label={t("summary.active")}
+                colorClass="text-[var(--info)]"
+              />
+              <StatPill
+                icon={CheckCircle2}
+                value={summaryStats.allow}
+                label={t("summary.allow")}
+                colorClass="text-[var(--ok)]"
+              />
+              <StatPill
+                icon={ShieldOff}
+                value={summaryStats.deny}
+                label={t("summary.deny")}
+                colorClass="text-[var(--danger)]"
+              />
+              <StatPill
+                icon={BrainCircuit}
+                value={summaryStats.learning}
+                label={t("summary.learning")}
+                colorClass="text-[var(--accent-strong)]"
+              />
             </div>
           </div>
+        </GlassCard>
 
-          <section className="rounded-[28px] border border-white/10 bg-white/80 p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.28)] backdrop-blur dark:bg-white/5">
-            <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <div className="flex items-center gap-2 text-sm font-medium text-slate-900 dark:text-white">
-                  <Filter className="h-4 w-4 text-amber-500" />
-                  {t("sections.rules")}
-                </div>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  {t("subtitle")}
-                </p>
-              </div>
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <div className="inline-flex rounded-2xl border border-white/20 bg-slate-100/80 p-1 dark:bg-white/5">
-                  {(["all", "allow", "deny"] as const).map((item) => (
-                    <button
-                      key={item}
-                      type="button"
-                      onClick={() => setFilter(item)}
-                      className={`rounded-2xl px-3 py-2 text-xs font-medium transition ${
-                        filter === item
-                          ? "bg-white text-slate-900 shadow-sm dark:bg-white/10 dark:text-white"
-                          : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-                      }`}
-                    >
-                      {t(`filters.${item}`)}
-                    </button>
-                  ))}
-                </div>
-                <Input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder={t("filters.searchPlaceholder")}
-                  className="w-full min-w-[240px] rounded-2xl border-white/20 bg-white/70 dark:bg-white/5"
-                />
-              </div>
-            </div>
-
-            {loading ? (
-              <div className="flex items-center gap-3 rounded-2xl border border-dashed border-white/15 p-6 text-sm text-slate-500 dark:text-slate-400">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {t("status.loading")}
-              </div>
-            ) : explicitRules.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-white/15 p-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                {t("empty.rules")}
-              </div>
-            ) : (
-              <div className="grid gap-4 xl:grid-cols-2">
-                {explicitRules.map((rule) => {
-                  const sourceKey = classifyRuleSource(rule)
-                  const isDeny = rule.action === "deny_always"
-                  return (
-                    <div
-                      key={rule.key}
-                      className="group rounded-[26px] border border-white/15 bg-[linear-gradient(180deg,rgba(255,255,255,0.85),rgba(248,250,252,0.82))] p-5 shadow-[0_24px_60px_-36px_rgba(15,23,42,0.35)] transition hover:-translate-y-0.5 hover:shadow-[0_28px_70px_-36px_rgba(15,23,42,0.4)] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.03))]"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="space-y-3">
-                          <div className="flex items-center gap-2">
-                            <RuleChip tone={isDeny ? "deny" : "allow"}>
-                              {t(`source.${sourceKey}`)}
-                            </RuleChip>
-                            <RuleChip tone={rule.auto_promoted ? "learning" : "info"}>
-                              {rule.risk_level ?? t("status.unknownRisk")}
-                            </RuleChip>
-                          </div>
-                          <div>
-                            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
-                              {rule.display_label}
-                            </h2>
-                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                              {rule.tool_name}
-                            </p>
-                          </div>
-                        </div>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={busyKey === rule.key}
-                          onClick={() => void handleRemoveRule(rule.key)}
-                        >
-                          {busyKey === rule.key ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="mr-2 h-4 w-4" />
-                          )}
-                          {t("actions.removeRule")}
-                        </Button>
-                      </div>
-
-                      <div className="mt-5 grid gap-3 md:grid-cols-2">
-                        <div className="rounded-2xl border border-white/10 bg-white/60 p-3 dark:bg-white/5">
-                          <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">
-                            {getOperationLabel(rule.operation_class)}
-                          </div>
-                          <div className="mt-2 text-sm text-slate-700 dark:text-slate-300">
-                            {getTargetLabel(rule.target_class)} ·{" "}
-                            {getBoundaryLabel(rule.boundary_class)}
-                          </div>
-                        </div>
-                        <div className="rounded-2xl border border-white/10 bg-white/60 p-3 dark:bg-white/5">
-                          <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">
-                            {t("meta.expires")}
-                          </div>
-                          <div className="mt-2 text-sm text-slate-700 dark:text-slate-300">
-                            {rule.expires_at_unix_ms
-                              ? formatDate(rule.expires_at_unix_ms)
-                              : t("meta.never")}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-4 grid gap-2 text-xs text-slate-500 dark:text-slate-400 md:grid-cols-2">
-                        <div>
-                          {t("meta.created")}: {formatDate(rule.created_at_unix_ms)}
-                        </div>
-                        <div>
-                          {t("meta.updated")}: {formatDate(rule.updated_at_unix_ms)}
-                        </div>
-                        <div>
-                          {t("meta.approvals")}: {rule.approve_count}
-                        </div>
-                        <div>
-                          {t("meta.rejections")}: {rule.reject_count}
-                        </div>
-                        <div>
-                          {t("meta.halfLife", { days: rule.half_life_days })}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </section>
-
-          <section className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
-            <div className="rounded-[28px] border border-white/10 bg-white/80 p-5 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.28)] backdrop-blur dark:bg-white/5">
-              <div className="mb-5 flex items-center gap-2 text-sm font-medium text-slate-900 dark:text-white">
-                <BrainCircuit className="h-4 w-4 text-sky-500" />
-                {t("sections.learning")}
-              </div>
-              <p className="mb-5 text-sm text-slate-500 dark:text-slate-400">
-                {t("learning.description")}
-              </p>
-
-              {summaryRows.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-white/15 p-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                  {t("empty.learning")}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {summaryRows.map((row) => {
-                    const status = getLearningStatus(row)
-                    return (
-                      <div
-                        key={`${row.operation_class}-${row.target_class}-${row.boundary_class}`}
-                        className="rounded-2xl border border-white/10 bg-white/60 p-4 dark:bg-white/5"
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                              {getOperationLabel(row.operation_class)} ·{" "}
-                              {getTargetLabel(row.target_class)}
-                            </div>
-                            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                              {getBoundaryLabel(row.boundary_class)}
-                            </div>
-                          </div>
-                          <RuleChip
-                            tone={
-                              status === "autoPromoted"
-                                ? "learning"
-                                : status === "stable"
-                                ? "info"
-                                : status === "learning"
-                                ? "allow"
-                                : "deny"
-                            }
-                          >
-                            {t(`learning.status.${status}`)}
-                          </RuleChip>
-                        </div>
-                        <div className="mt-4 grid gap-2 text-xs text-slate-500 dark:text-slate-400 sm:grid-cols-2">
-                          <div>
-                            {t("meta.approvals")}: {row.observed_approvals}
-                          </div>
-                          <div>
-                            {t("meta.rejections")}: {row.observed_rejections}
-                          </div>
-                          <div>
-                            {t("source.autoPromoted")}: {row.auto_promoted_rules}
-                          </div>
-                          <div>
-                            {t("source.explicitAllow")}: {row.explicit_allow_rules}
-                          </div>
-                          <div>
-                            {t("source.explicitDeny")}: {row.explicit_deny_rules}
-                          </div>
-                          <div>
-                            {t("meta.updated")}:{" "}
-                            {formatDate(
-                              row.last_approved_at_unix_ms ?? row.last_rejected_at_unix_ms
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
+        {/* Tabs */}
+        <div className="flex items-center gap-1 border-b border-[var(--hairline)]">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={cn(
+                "relative px-4 py-2.5 text-sm font-medium transition-colors",
+                activeTab === tab.key
+                  ? "text-[var(--accent-strong)]"
+                  : "text-[var(--ink-3)] hover:text-[var(--ink-2)]"
               )}
-            </div>
+            >
+              {tab.label}
+              {activeTab === tab.key && (
+                <span className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-[var(--accent-strong)]" />
+              )}
+            </button>
+          ))}
+        </div>
 
-            <div className="rounded-[28px] border border-red-500/15 bg-[linear-gradient(180deg,rgba(255,248,240,0.9),rgba(255,245,245,0.92))] p-5 shadow-[0_20px_60px_-34px_rgba(185,28,28,0.3)] dark:bg-[linear-gradient(180deg,rgba(127,29,29,0.16),rgba(28,25,23,0.12))]">
-              <div className="mb-4 flex items-center gap-2 text-sm font-medium text-slate-900 dark:text-white">
-                <AlertTriangle className="h-4 w-4 text-red-500" />
-                {t("sections.danger")}
-              </div>
-              <p className="mb-5 text-sm text-slate-600 dark:text-slate-300">
-                {t("danger.description")}
-              </p>
+        {/* Explicit Rules Tab */}
+        {activeTab === "explicit" && (
+          <div className="space-y-6">
+            <GlassCard theme="surface" hover="none">
+              {/* Filter bar */}
+              <GlassCardHeader className="gap-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between w-full">
+                  <div className="flex flex-wrap gap-2">
+                    {(["all", "allow", "deny"] as const).map((item) => (
+                      <GlassButton
+                        key={item}
+                        type="button"
+                        size="sm"
+                        variant={filter === item ? "outline" : "ghost"}
+                        onClick={() => setFilter(item)}
+                        className={cn(
+                          "min-w-[88px]",
+                          filter === item
+                            ? "border-[var(--accent-border)] text-[var(--accent-strong)] bg-[var(--accent-soft)]"
+                            : "text-[var(--ink-2)]"
+                        )}
+                      >
+                        {t(`filters.${item}`)}
+                      </GlassButton>
+                    ))}
+                  </div>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--ink-3)]" />
+                    <Input
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder={t("filters.searchPlaceholder")}
+                      className="w-full min-w-[260px] pl-9 border-[var(--hairline)] bg-[var(--panel-bg)]/65 text-[var(--ink)] placeholder:text-[var(--ink-3)] lg:max-w-sm"
+                    />
+                  </div>
+                </div>
+              </GlassCardHeader>
 
-              <div className="space-y-4">
-                <div className="rounded-2xl border border-white/10 bg-white/70 p-4 dark:bg-white/5">
-                  <div className="flex items-start gap-3">
-                    <Sparkles className="mt-0.5 h-4 w-4 text-amber-500" />
-                    <div className="space-y-3">
-                      <div>
-                        <div className="text-sm font-medium text-slate-900 dark:text-white">
-                          {t("actions.resetLearning")}
-                        </div>
-                        <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+              <GlassCardContent className="pt-0">
+                {loading ? (
+                  <div className="flex items-center gap-3 rounded-[var(--r-12)] border border-dashed border-[var(--hairline)] bg-[var(--panel-bg)]/45 px-5 py-6 text-sm text-[var(--ink-2)]">
+                    <Loader2 className="size-4 animate-spin text-[var(--accent-strong)]" />
+                    {t("status.loading")}
+                  </div>
+                ) : explicitRules.length === 0 ? (
+                  <EmptyState icon={Filter}>{t("empty.rules")}</EmptyState>
+                ) : (
+                  <div className="grid gap-4 xl:grid-cols-2 max-h-[560px] overflow-y-auto pr-1">
+                    {explicitRules.map((rule) => {
+                      const sourceKey = classifyRuleSource(rule)
+                      const isDeny = rule.action === "deny_always"
+
+                      return (
+                        <GlassCard
+                          key={rule.key}
+                          theme="surface"
+                          hover="lift"
+                          padding="sm"
+                          className={cn(
+                            "border-[var(--hairline)] bg-[var(--panel-bg)]/68",
+                            isDeny && "border-[var(--danger-border)] bg-[var(--danger-soft)]/24"
+                          )}
+                        >
+                          <div className="space-y-3">
+                            {/* Top row: tags + delete */}
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <RuleChip tone={isDeny ? "deny" : "allow"}>
+                                  {t(`source.${sourceKey}`)}
+                                </RuleChip>
+                                {rule.risk_level && (
+                                  <span
+                                    className={cn(
+                                      "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
+                                      rule.risk_level === "HIGH"
+                                        ? "bg-[var(--danger-soft)] text-[var(--danger)]"
+                                        : rule.risk_level === "MEDIUM"
+                                        ? "bg-[var(--warn-soft)] text-[var(--warn)]"
+                                        : "bg-[var(--info-soft)] text-[var(--info)]"
+                                    )}
+                                  >
+                                    {rule.risk_level}
+                                  </span>
+                                )}
+                                <span className="inline-flex items-center rounded-full border border-[var(--hairline)] bg-[var(--panel-bg)] px-2 py-0.5 text-[11px] text-[var(--ink-3)]">
+                                  {getBoundaryLabel(rule.boundary_class)}
+                                </span>
+                              </div>
+                              <GlassButton
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                disabled={busyKey === rule.key}
+                                onClick={() => void handleRemoveRule(rule.key)}
+                                className="text-[var(--ink-3)] hover:text-[var(--danger)] hover:bg-[var(--danger-soft)]"
+                              >
+                                {busyKey === rule.key ? (
+                                  <Loader2 className="size-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="size-4" />
+                                )}
+                                {t("actions.removeRule")}
+                              </GlassButton>
+                            </div>
+
+                            {/* Title & tool name */}
+                            <div>
+                              <h2 className="text-[15px] font-semibold text-[var(--ink)] leading-snug">
+                                {rule.display_label}
+                              </h2>
+                              <p className="mt-0.5 text-xs text-[var(--ink-3)]">{rule.tool_name}</p>
+                              <p className="mt-1 text-xs text-[var(--ink-2)]">
+                                {getOperationLabel(rule.operation_class)} ·{" "}
+                                {getTargetLabel(rule.target_class)} ·{" "}
+                                {getBoundaryLabel(rule.boundary_class)}
+                              </p>
+                            </div>
+
+                            {/* Meta grid */}
+                            <div className="grid grid-cols-5 gap-2 rounded-[var(--r-10)] border border-[var(--hairline)] bg-[var(--panel-bg)]/50 p-3">
+                              <div>
+                                <div className="text-[10px] uppercase tracking-wider text-[var(--ink-3)]">
+                                  {t("meta.created")}
+                                </div>
+                                <div className="mt-1 text-[11px] text-[var(--ink-2)]">
+                                  {formatDate(rule.created_at_unix_ms)}
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-[10px] uppercase tracking-wider text-[var(--ink-3)]">
+                                  {t("meta.expires")}
+                                </div>
+                                <div className="mt-1 text-[11px] text-[var(--ink-2)]">
+                                  {rule.expires_at_unix_ms
+                                    ? formatDate(rule.expires_at_unix_ms)
+                                    : t("meta.never")}
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-[10px] uppercase tracking-wider text-[var(--ink-3)]">
+                                  {t("meta.approvals")}
+                                </div>
+                                <div className="mt-1 text-[11px] text-[var(--ink-2)]">
+                                  {rule.approve_count}
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-[10px] uppercase tracking-wider text-[var(--ink-3)]">
+                                  {t("meta.rejections")}
+                                </div>
+                                <div className="mt-1 text-[11px] text-[var(--ink-2)]">
+                                  {rule.reject_count}
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-[10px] uppercase tracking-wider text-[var(--ink-3)]">
+                                  {t("meta.updated")}
+                                </div>
+                                <div className="mt-1 text-[11px] text-[var(--ink-2)]">
+                                  {formatDate(rule.updated_at_unix_ms)}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </GlassCard>
+                      )
+                    })}
+                  </div>
+                )}
+              </GlassCardContent>
+            </GlassCard>
+
+            {/* Bottom section: Learning + Danger */}
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(300px,0.8fr)]">
+              {/* Learning Signals Table */}
+              <GlassCard theme="surface" hover="none">
+                <GlassCardHeader className="flex-row items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <BrainCircuit className="size-4 text-[var(--info)]" />
+                    <GlassCardTitle className="text-base">{t("sections.learning")}</GlassCardTitle>
+                  </div>
+                  <button
+                    onClick={() => setActiveTab("learning")}
+                    className="inline-flex items-center gap-0.5 text-xs text-[var(--accent-strong)] hover:underline"
+                  >
+                    {t("learning.viewAll")}
+                    <ChevronRight className="size-3" />
+                  </button>
+                </GlassCardHeader>
+                <GlassCardDescription className="px-6 pb-2 text-[var(--ink-2)]">
+                  {t("learning.description")}
+                </GlassCardDescription>
+                <GlassCardContent className="pt-0">
+                  {summaryRows.length === 0 ? (
+                    <EmptyState icon={BrainCircuit}>{t("empty.learning")}</EmptyState>
+                  ) : (
+                    <LearningTable
+                      rows={summaryRows}
+                      getOperationLabel={getOperationLabel}
+                      getTargetLabel={getTargetLabel}
+                      getBoundaryLabel={getBoundaryLabel}
+                      t={t}
+                      maxRows={5}
+                    />
+                  )}
+                </GlassCardContent>
+              </GlassCard>
+
+              {/* Danger Zone */}
+              <GlassCard
+                theme="surface"
+                hover="none"
+                className="border-[var(--danger-border)] bg-[var(--danger-soft)]/18"
+              >
+                <GlassCardHeader>
+                  <div className="flex items-center gap-2 text-sm font-medium text-[var(--ink)]">
+                    <AlertTriangle className="size-4 text-[var(--danger)]" />
+                    <GlassCardTitle className="text-base">{t("sections.danger")}</GlassCardTitle>
+                  </div>
+                  <GlassCardDescription className="text-[var(--ink-2)]">
+                    {t("danger.description")}
+                  </GlassCardDescription>
+                </GlassCardHeader>
+
+                <GlassCardContent className="space-y-3 pt-0">
+                  <div className="space-y-3 rounded-[var(--r-10)] border border-[var(--hairline)] bg-[var(--panel-bg)]/50 p-3">
+                    <div className="flex items-start gap-3">
+                      <div className="flex size-8 shrink-0 items-center justify-center rounded-[var(--r-8)] bg-[var(--warn-soft)] text-[var(--warn)]">
+                        <Sparkles className="size-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-[var(--ink)]">{t("actions.resetLearning")}</div>
+                        <p className="mt-0.5 text-xs leading-5 text-[var(--ink-2)]">
                           {t("danger.resetLearningHelp")}
                         </p>
                       </div>
-                      <Button
+                    </div>
+                    <div className="flex justify-end">
+                      <GlassButton
                         type="button"
                         size="sm"
                         variant="outline"
                         onClick={() => setConfirmAction("reset-learning")}
+                        className="shrink-0"
                       >
-                        {t("actions.resetLearning")}
-                      </Button>
+                        {t("actions.reset")}
+                      </GlassButton>
                     </div>
                   </div>
-                </div>
 
-                <div className="rounded-2xl border border-white/10 bg-white/70 p-4 dark:bg-white/5">
-                  <div className="flex items-start gap-3">
-                    <ShieldCheck className="mt-0.5 h-4 w-4 text-emerald-500" />
-                    <div className="space-y-3">
-                      <div>
-                        <div className="text-sm font-medium text-slate-900 dark:text-white">
-                          {t("actions.clearAllows")}
-                        </div>
-                        <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                  <div className="space-y-3 rounded-[var(--r-10)] border border-[var(--hairline)] bg-[var(--panel-bg)]/50 p-3">
+                    <div className="flex items-start gap-3">
+                      <div className="flex size-8 shrink-0 items-center justify-center rounded-[var(--r-8)] bg-[var(--ok-soft)] text-[var(--ok)]">
+                        <ShieldCheck className="size-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-[var(--ink)]">{t("actions.clearAllows")}</div>
+                        <p className="mt-0.5 text-xs leading-5 text-[var(--ink-2)]">
                           {t("danger.clearAllowsHelp")}
                         </p>
                       </div>
-                      <Button
+                    </div>
+                    <div className="flex justify-end">
+                      <GlassButton
                         type="button"
                         size="sm"
                         variant="outline"
                         onClick={() => setConfirmAction("clear-allow")}
+                        className="shrink-0"
                       >
-                        {t("actions.clearAllows")}
-                      </Button>
+                        {t("actions.clear")}
+                      </GlassButton>
                     </div>
                   </div>
-                </div>
 
-                <div className="rounded-2xl border border-red-500/15 bg-red-500/[0.08] p-4">
-                  <div className="flex items-start gap-3">
-                    <ShieldOff className="mt-0.5 h-4 w-4 text-red-500" />
-                    <div className="space-y-3">
-                      <div>
-                        <div className="text-sm font-medium text-slate-900 dark:text-white">
-                          {t("actions.clearAll")}
-                        </div>
-                        <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-300">
+                  <div className="space-y-3 rounded-[var(--r-10)] border border-[var(--danger-border)] bg-[var(--danger-soft)]/20 p-3">
+                    <div className="flex items-start gap-3">
+                      <div className="flex size-8 shrink-0 items-center justify-center rounded-[var(--r-8)] bg-[var(--danger-soft)] text-[var(--danger)]">
+                        <ShieldOff className="size-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-[var(--ink)]">{t("actions.clearAll")}</div>
+                        <p className="mt-0.5 text-xs leading-5 text-[var(--ink-2)]">
                           {t("danger.clearAllHelp")}
                         </p>
                       </div>
-                      <Button
+                    </div>
+                    <div className="flex justify-end">
+                      <GlassButton
                         type="button"
                         size="sm"
+                        variant="destructive"
                         onClick={() => setConfirmAction("clear-all")}
+                        className="shrink-0"
                       >
                         {t("actions.clearAll")}
-                      </Button>
+                      </GlassButton>
                     </div>
                   </div>
-                </div>
-              </div>
+                </GlassCardContent>
+              </GlassCard>
             </div>
-          </section>
-        </div>
+          </div>
+        )}
+
+        {/* Learning Tab */}
+        {activeTab === "learning" && (
+          <GlassCard theme="surface" hover="none">
+            <GlassCardHeader>
+              <div className="flex items-center gap-2">
+                <BrainCircuit className="size-4 text-[var(--info)]" />
+                <GlassCardTitle className="text-base">{t("sections.learning")}</GlassCardTitle>
+              </div>
+              <GlassCardDescription className="text-[var(--ink-2)]">
+                {t("learning.description")}
+              </GlassCardDescription>
+            </GlassCardHeader>
+            <GlassCardContent>
+              {summaryRows.length === 0 ? (
+                <EmptyState icon={BrainCircuit}>{t("empty.learning")}</EmptyState>
+              ) : (
+                <LearningTable
+                  rows={summaryRows}
+                  getOperationLabel={getOperationLabel}
+                  getTargetLabel={getTargetLabel}
+                  getBoundaryLabel={getBoundaryLabel}
+                  t={t}
+                />
+              )}
+            </GlassCardContent>
+          </GlassCard>
+        )}
+
+        {/* Logs Tab */}
+        {activeTab === "logs" && (
+          <GlassCard theme="surface" hover="none">
+            <GlassCardHeader>
+              <div className="flex items-center gap-2">
+                <Clock className="size-4 text-[var(--ink-3)]" />
+                <GlassCardTitle className="text-base">{t("tabs.logs")}</GlassCardTitle>
+              </div>
+              <GlassCardDescription className="text-[var(--ink-2)]">
+                {t("logs.description")}
+              </GlassCardDescription>
+            </GlassCardHeader>
+            <GlassCardContent>
+              <EmptyState icon={Clock}>{t("logs.empty")}</EmptyState>
+            </GlassCardContent>
+          </GlassCard>
+        )}
+
+        {/* Alert Dialog */}
+        <AlertDialog
+          open={confirmAction !== null}
+          onOpenChange={(open) => !open && setConfirmAction(null)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {confirmAction === "clear-all"
+                  ? t("confirm.clearAllTitle")
+                  : confirmAction === "clear-allow"
+                  ? t("confirm.clearAllowsTitle")
+                  : t("confirm.resetLearningTitle")}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {confirmAction === "clear-all"
+                  ? t("confirm.clearAllBody")
+                  : confirmAction === "clear-allow"
+                  ? t("confirm.clearAllowsBody")
+                  : t("confirm.resetLearningBody")}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t("confirm.cancel")}</AlertDialogCancel>
+              <AlertDialogAction onClick={() => void handleDangerAction()}>
+                {busyKey === confirmAction ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                {t("confirm.confirm")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
-
-      <AlertDialog open={confirmAction !== null} onOpenChange={(open) => !open && setConfirmAction(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {confirmAction === "clear-all"
-                ? t("confirm.clearAllTitle")
-                : confirmAction === "clear-allow"
-                ? t("confirm.clearAllowsTitle")
-                : t("confirm.resetLearningTitle")}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirmAction === "clear-all"
-                ? t("confirm.clearAllBody")
-                : confirmAction === "clear-allow"
-                ? t("confirm.clearAllowsBody")
-                : t("confirm.resetLearningBody")}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("confirm.cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void handleDangerAction()}>
-              {busyKey === confirmAction ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              {t("confirm.confirm")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
-  )
-
-  return (
-    <Container as="main" gutter="md" size="full" className="py-6 md:py-8 !mx-0 !max-w-none">
-      {content}
     </Container>
   )
 }
-

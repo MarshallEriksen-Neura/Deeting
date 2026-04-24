@@ -5,6 +5,12 @@
     "description": "Manage Model Context Protocol services and upstream sync sources with Deeting OS runtime.",
     "addManual": "Add Manual Server"
   },
+  "kpi": {
+    "total": "Total",
+    "running": "Running",
+    "stopped": "Stopped",
+    "conflicts": "Conflicts"
+  },
   "supplyChain": {
     "title": "The Supply Chain",
     "addSource": "Add Source"

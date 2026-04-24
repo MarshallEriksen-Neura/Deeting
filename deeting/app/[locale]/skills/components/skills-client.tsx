@@ -2,9 +2,10 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Laptop, RefreshCw, Search, ShieldCheck, Wrench, Filter, Grid2X2 } from "lucide-react";
+import { Laptop, RefreshCw, Search, ShieldCheck, Wrench, Grid2X2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
+import { GlassCard } from "@/components/ui/common/glass-card";
 import { PluginCard } from "@/components/plugins/plugin-card";
 import { SkillRuntimeConfigSheet } from "@/components/plugins/skill-runtime-config-sheet";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -164,64 +165,109 @@ export function SkillsClient() {
 
   return (
     <div className="flex flex-col h-full gap-5">
+      {/* KPI Dashboard */}
+      {stats.total > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          <GlassCard padding="sm" hover="none" className="flex flex-col gap-1">
+            <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">
+              {t("page.skills.stats.installed")}
+            </span>
+            <span className="font-mono text-[22px] font-semibold leading-none tracking-[-0.5px] text-[var(--ink)]">
+              {stats.total}
+            </span>
+          </GlassCard>
+          <GlassCard padding="sm" hover="none" theme="primary" className="flex flex-col gap-1">
+            <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">
+              {t("page.skills.stats.ready")}
+            </span>
+            <span className="font-mono text-[22px] font-semibold leading-none tracking-[-0.5px] text-[var(--ok)]">
+              {stats.ready}
+            </span>
+          </GlassCard>
+          <GlassCard padding="sm" hover="none" className="flex flex-col gap-1">
+            <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">
+              {t("page.skills.stats.actionRequired")}
+            </span>
+            <span className="font-mono text-[22px] font-semibold leading-none tracking-[-0.5px] text-[var(--warn)]">
+              {stats.action}
+            </span>
+          </GlassCard>
+        </div>
+      )}
+
       {/* Workspace Header Toolbar */}
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div className="flex min-w-0 flex-1 flex-col gap-3">
-          <div className="flex items-center gap-4">
-            <h1 className="text-[17px] font-[600] tracking-[-0.2px] text-[var(--ink)] flex items-center gap-2">
-              <Grid2X2 size={18} className="text-[var(--accent)]" />
-              {tCommon("nav.skills")}
-            </h1>
-            <div className="h-4 w-px bg-[var(--hairline)] hidden lg:block" />
-          </div>
-          <div className="flex w-full max-w-fit flex-wrap items-center gap-1.5 bg-[var(--panel-bg-inset)] p-1 rounded-[10px] ring-1 ring-[var(--hairline)] shadow-sm">
-             {[
-               { id: "all", label: t("page.skills.stats.installed"), count: stats.total, icon: Grid2X2 },
-               { id: "ready", label: t("page.skills.stats.ready"), count: stats.ready, icon: ShieldCheck, color: "text-[var(--ok)]" },
-               { id: "action", label: t("page.skills.stats.actionRequired"), count: stats.action, icon: Wrench, color: "text-[var(--warn)]" },
-             ].map(filter => (
-               <button
-                 key={filter.id}
-                 onClick={() => setActiveFilter(filter.id as any)}
-                 className={cn(
-                   "flex items-center gap-2 px-3 py-1.5 rounded-[8px] text-[12px] font-[500] transition-all",
-                   activeFilter === filter.id 
-                    ? "bg-[var(--panel-bg)] text-[var(--ink)] shadow-sm ring-1 ring-[var(--hairline-strong)]" 
-                    : "text-[var(--ink-3)] hover:text-[var(--ink)]"
-                 )}
-               >
-                 <filter.icon size={13} className={cn(activeFilter === filter.id ? filter.color : "text-current")} />
-                 {filter.label}
-                 <span className="font-mono tabular-nums opacity-60 ml-0.5">{filter.count}</span>
-               </button>
-             ))}
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex items-center gap-4">
+          <h1 className="flex items-center gap-2 text-[17px] font-semibold tracking-[-0.2px] text-[var(--ink)]">
+            <Grid2X2 size={18} className="text-[var(--accent-strong)]" />
+            {tCommon("nav.skills")}
+          </h1>
+          <div className="hidden h-4 w-px bg-[var(--hairline)] lg:block" />
+          <div className="flex h-[32px] items-center gap-1 border-b border-[var(--hairline)]">
+            {[
+              { id: "all", label: t("page.skills.stats.installed"), count: stats.total, tone: "slate" as const },
+              { id: "ready", label: t("page.skills.stats.ready"), count: stats.ready, tone: "emerald" as const },
+              { id: "action", label: t("page.skills.stats.actionRequired"), count: stats.action, tone: "amber" as const },
+            ].map((filter) => {
+              const isActive = activeFilter === filter.id
+              return (
+                <button
+                  key={filter.id}
+                  onClick={() => setActiveFilter(filter.id as typeof activeFilter)}
+                  className={cn(
+                    "relative flex h-[32px] items-center gap-2 px-3 text-[13px] font-medium leading-none transition-colors",
+                    isActive
+                      ? "border-b-2 border-[var(--accent-strong)] text-[var(--ink)]"
+                      : "border-b-2 border-transparent text-[var(--ink-2)] hover:text-[var(--ink)]"
+                  )}
+                >
+                  {filter.label}
+                  <span
+                    className={cn(
+                      "flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 font-mono text-[10px] tabular-nums tracking-tight",
+                      filter.tone === "emerald"
+                        ? isActive
+                          ? "bg-[var(--ok)] text-white"
+                          : "bg-[var(--ok-soft)] text-[var(--ok)]"
+                        : filter.tone === "amber"
+                          ? isActive
+                            ? "bg-[var(--warn)] text-white"
+                            : "bg-[var(--warn-soft)] text-[var(--warn)]"
+                          : "bg-[var(--panel-bg-inset)] text-[var(--ink-2)] ring-1 ring-[var(--hairline)]"
+                    )}
+                  >
+                    {filter.count}
+                  </span>
+                </button>
+              )
+            })}
           </div>
         </div>
 
-        <div className="flex w-full items-center gap-3 xl:w-auto xl:justify-end xl:self-start">
-          <div className="relative min-w-0 flex-1 xl:w-[360px] xl:flex-none">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-[var(--ink-4)]" />
+        <div className="flex w-full items-center gap-3 xl:w-auto xl:justify-end">
+          <div className="relative min-w-0 flex-1 xl:w-[280px] xl:flex-none">
+            <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--ink-4)]" />
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={t("page.skills.searchPlaceholder")}
-              className="w-full h-[32px] pl-8 pr-3 text-[13px] bg-[var(--panel-bg-inset)] rounded-[8px] ring-1 ring-[var(--hairline)] focus:ring-[var(--hairline-strong)] outline-none transition-all placeholder:text-[var(--ink-4)]"
+              className="h-[32px] w-full rounded-[var(--r-8)] bg-[var(--panel-bg-inset)] pl-8 pr-3 text-[13px] ring-1 ring-[var(--hairline)] outline-none transition-all placeholder:text-[var(--ink-4)] focus:ring-[var(--hairline-strong)]"
             />
           </div>
           <button
             onClick={() => refreshRuntimeStatuses()}
-            className="flex h-[32px] w-[32px] items-center justify-center rounded-[8px] text-[var(--ink-3)] hover:text-[var(--ink)] hover:bg-[var(--panel-bg-inset)] transition-all ring-1 ring-transparent hover:ring-[var(--hairline)]"
+            className="flex h-[32px] w-[32px] items-center justify-center rounded-[var(--r-8)] text-[var(--ink-3)] ring-1 ring-transparent transition-all hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)] hover:ring-[var(--hairline)]"
           >
-            <RefreshCw size={14} className={isLoadingRuntimeStatuses ? "animate-spin text-[var(--accent)]" : ""} />
+            <RefreshCw size={14} className={isLoadingRuntimeStatuses ? "animate-spin text-[var(--accent-strong)]" : ""} />
           </button>
         </div>
       </div>
 
       {/* Main Grid View */}
       <div className="flex-1 overflow-y-auto min-h-0 pr-1 -mr-1">
-        <motion.div 
+        <motion.div
           layout
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4"
+          className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
         >
           <AnimatePresence mode="popLayout">
             {isLoadingRuntimeStatuses && skillStatuses.length === 0 ? (

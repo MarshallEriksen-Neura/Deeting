@@ -7,6 +7,7 @@ import { useTranslations } from "next-intl";
 import { mapDesktopToolRecordToTool } from "@/lib/mcp/registry-mappers";
 import { DESKTOP_MCP_COMMANDS } from "@/lib/api/mcp-desktop";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
+import { GlassCard } from "@/components/ui/common/glass-card";
 import { useNotifications } from "@/components/contexts/notification-context";
 import type { MCPLogEntry, MCPSource, MCPTool, McpToolRecord } from "@/types/mcp";
 import {
@@ -238,6 +239,57 @@ export function MCPRegistryClient({
     <div className="relative min-h-0 w-full min-w-0 space-y-8">
       <RegistryHeader onCreateManual={handleImportConfig} />
 
+      {/* KPI Dashboard */}
+      {runtimeGroups.length > 0 && (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {(() => {
+            const runningCount = runtimeGroups.filter((g) => g.runningCount > 0).length
+            const stoppedCount = runtimeGroups.length - runningCount
+            return (
+              <>
+                <GlassCard padding="sm" hover="none" className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">
+                    {t("kpi.total")}
+                  </span>
+                  <span className="font-mono text-[22px] font-semibold leading-none tracking-[-0.5px] text-[var(--ink)]">
+                    {runtimeGroups.length}
+                  </span>
+                </GlassCard>
+                <GlassCard padding="sm" hover="none" theme="primary" className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">
+                    {t("kpi.running")}
+                  </span>
+                  <span className="font-mono text-[22px] font-semibold leading-none tracking-[-0.5px] text-[var(--ok)]">
+                    {runningCount}
+                  </span>
+                </GlassCard>
+                <GlassCard padding="sm" hover="none" className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">
+                    {t("kpi.stopped")}
+                  </span>
+                  <span className="font-mono text-[22px] font-semibold leading-none tracking-[-0.5px] text-[var(--ink-3)]">
+                    {stoppedCount}
+                  </span>
+                </GlassCard>
+                <GlassCard
+                  padding="sm"
+                  hover="none"
+                  theme={conflictCount > 0 ? "primary" : "default"}
+                  className="flex flex-col gap-1"
+                >
+                  <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">
+                    {t("kpi.conflicts")}
+                  </span>
+                  <span className="font-mono text-[22px] font-semibold leading-none tracking-[-0.5px] text-[var(--warn)]">
+                    {conflictCount}
+                  </span>
+                </GlassCard>
+              </>
+            )
+          })()}
+        </div>
+      )}
+
       <SupplyChainSection
         sources={visibleSources}
         onSync={handleSyncSource}
@@ -285,22 +337,18 @@ export function MCPRegistryClient({
           </div>
         ) : null}
 
-        <div className="ws-bezel">
-          <div className="ws-bezel-inner p-4 sm:p-5">
-            <RuntimeServerListSection
-              groups={runtimeGroups}
-              conflictCount={conflictCount}
-              platform="desktop"
-              toggleMode="runtime"
-              onToggleTool={(tool, enabled) => handleToggleTool(tool, enabled)}
-              onPrimaryAction={handlePrimaryAction}
-              onResolveConflict={handleOpenConflict}
-              onDeleteServer={handleDeleteTool}
-              onReindexMissingTools={handleReindexMissingTools}
-              reindexMissingLoading={reindexingMissingTools}
-            />
-          </div>
-        </div>
+        <RuntimeServerListSection
+          groups={runtimeGroups}
+          conflictCount={conflictCount}
+          platform="desktop"
+          toggleMode="runtime"
+          onToggleTool={(tool, enabled) => handleToggleTool(tool, enabled)}
+          onPrimaryAction={handlePrimaryAction}
+          onResolveConflict={handleOpenConflict}
+          onDeleteServer={handleDeleteTool}
+          onReindexMissingTools={handleReindexMissingTools}
+          reindexMissingLoading={reindexingMissingTools}
+        />
       </section>
 
       <ServerLogsSheet

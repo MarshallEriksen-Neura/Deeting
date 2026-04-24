@@ -4,11 +4,17 @@
   "hero": {
     "eyebrow": "Adaptive Control Layer",
     "title": "Watch the policy bias shift in real time.",
-    "description": "This page turns raw bandit arm state into an operator view: which arm is leading, whether exploration is still active, and where cooldown or low-confidence behavior is shaping the next decision."
+    "description": "The adaptive bandit control layer acts as the live decision surface. It keeps balancing exploration and exploitation to optimize routing, task dispatch, and resource choice.",
+    "runtimeTag": "Adaptive Control Layer",
+    "selectorScene": "Current Scene",
+    "selectorLeader": "Leading Arm",
+    "selectorStrategy": "Strategy"
   },
   "actions": {
     "refresh": "Refresh",
-    "openTaskLearning": "Open Task Learning"
+    "openTaskLearning": "Open Diagnostics",
+    "viewDetails": "View Details",
+    "viewAll": "View All"
   },
   "stats": {
     "scenes": "Scenes",
@@ -37,7 +43,7 @@
   },
   "overview": {
     "title": "Scene Pulse",
-    "description": "A compact read on how the currently selected scene is behaving.",
+    "description": "LLM Routing · Runtime Snapshot",
     "totalTrials": "Total trials",
     "leaderShare": "Leader share",
     "exploration": "Exploration",
@@ -45,8 +51,8 @@
     "lastUpdated": "Last update"
   },
   "effect": {
-    "title": "Observed Effect",
-    "description": "The page summarizes where the current scene is leaning, and whether that looks like healthy learning or unresolved drift.",
+    "title": "Recommended Arm",
+    "description": "The arm the system is currently favoring, and whether that preference looks stable or still in motion.",
     "leadingArm": "Leading arm",
     "strategy": "Strategy",
     "confidence": "Posterior mean",
@@ -54,7 +60,7 @@
   },
   "arms": {
     "title": "Arm Leaderboard",
-    "description": "Each arm shows evidence volume, posterior confidence, cost, latency, and whether the runtime is actively backing off.",
+    "description": "Top 5 arms ranked by current-scene success rate and posterior mean.",
     "trials": "Trials",
     "successRate": "Success rate",
     "posteriorMean": "Posterior mean",
@@ -72,6 +78,35 @@
     "cooling": "Cooling",
     "live": "Live",
     "idle": "Idle"
+  },
+  "sceneState": {
+    "balanced": "Balanced",
+    "exploring": "Exploring",
+    "cooling": "Cooling",
+    "idle": "Standby"
+  },
+  "sceneCards": {
+    "activity": "Activity",
+    "successRate": "Success",
+    "exploration": "Explore",
+    "leader": "Leading Arm"
+  },
+  "pulse": {
+    "snapshot": "Runtime Snapshot",
+    "chartTitle": "Success contour (live snapshot)",
+    "chartWindow": "Current snapshot"
+  },
+  "recommend": {
+    "adviceTitle": "System Advice"
+  },
+  "leaderboard": {
+    "trials": "{count} trials · avg latency {latency}",
+    "posterior": "Posterior {value}"
+  },
+  "health": {
+    "healthy": "Healthy",
+    "watch": "Watch Closely",
+    "idle": "Standby"
   },
   "strategy": {
     "epsilonGreedy": "Epsilon greedy",
