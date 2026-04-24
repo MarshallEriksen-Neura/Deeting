@@ -1211,13 +1211,14 @@ async fn execute_core_tool_call_with_tool_ref_internal(
                 }
             }
 
-            let input = crate::modules::generated_files::docx_generator::parse_write_docx_input(&arguments)
-                .map_err(|err| format!("Invalid write_docx arguments: {err}"))?;
+            let input =
+                crate::modules::generated_files::docx_generator::parse_write_docx_input(&arguments)
+                    .map_err(|err| format!("Invalid write_docx arguments: {err}"))?;
 
             let generated =
                 crate::modules::generated_files::docx_generator::generate_docx(&app_handle, &input)
-            .await
-            .map_err(|err| format!("Failed to generate docx: {err}"))?;
+                    .await
+                    .map_err(|err| format!("Failed to generate docx: {err}"))?;
 
             Ok(Some(serde_json::json!({
                 "file_id": generated.file_id,
@@ -1266,13 +1267,14 @@ async fn execute_core_tool_call_with_tool_ref_internal(
                 }
             }
 
-            let input = crate::modules::generated_files::pptx_generator::parse_write_pptx_input(&arguments)
-                .map_err(|err| format!("Invalid write_pptx arguments: {err}"))?;
+            let input =
+                crate::modules::generated_files::pptx_generator::parse_write_pptx_input(&arguments)
+                    .map_err(|err| format!("Invalid write_pptx arguments: {err}"))?;
 
             let generated =
                 crate::modules::generated_files::pptx_generator::generate_pptx(&app_handle, &input)
-            .await
-            .map_err(|err| format!("Failed to generate pptx: {err}"))?;
+                    .await
+                    .map_err(|err| format!("Failed to generate pptx: {err}"))?;
 
             Ok(Some(serde_json::json!({
                 "file_id": generated.file_id,

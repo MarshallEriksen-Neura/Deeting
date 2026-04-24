@@ -1377,7 +1377,10 @@ mod tests {
             resolve_custom_task_agent_model_selection(None, Some(&parent));
 
         assert_eq!(model, "gpt-5.4");
-        assert_eq!(provider_model_id.as_deref().unwrap_or(""), "provider-model-1");
+        assert_eq!(
+            provider_model_id.as_deref().unwrap_or(""),
+            "provider-model-1"
+        );
     }
 
     #[test]
@@ -1399,6 +1402,9 @@ mod tests {
         );
 
         assert_eq!(model, "o3");
-        assert_eq!(provider_model_id.as_deref().unwrap_or(""), "provider-model-2");
+        assert_eq!(
+            provider_model_id.as_deref().unwrap_or(""),
+            "provider-model-2"
+        );
     }
 }

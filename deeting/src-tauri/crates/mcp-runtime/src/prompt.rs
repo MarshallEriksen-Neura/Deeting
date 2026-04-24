@@ -223,7 +223,8 @@ mod tests {
         assert!(prompt.contains("Agent Skills Progressive Disclosure"));
         assert!(prompt.contains("call `activate_skill` with its stable `skill_id`"));
         assert!(prompt.contains("Use `read_skill_resource` only for package-local"));
-        assert!(prompt.contains("Use `shell_execute` only when the activated skill describes an actual CLI"));
+        assert!(prompt
+            .contains("Use `shell_execute` only when the activated skill describes an actual CLI"));
         assert!(prompt.contains("Do not treat a recipe excerpt as the whole skill"));
     }
 

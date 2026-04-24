@@ -23,10 +23,10 @@ use crate::modules::custom_task_agents::service::create_custom_task_agent_servic
 use crate::modules::custom_task_agents::types::{
     CreateCustomTaskAgentRequest, CustomTaskAgentPreviewRequest,
 };
+use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUNDS_CONFIG_KEY};
 use crate::modules::desktop_runtime::runtime::execution_plane::{
     DelegatedExecutionAction, DelegatedExecutionChildRecord,
 };
-use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUNDS_CONFIG_KEY};
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
 use crate::modules::mcp::commands::support::*;
@@ -1079,8 +1079,7 @@ async fn execute_delegate_task_tool(
             worker_ref: None,
             summary: Some(format!(
                 "Selected '{}' with reason {}.",
-                selection.profile.name,
-                selection.reason
+                selection.profile.name, selection.reason
             )),
             error: None,
             available_actions: Vec::new(),

@@ -24,7 +24,8 @@ pub async fn open_generated_file<R: Runtime>(
     }
 
     // Use Tauri opener plugin to open or reveal file
-    app.opener().open_path(path.to_string_lossy().to_string(), None::<&str>)
+    app.opener()
+        .open_path(path.to_string_lossy().to_string(), None::<&str>)
         .map_err(|e| format!("Failed to open file: {e}"))?;
 
     Ok(())

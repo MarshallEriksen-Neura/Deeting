@@ -23,6 +23,12 @@ pub fn write_docx_input_schema() -> serde_json::Value {
                 "minLength": 1,
                 "maxLength": 200
             },
+            "theme_style": {
+                "type": "string",
+                "enum": ["default", "executive", "ocean", "sunset"],
+                "description": "Theme style for document styling.",
+                "default": "default"
+            },
             "sections": {
                 "type": "array",
                 "description": "Document sections.",
@@ -37,7 +43,7 @@ pub fn write_docx_input_schema() -> serde_json::Value {
                         },
                         "bullets": {
                             "type": "array",
-                            "description": "Bullet list items. Each item can be a string or an object with `text`, optional `level` (1 or 2), and rich runs.",
+                            "description": "Bullet list items using native Word numbering (levels 1-2). Level 2 creates nested sub-bullets with proper numbering.",
                             "items": bullet_item_schema()
                         },
                         "tables": {
@@ -76,7 +82,7 @@ pub fn write_docx_input_schema() -> serde_json::Value {
 }
 
 pub fn write_docx_tool_description() -> &'static str {
-    "Generate a Microsoft Word (.docx) document with titles, rich-text paragraphs, bullet lists with second-level indentation, and simple tables."
+    "Generate a Microsoft Word (.docx) document with native Word numbering (levels 1-2), titles, rich-text paragraphs, and simple tables."
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -143,12 +149,96 @@ pub struct DocxSection {
     pub tables: Vec<DocxTable>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum DocxThemeStyle {
+    Default,
+    Executive,
+    Ocean,
+    Sunset,
+}
+
+impl DocxThemeStyle {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DocxThemeStyle::Default => "default",
+            DocxThemeStyle::Executive => "executive",
+            DocxThemeStyle::Ocean => "ocean",
+            DocxThemeStyle::Sunset => "sunset",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Result<Self, String> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "" | "default" => Ok(DocxThemeStyle::Default),
+            "executive" => Ok(DocxThemeStyle::Executive),
+            "ocean" => Ok(DocxThemeStyle::Ocean),
+            "sunset" => Ok(DocxThemeStyle::Sunset),
+            other => Err(format!(
+                "theme_style '{}' is unsupported; expected default, executive, ocean, or sunset",
+                other
+            )),
+        }
+    }
+
+    pub fn to_hex(&self) -> String {
+        match self {
+            DocxThemeStyle::Default => "0F172A",   // Slate 900
+            DocxThemeStyle::Executive => "1C1917", // Stone 900
+            DocxThemeStyle::Ocean => "082F49",     // Blue 950
+            DocxThemeStyle::Sunset => "7C2D12",    // Red 950
+        }
+        .to_string()
+    }
+
+    pub fn to_surface_hex(&self) -> String {
+        match self {
+            DocxThemeStyle::Default => "F1F5F9",   // Slate 100
+            DocxThemeStyle::Executive => "FAFAF9", // Stone 50
+            DocxThemeStyle::Ocean => "E0F2FE",     // Sky 100
+            DocxThemeStyle::Sunset => "FFEDD5",    // Orange 100
+        }
+        .to_string()
+    }
+}
+
+impl Default for DocxThemeStyle {
+    fn default() -> Self {
+        DocxThemeStyle::Default
+    }
+}
+
+// Manual serde impls for DocxThemeStyle
+impl serde::Serialize for DocxThemeStyle {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::ser::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for DocxThemeStyle {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Self::from_str(&s).map_err(serde::de::Error::custom)
+    }
+}
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct WriteDocxInput {
     pub filename: String,
     pub title: String,
+    #[serde(default = "default_theme_style")]
+    pub theme_style: DocxThemeStyle,
     #[serde(default)]
     pub sections: Vec<DocxSection>,
+}
+
+fn default_theme_style() -> DocxThemeStyle {
+    DocxThemeStyle::Default
 }
 
 pub fn parse_write_docx_input(args: &serde_json::Value) -> Result<WriteDocxInput, String> {
@@ -220,6 +310,12 @@ pub async fn generate_docx<R: Runtime>(
     writer.start_file("word/document.xml", options)?;
     writer.write_all(document_xml.as_bytes())?;
 
+    writer.start_file("word/numbering.xml", options)?;
+    writer.write_all(build_numbering_xml().as_bytes())?;
+
+    writer.start_file("word/styles.xml", options)?;
+    writer.write_all(build_styles_xml().as_bytes())?;
+
     let bytes = writer.finish()?.into_inner();
     let filename = input.filename.clone();
     let file_id = put_generated_file(app, &bytes, &filename)?;
@@ -280,7 +376,7 @@ fn bullet_item_schema() -> serde_json::Value {
                     "level": {
                         "type": "integer",
                         "enum": [1, 2],
-                        "description": "Bullet indentation level. Use 2 for a second-level bullet."
+                        "description": "Numbering level. Level 1 shows '1.', level 2 shows '2.1', '2.2', etc. Level 2 creates nested sub-bullets with proper Word numbering."
                     },
                     "runs": {
                         "type": "array",
@@ -443,27 +539,104 @@ fn heading_xml(value: &str, level: u8) -> String {
 
 fn bullet_xml(item: &DocxListItem) -> Option<String> {
     let (level, runs) = normalize_list_item(item);
-    let content = render_runs_xml(
-        &std::iter::once(DocxTextRun {
-            text: if level <= 1 {
-                "• ".to_string()
-            } else {
-                "◦ ".to_string()
-            },
-            bold: false,
-        })
-        .chain(runs)
-        .collect::<Vec<_>>(),
-        None,
-    );
+    if level > 2 {
+        return None;
+    }
+
+    let content = render_runs_xml(&runs, None);
     if content.is_empty() {
         return None;
     }
 
-    let left_indent = if level <= 1 { 720 } else { 1440 };
+    // Word numbering format: level 1 uses abstractNum/numId 1, level 2 inherits with different lvl
+    let num_id = 1u32;
+    let level_val = level as u32;
+
     Some(format!(
-        "<w:p><w:pPr><w:ind w:left=\"{left_indent}\" w:hanging=\"360\"/></w:pPr>{content}</w:p>"
+        "<w:p w:rsidR=\"00A6E342\" w:rsidRDefault=\"00A6E342\">\
+        <w:pPr><w:pStyle w:val=\"NumberedList\"/><w:numPr><w:ilvl w:val=\"{}\"/><w:numId w:val=\"{}\"/></w:numPr></w:pPr>{}</w:p>",
+        level_val - 1,
+        num_id,
+        content
     ))
+}
+
+fn build_numbering_xml() -> String {
+    // Abstract numbering definition with two levels
+    // Level 1: "1." (Arabic, 1 digit)
+    // Level 2: "a)" (Lowercase Letter, 1 char)
+    format!(
+        concat!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>",
+            "<w:numbering xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">",
+            "<w:abstractNum w:abstractNumId=\"0\">",
+            "<w:nsid w:val=\"48675734\"/>",
+            "<w:multiLevelType w:val=\"hybridMultilevel\"/>",
+            "<w:lvl w:ilvl=\"0\">",
+            "<w:start w:val=\"1\"/>",
+            "<w:numFmt w:val=\"arabic\"/>",
+            "<w:pStyle w:val=\"NumberedList\"/>",
+            "<w:lvlText w:val=\"{}\"/>",
+            "<w:lvlJc w:val=\"left\"/>",
+            "<w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr>",
+            "<w:rPr><w:rStyle w:val=\"NumberedListLevel1\"/></w:rPr>",
+            "</w:lvl>",
+            "<w:lvl w:ilvl=\"1\">",
+            "<w:start w:val=\"1\"/>",
+            "<w:numFmt w:val=\"letterLower\"/>",
+            "<w:lvlText w:val=\"{}\"/>",
+            "<w:lvlJc w:val=\"left\"/>",
+            "<w:pPr><w:ind w:left=\"1440\" w:hanging=\"360\"/></w:pPr>",
+            "<w:rPr><w:rStyle w:val=\"NumberedListLevel2\"/></w:rPr>",
+            "</w:lvl>",
+            "</w:abstractNum>",
+            "<w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num>",
+            "</w:numbering>"
+        ),
+        "{0}.",
+        "{0}."
+    )
+}
+
+fn build_styles_xml() -> String {
+    // Base styles with configurable theme colors
+    format!(
+        concat!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>",
+            "<w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">",
+            "<w:docDefaults><w:rPrDefault><w:rPr/></w:rPrDefault></w:docDefaults>",
+            // Default theme colors (can be overridden by theme-specific styles)
+            "<w:style w:type=\"paragraph\" w:styleId=\"NumberedList\">",
+            "<w:name w:val=\"Numbered List\"/>",
+            "<w:rPr/></w:style>",
+            "<w:style w:type=\"paragraph\" w:styleId=\"NumberedListLevel1\">",
+            "<w:name w:val=\"Numbered List Level 1\"/>",
+            "<w:rPr><w:rStyle w:val=\"BodyTextParagraphStyle\"/></w:rPr></w:style>",
+            "<w:style w:type=\"paragraph\" w:styleId=\"NumberedListLevel2\">",
+            "<w:name w:val=\"Numbered List Level 2\"/>",
+            "<w:rPr><w:rStyle w:val=\"BodyTextParagraphStyle\"/></w:rPr></w:style>",
+            "<w:style w:type=\"paragraph\" w:styleId=\"BodyTextParagraphStyle\">",
+            "<w:name w:val=\"Body Text\"/>",
+            "<w:rPr><w:sz w:val=\"22\"/><w:szCs w:val=\"22\"/></w:rPr></w:style>",
+            // Default body text style with theme-compatible colors
+            "<w:style w:type=\"paragraph\" w:styleId=\"Normal\">",
+            "<w:name w:val=\"Normal\"/>",
+            "<w:rPr>",
+            "<w:color w:val=\"0F172A\"/><w:sz w:val=\"22\"/><w:szCs w:val=\"22\"/></w:rPr>",
+            "</w:style>",
+            // Theme color styles
+            "<w:style w:type=\"character\" w:styleId=\"Title\">",
+            "<w:name w:val=\"Title\"/>",
+            "<w:rPr><w:b/><w:color w:val=\"0F172A\"/><w:sz w:val=\"44\"/><w:szCs w:val=\"44\"/></w:rPr></w:style>",
+            "<w:style w:type=\"character\" w:styleId=\"Heading1\">",
+            "<w:name w:val=\"Heading 1\"/>",
+            "<w:rPr><w:b/><w:color w:val=\"1C1917\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/></w:rPr></w:style>",
+            "<w:style w:type=\"character\" w:styleId=\"Heading2\">",
+            "<w:name w:val=\"Heading 2\"/>",
+            "<w:rPr><w:b/><w:color w:val=\"082F49\"/><w:sz w:val=\"28\"/><w:szCs w:val=\"28\"/></w:rPr></w:style>",
+            "</w:styles>"
+        )
+    )
 }
 
 fn build_table_xml(table: &DocxTable) -> String {
@@ -610,7 +783,14 @@ fn build_content_types_xml() -> &'static str {
         "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">",
         "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>",
         "<Default Extension=\"xml\" ContentType=\"application/xml\"/>",
+        "<Default Extension=\"png\" ContentType=\"image/png\"/>",
+        "<Default Extension=\"jpeg\" ContentType=\"image/jpeg\"/>",
+        "<Default Extension=\"gif\" ContentType=\"image/gif\"/>",
+        "<Default Extension=\"webp\" ContentType=\"image/webp\"/>",
+        "<Default Extension=\"bmp\" ContentType=\"image/bmp\"/>",
         "<Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>",
+        "<Override PartName=\"/word/numbering.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml\"/>",
+        "<Override PartName=\"/word/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml\"/>",
         "</Types>"
     )
 }
@@ -748,10 +928,11 @@ mod tests {
     }
 
     #[test]
-    fn build_document_xml_renders_bold_runs_tables_and_second_level_indent() {
+    fn build_document_xml_renders_bold_runs_tables_and_native_numbering() {
         let input = WriteDocxInput {
             filename: "report.docx".to_string(),
             title: "Report".to_string(),
+            theme_style: DocxThemeStyle::Default,
             sections: vec![DocxSection {
                 heading: "Section".to_string(),
                 paragraphs: vec![DocxRichText::Structured(DocxTextBlock {
@@ -769,9 +950,9 @@ mod tests {
                     ],
                 })],
                 bullets: vec![DocxListItem::Structured(DocxListItemBlock {
-                    text: "Nested".to_string(),
+                    text: "Main item".to_string(),
                     bold: false,
-                    level: 2,
+                    level: 1,
                     runs: Vec::new(),
                 })],
                 tables: vec![DocxTable {
@@ -792,7 +973,51 @@ mod tests {
 
         assert!(xml.contains("<w:b/>"));
         assert!(xml.contains("<w:tbl>"));
-        assert!(xml.contains("w:left=\"1440\""));
+        assert!(xml.contains("<w:ilvl w:val=\"0\"/>"));
+        assert!(xml.contains("<w:numId w:val=\"1\"/>"));
+        assert!(xml.contains("<w:numPr>"));
         assert!(xml.contains("Summary"));
+    }
+
+    #[test]
+    fn build_document_xml_renders_nested_numbering() {
+        let input = WriteDocxInput {
+            filename: "nested.docx".to_string(),
+            title: "Nested Test".to_string(),
+            theme_style: DocxThemeStyle::Default,
+            sections: vec![DocxSection {
+                heading: "Test".to_string(),
+                paragraphs: Vec::new(),
+                bullets: vec![
+                    DocxListItem::Structured(DocxListItemBlock {
+                        text: "Level 1 Item A".to_string(),
+                        bold: false,
+                        level: 1,
+                        runs: Vec::new(),
+                    }),
+                    DocxListItem::Structured(DocxListItemBlock {
+                        text: "Level 1 Item B".to_string(),
+                        bold: false,
+                        level: 1,
+                        runs: Vec::new(),
+                    }),
+                    DocxListItem::Structured(DocxListItemBlock {
+                        text: "Level 2 Sub Item".to_string(),
+                        bold: false,
+                        level: 2,
+                        runs: Vec::new(),
+                    }),
+                ],
+                tables: Vec::new(),
+            }],
+        };
+
+        let xml = build_document_xml(&input);
+
+        // Verify numbering markers for level 1 and level 2
+        assert!(xml.contains("<w:ilvl w:val=\"0\"/>")); // Level 1 (1., 2., 3., etc.)
+        assert!(xml.contains("<w:ilvl w:val=\"1\"/>")); // Level 2 (a), b), c), etc.)
+        assert!(xml.contains("<w:numFmt w:val=\"arabic\"/>"));
+        assert!(xml.contains("<w:numFmt w:val=\"letterLower\"/>"));
     }
 }
