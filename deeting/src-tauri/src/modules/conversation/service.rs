@@ -195,6 +195,7 @@ pub async fn execute_text_chat_raw(
         stream: false,
         status_stream: false,
         selected_knowledge_file_ids: Vec::new(),
+        locale: None,
     };
 
     let response = execute_local_orchestrated_chat(

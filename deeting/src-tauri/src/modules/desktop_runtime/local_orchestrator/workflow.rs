@@ -795,6 +795,7 @@ pub(super) struct LocalWorkflowContext {
     pub(super) request_query_embedding: Option<Vec<f32>>,
     pub(super) request_query_embedding_attempted: bool,
     pub(super) prefetched_retrievals: PrefetchedRetrievals,
+    pub(super) locale: Option<String>,
 }
 
 impl LocalWorkflowContext {
@@ -840,6 +841,7 @@ impl LocalWorkflowContext {
             request_query_embedding: None,
             request_query_embedding_attempted: false,
             prefetched_retrievals: PrefetchedRetrievals::default(),
+            locale: input.locale.clone(),
         }
     }
 
@@ -1562,10 +1564,11 @@ impl LocalWorkflowStep<LocalWorkflowContext> for TemplateRenderStep {
                 ctx.runtime_discovery.clone(),
                 ctx.route_decision.clone(),
                 ctx.execution_policy.clone(),
+                ctx.locale.as_deref(),
             );
             let prelude_messages = control_plane_result.prompt_plan.prelude_messages.clone();
             let local_context = control_plane_result.prompt_plan.local_context.clone();
-            let response_language = control_plane_result.prompt_plan.response_language;
+            let response_language = control_plane_result.prompt_plan.response_language.clone();
             let mut result = StepResult::success()
                 .with_patch(ContextPatch::SetExecutionPolicy(Some(
                     control_plane_result.execution_policy.clone(),

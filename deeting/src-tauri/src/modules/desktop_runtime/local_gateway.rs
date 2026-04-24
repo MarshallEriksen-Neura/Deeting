@@ -27,9 +27,7 @@ use crate::modules::mcp::commands::tool_approval_impl::{
     approve_mcp_tool_payload, reject_mcp_tool_payload,
 };
 use crate::state::AppState;
-use mcp_session::conversation::{
-    LocalConversationCompareFinalizeRequest, LocalConversationCompareFinalizeResponse,
-};
+use mcp_session::conversation::LocalConversationCompareFinalizeRequest;
 use mcp_transport::gateway::{
     build_stream_error_payload, extract_root_execution_id, extract_selected_knowledge_file_ids,
     normalize_optional_string, GatewayHealthResponse, LocalChatCancelResponse,
@@ -576,22 +574,7 @@ async fn finalize_compare_handler(
         .finalize_local_compare_winner(payload)
         .await
     {
-        Ok(response) => {
-            if let Err(err) = sync_compare_finalize_memories(
-                state.app_state.clone(),
-                &finalize_payload,
-                &response,
-            )
-            .await
-            {
-                log::warn!(
-                    "compare finalize memory sync skipped for session {}: {}",
-                    response.session_id,
-                    err
-                );
-            }
-            Json(response).into_response()
-        }
+        Ok(response) => Json(response).into_response(),
         Err(err) => (
             axum::http::StatusCode::BAD_REQUEST,
             Json(LocalCompareFinalizeErrorResponse {
@@ -602,17 +585,6 @@ async fn finalize_compare_handler(
         )
             .into_response(),
     }
-}
-
-async fn sync_compare_finalize_memories(
-    app_state: AppState,
-    payload: &LocalConversationCompareFinalizeRequest,
-    response: &LocalConversationCompareFinalizeResponse,
-) -> Result<(), String> {
-    crate::modules::conversations::fact_sync::sync_compare_finalize_memories(
-        app_state, payload, response,
-    )
-    .await
 }
 
 fn map_request_to_orchestrator_input(
@@ -652,6 +624,7 @@ fn map_request_to_orchestrator_input(
         stream,
         status_stream,
         selected_knowledge_file_ids,
+        locale: normalize_optional_string(payload.locale.as_deref()),
     })
 }
 

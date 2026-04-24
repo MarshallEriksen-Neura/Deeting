@@ -661,23 +661,42 @@ pub(super) fn apply_approved_tool_result_to_execution_graph(
     let tool_node_id = suspended
         .tool_node_id_for_call_id(resolved_call_id.as_str())
         .unwrap_or_else(|| suspended.pending_tool_node_id().to_string());
+
+    // Determine if the tool result represents an error so the execution graph
+    // accurately reflects the outcome instead of always marking "success".
+    let has_error = normalized_tool_result.get("error").is_some()
+        || normalized_tool_result
+            .get("status")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|s| s.eq_ignore_ascii_case("error"));
+    let tool_node_status = if has_error { "error" } else { "success" };
+    let gate_node_status = if has_error {
+        "approval_failed"
+    } else {
+        "approved"
+    };
+
     update_execution_graph_node(
         &mut suspended.execution_graph,
         gate_node_id.as_str(),
-        "approved",
+        gate_node_status,
         Some(normalized_tool_result.clone()),
     );
     update_execution_graph_node(
         &mut suspended.execution_graph,
         tool_node_id.as_str(),
-        "success",
+        tool_node_status,
         Some(normalized_tool_result.clone()),
     );
     update_finalize_node_status_from_graph(&mut suspended.execution_graph);
     append_execution_graph_event(
         &mut suspended.execution_graph,
         gate_node_id.as_str(),
-        "approval_gate.approved",
+        if has_error {
+            "approval_gate.approval_failed"
+        } else {
+            "approval_gate.approved"
+        },
         serde_json::json!({
             "call_id": resolved_call_id,
             "execution_graph_gate_node_id": gate_node_id,
@@ -688,7 +707,11 @@ pub(super) fn apply_approved_tool_result_to_execution_graph(
     append_execution_graph_event(
         &mut suspended.execution_graph,
         tool_node_id.as_str(),
-        "tool_call.approved_result_applied",
+        if has_error {
+            "tool_call.approved_result_failed"
+        } else {
+            "tool_call.approved_result_applied"
+        },
         normalized_tool_result,
     );
 }

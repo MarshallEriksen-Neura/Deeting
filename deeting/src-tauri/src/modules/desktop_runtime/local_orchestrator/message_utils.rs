@@ -247,7 +247,7 @@ pub(super) fn fallback_prefers_chinese(
     control_plane_result: Option<&LocalControlPlaneResult>,
 ) -> bool {
     control_plane_result
-        .map(|result| result.prompt_plan.response_language)
+        .map(|result| result.prompt_plan.response_language.clone())
         .map(|value| value.to_ascii_lowercase().contains("zh"))
         .unwrap_or_else(crate::tray::desktop_prefers_zh)
 }

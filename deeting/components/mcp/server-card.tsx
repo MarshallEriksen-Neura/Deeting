@@ -2,17 +2,16 @@
 
 import { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Terminal, AlertCircle, RefreshCw, MoreHorizontal, Pencil, Trash2 } from "lucide-react"
+import { Terminal, AlertCircle, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/shadcn/badge"
 import { Card } from "@/components/ui/shadcn/card"
 import { Switch } from "@/components/ui/shadcn/switch"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/shadcn/alert-dialog"
-import { GlassDropdownMenu, GlassDropdownMenuContent, GlassDropdownMenuItem, GlassDropdownMenuTrigger } from "@/components/ui/common/glass-dropdown"
+
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/shadcn/tooltip"
 import {
   type McpUiToggleMode,
   getMcpIndexLabelKey,
-  getMcpPrimaryActionLabelKey,
   getMcpRuntimeHintKey,
   getMcpRuntimeLabelKey,
   isMcpIndexMissing,
@@ -158,21 +157,14 @@ export function ServerCard({
   const showConflict = tool.conflictStatus === "conflict"
   const showUpdate = tool.conflictStatus === "update_available"
   const showNew = tool.isNew && !showConflict && !showUpdate
-  const showInlineToggle = platform !== "desktop" && Boolean(onToggle)
-  const showDesktopToggleAction = platform === "desktop" && Boolean(onToggle)
-  const showMenu = platform === "desktop" ? Boolean(onToggle || onDelete) : Boolean(onEdit || onDelete)
   const theme = statusTheme[tool.status]
   const isActive = isRunning || isMcpRuntimeTransitioning(tool)
   const runtimeHintKey = getMcpRuntimeHintKey(tool)
   const runtimeLabelKey = getMcpRuntimeLabelKey(tool)
   const showIndexMissing = isMcpIndexMissing(tool)
   const indexLabelKey = getMcpIndexLabelKey(tool)
-  const primaryActionLabelKey = getMcpPrimaryActionLabelKey(tool)
-  const showPrimaryAction = platform !== "desktop" && Boolean(primaryActionLabelKey && onPrimaryAction)
   const toggleChecked = isMcpToolSwitchChecked(tool, toggleMode)
   const toggleDisabled = isMcpToolSwitchDisabled(tool, toggleMode)
-  const toggleActionLabelKey = toggleChecked ? "actions.stop" : "actions.start"
-  const deleteActionLabelKey = platform === "desktop" ? "actions.delete" : "server.actions.delete"
   const deleteDialogKeyPrefix = platform === "desktop" ? "tool.delete" : "server.delete"
   const isCompact = density === "compact"
 
@@ -250,14 +242,14 @@ export function ServerCard({
                   <AnimatePresence>
                     {showConflict && (
                       <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
-                        <Badge variant="outline" className="h-[20px] rounded-full border-[var(--warn-border)] bg-[var(--warn-soft)] px-2 text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--warn)] shadow-none" onClick={(e) => { e.stopPropagation(); onResolveConflict?.(); }}>
+                        <Badge variant="outline" className="h-[20px] rounded-full border-[var(--warn-border)] bg-[var(--warn-soft)] px-2 text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--warn)] shadow-none" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onResolveConflict?.(); }}>
                           <AlertCircle size={10} className="mr-1" /> {t("tool.badges.conflict")}
                         </Badge>
                       </motion.div>
                     )}
                     {showUpdate && !showConflict && (
                       <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
-                        <Badge variant="outline" className="h-[20px] rounded-full border-[var(--warn-border)] bg-[var(--warn-soft)] px-2 text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--warn)] shadow-none" onClick={(e) => { e.stopPropagation(); onResolveConflict?.(); }}>
+                        <Badge variant="outline" className="h-[20px] rounded-full border-[var(--warn-border)] bg-[var(--warn-soft)] px-2 text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--warn)] shadow-none" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onResolveConflict?.(); }}>
                           <AlertCircle size={10} className="mr-1" /> {t("tool.badges.update")}
                         </Badge>
                       </motion.div>
@@ -301,23 +293,8 @@ export function ServerCard({
             </div>
 
             {/* Actions Block */}
-            <div className="flex shrink-0 items-center gap-1.5" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
-              {showPrimaryAction && primaryActionLabelKey && (
-                <button
-                  type="button"
-                  className={cn(
-                    "flex h-[28px] items-center justify-center rounded-[var(--r-6)] px-3 text-[12px] font-medium shadow-[0_1px_0_var(--hairline)_inset] transition-all duration-150 active:translate-y-[1px]",
-                    tool.recommendedAction === "review"
-                      ? "bg-[var(--panel-bg)] text-[var(--ink)] ring-1 ring-[var(--hairline)] hover:bg-[var(--panel-bg-inset)] hover:ring-[var(--hairline-strong)]"
-                      : "bg-[var(--accent-strong)] text-white hover:brightness-110"
-                  )}
-                  onClick={(e) => { e.stopPropagation(); onPrimaryAction?.(); }}
-                >
-                  {t(primaryActionLabelKey)}
-                </button>
-              )}
-
-              {showInlineToggle && (
+            <div className="flex shrink-0 items-center gap-2" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+              {Boolean(onToggle) && (
                 <div className="flex h-[28px] items-center rounded-[var(--r-6)] bg-[var(--panel-bg-inset)] px-2 ring-1 ring-[var(--hairline)] transition-all focus-within:ring-[var(--hairline-strong)]">
                   <Switch
                     checked={toggleChecked}
@@ -328,92 +305,41 @@ export function ServerCard({
                 </div>
               )}
 
-              {isSynced && onSync && (
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        className="flex h-[28px] w-[28px] items-center justify-center rounded-[var(--r-6)] bg-transparent text-[var(--ink-3)] transition-colors hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)]"
-                        onClick={(e) => { e.stopPropagation(); onSync?.(); }}
-                      >
-                        <RefreshCw size={14} className={syncLoading ? "animate-spin text-[var(--accent-strong)]" : ""} />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent className="rounded-[var(--r-8)] bg-[var(--panel-bg)] text-[11px] font-medium text-[var(--ink)] ring-1 ring-[var(--hairline-strong)]">
-                      Sync
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
-
-              {showMenu && (
-                <GlassDropdownMenu>
-                  <GlassDropdownMenuTrigger asChild>
+              {onDelete && (
+                <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+                  <AlertDialogTrigger asChild>
                     <button
                       type="button"
-                      className="flex h-[28px] w-[28px] items-center justify-center rounded-[var(--r-6)] bg-transparent text-[var(--ink-3)] transition-colors hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-strong)] focus-visible:ring-offset-[var(--window-bg)]"
+                      className="flex h-[28px] w-[28px] items-center justify-center rounded-[var(--r-6)] bg-transparent text-[var(--ink-3)] transition-colors hover:bg-[var(--danger-soft)] hover:text-[var(--danger)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--danger)] focus-visible:ring-offset-[var(--window-bg)]"
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmOpen(true); }}
                     >
-                      <MoreHorizontal size={14} />
+                      <Trash2 size={14} />
                     </button>
-                  </GlassDropdownMenuTrigger>
-                  <GlassDropdownMenuContent align="end" className="w-[180px] rounded-[var(--r-12)] bg-[var(--panel-bg)] p-1 text-[12px] shadow-[0_20px_48px_-24px_rgba(0,0,0,0.22)] ring-1 ring-[var(--hairline-strong)]">
-                    {showDesktopToggleAction && (
-                      <GlassDropdownMenuItem
-                        disabled={toggleDisabled}
-                        className="rounded-[var(--r-6)] px-2.5 py-1.5 focus:bg-[var(--accent-soft)] focus:text-[var(--accent-ink)] cursor-pointer"
-                        onSelect={(e) => { e.preventDefault(); e.stopPropagation(); onToggle?.(tool, !toggleChecked); }}
-                      >
-                        {t(toggleActionLabelKey)}
-                      </GlassDropdownMenuItem>
-                    )}
-                    {onEdit && (
-                      <GlassDropdownMenuItem
-                        className="flex items-center gap-2 rounded-[var(--r-6)] px-2.5 py-1.5 focus:bg-[var(--panel-bg-inset)] cursor-pointer"
-                        onClick={(e) => { e.stopPropagation(); onEdit?.(); }}
-                      >
-                        <Pencil size={13} className="text-[var(--ink-3)]" />
-                        {t("server.actions.edit")}
-                      </GlassDropdownMenuItem>
-                    )}
-                    {onDelete && (
-                      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-                        <AlertDialogTrigger asChild>
-                          <GlassDropdownMenuItem
-                            className="flex items-center gap-2 rounded-[var(--r-6)] px-2.5 py-1.5 text-[var(--danger)] focus:bg-[var(--danger-soft)] focus:text-[var(--danger)] cursor-pointer"
-                            onSelect={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmOpen(true); }}
-                          >
-                            <Trash2 size={13} />
-                            {t(deleteActionLabelKey)}
-                          </GlassDropdownMenuItem>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent className="rounded-[var(--r-18)] bg-[var(--panel-bg)] p-[6px] ring-1 ring-[var(--hairline)] sm:max-w-[420px]">
-                          <div className="rounded-[calc(var(--r-18)-6px)] bg-[var(--panel-bg)] ring-1 ring-[var(--hairline)] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-                            <AlertDialogHeader>
-                              <AlertDialogTitle className="text-[17px] font-semibold tracking-[-0.2px] text-[var(--ink)]">
-                                {t(`${deleteDialogKeyPrefix}.title`)}
-                              </AlertDialogTitle>
-                              <AlertDialogDescription className="text-[13px] leading-[1.5] text-[var(--ink-2)]">
-                                {t(`${deleteDialogKeyPrefix}.description`, { name: tool.name })}
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter className="mt-6 gap-2 sm:space-x-0">
-                              <AlertDialogCancel className="h-[32px] rounded-[var(--r-6)] bg-[var(--panel-bg)] px-3.5 text-[12px] font-medium text-[var(--ink)] ring-1 ring-[var(--hairline)] hover:bg-[var(--panel-bg-inset)]">
-                                {t(`${deleteDialogKeyPrefix}.cancel`)}
-                              </AlertDialogCancel>
-                              <AlertDialogAction
-                                className="h-[32px] rounded-[var(--r-6)] bg-[var(--danger)] px-3.5 text-[12px] font-medium text-white shadow-[0_1px_0_rgba(255,255,255,0.2)_inset] hover:brightness-110 border border-[var(--danger-border)]"
-                                onClick={() => { onDelete?.(); setConfirmOpen(false); }}
-                              >
-                                {t(`${deleteDialogKeyPrefix}.confirm`)}
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </div>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    )}
-                  </GlassDropdownMenuContent>
-                </GlassDropdownMenu>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent className="rounded-[var(--r-18)] bg-[var(--panel-bg)] p-[6px] ring-1 ring-[var(--hairline)] sm:max-w-[420px]">
+                    <div className="rounded-[calc(var(--r-18)-6px)] bg-[var(--panel-bg)] ring-1 ring-[var(--hairline)] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                      <AlertDialogHeader>
+                        <AlertDialogTitle className="text-[17px] font-semibold tracking-[-0.2px] text-[var(--ink)]">
+                          {t(`${deleteDialogKeyPrefix}.title`)}
+                        </AlertDialogTitle>
+                        <AlertDialogDescription className="text-[13px] leading-[1.5] text-[var(--ink-2)]">
+                          {t(`${deleteDialogKeyPrefix}.description`, { name: tool.name })}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter className="mt-6 gap-2 sm:space-x-0">
+                        <AlertDialogCancel className="h-[32px] rounded-[var(--r-6)] bg-[var(--panel-bg)] px-3.5 text-[12px] font-medium text-[var(--ink)] ring-1 ring-[var(--hairline)] hover:bg-[var(--panel-bg-inset)]">
+                          {t(`${deleteDialogKeyPrefix}.cancel`)}
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                          className="h-[32px] rounded-[var(--r-6)] bg-[var(--danger)] px-3.5 text-[12px] font-medium text-white shadow-[0_1px_0_rgba(255,255,255,0.2)_inset] hover:brightness-110 border border-[var(--danger-border)]"
+                          onClick={() => { onDelete?.(); setConfirmOpen(false); }}
+                        >
+                          {t(`${deleteDialogKeyPrefix}.confirm`)}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </div>
+                  </AlertDialogContent>
+                </AlertDialog>
               )}
             </div>
           </div>

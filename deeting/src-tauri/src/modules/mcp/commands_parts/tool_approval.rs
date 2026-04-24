@@ -165,7 +165,7 @@ pub(crate) async fn approve_mcp_tool_payload(
         }
     }
 
-    let approved = match approve_mcp_tool_inner_with_context_and_mode(
+    let (tool_result, approval_failed) = match approve_mcp_tool_inner_with_context_and_mode(
         &approval_context,
         Some(&state.mcp),
         state.mcp.store.as_ref(),
@@ -175,7 +175,7 @@ pub(crate) async fn approve_mcp_tool_payload(
     )
     .await
     {
-        Ok(approved) => approved,
+        Ok(approved) => (approved, false),
         Err(err) => {
             if is_idempotent_post_approval_error(err.as_str()) {
                 if let Some(execution_id) = requested_execution_id.as_deref() {
@@ -191,11 +191,49 @@ pub(crate) async fn approve_mcp_tool_payload(
                 }
             }
 
+            // When the actual tool execution fails after approval, construct a
+            // tool-result-shaped payload that contains the error so the LLM can
+            // see it and decide how to continue (self-correct, retry, etc.).
             let failed_tool_result = build_failed_approval_tool_result_payload(
                 pending_before_approval.as_ref(),
                 requested_execution_id.as_deref(),
                 err.as_str(),
             );
+            let error_tool_result = serde_json::json!({
+                "error": err,
+                "error_code": "LOCAL_TOOL_APPROVAL_FAILED",
+                "status": "error",
+                "retryable": true,
+                "execution_graph_execution_id": requested_execution_id,
+                "execution_graph_gate_node_id": pending_before_approval
+                    .as_ref()
+                    .and_then(|pending| pending.execution_graph_gate_node_id.clone()),
+                "execution_graph_tool_node_id": pending_before_approval
+                    .as_ref()
+                    .and_then(|pending| pending.execution_graph_tool_node_id.clone()),
+                "call_id": pending_before_approval
+                    .as_ref()
+                    .and_then(|pending| pending.call_id.clone()),
+            });
+
+            // Prefer resuming the suspended execution graph so the error is
+            // injected into the message history via finalize_tool_round.
+            if let Some(resumed) = resume_suspended_chat_tool_execution_after_approval(
+                app,
+                state,
+                token,
+                &error_tool_result,
+                pending_before_approval
+                    .as_ref()
+                    .and_then(|pending| pending.call_id.as_deref()),
+                requested_execution_id.as_deref(),
+            )
+            .await?
+            {
+                return Ok(resumed);
+            }
+
+            // Fallback: no suspended execution found, return a terminal payload.
             if let Some(execution_id) = requested_execution_id.as_deref() {
                 if let Some(mut payload) = project_local_chat_approval_state_payload(
                     state,
@@ -239,6 +277,15 @@ pub(crate) async fn approve_mcp_tool_payload(
                 "retryable": true,
             }));
         }
+    };
+
+    let approved = if approval_failed {
+        // This branch is unreachable because the Err arm above always returns,
+        // but kept for clarity: if we ever refactor to propagate the error
+        // result without returning, we still want to resume with the error.
+        tool_result
+    } else {
+        tool_result
     };
 
     if let Some(resumed) = resume_suspended_chat_tool_execution_after_approval(

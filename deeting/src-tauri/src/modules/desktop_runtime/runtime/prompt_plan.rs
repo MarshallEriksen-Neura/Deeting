@@ -99,6 +99,7 @@ pub(crate) fn render_local_runtime_system_prompt(
 pub(crate) fn build_local_prompt_plan(
     prompt_assets: &PromptAssets,
     execution_policy: Option<&LocalExecutionPolicy>,
+    locale: Option<&str>,
 ) -> PromptPlan {
     let runtime_capability_prompt = execution_policy.and_then(|policy| {
         let tool_names = policy.prompt_tool_names();
@@ -113,11 +114,21 @@ pub(crate) fn build_local_prompt_plan(
             .filter(|prompt| !prompt.trim().is_empty())
     });
     let local_context = router_prompt_local_context();
-    let response_language = router_prompt_default_response_language();
+    let response_language = locale
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .map(|l| {
+            if l.to_lowercase().starts_with("zh") {
+                "Simplified Chinese (zh-CN)".to_string()
+            } else {
+                "English (en)".to_string()
+            }
+        })
+        .unwrap_or_else(|| router_prompt_default_response_language().to_string());
     let local_router_prompt = render_local_router_base_prompt(
         &local_context.current_date,
         &local_context.timezone,
-        response_language,
+        &response_language,
     );
     let base_system_prompt = render_local_runtime_system_prompt(
         &local_router_prompt,
@@ -128,7 +139,7 @@ pub(crate) fn build_local_prompt_plan(
     build_local_prompt_plan_inner(
         prompt_assets,
         local_context,
-        response_language,
+        &response_language,
         &base_system_prompt,
     )
 }

@@ -159,7 +159,8 @@ export async function streamDesktopLocalChatCompletion(
   } = {},
   control: {
     onCancel?: (cancel: () => void) => void
-  } = {}
+  } = {},
+  locale?: string
 ): Promise<string> {
   const localContext = payload.context ?? (await collectLocalContext())
   const baseUrl = await resolveLocalGatewayBaseUrl()
@@ -168,6 +169,7 @@ export async function streamDesktopLocalChatCompletion(
     context: localContext,
     stream: payload.stream ?? true,
     status_stream: payload.status_stream ?? true,
+    locale,
   })
 
   return streamViaSse(

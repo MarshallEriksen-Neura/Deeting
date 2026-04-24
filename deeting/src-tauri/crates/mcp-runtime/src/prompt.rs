@@ -78,7 +78,7 @@ pub struct RouterPromptLocalContext {
 pub struct PromptPlan {
     pub prelude_messages: Vec<LocalChatInputMessage>,
     pub local_context: RouterPromptLocalContext,
-    pub response_language: &'static str,
+    pub response_language: String,
 }
 
 pub fn router_prompt_default_local_context() -> RouterPromptLocalContext {
@@ -151,13 +151,13 @@ pub fn render_local_base_system_prompt(
 pub fn build_local_prompt_plan(
     prompt_assets: &PromptAssets,
     local_context: RouterPromptLocalContext,
-    response_language: &'static str,
+    response_language: &str,
     base_system_prompt: &str,
 ) -> PromptPlan {
     PromptPlan {
         prelude_messages: build_local_prelude_messages(prompt_assets, base_system_prompt),
         local_context,
-        response_language,
+        response_language: response_language.to_string(),
     }
 }
 

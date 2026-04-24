@@ -83,6 +83,13 @@ pub(crate) fn resolve_tool_trace_call_id(item: &serde_json::Value, index: usize)
     synthesize_missing_tool_call_id(tool_name, index)
 }
 
+fn resolve_tool_trace_result(item: &serde_json::Value) -> serde_json::Value {
+    if let Some(reasoning) = trimmed_json_string(item.get("reasoning")) {
+        return serde_json::Value::String(reasoning);
+    }
+    item.get("result").cloned().unwrap_or_else(|| serde_json::json!({}))
+}
+
 pub(crate) fn build_local_tool_trace_blocks(
     tool_call_meta: &[serde_json::Value],
 ) -> Vec<serde_json::Value> {
@@ -139,7 +146,7 @@ pub(crate) fn build_local_tool_trace_blocks(
                 "callId": call_id,
                 "toolName": tool_name,
                 "status": if requires_approval { "requires_approval" } else { "success" },
-                "result": item.get("result").cloned().unwrap_or_else(|| serde_json::json!({})),
+                "result": resolve_tool_trace_result(item),
             }));
             blocks.extend(extract_capability_transition_blocks(
                 item, &call_id, tool_name,
@@ -186,7 +193,7 @@ pub(crate) fn append_streamable_local_tool_result_blocks(
             "callId": call_id,
             "toolName": tool_name,
             "status": if requires_approval { "requires_approval" } else { "success" },
-            "result": item.get("result").cloned().unwrap_or_else(|| serde_json::json!({})),
+            "result": resolve_tool_trace_result(item),
         }));
         blocks.extend(extract_capability_transition_blocks(
             item, &call_id, tool_name,

@@ -15,6 +15,7 @@ import {
 } from "@/lib/chat/history-loader"
 import { createRequestId } from "@/lib/chat/request-id"
 import { useI18n } from "@/hooks/use-i18n"
+import { useLanguageStore } from "@/store/language-store"
 import {
   isDesktopLocalModel,
   matchesChatModelSelectionValue,
@@ -462,6 +463,7 @@ function getAssistantShadowContentForCandidate(message: Message): string {
 
 export function useChatMessagingService() {
   const t = useI18n("chat")
+  const locale = useLanguageStore((state) => state.language)
   const cancelRef = useRef<(() => void) | null>(null)
   const requestIdRef = useRef<string | null>(null)
   const activeRequestRouteRef = useRef<"local_gateway" | null>(null)
@@ -789,7 +791,8 @@ export function useChatMessagingService() {
               cancelRef.current = cancel
             },
           }
-        : undefined
+        : undefined,
+      locale ?? undefined
     )
 
     const latestBlocks = getCurrentBlocks()

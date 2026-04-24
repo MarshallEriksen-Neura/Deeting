@@ -66,13 +66,14 @@ pub(crate) fn build_local_control_plane_result(
     runtime_discovery: Option<RuntimeDiscoveryBundle>,
     route_decision: Option<LocalRouteDecision>,
     execution_policy: Option<LocalExecutionPolicy>,
+    locale: Option<&str>,
 ) -> LocalControlPlaneResult {
     let execution_policy = enrich_execution_policy_with_runtime_discovery(
         execution_policy.unwrap_or_else(build_default_local_execution_policy),
         runtime_discovery.as_ref(),
     );
     let prompt_assets = PromptAssets::from_system_messages(system_messages);
-    let prompt_plan = build_local_prompt_plan(&prompt_assets, Some(&execution_policy));
+    let prompt_plan = build_local_prompt_plan(&prompt_assets, Some(&execution_policy), locale);
     let status_meta = route_decision
         .as_ref()
         .map(|decision| build_local_control_plane_status_meta(decision, &execution_policy))

@@ -18,6 +18,8 @@ pub struct LocalChatCompletionRequest {
     pub regenerate: Option<bool>,
     pub compare_only: Option<bool>,
     pub metadata: Option<Value>,
+    #[serde(default)]
+    pub locale: Option<String>,
 }
 
 #[derive(Serialize)]

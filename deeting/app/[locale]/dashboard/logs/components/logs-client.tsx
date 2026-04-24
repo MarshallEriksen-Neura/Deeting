@@ -61,6 +61,14 @@ export function LogsClient() {
   const selectedLog = items.find((item) => item.id === effectiveSelectedId) ?? null
   const activeFilterCount = useMemo(() => getActiveFilterCount(filters), [filters])
 
+  const pageInfo = useMemo(() => {
+    const pageSize = Number(filters.pageSize)
+    const skip = cursor ? parseInt(cursor, 10) : 0
+    const page = Math.floor(skip / pageSize) + 1
+    const totalPages = statsData?.total ? Math.ceil(statsData.total / pageSize) : 1
+    return { page, totalPages }
+  }, [cursor, filters.pageSize, statsData?.total])
+
   return (
     <main className="-mb-[var(--shell-canvas-pb)] -mt-[var(--shell-canvas-pt)] -mx-[var(--shell-canvas-px)] flex h-[calc(100dvh-var(--shell-toolbar-h))] flex-col overflow-hidden bg-[var(--background)] font-mono text-[var(--ink-2)]">
       <header className="flex h-12 flex-none items-center justify-between border-b border-[var(--hairline)] bg-[var(--background)] px-4">
@@ -109,7 +117,7 @@ export function LogsClient() {
           </div>
         ) : null}
 
-        <div className="grid min-h-0 flex-1 xl:grid-cols-[1fr_450px]">
+        <div className="grid min-h-0 flex-1 xl:grid-cols-[minmax(0,1fr)_560px]">
           <section className="flex min-h-0 flex-col border-r border-[var(--hairline)]">
             <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar-brutalist">
               <LogsTable
@@ -122,7 +130,7 @@ export function LogsClient() {
 
             <footer className="flex h-10 flex-none items-center justify-between border-t border-[var(--hairline)] bg-[var(--background)] px-4">
               <div className="flex items-center gap-4 text-[11px]">
-                <span className="text-[var(--ink-4)]">{t("footer.pageInfoLabel")}</span>
+                <span className="text-[var(--ink-4)]">{t("footer.pageInfoLabel", pageInfo)}</span>
                 <span className="text-[var(--ink-2)]">{t("footer.items", { count: items.length })}</span>
                 <span className="text-[var(--ink-2)]">{t("footer.size", { size: filters.pageSize })}</span>
               </div>
