@@ -72,12 +72,16 @@ export function TaskAgentsClient() {
     isReindexing,
     isImportPreviewing,
     isImporting,
+    isExternalScanning,
+    isExternalImporting,
     deleteDialogOpen,
     discardDialogOpen,
     previewResult,
     previewError,
     claudeImportPreview,
     claudeImportError,
+    externalAgentPreview,
+    externalAgentError,
     setSearchQuery,
     setKindFilter,
     setStatusFilter,
@@ -100,6 +104,8 @@ export function TaskAgentsClient() {
     handleRunPreview,
     handlePreviewClaudeImport,
     handleImportClaudeAgents,
+    handleScanExternalAgents,
+    handleImportExternalAgents,
     handleDiscardConfirm,
     handleDiscardCancel,
     handleCreateNew,
@@ -477,10 +483,16 @@ export function TaskAgentsClient() {
         t={t}
         isPreviewing={isImportPreviewing}
         isImporting={isImporting}
+        isExternalScanning={isExternalScanning}
+        isExternalImporting={isExternalImporting}
         preview={claudeImportPreview}
+        externalPreview={externalAgentPreview}
         error={claudeImportError}
+        externalError={externalAgentError}
         onPreview={handlePreviewClaudeImport}
         onImport={handleImportClaudeAgents}
+        onExternalScan={handleScanExternalAgents}
+        onExternalImport={handleImportExternalAgents}
       />
     </div>
   )

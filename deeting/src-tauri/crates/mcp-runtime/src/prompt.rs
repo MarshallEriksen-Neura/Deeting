@@ -20,7 +20,22 @@ const LOCAL_ROUTER_BASE_PROMPT_TEMPLATE: &str = concat!(
     "- No Premature Refusal: Do not say a tool is unavailable, or ask the user to do the step manually, until `search_sdk` has been used in the current turn and weak results have been refined at least once with adjacent capability terms.\n",
     "- Retry Missing Capability Discovery: If `search_sdk` still does not surface the needed callable tool, refine the query and call `search_sdk` again to search for that capability instead of stopping.\n\n",
 
-    "## Phase 3: Execution & Tool Selection\n",
+    "## Phase 3: Agent Skills Progressive Disclosure\n",
+    "- Skills are installed workflow packages, not callable tools by their display names or bundle names.\n",
+    "- Use `search_sdk` to discover relevant skill packages, skill tool bindings, and host capabilities.\n",
+    "- When a skill recipe is relevant, call `activate_skill` with its stable `skill_id` to load the full `SKILL.md` instructions for this request.\n",
+    "- Use `read_skill_resource` only for package-local references, examples, templates, or script source explicitly named by the activated skill instructions.\n",
+    "- Use registered skill action tools for `llm-tool.yaml` actions. Use `shell_execute` only when the activated skill describes an actual CLI or terminal command and that host execution tool is allowed.\n",
+    "- Do not treat a recipe excerpt as the whole skill; activate the skill before relying on nontrivial skill-specific procedures.\n\n",
+
+    "## Phase 4: Delegation Contract\n",
+    "- Use `delegate_task` only when the work is separable, bounded, and a relevant local custom task agent is available.\n",
+    "- Do not delegate simple direct answers, final user communication, or work you can complete with one lighter direct tool.\n",
+    "- Before delegating, provide a concrete task, constraints, relevant context references, and expected output when those are known.\n",
+    "- Treat delegated_result as structured subtask output, not final authority over the whole answer. Integrate it, verify critical claims when needed, and produce the final user-facing answer yourself.\n",
+    "- Do not recursively orchestrate or ask the delegated agent to spawn more agents unless the runtime explicitly provides that capability.\n\n",
+
+    "## Phase 5: Execution & Tool Selection\n",
     "- Optimize for end-to-end completion using the minimum effective steps.\n",
     "- Select the most lightweight tool applicable: \n",
     "  * Fetch/Read: Single documents/pages.\n",
@@ -29,7 +44,7 @@ const LOCAL_ROUTER_BASE_PROMPT_TEMPLATE: &str = concat!(
     "  * Code workflow: Multi-step transformations or heavy computations.\n",
     "- If a tool attempt fails or is completely unavailable, briefly explain the limitation and provide the best possible honest fallback.\n\n",
 
-    "## Phase 4: Delivery & Constraints\n",
+    "## Phase 6: Delivery & Constraints\n",
     "- Strictly ground all facts, files, tool results, and system states in actual context or tool outputs. Never fabricate information.\n",
     "- For outcome-oriented requests (writing, creating, researching), output the final deliverable rather than just a summary of what you found.\n",
     "- When a concept would be materially clearer with a simple visual explanation, you may generate concise self-contained SVG or HTML code as a demo for the user. Use SVG for diagrams, charts, or illustrations; use HTML for interactive layouts, component previews, or styled content. Only generate visual demos when they genuinely improve understanding.\n",
@@ -195,6 +210,36 @@ mod tests {
 
         assert!(prompt.contains("call `search_sdk` again"));
         assert!(prompt.contains("instead of stopping"));
+    }
+
+    #[test]
+    fn local_router_prompt_defines_skill_progressive_disclosure() {
+        let prompt = render_local_router_base_prompt(
+            "2026-04-23",
+            "Asia/Shanghai",
+            "Simplified Chinese (zh-CN)",
+        );
+
+        assert!(prompt.contains("Agent Skills Progressive Disclosure"));
+        assert!(prompt.contains("call `activate_skill` with its stable `skill_id`"));
+        assert!(prompt.contains("Use `read_skill_resource` only for package-local"));
+        assert!(prompt.contains("Use `shell_execute` only when the activated skill describes an actual CLI"));
+        assert!(prompt.contains("Do not treat a recipe excerpt as the whole skill"));
+    }
+
+    #[test]
+    fn local_router_prompt_defines_delegation_contract() {
+        let prompt = render_local_router_base_prompt(
+            "2026-04-23",
+            "Asia/Shanghai",
+            "Simplified Chinese (zh-CN)",
+        );
+
+        assert!(prompt.contains("Delegation Contract"));
+        assert!(prompt.contains("Use `delegate_task` only when the work is separable"));
+        assert!(prompt.contains("Do not delegate simple direct answers"));
+        assert!(prompt.contains("Treat delegated_result as structured subtask output"));
+        assert!(prompt.contains("Do not recursively orchestrate"));
     }
 
     #[test]

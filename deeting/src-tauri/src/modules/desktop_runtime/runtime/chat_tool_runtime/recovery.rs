@@ -553,6 +553,7 @@ async fn advance_local_chat_execution_from_graph_state(
         temperature: state.temperature,
         max_tokens: state.max_tokens,
         active_capability: state.active_capability.clone(),
+        active_skill_context: state.active_skill_context.clone(),
         discovery_gate_forced: state.discovery_gate_forced,
         verification_gate_forced: state.verification_gate_forced,
         runtime_metrics: state.runtime_metrics.clone(),

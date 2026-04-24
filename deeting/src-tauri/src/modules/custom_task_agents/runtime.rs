@@ -4,6 +4,7 @@ use base64::Engine;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
+use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::modules::ai_upstream::{
     request_provider_chat_completion, resolve_local_model_connection,
 };
@@ -80,13 +81,28 @@ impl From<String> for CustomTaskAgentRuntimeError {
 
 pub(crate) fn resolve_custom_task_agent_model_selection(
     model_config: Option<&serde_json::Value>,
+    parent_model_connection: Option<&LocalModelConnection>,
 ) -> (String, Option<String>) {
+    let mode = model_config
+        .and_then(|value| value.get("mode"))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let explicit_fixed_mode = matches!(mode, Some("fixed") | Some("capability_match"));
     let provider_model_id = model_config
         .and_then(|value| value.get("provider_model_id"))
         .and_then(|value| value.as_str())
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string);
+    if provider_model_id.is_none() && !explicit_fixed_mode {
+        if let Some(parent) = parent_model_connection {
+            return (
+                parent.model_id.clone(),
+                Some(parent.provider_model_id.clone()),
+            );
+        }
+    }
     let model = model_config
         .and_then(|value| value.get("model"))
         .and_then(|value| value.as_str())
@@ -111,6 +127,16 @@ pub(crate) async fn preview_custom_task_agent(
     profile: &CustomTaskAgentProfile,
     request: CustomTaskAgentPreviewRequest,
 ) -> Result<CustomTaskAgentPreviewResponse, CustomTaskAgentRuntimeError> {
+    preview_custom_task_agent_with_parent_model(app_handle, app_state, profile, request, None).await
+}
+
+pub(crate) async fn preview_custom_task_agent_with_parent_model(
+    app_handle: &AppHandle,
+    app_state: &AppState,
+    profile: &CustomTaskAgentProfile,
+    request: CustomTaskAgentPreviewRequest,
+    parent_model_connection: Option<&LocalModelConnection>,
+) -> Result<CustomTaskAgentPreviewResponse, CustomTaskAgentRuntimeError> {
     if !profile.is_enabled {
         return Err(CustomTaskAgentRuntimeError::new(
             "custom task agent is disabled",
@@ -125,8 +151,10 @@ pub(crate) async fn preview_custom_task_agent(
         ));
     }
 
-    let (model, provider_model_id) =
-        resolve_custom_task_agent_model_selection(profile.model_config.as_ref());
+    let (model, provider_model_id) = resolve_custom_task_agent_model_selection(
+        profile.model_config.as_ref(),
+        parent_model_connection,
+    );
     let model_connection =
         resolve_local_model_connection(app_state, &model, provider_model_id.as_deref())
             .await
@@ -950,8 +978,7 @@ fn build_initial_messages(
         "Guidance skills are documentation-only context. Read them, but do not treat them as directly callable tools.".to_string(),
         "Callable MCP tools and callable skill actions are separate execution lanes.".to_string(),
         "Use only the callable MCP tools and callable skill actions explicitly bound to this custom task agent.".to_string(),
-        "If a guidance skill describes a CLI or terminal workflow, and one of your bound callable MCP tools can execute host commands, translate the documented workflow into that callable tool instead of blocking on the absence of a dedicated skill action.".to_string(),
-        "Do not require a bespoke skill action name when the delegated task can be completed through a bound shell or host-execution tool.".to_string(),
+        "Follow the parent runtime's Agent Skills Progressive Disclosure contract; this delegated agent receives already-selected guidance context and bound executable lanes only.".to_string(),
         "Do not perform extra search, search_sdk, route planning, or orchestration on your own.".to_string(),
         "If you are blocked, explain the blocker briefly and stop.".to_string(),
         String::new(),
@@ -1145,7 +1172,11 @@ fn merge_tts_extra_params(speed: Option<f64>, extra_params: Option<Value>) -> Op
 
 #[cfg(test)]
 mod tests {
-    use super::{build_initial_messages, validate_image_generation_detail};
+    use super::{
+        build_initial_messages, resolve_custom_task_agent_model_selection,
+        validate_image_generation_detail,
+    };
+    use crate::modules::ai_upstream::types::LocalModelConnection;
     use crate::modules::custom_task_agents::types::{
         CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
     };
@@ -1231,10 +1262,9 @@ mod tests {
             .unwrap_or_default();
 
         assert!(system.contains("Guidance skills are documentation-only context"));
-        assert!(system.contains("CLI or terminal workflow"));
-        assert!(system.contains("bound callable MCP tools can execute host commands"));
-        assert!(system.contains("absence of a dedicated skill action"));
-        assert!(system.contains("bound shell or host-execution tool"));
+        assert!(system.contains("Agent Skills Progressive Disclosure"));
+        assert!(system.contains("already-selected guidance context"));
+        assert!(system.contains("bound executable lanes only"));
     }
 
     #[test]
@@ -1332,5 +1362,43 @@ mod tests {
             .contains("\"packet_hash\": \"hash-123\""));
         assert_eq!(messages[3].role, "user");
         assert!(messages[3].content.contains("Raw user phrasing"));
+    }
+
+    #[test]
+    fn resolve_custom_task_agent_model_selection_inherits_parent_when_unset() {
+        let parent = LocalModelConnection {
+            provider_model_id: "provider-model-1".to_string(),
+            model_id: "gpt-5.4".to_string(),
+            logical_model_key: None,
+            protocol_family: "openai_responses".to_string(),
+        };
+
+        let (model, provider_model_id) =
+            resolve_custom_task_agent_model_selection(None, Some(&parent));
+
+        assert_eq!(model, "gpt-5.4");
+        assert_eq!(provider_model_id.as_deref().unwrap_or(""), "provider-model-1");
+    }
+
+    #[test]
+    fn resolve_custom_task_agent_model_selection_prefers_fixed_override() {
+        let parent = LocalModelConnection {
+            provider_model_id: "provider-model-1".to_string(),
+            model_id: "gpt-5.4".to_string(),
+            logical_model_key: None,
+            protocol_family: "openai_responses".to_string(),
+        };
+
+        let (model, provider_model_id) = resolve_custom_task_agent_model_selection(
+            Some(&json!({
+                "mode": "fixed",
+                "model": "o3",
+                "provider_model_id": "provider-model-2"
+            })),
+            Some(&parent),
+        );
+
+        assert_eq!(model, "o3");
+        assert_eq!(provider_model_id.as_deref().unwrap_or(""), "provider-model-2");
     }
 }

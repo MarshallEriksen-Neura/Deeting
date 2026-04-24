@@ -146,6 +146,7 @@ export function ModelManagementProvidersPage() {
                         <button
                           type="button"
                           aria-label={`${instance.name} actions`}
+                          onPointerDown={(event) => event.stopPropagation()}
                           onClick={(event) => event.stopPropagation()}
                           className="absolute bottom-4 right-4 z-20 rounded-xl p-1.5 opacity-0 transition-all hover:bg-[var(--panel-bg)] group-hover:opacity-100 data-[state=open]:opacity-100 data-[state=open]:bg-[var(--panel-bg)]"
                         >

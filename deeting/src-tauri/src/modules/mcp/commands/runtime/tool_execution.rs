@@ -396,6 +396,8 @@ fn resolve_core_tool_name(tool_id: Option<&str>, tool_name: Option<&str>) -> Opt
         ("browser_type", _) | (_, "core.browser_type") => Some("browser_type"),
         ("save_asset", _) | (_, "core.save_asset") => Some("save_asset"),
         ("shell_execute", _) | (_, "core.shell_execute") => Some("shell_execute"),
+        ("write_docx", _) | (_, "core.write_docx") => Some("write_docx"),
+        ("write_pptx", _) | (_, "core.write_pptx") => Some("write_pptx"),
         _ => None,
     }
 }
@@ -1181,6 +1183,116 @@ async fn execute_core_tool_call_with_tool_ref_internal(
             Ok(Some(
                 serde_json::to_value(record).map_err(|err| err.to_string())?,
             ))
+        }
+        "write_docx" => {
+            let app_handle = crate::state::global_app_handle()
+                .ok_or_else(|| "global app handle is unavailable".to_string())?;
+
+            if !skip_approval_gate {
+                let risk = assess_policy_risk(PolicyTargetRef::CoreTool {
+                    tool_name: core_tool_name,
+                    arguments: &arguments,
+                });
+                if let Some(queued) = maybe_queue_core_tool_approval(
+                    approval_context,
+                    runtime_state,
+                    store,
+                    pending_tool_calls,
+                    "core.write_docx",
+                    "write_docx",
+                    &arguments,
+                    "Generate a Microsoft Word (.docx) document on the user's machine.",
+                    &risk,
+                    core_tool_fingerprint("core.write_docx", &arguments),
+                )
+                .await?
+                {
+                    return Ok(Some(queued));
+                }
+            }
+
+            let input = crate::modules::generated_files::docx_generator::parse_write_docx_input(&arguments)
+                .map_err(|err| format!("Invalid write_docx arguments: {err}"))?;
+
+            let generated =
+                crate::modules::generated_files::docx_generator::generate_docx(&app_handle, &input)
+            .await
+            .map_err(|err| format!("Failed to generate docx: {err}"))?;
+
+            Ok(Some(serde_json::json!({
+                "file_id": generated.file_id,
+                "filename": generated.filename,
+                "size": generated.size,
+                "content_type": generated.content_type,
+                "message": format!("Successfully generated {} ({} bytes)", generated.filename, generated.size),
+                "render_blocks": [{
+                    "view_type": "generated.file",
+                    "title": generated.filename,
+                    "payload": {
+                        "file_id": generated.file_id,
+                        "name": generated.filename,
+                        "size": generated.size,
+                        "content_type": generated.content_type,
+                        "preview_kind": "text",
+                        "preview_text": generated.preview_text,
+                    }
+                }]
+            })))
+        }
+        "write_pptx" => {
+            let app_handle = crate::state::global_app_handle()
+                .ok_or_else(|| "global app handle is unavailable".to_string())?;
+
+            if !skip_approval_gate {
+                let risk = assess_policy_risk(PolicyTargetRef::CoreTool {
+                    tool_name: core_tool_name,
+                    arguments: &arguments,
+                });
+                if let Some(queued) = maybe_queue_core_tool_approval(
+                    approval_context,
+                    runtime_state,
+                    store,
+                    pending_tool_calls,
+                    "core.write_pptx",
+                    "write_pptx",
+                    &arguments,
+                    "Generate a PowerPoint (.pptx) presentation on the user's machine.",
+                    &risk,
+                    core_tool_fingerprint("core.write_pptx", &arguments),
+                )
+                .await?
+                {
+                    return Ok(Some(queued));
+                }
+            }
+
+            let input = crate::modules::generated_files::pptx_generator::parse_write_pptx_input(&arguments)
+                .map_err(|err| format!("Invalid write_pptx arguments: {err}"))?;
+
+            let generated =
+                crate::modules::generated_files::pptx_generator::generate_pptx(&app_handle, &input)
+            .await
+            .map_err(|err| format!("Failed to generate pptx: {err}"))?;
+
+            Ok(Some(serde_json::json!({
+                "file_id": generated.file_id,
+                "filename": generated.filename,
+                "size": generated.size,
+                "content_type": generated.content_type,
+                "message": format!("Successfully generated {} ({} bytes)", generated.filename, generated.size),
+                "render_blocks": [{
+                    "view_type": "generated.file",
+                    "title": generated.filename,
+                    "payload": {
+                        "file_id": generated.file_id,
+                        "name": generated.filename,
+                        "size": generated.size,
+                        "content_type": generated.content_type,
+                        "preview_kind": "text",
+                        "preview_text": generated.preview_text,
+                    }
+                }]
+            })))
         }
         _ => Ok(None),
     }

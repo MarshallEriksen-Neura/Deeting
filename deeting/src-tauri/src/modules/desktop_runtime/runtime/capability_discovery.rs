@@ -411,7 +411,7 @@ fn build_search_result_payload(
                     "programmatic_path": "execute_code_plan",
                     "direct_callable_capability_count": direct_callable_capability_count,
                 },
-                "usage_hint": "Prefer direct host capabilities from capability_groups.skill_tools, capability_groups.user_mcp_tools, and capability_groups.core_tools. recipe_groups.skills are guidance-only skill bundles, not callable tools by themselves. If a recipe describes a CLI or terminal workflow and shell_execute is callable, execute that workflow through shell_execute instead of failing for lack of a dedicated skill action. Use execute_code_plan only for multi-step program logic, loops, branching, or result aggregation.",
+                "usage_hint": "Prefer direct host capabilities from capability_groups.skill_tools, capability_groups.user_mcp_tools, and capability_groups.core_tools. For recipe_groups.skills, call activate_skill with the stable skill_id before relying on package-specific procedures, then use read_skill_resource for package-local references when needed. Use shell_execute only for actual host command execution. Use execute_code_plan only for multi-step program logic, loops, branching, or result aggregation.",
                 "availability": {
                     "enabled_assistant_count": enabled_assistant_count,
                     "read_path_mode": read_path_mode,
@@ -451,7 +451,10 @@ fn summarize_search_item(item: &Value) -> Value {
         "mutating",
         "risk_level",
         "recipe_kind",
+        "skill_id",
         "recommended_path",
+        "recommended_next_tool",
+        "activation_available",
         "primitive_kind",
         "docs_excerpt",
     ] {
@@ -493,9 +496,47 @@ fn build_capability_groups(items: &[Value], detail_level: SearchSdkDetailLevel) 
 
 fn build_recipe_groups(items: &[Value], detail_level: SearchSdkDetailLevel) -> Value {
     json!({
-        "skills": collect_group_items(items, detail_level, |item| item.get("asset_namespace").and_then(Value::as_str) == Some("skill")),
-        "assistants": collect_group_items(items, detail_level, |item| item.get("asset_type").and_then(Value::as_str) == Some("assistant")),
+        "skills": collect_recipe_group_items(items, detail_level, |item| item.get("asset_namespace").and_then(Value::as_str) == Some("skill")),
+        "assistants": collect_recipe_group_items(items, detail_level, |item| item.get("asset_type").and_then(Value::as_str) == Some("assistant")),
     })
+}
+
+fn collect_recipe_group_items<F>(
+    items: &[Value],
+    detail_level: SearchSdkDetailLevel,
+    predicate: F,
+) -> Vec<Value>
+where
+    F: Fn(&Value) -> bool,
+{
+    items
+        .iter()
+        .filter(|item| predicate(item))
+        .map(|item| match detail_level {
+            SearchSdkDetailLevel::Summary => summarize_recipe_group_item(item),
+            SearchSdkDetailLevel::Full => item.clone(),
+        })
+        .collect()
+}
+
+fn summarize_recipe_group_item(item: &Value) -> Value {
+    let Some(object) = item.as_object() else {
+        return item.clone();
+    };
+
+    let mut summary = Map::new();
+    for key in [
+        "name",
+        "description",
+        "skill_id",
+        "recipe_kind",
+        "recommended_path",
+        "recommended_next_tool",
+        "activation_available",
+    ] {
+        copy_non_null_field(&mut summary, object, key);
+    }
+    Value::Object(summary)
 }
 
 fn collect_group_items<F>(
@@ -1254,8 +1295,23 @@ fn materialize_ranked_entry(
             SemanticGroup::Recipe => {
                 object.insert("semantic_kind".to_string(), json!("recipe"));
                 object.insert("recipe_kind".to_string(), json!(asset_type));
-                object.insert("recommended_path".to_string(), json!("install_or_activate"));
+                object.insert("recommended_path".to_string(), json!("activate_skill"));
+                object.insert(
+                    "activation_available".to_string(),
+                    json!(asset_type == "skill" || skill_backed_tool),
+                );
+                object.insert("recommended_next_tool".to_string(), json!("activate_skill"));
                 if asset_type == "skill" || skill_backed_tool {
+                    if let Some(skill_id) = object
+                        .get("id")
+                        .or_else(|| object.get("pkg_name"))
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_string)
+                    {
+                        object.insert("skill_id".to_string(), json!(skill_id));
+                    }
                     if let Some(metadata) = asset_metadata {
                         if let Some(compatibility) = metadata.get("compatibility") {
                             object.insert("compatibility".to_string(), compatibility.clone());
@@ -2238,6 +2294,7 @@ mod tests {
         assert_eq!(summary["status"]["callable"], json!(true));
         assert_eq!(summary["status"]["recommended_action"], json!("execute"));
         assert_eq!(summary["status"]["reason"], json!("core_runtime_tool"));
+        assert!(summary.get("skill_id").is_none());
         assert!(summary.get("input_schema").is_none());
         assert!(summary.get("required_parameters").is_none());
         assert!(summary.get("python_stub").is_none());
@@ -2333,6 +2390,66 @@ mod tests {
         assert_eq!(
             groups["skill_tools"],
             json!(["skill.openclaw_weather.fetch_weather"])
+        );
+    }
+
+    #[test]
+    fn search_summary_keeps_skill_activation_fields_for_recipes() {
+        let summary = summarize_search_item(&json!({
+            "name": "Planner",
+            "description": "Planning workflow skill",
+            "semantic_kind": "recipe",
+            "asset_namespace": "skill",
+            "recipe_kind": "skill",
+            "skill_id": "official.skills.planner",
+            "recommended_path": "activate_skill",
+            "recommended_next_tool": "activate_skill",
+            "activation_available": true,
+            "docs_excerpt": "Read SKILL.md first.",
+            "install_root": "C:/Users/example/.agents/skills/planner",
+            "manifest": {"name": "planner"},
+            "runtime_state": "ready"
+        }));
+
+        assert_eq!(summary["skill_id"], json!("official.skills.planner"));
+        assert_eq!(summary["recommended_path"], json!("activate_skill"));
+        assert_eq!(summary["recommended_next_tool"], json!("activate_skill"));
+        assert_eq!(summary["activation_available"], json!(true));
+        assert_eq!(summary["docs_excerpt"], json!("Read SKILL.md first."));
+        assert!(summary.get("install_root").is_none());
+        assert!(summary.get("manifest").is_none());
+        assert!(summary.get("runtime_state").is_none());
+    }
+
+    #[test]
+    fn recipe_groups_summary_keeps_activation_handle() {
+        let groups = build_recipe_groups(
+            &[json!({
+                "name": "Planner",
+                "description": "Planning workflow skill",
+                "asset_namespace": "skill",
+                "asset_type": "skill",
+                "recipe_kind": "skill",
+                "skill_id": "official.skills.planner",
+                "recommended_path": "activate_skill",
+                "recommended_next_tool": "activate_skill",
+                "activation_available": true,
+                "install_root": "C:/Users/example/.agents/skills/planner"
+            })],
+            SearchSdkDetailLevel::Summary,
+        );
+
+        assert_eq!(
+            groups["skills"],
+            json!([{
+                "name": "Planner",
+                "description": "Planning workflow skill",
+                "skill_id": "official.skills.planner",
+                "recipe_kind": "skill",
+                "recommended_path": "activate_skill",
+                "recommended_next_tool": "activate_skill",
+                "activation_available": true
+            }])
         );
     }
 

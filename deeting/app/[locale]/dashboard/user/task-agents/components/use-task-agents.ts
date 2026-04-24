@@ -11,18 +11,23 @@ import {
   deleteCustomTaskAgent,
   getCustomTaskAgentBindingCatalog,
   importClaudeAgents,
+  importExternalTaskAgents,
   listCustomTaskAgents,
   previewCustomTaskAgent,
   previewClaudeAgentImport,
   reindexCustomTaskAgents,
+  scanExternalTaskAgents,
   supportsLocalCustomTaskAgents,
   updateCustomTaskAgent,
   type ClaudeAgentImportPreviewResponse,
   type CustomTaskAgentBindingCatalog,
+  type ExternalAgentCandidate,
   type CustomTaskAgentInvocationKind,
   type CustomTaskAgentPreviewResponse,
   type CustomTaskAgentProfile,
+  type ImportExternalAgentsResponse,
   type ImportClaudeAgentsResponse,
+  type ScanExternalAgentsResponse,
   type UpsertCustomTaskAgentPayload,
 } from "@/lib/api/custom-task-agents"
 import { listLocalAssets, type LocalAsset } from "@/lib/api/local-assets"
@@ -100,10 +105,14 @@ export function useTaskAgents(t: Translation) {
   const [isReindexing, setIsReindexing] = React.useState(false)
   const [isImportPreviewing, setIsImportPreviewing] = React.useState(false)
   const [isImporting, setIsImporting] = React.useState(false)
+  const [isExternalScanning, setIsExternalScanning] = React.useState(false)
+  const [isExternalImporting, setIsExternalImporting] = React.useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [discardDialogOpen, setDiscardDialogOpen] = React.useState(false)
   const [claudeImportPreview, setClaudeImportPreview] = React.useState<ClaudeAgentImportPreviewResponse | null>(null)
+  const [externalAgentPreview, setExternalAgentPreview] = React.useState<ScanExternalAgentsResponse | null>(null)
   const [claudeImportError, setClaudeImportError] = React.useState<string | null>(null)
+  const [externalAgentError, setExternalAgentError] = React.useState<string | null>(null)
   const pendingNavigationRef = React.useRef<(() => void) | null>(null)
   const hydratedSelectionRef = React.useRef<string | null>(null)
   const llmWikiHandoffAppliedRef = React.useRef(false)
@@ -797,6 +806,64 @@ export function useTaskAgents(t: Translation) {
     }
   }, [mutateAgents, t])
 
+  const handleScanExternalAgents = React.useCallback(async (payload?: {
+    roots?: string[]
+    include_user_defaults?: boolean
+  }) => {
+    try {
+      setIsExternalScanning(true)
+      setExternalAgentError(null)
+      const result = await scanExternalTaskAgents(payload)
+      setExternalAgentPreview(result)
+      return result
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("toast.importPreviewFailed")
+      setExternalAgentError(message)
+      toast.error(message)
+      throw error
+    } finally {
+      setIsExternalScanning(false)
+    }
+  }, [t])
+
+  const handleImportExternalAgents = React.useCallback(async (payload: {
+    candidates: ExternalAgentCandidate[]
+  }) => {
+    try {
+      setIsExternalImporting(true)
+      setExternalAgentError(null)
+      const result: ImportExternalAgentsResponse = await importExternalTaskAgents(payload)
+      await mutateAgents((current = []) => {
+        const byId = new Map(current.map((item) => [item.id, item]))
+        for (const profile of result.profiles) {
+          byId.set(profile.id, profile)
+        }
+        return Array.from(byId.values()).toSorted((left, right) =>
+          right.updated_at.localeCompare(left.updated_at),
+        )
+      }, { revalidate: false })
+      if (result.profiles[0]) {
+        setSelectedAgentId(result.profiles[0].id)
+        setCreateFlowStep("editor")
+      }
+      setExternalAgentPreview(null)
+      toast.success(
+        t("toast.externalImported", {
+          created: result.created_count,
+          updated: result.updated_count,
+        }),
+      )
+      return result
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("toast.importFailed")
+      setExternalAgentError(message)
+      toast.error(message)
+      throw error
+    } finally {
+      setIsExternalImporting(false)
+    }
+  }, [mutateAgents, t])
+
   return {
     // Platform
     desktopSupport,
@@ -859,12 +926,16 @@ export function useTaskAgents(t: Translation) {
     isReindexing,
     isImportPreviewing,
     isImporting,
+    isExternalScanning,
+    isExternalImporting,
     deleteDialogOpen,
     discardDialogOpen,
     previewResult,
     previewError,
     claudeImportPreview,
     claudeImportError,
+    externalAgentPreview,
+    externalAgentError,
 
     // Actions
     setSearchQuery,
@@ -890,6 +961,8 @@ export function useTaskAgents(t: Translation) {
     handleRunPreview,
     handlePreviewClaudeImport,
     handleImportClaudeAgents,
+    handleScanExternalAgents,
+    handleImportExternalAgents,
     handleDiscardConfirm,
     handleDiscardCancel,
   }

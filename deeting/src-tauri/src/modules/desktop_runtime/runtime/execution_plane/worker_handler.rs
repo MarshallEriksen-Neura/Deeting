@@ -8,7 +8,7 @@ use super::{
 use crate::modules::audio::result_blocks::build_audio_result_block;
 use crate::modules::chat_assets::resolve_chat_assets_dir;
 use crate::modules::custom_task_agents::runtime::{
-    preview_custom_task_agent, CustomTaskAgentRuntimeError,
+    preview_custom_task_agent_with_parent_model, CustomTaskAgentRuntimeError,
 };
 use crate::modules::custom_task_agents::types::{
     CustomTaskAgentInvocationKind, CustomTaskAgentPreviewRequest, CustomTaskAgentPreviewResponse,
@@ -491,7 +491,7 @@ where
         None,
         None,
     );
-    let execution = match preview_custom_task_agent(
+    let execution = match preview_custom_task_agent_with_parent_model(
         &request.app_handle,
         &request.app_state,
         &selection.profile,
@@ -503,6 +503,7 @@ where
             max_rounds: Some(4),
             worker_task_packet: Some(task_packet.as_value()),
         },
+        Some(&request.model_connection),
     )
     .await
     {

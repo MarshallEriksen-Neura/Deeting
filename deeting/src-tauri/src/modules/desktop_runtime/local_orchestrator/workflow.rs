@@ -15,6 +15,7 @@ use crate::modules::desktop_runtime::runtime::{
     LocalControlPlaneResult, LocalExecutionPolicy, LocalRouteDecision, RuntimeDiscoveryBundle,
     TaskFingerprint,
 };
+use crate::modules::mcp::store::LocalSkillInstallDetail;
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
 
@@ -42,6 +43,240 @@ pub(super) fn latest_user_message(messages: &[LocalChatInputMessage]) -> Option<
         })
 }
 
+pub(super) fn extract_explicit_skill_mentions(text: &str) -> Vec<String> {
+    let sanitized = strip_code_spans_for_skill_mentions(text);
+    let mut mentions = Vec::new();
+    let chars = sanitized.char_indices().collect::<Vec<_>>();
+    let mut index = 0;
+    while index < chars.len() {
+        let (_, ch) = chars[index];
+        if ch != '$' {
+            index += 1;
+            continue;
+        }
+
+        let mut end = index + 1;
+        let mut token = String::new();
+        while end < chars.len() {
+            let (_, next) = chars[end];
+            if next.is_ascii_alphanumeric() || matches!(next, '_' | '-' | '.' | '/') {
+                token.push(next);
+                end += 1;
+            } else {
+                break;
+            }
+        }
+
+        let normalized = normalize_skill_mention(&token);
+        if !normalized.is_empty()
+            && normalized.chars().any(|ch| ch.is_ascii_alphabetic())
+            && !looks_like_env_token(&token, &normalized)
+            && !mentions.iter().any(|existing| existing == &normalized)
+        {
+            mentions.push(normalized);
+        }
+        index = end.max(index + 1);
+    }
+    mentions
+}
+
+fn strip_code_spans_for_skill_mentions(text: &str) -> String {
+    let mut output = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    let mut in_inline_code = false;
+    let mut in_fenced_code = false;
+
+    while let Some(ch) = chars.next() {
+        if ch == '`' {
+            let mut tick_count = 1;
+            while matches!(chars.peek(), Some('`')) {
+                chars.next();
+                tick_count += 1;
+            }
+
+            if tick_count >= 3 {
+                in_fenced_code = !in_fenced_code;
+            } else if !in_fenced_code {
+                in_inline_code = !in_inline_code;
+            }
+
+            for _ in 0..tick_count {
+                output.push(' ');
+            }
+            continue;
+        }
+
+        if in_inline_code || in_fenced_code {
+            output.push(if ch == '\n' || ch == '\r' { ch } else { ' ' });
+        } else {
+            output.push(ch);
+        }
+    }
+
+    output
+}
+
+fn normalize_skill_mention(value: &str) -> String {
+    value
+        .trim()
+        .trim_start_matches('$')
+        .trim_matches(|ch: char| matches!(ch, '.' | ',' | ';' | ':' | '!' | '?' | ')' | ']' | '}'))
+        .to_ascii_lowercase()
+}
+
+fn looks_like_env_token(raw: &str, normalized: &str) -> bool {
+    if normalized.is_empty() {
+        return true;
+    }
+    if normalized == "env" {
+        return true;
+    }
+    raw.chars()
+        .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == '_')
+}
+
+fn query_with_explicit_skill_mentions(query: &str) -> String {
+    let mentions = extract_explicit_skill_mentions(query);
+    if mentions.is_empty() {
+        return query.to_string();
+    }
+    let display = mentions
+        .iter()
+        .map(|mention| format!("${mention}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "{query}\nExplicit skill mention(s): {display}. Prefer installed skill packages whose skill_id, package id, or display name matches these mentions."
+    )
+}
+
+fn install_matches_explicit_skill_mention(
+    install: &LocalSkillInstallDetail,
+    mention: &str,
+) -> bool {
+    if mention.trim().is_empty() {
+        return false;
+    }
+    let mention = normalize_skill_mention(mention);
+    if mention.is_empty() {
+        return false;
+    }
+
+    let manifest = serde_json::from_str::<Value>(&install.manifest_json).unwrap_or(Value::Null);
+    let mut identifiers = vec![normalize_skill_mention(&install.skill_id)];
+    if let Some(name) = manifest.get("name").and_then(Value::as_str) {
+        let normalized = normalize_skill_mention(name);
+        if !normalized.is_empty() {
+            identifiers.push(normalized);
+        }
+    }
+    if let Some(display_name) = manifest.get("displayName").and_then(Value::as_str) {
+        let normalized = normalize_skill_mention(display_name);
+        if !normalized.is_empty() {
+            identifiers.push(normalized);
+        }
+    }
+
+    identifiers.iter().any(|identifier| {
+        identifier == &mention
+            || identifier
+                .rsplit(|ch| matches!(ch, '.' | '/' | '-'))
+                .next()
+                .is_some_and(|tail| tail == mention)
+    })
+}
+
+fn build_pinned_skill_recipe_from_install(install: &LocalSkillInstallDetail) -> Value {
+    let manifest = serde_json::from_str::<Value>(&install.manifest_json).unwrap_or(Value::Null);
+    let name = manifest
+        .get("name")
+        .or_else(|| manifest.get("displayName"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(install.skill_id.as_str())
+        .to_string();
+    let description = manifest
+        .get("description")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_default()
+        .to_string();
+
+    json!({
+        "name": name,
+        "description": description,
+        "skill_id": install.skill_id,
+        "recipe_kind": "skill",
+        "recommended_path": "activate_skill",
+        "recommended_next_tool": "activate_skill",
+        "activation_available": install.is_enabled,
+        "status": {
+            "recommended_action": if install.is_enabled { "activate_skill" } else { "review" },
+            "reason": if install.is_enabled {
+                "explicit_skill_mention_exact_match"
+            } else {
+                "explicit_skill_mention_disabled"
+            }
+        },
+        "pinned_reason": "exact_skill_mention_match"
+    })
+}
+
+async fn resolve_pinned_skill_recipes(
+    ctx: &LocalWorkflowContext,
+    explicit_mentions: &[String],
+) -> Vec<Value> {
+    if explicit_mentions.is_empty() {
+        return Vec::new();
+    }
+
+    let installs = match ctx
+        .app_state
+        .mcp
+        .store
+        .list_local_skill_install_details()
+        .await
+    {
+        Ok(installs) => installs,
+        Err(_) => return Vec::new(),
+    };
+
+    installs
+        .into_iter()
+        .filter(|install| {
+            explicit_mentions
+                .iter()
+                .any(|mention| install_matches_explicit_skill_mention(install, mention))
+        })
+        .map(|install| build_pinned_skill_recipe_from_install(&install))
+        .collect()
+}
+
+fn merge_pinned_skill_recipes(pinned: &[Value], discovered: &[Value]) -> Vec<Value> {
+    let mut merged = Vec::with_capacity(pinned.len() + discovered.len());
+    let mut seen = Vec::<String>::new();
+
+    for recipe in pinned.iter().chain(discovered.iter()) {
+        let key = recipe
+            .get("skill_id")
+            .or_else(|| recipe.get("id"))
+            .or_else(|| recipe.get("pkg_name"))
+            .or_else(|| recipe.get("name"))
+            .and_then(Value::as_str)
+            .map(normalize_skill_mention)
+            .unwrap_or_default();
+        if key.is_empty() || seen.iter().any(|existing| existing == &key) {
+            continue;
+        }
+        seen.push(key);
+        merged.push(recipe.clone());
+    }
+
+    merged
+}
+
 async fn resolve_runtime_discovery_bundle(
     ctx: &LocalWorkflowContext,
     query: &str,
@@ -65,20 +300,37 @@ async fn resolve_runtime_discovery_bundle(
     )
 }
 
-pub(super) fn render_skill_recipe_prompt(recipes: &[Value]) -> Option<String> {
+pub(super) fn render_skill_recipe_prompt(
+    recipes: &[Value],
+    explicit_mentions: &[String],
+) -> Option<String> {
     if recipes.is_empty() {
         return None;
     }
 
     let mut lines = vec![
         "## Installed Skills".to_string(),
-        "These are installed skill bundles. Recipe entries are supporting guidance only; the current request allowlist plus `search_sdk` capability results are the source of truth for what is executable right now.".to_string(),
-        "Read the recipe details when helpful, but if `search_sdk` surfaces a callable direct capability for this request you may call it directly.".to_string(),
-        "If a recipe documents a CLI or terminal workflow and `search_sdk` exposes a callable host command tool such as `shell_execute`, use that executable path instead of treating the missing dedicated skill action as a blocker.".to_string(),
-        "Do not stop at recipe guidance, refusal, or manual handoff until `search_sdk` has verified the executable capability set for this request.".to_string(),
+        "These are candidate skill packages discovered for this request. A recipe preview is not the full skill.".to_string(),
+        "When a listed skill is relevant, call `activate_skill` with its stable `skill_id` before relying on package-specific procedures.".to_string(),
+        "After activation, call `read_skill_resource` only for package-local references, examples, templates, or script source named by `SKILL.md`.".to_string(),
+        "Use registered skill actions for callable skill tools, and use `shell_execute` only for actual host command execution when it is allowed.".to_string(),
     ];
+    if !explicit_mentions.is_empty() {
+        lines.push(format!(
+            "Explicit user skill mentions in this request: {}. Prefer matching entries, but still activate by stable `skill_id`.",
+            explicit_mentions
+                .iter()
+                .map(|mention| format!("${mention}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
 
-    for recipe in recipes {
+    let mut ordered_recipes = recipes.iter().collect::<Vec<_>>();
+    ordered_recipes
+        .sort_by_key(|recipe| !recipe_matches_explicit_skill_mentions(recipe, explicit_mentions));
+
+    for recipe in ordered_recipes {
         let name = recipe
             .get("name")
             .and_then(Value::as_str)
@@ -95,8 +347,26 @@ pub(super) fn render_skill_recipe_prompt(recipes: &[Value]) -> Option<String> {
             .pointer("/status/reason")
             .and_then(Value::as_str)
             .unwrap_or("skill_available");
-        lines.push(format!("- {} 鈥?{}", name, description));
+        let skill_id = recipe
+            .get("skill_id")
+            .or_else(|| recipe.get("id"))
+            .or_else(|| recipe.get("pkg_name"))
+            .and_then(Value::as_str)
+            .unwrap_or(name);
+        lines.push(format!("- {} - {}", name, description));
+        lines.push(format!("  - skill_id: {}", skill_id));
+        if recipe.get("pinned_reason").and_then(Value::as_str) == Some("exact_skill_mention_match")
+        {
+            lines.push("  - Pinned exact match: true".to_string());
+        }
+        if recipe_matches_explicit_skill_mentions(recipe, explicit_mentions) {
+            lines.push("  - Explicit mention match: true".to_string());
+        }
         lines.push(format!("  - Status: action={}, reason={}", action, reason));
+        lines.push(format!(
+            "  - Next: activate_skill(skill_id=\"{}\")",
+            skill_id
+        ));
         if let Some(excerpt) = recipe
             .get("docs_excerpt")
             .and_then(Value::as_str)
@@ -113,7 +383,7 @@ pub(super) fn render_skill_recipe_prompt(recipes: &[Value]) -> Option<String> {
                 .take(3)
                 .collect::<Vec<_>>();
             if !docs.is_empty() {
-                lines.push(format!("  - Files: {}", docs.join(", ")));
+                lines.push(format!("  - Resource hints: {}", docs.join(", ")));
             }
         }
         if let Some(entry) = recipe.get("entry").and_then(Value::as_object) {
@@ -129,6 +399,31 @@ pub(super) fn render_skill_recipe_prompt(recipes: &[Value]) -> Option<String> {
     }
 
     Some(lines.join("\n"))
+}
+
+fn recipe_matches_explicit_skill_mentions(recipe: &Value, explicit_mentions: &[String]) -> bool {
+    if explicit_mentions.is_empty() {
+        return false;
+    }
+    let identifiers = recipe_skill_identifiers(recipe);
+    explicit_mentions.iter().any(|mention| {
+        identifiers.iter().any(|identifier| {
+            identifier == mention
+                || identifier
+                    .rsplit(|ch| matches!(ch, '.' | '/' | '-'))
+                    .next()
+                    .is_some_and(|tail| tail == mention)
+        })
+    })
+}
+
+fn recipe_skill_identifiers(recipe: &Value) -> Vec<String> {
+    ["skill_id", "id", "pkg_name", "name"]
+        .into_iter()
+        .filter_map(|key| recipe.get(key).and_then(Value::as_str))
+        .map(normalize_skill_mention)
+        .filter(|value| !value.is_empty())
+        .collect()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1116,9 +1411,10 @@ impl LocalWorkflowStep<LocalWorkflowContext> for RouteSelectionStep {
                 return Ok(StepResult::skipped());
             };
             let task_fingerprint = build_task_fingerprint(&query);
+            let discovery_query = query_with_explicit_skill_mentions(&query);
 
             let (discovery_bundle, runtime_discovery_patch) =
-                resolve_runtime_discovery_bundle(ctx, &query).await;
+                resolve_runtime_discovery_bundle(ctx, &discovery_query).await;
             let base_decision = maybe_override_route_with_custom_task_agent_query_vector(
                 &ctx.app_state,
                 ctx.explicit_task_agent_id.as_deref(),
@@ -1200,12 +1496,17 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SkillRecipeInjectionStep {
                 return Ok(StepResult::skipped());
             };
 
+            let explicit_skill_mentions = extract_explicit_skill_mentions(&query);
+            let discovery_query = query_with_explicit_skill_mentions(&query);
             let (discovery_bundle, runtime_discovery_patch) =
-                resolve_runtime_discovery_bundle(ctx, &query).await;
-            let recipes = discovery_bundle.skill_recipes();
+                resolve_runtime_discovery_bundle(ctx, &discovery_query).await;
+            let pinned_skill_recipes =
+                resolve_pinned_skill_recipes(ctx, &explicit_skill_mentions).await;
+            let recipes =
+                merge_pinned_skill_recipes(&pinned_skill_recipes, discovery_bundle.skill_recipes());
 
             let mut result = StepResult::success();
-            if let Some(prompt) = render_skill_recipe_prompt(&recipes) {
+            if let Some(prompt) = render_skill_recipe_prompt(&recipes, &explicit_skill_mentions) {
                 result = result.with_system_message(prompt);
             }
             if let Some(patch) = runtime_discovery_patch {
@@ -1218,9 +1519,17 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SkillRecipeInjectionStep {
                     Some("skill_recipe_injection"),
                     "success",
                     "skills.recipes.injected",
-                    Some(json!({ "count": recipes.len() })),
+                    Some(json!({
+                        "count": recipes.len(),
+                        "pinned_skill_recipe_count": pinned_skill_recipes.len(),
+                        "explicit_skill_mentions": explicit_skill_mentions.clone(),
+                    })),
                 ))
-                .with_metrics(json!({ "recipe_count": recipes.len() })))
+                .with_metrics(json!({
+                    "recipe_count": recipes.len(),
+                    "pinned_skill_recipe_count": pinned_skill_recipes.len(),
+                    "explicit_skill_mention_count": explicit_skill_mentions.len(),
+                })))
         })
     }
 }

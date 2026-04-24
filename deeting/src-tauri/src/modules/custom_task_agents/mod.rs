@@ -1,5 +1,6 @@
 pub mod bound_callables;
 pub mod commands;
+pub mod external_scan;
 pub mod image_config;
 pub mod import;
 pub mod import_templates;

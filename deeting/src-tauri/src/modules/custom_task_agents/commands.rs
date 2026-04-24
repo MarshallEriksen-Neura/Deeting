@@ -2,6 +2,10 @@ use tauri::{AppHandle, State};
 
 use crate::state::AppState;
 
+use super::external_scan::{
+    import_external_agents as import_external_agents_inner,
+    scan_external_agents as scan_external_agents_inner,
+};
 use super::import::{
     import_claude_agents as import_claude_agents_inner,
     preview_claude_agents_import as preview_claude_agents_import_inner,
@@ -23,7 +27,9 @@ use super::types::{
     CustomTaskAgentBindableGuidanceSkill, CustomTaskAgentBindableMcpTool,
     CustomTaskAgentBindingCatalogResponse, CustomTaskAgentPreviewRequest,
     CustomTaskAgentPreviewResponse, CustomTaskAgentProfile, ImportClaudeAgentsRequest,
-    ImportClaudeAgentsResponse, PreviewClaudeAgentImportRequest, UpdateCustomTaskAgentRequest,
+    ImportClaudeAgentsResponse, ImportExternalAgentsRequest, ImportExternalAgentsResponse,
+    PreviewClaudeAgentImportRequest, ScanExternalAgentsRequest, ScanExternalAgentsResponse,
+    UpdateCustomTaskAgentRequest,
 };
 
 #[tauri::command]
@@ -164,4 +170,25 @@ pub async fn import_claude_agents(
         sync_custom_task_agent_index(state.inner(), profile).await?;
     }
     Ok(response)
+}
+
+#[tauri::command]
+pub async fn scan_external_task_agents(
+    state: State<'_, AppState>,
+    payload: ScanExternalAgentsRequest,
+) -> Result<ScanExternalAgentsResponse, String> {
+    scan_external_agents_inner(
+        state.mcp.store.as_ref(),
+        &payload.roots,
+        payload.include_user_defaults,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn import_external_task_agents(
+    state: State<'_, AppState>,
+    payload: ImportExternalAgentsRequest,
+) -> Result<ImportExternalAgentsResponse, String> {
+    import_external_agents_inner(state.inner(), &payload.candidates).await
 }

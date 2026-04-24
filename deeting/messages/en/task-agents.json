@@ -342,16 +342,25 @@
       "description": "Upload one or more markdown Claude agents, preview the parsed result, then import them as local task agents.",
       "fileLabel": "Markdown Files",
       "fileHint": "Select one or more .md or .mdx Claude agent files from your computer.",
+      "scanRootsLabel": "Extra Scan Roots",
+      "scanRootsHint": "Optional extra roots, one path per line. Leave empty to scan ~/.claude/agents and ~/.codex/agents.",
+      "scanRootsHelper": "Use this to preview local Claude or Codex agent folders before importing them into the desktop registry.",
       "filesSelected": "{count} file(s) selected",
       "previewTitle": "Import Preview",
       "previewRoot": "Import source: {value}",
       "previewEmpty": "Run a preview to inspect which Claude agents can be imported.",
+      "scanTitle": "Scan Local Agent Folders",
+      "scanRootSummary": "Scanned {count} root(s)",
+      "scanEmpty": "Run a scan to inspect local Claude and Codex agent folders.",
       "toolSummary": "Auto-bind tools: {value}",
       "skillSummary": "Auto-bind skills: {value}",
       "noBindings": "No safe default bindings detected. This agent will import as prompt-only.",
       "previewAction": "Preview Import",
       "previewing": "Previewing...",
+      "scanAction": "Scan Local Agents",
+      "scanning": "Scanning...",
       "importAction": "Import Agents",
+      "importExternalAction": "Import Scanned Agents",
       "importing": "Importing...",
       "badges": {
         "new": "New",
@@ -401,7 +410,8 @@
       "previewFailed": "Failed to run preview",
       "importPreviewFailed": "Failed to preview Claude agent import",
       "importFailed": "Failed to import Claude agents",
-      "imported": "Imported Claude agents ({created} created, {updated} updated)"
+      "imported": "Imported Claude agents ({created} created, {updated} updated)",
+      "externalImported": "Imported scanned agents ({created} created, {updated} updated)"
     }
   }
 }

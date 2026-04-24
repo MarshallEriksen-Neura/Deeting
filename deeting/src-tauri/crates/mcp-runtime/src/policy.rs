@@ -10,6 +10,9 @@ use crate::route::{
 pub const SEARCH_SDK_TOOL_NAME: &str = "search_sdk";
 pub const QUERY_TASK_POLICY_TOOL_NAME: &str = "query_task_policy";
 pub const GET_TOOL_SCHEMA_TOOL_NAME: &str = "get_tool_schema";
+pub const ACTIVATE_SKILL_TOOL_NAME: &str = "activate_skill";
+pub const READ_SKILL_RESOURCE_TOOL_NAME: &str = "read_skill_resource";
+pub const DELEGATE_TASK_TOOL_NAME: &str = "delegate_task";
 pub const EXECUTE_CODE_PLAN_TOOL_NAME: &str = "execute_code_plan";
 pub const CONSULT_EXPERT_NETWORK_TOOL_NAME: &str = "consult_expert_network";
 pub const ATTACH_CAPABILITY_TOOL_NAME: &str = "attach_capability";
@@ -204,6 +207,9 @@ pub fn full_execution_tool_names() -> Vec<String> {
         SEARCH_SDK_TOOL_NAME,
         QUERY_TASK_POLICY_TOOL_NAME,
         GET_TOOL_SCHEMA_TOOL_NAME,
+        ACTIVATE_SKILL_TOOL_NAME,
+        READ_SKILL_RESOURCE_TOOL_NAME,
+        DELEGATE_TASK_TOOL_NAME,
         EXECUTE_CODE_PLAN_TOOL_NAME,
         CONSULT_EXPERT_NETWORK_TOOL_NAME,
         ATTACH_CAPABILITY_TOOL_NAME,

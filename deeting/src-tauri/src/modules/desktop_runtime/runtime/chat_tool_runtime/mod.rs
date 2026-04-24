@@ -1,21 +1,31 @@
 use super::sovereign::{DecisionLocus, Self_};
 use super::{
-    append_streamable_local_tool_result_blocks, build_local_runtime_tools_with_allowlist,
+    activate_skill_from_args, append_streamable_local_tool_result_blocks,
+    build_delegated_result_feedback_messages, build_local_runtime_tools_with_allowlist,
     build_local_sdk_search_result_bundle_with_feedback_runtime, build_local_tool_trace_blocks,
-    build_tool_loop_feedback, delete_execution_graph_runtime_context,
+    build_tool_loop_feedback, build_worker_task_packet, delete_execution_graph_runtime_context,
     execute_or_queue_mcp_tool_call_with_tool_ref, extract_chat_tool_calls,
     install_local_skill_from_onboarding_request, list_execution_graph_runtime_contexts,
     load_execution_graph_runtime_context, load_execution_graph_snapshot,
     persist_execution_graph_runtime_context, persist_execution_graph_snapshot,
     project_execution_graph_blocks_from_value, project_execution_graph_snapshot,
-    request_provider_chat_completion, resolve_local_capability_activation_state,
-    resolve_provider_tool_name_for_execution, resolve_tool_trace_call_id,
-    search_feedback::search_feedback_context_from_tool_call_meta, CapabilityExecutionContract,
-    GraphProjectionInput, LocalCapabilityActivationState, LocalExecutionPolicy,
+    read_skill_resource_from_args, request_provider_chat_completion,
+    resolve_local_capability_activation_state, resolve_provider_tool_name_for_execution,
+    resolve_tool_trace_call_id, search_feedback::search_feedback_context_from_tool_call_meta,
+    ActiveSkillContextState, CapabilityExecutionContract, DelegatedExecutionKind,
+    DelegatedExecutionPacketReceipt, DelegatedExecutionRecord, DelegatedExecutionSelection,
+    DelegatedExecutionStatus, DelegatedExecutionTarget, GraphProjectionInput,
+    LocalCapabilityActivationState, LocalExecutionPolicy, WorkerTaskPacketInput,
     LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
 };
+use crate::modules::custom_task_agents::runtime::preview_custom_task_agent_with_parent_model;
 use crate::modules::custom_task_agents::service::create_custom_task_agent_service;
-use crate::modules::custom_task_agents::types::CreateCustomTaskAgentRequest;
+use crate::modules::custom_task_agents::types::{
+    CreateCustomTaskAgentRequest, CustomTaskAgentPreviewRequest,
+};
+use crate::modules::desktop_runtime::runtime::execution_plane::{
+    DelegatedExecutionAction, DelegatedExecutionChildRecord,
+};
 use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUNDS_CONFIG_KEY};
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
@@ -225,12 +235,14 @@ enum LocalToolCallProcessingOutcome {
         synthesized: bool,
         tool_call_meta: Vec<serde_json::Value>,
         results: Vec<String>,
+        skill_context_update: Option<ActiveSkillContextState>,
     },
     Interrupted {
         approval_tokens: Vec<String>,
         tool_call_meta: Vec<serde_json::Value>,
         results: Vec<String>,
         capability_update: Option<LocalCapabilityTransition>,
+        skill_context_update: Option<ActiveSkillContextState>,
     },
 }
 
@@ -247,6 +259,7 @@ struct LocalChatToolRuntimeState {
     temperature: Option<f32>,
     max_tokens: Option<u32>,
     active_capability: Option<LocalCapabilityActivationState>,
+    active_skill_context: Option<ActiveSkillContextState>,
     discovery_gate_forced: bool,
     verification_gate_forced: bool,
     diting_think_consumed: bool,
@@ -420,12 +433,7 @@ pub(crate) async fn run_local_chat_complete_with_tools(
             content: concat!(
                 "## Desktop Execution Tools\n",
                 "- Environment: Deeting Desktop local runtime\n",
-                "When the user asks to install, create, or manage skills:\n",
-                "- Deeting skills are capability bundles centered on SKILL.md, deeting.json, and callable tool bindings derived from llm-tool.yaml when present.\n",
-                "- Use the install_skill_from_repo tool or sys_submit_onboarding_request to install skills.\n",
-                "- After external or manual skill installs, use refresh_skill_index to rescan shared and managed skill directories.\n",
-                "- User skills directory: $APP_DATA_DIR/skills/<skill_id>/.\n",
-                "- Shared agent skills directory: ~/.agents/skills/.\n",
+                "- Follow the base Agent Skills Progressive Disclosure contract for skill discovery, activation, resource reading, and execution boundaries.\n",
             ).to_string(),
             tool_calls: vec![],
             tool_call_id: None,
@@ -449,6 +457,7 @@ pub(crate) async fn run_local_chat_complete_with_tools(
         temperature,
         max_tokens,
         active_capability: None,
+        active_skill_context: None,
         discovery_gate_forced: false,
         verification_gate_forced: false,
         diting_think_consumed: false,
@@ -632,6 +641,7 @@ async fn continue_local_chat_complete_with_tools(
             temperature: state.temperature,
             max_tokens: state.max_tokens,
             active_capability: state.active_capability.clone(),
+            active_skill_context: state.active_skill_context.clone(),
             discovery_gate_forced: state.discovery_gate_forced,
             verification_gate_forced: state.verification_gate_forced,
             diting_think_consumed: state.diting_think_consumed,
@@ -663,7 +673,11 @@ async fn continue_local_chat_complete_with_tools(
                 synthesized,
                 tool_call_meta,
                 results,
+                skill_context_update,
             } => {
+                if let Some(update) = skill_context_update {
+                    state.active_skill_context = Some(update);
+                }
                 if let Some(reasoning) = tool_call_meta.iter().find_map(|item| {
                     if item.get("name").and_then(|v| v.as_str()) == Some(DITING_THINK_TOOL_NAME) {
                         item.get("reasoning")
@@ -722,7 +736,11 @@ async fn continue_local_chat_complete_with_tools(
                 mut tool_call_meta,
                 results,
                 capability_update,
+                skill_context_update,
             } => {
+                if let Some(update) = skill_context_update {
+                    state.active_skill_context = Some(update);
+                }
                 let canonical_tool_call_meta = canonicalize_tool_call_meta_via_graph(
                     &session_id,
                     &state.execution_policy,
@@ -950,6 +968,283 @@ fn build_runtime_bridge_stream_target(
     )
 }
 
+async fn execute_delegate_task_tool(
+    app: &AppHandle,
+    app_state: &AppState,
+    state: &LocalChatToolRuntimeState,
+    session_id: &str,
+    call_id: &str,
+    arguments: &serde_json::Value,
+    effective_allowed_tool_names: &[String],
+) -> Result<serde_json::Value, String> {
+    let task = arguments
+        .get("task")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "delegate_task requires a non-empty 'task' argument".to_string())?;
+    let agent_id = arguments
+        .get("agent_id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let selection = super::select_worker_custom_task_agent(app_state, agent_id, task)
+        .await?
+        .ok_or_else(|| "no enabled custom task agent matched delegate_task".to_string())?;
+    let execution_id = uuid::Uuid::new_v4().to_string();
+    let constraints = arguments
+        .get("constraints")
+        .and_then(serde_json::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let context_refs = arguments
+        .get("context_refs")
+        .and_then(serde_json::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let max_rounds = arguments
+        .get("max_rounds")
+        .and_then(serde_json::Value::as_u64)
+        .map(|value| value.clamp(1, 8) as u32)
+        .unwrap_or(4);
+    let task_packet = build_worker_task_packet(
+        &selection,
+        WorkerTaskPacketInput {
+            task_id: execution_id.clone(),
+            route: state.execution_policy.route.as_str().to_string(),
+            goal: task.to_string(),
+            user_query: task.to_string(),
+            raw_user_text: Some(task.to_string()),
+            image_urls: Vec::new(),
+            parent_allowed_tool_names: effective_allowed_tool_names.to_vec(),
+            prefer_workflow_runtime: state.execution_policy.prefer_workflow_runtime,
+            explicit_task_agent_id: agent_id.map(str::to_string),
+            bound_asset_reference: None,
+        },
+    );
+    let started_at_ms = now_unix_ms_i64();
+    let response_result = preview_custom_task_agent_with_parent_model(
+        app,
+        app_state,
+        &selection.profile,
+        CustomTaskAgentPreviewRequest {
+            message: task.to_string(),
+            image_urls: Vec::new(),
+            temperature: state.temperature,
+            max_tokens: state.max_tokens,
+            max_rounds: Some(max_rounds),
+            worker_task_packet: Some(task_packet.as_value()),
+        },
+        Some(&state.model_connection),
+    )
+    .await;
+    let selection_payload = DelegatedExecutionSelection {
+        explicit: agent_id.is_some(),
+        score: Some(selection.score),
+        reason_codes: selection.reason_codes.clone(),
+        reason_text: Some(selection.reason.clone()).filter(|value| !value.trim().is_empty()),
+        candidate_count: selection.candidate_count,
+        selected_from_top_k: selection.selected_from_top_k,
+        callable_coverage_score: Some(selection.callable_coverage_score),
+        modality_fit_score: Some(selection.modality_fit_score),
+        profile_prior_score: Some(selection.profile_prior_score),
+    };
+    let packet_receipt = Some(DelegatedExecutionPacketReceipt {
+        packet_hash: task_packet.packet_hash.clone(),
+        task_kind: task_packet.task_kind.clone(),
+        deliverable_kind: task_packet.deliverable_kind.clone(),
+        selected_profile_id: selection.profile.id.clone(),
+    });
+    let mut base_children = vec![
+        DelegatedExecutionChildRecord {
+            id: format!("{}:selection", execution_id),
+            phase_id: Some("selection".to_string()),
+            step_type: Some("agent_selection".to_string()),
+            title: "Select delegated agent".to_string(),
+            status: "succeeded".to_string(),
+            worker_ref: None,
+            summary: Some(format!(
+                "Selected '{}' with reason {}.",
+                selection.profile.name,
+                selection.reason
+            )),
+            error: None,
+            available_actions: Vec::new(),
+        },
+        DelegatedExecutionChildRecord {
+            id: format!("{}:packet", execution_id),
+            phase_id: Some("packet".to_string()),
+            step_type: Some("task_packet".to_string()),
+            title: "Build delegated task packet".to_string(),
+            status: "succeeded".to_string(),
+            worker_ref: None,
+            summary: Some(format!(
+                "Task kind '{}', deliverable '{}', {} context refs, {} constraints.",
+                task_packet.task_kind,
+                task_packet.deliverable_kind,
+                context_refs.len(),
+                constraints.len()
+            )),
+            error: None,
+            available_actions: Vec::new(),
+        },
+    ];
+    let record = match response_result {
+        Ok(response) => {
+            let summary = response
+                .content
+                .trim()
+                .lines()
+                .next()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("Delegated task completed")
+                .to_string();
+            base_children.push(DelegatedExecutionChildRecord {
+                id: format!("{}:execution", execution_id),
+                phase_id: Some("execution".to_string()),
+                step_type: Some("custom_task_agent".to_string()),
+                title: "Run delegated custom task agent".to_string(),
+                status: response.status.clone(),
+                worker_ref: Some(format!("custom_task_agent:{}", selection.profile.id)),
+                summary: Some(summary.clone()),
+                error: None,
+                available_actions: Vec::new(),
+            });
+            DelegatedExecutionRecord {
+                execution_id: execution_id.clone(),
+                kind: DelegatedExecutionKind::CustomTaskAgent,
+                status: DelegatedExecutionStatus::Succeeded,
+                target: DelegatedExecutionTarget {
+                    id: selection.profile.id.clone(),
+                    name: selection.profile.name.clone(),
+                    invocation_kind: Some(response.invocation_kind.as_str().to_string()),
+                    worker_ref: None,
+                    workflow_run_id: None,
+                },
+                selection: selection_payload,
+                packet_receipt,
+                available_actions: Vec::new(),
+                children: base_children,
+                summary: Some(summary),
+                primary_output: Some(serde_json::json!({
+                    "status": response.status,
+                    "agent_id": selection.profile.id,
+                    "agent_name": selection.profile.name,
+                    "invocation_kind": response.invocation_kind.as_str(),
+                    "content": response.content,
+                    "reasoning_content": response.reasoning_content,
+                    "images": response.images,
+                    "audios": response.audios,
+                    "tool_trace": response.tool_trace,
+                    "callable_mcp_tool_ids": response.callable_mcp_tool_ids,
+                    "guidance_skill_ids": response.guidance_skill_ids,
+                    "callable_skill_action_refs": response.callable_skill_action_refs,
+                    "model_id": response.model_id,
+                    "provider_model_id": response.provider_model_id,
+                    "delegated_model_policy": "inherit_parent_unless_profile_overrides",
+                    "context_refs": context_refs,
+                    "constraints": constraints,
+                    "expected_output": arguments.get("expected_output").cloned(),
+                    "session_id": session_id,
+                    "tool_call_id": call_id,
+                })),
+                error: None,
+                started_at_ms,
+                completed_at_ms: Some(now_unix_ms_i64()),
+            }
+        }
+        Err(err) => {
+            let error_text = err.to_string();
+            base_children.push(DelegatedExecutionChildRecord {
+                id: format!("{}:execution", execution_id),
+                phase_id: Some("execution".to_string()),
+                step_type: Some("custom_task_agent".to_string()),
+                title: "Run delegated custom task agent".to_string(),
+                status: "failed".to_string(),
+                worker_ref: Some(format!("custom_task_agent:{}", selection.profile.id)),
+                summary: None,
+                error: Some(error_text.clone()),
+                available_actions: vec![DelegatedExecutionAction {
+                    kind: "retry".to_string(),
+                }],
+            });
+            DelegatedExecutionRecord {
+                execution_id: execution_id.clone(),
+                kind: DelegatedExecutionKind::CustomTaskAgent,
+                status: DelegatedExecutionStatus::Failed,
+                target: DelegatedExecutionTarget {
+                    id: selection.profile.id.clone(),
+                    name: selection.profile.name.clone(),
+                    invocation_kind: Some(selection.profile.invocation_kind.as_str().to_string()),
+                    worker_ref: None,
+                    workflow_run_id: None,
+                },
+                selection: selection_payload,
+                packet_receipt,
+                available_actions: vec![DelegatedExecutionAction {
+                    kind: "retry".to_string(),
+                }],
+                children: base_children,
+                summary: Some("Delegated task failed".to_string()),
+                primary_output: Some(serde_json::json!({
+                    "status": "failed",
+                    "agent_id": selection.profile.id,
+                    "agent_name": selection.profile.name,
+                    "error": error_text,
+                    "context_refs": context_refs,
+                    "constraints": constraints,
+                    "expected_output": arguments.get("expected_output").cloned(),
+                    "session_id": session_id,
+                    "tool_call_id": call_id,
+                })),
+                error: Some(error_text),
+                started_at_ms,
+                completed_at_ms: Some(now_unix_ms_i64()),
+            }
+        }
+    };
+    let delegated_execution_tree =
+        record.status_meta_with_status(DelegatedExecutionStatus::Integrated);
+    let execution_graph = project_execution_graph_snapshot(GraphProjectionInput {
+        session_id: session_id.to_string(),
+        route: state.execution_policy.route.as_str().to_string(),
+        plane: state.execution_policy.plane.as_str().to_string(),
+        trace_id: Some(state.trace_id.clone()),
+        request_id: state.request_id.clone(),
+        root_execution_id: Some(execution_id.clone()),
+        response_content: None,
+        tool_trace_blocks: Vec::new(),
+        delegated_execution_tree: Some(delegated_execution_tree),
+    })
+    .to_value();
+    let _ = persist_execution_graph_snapshot(
+        app_state.mcp.store.as_ref(),
+        &execution_graph,
+        session_id,
+        "desktop_local_chat_delegate_task",
+        state.request_id.as_deref(),
+        Some("complete"),
+    )
+    .await;
+    let _feedback = build_delegated_result_feedback_messages(&record);
+    Ok(record.delegated_result())
+}
+
 async fn process_chat_tool_calls(
     app: &AppHandle,
     app_state: &AppState,
@@ -968,12 +1263,14 @@ async fn process_chat_tool_calls(
             synthesized: false,
             tool_call_meta: Vec::new(),
             results: Vec::new(),
+            skill_context_update: None,
         };
     }
     let mut tool_call_meta = Vec::new();
     let mut results = Vec::new();
     let mut synthesized = false;
     let mut capability_update = None;
+    let mut skill_context_update = None;
     let mut approval_tokens = Vec::new();
 
     for (call_index, call) in tool_calls.into_iter().enumerate() {
@@ -1056,6 +1353,7 @@ async fn process_chat_tool_calls(
                 temperature: state.temperature,
                 max_tokens: state.max_tokens,
                 active_capability: state.active_capability.clone(),
+                active_skill_context: state.active_skill_context.clone(),
                 discovery_gate_forced: state.discovery_gate_forced,
                 verification_gate_forced: state.verification_gate_forced,
                 runtime_metrics: state.runtime_metrics.clone(),
@@ -1365,6 +1663,129 @@ async fn process_chat_tool_calls(
                 query,
                 serde_json::to_string_pretty(&search_res).unwrap()
             ));
+        } else if tool_name == "activate_skill" {
+            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
+            match activate_skill_from_args(app_state, &call.arguments).await {
+                Ok((active_skill, result)) => {
+                    synthesized = true;
+                    skill_context_update = Some(active_skill.clone());
+                    let meta = serde_json::json!({
+                        "id": call_id.as_str(),
+                        "name": tool_name,
+                        "status": "success",
+                        "result": result
+                    });
+                    let mut streamed_blocks = Vec::new();
+                    append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                    realtime_emitter.emit_blocks(streamed_blocks);
+                    tool_call_meta.push(meta);
+                    results.push(format!(
+                        "Skill '{}' activated for this request. Use its SKILL.md instructions and read package resources only when needed.",
+                        active_skill.skill_id
+                    ));
+                }
+                Err(err) => {
+                    synthesized = true;
+                    push_local_tool_call_error_meta(
+                        &mut tool_call_meta,
+                        &mut results,
+                        realtime_emitter,
+                        Some(call_id.as_str()),
+                        &tool_name,
+                        "SKILL_ACTIVATION_FAILED",
+                        err,
+                    );
+                }
+            }
+        } else if tool_name == "read_skill_resource" {
+            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
+            match read_skill_resource_from_args(
+                app_state,
+                &call.arguments,
+                state.active_skill_context.as_ref(),
+            )
+            .await
+            {
+                Ok((active_skill, result)) => {
+                    synthesized = true;
+                    skill_context_update = Some(active_skill);
+                    let path = result
+                        .get("path")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("<unknown>")
+                        .to_string();
+                    let meta = serde_json::json!({
+                        "id": call_id.as_str(),
+                        "name": tool_name,
+                        "status": "success",
+                        "result": result
+                    });
+                    let mut streamed_blocks = Vec::new();
+                    append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                    realtime_emitter.emit_blocks(streamed_blocks);
+                    tool_call_meta.push(meta);
+                    results.push(format!(
+                        "Skill resource '{}' loaded as private context.",
+                        path
+                    ));
+                }
+                Err(err) => {
+                    synthesized = true;
+                    push_local_tool_call_error_meta(
+                        &mut tool_call_meta,
+                        &mut results,
+                        realtime_emitter,
+                        Some(call_id.as_str()),
+                        &tool_name,
+                        "SKILL_RESOURCE_READ_FAILED",
+                        err,
+                    );
+                }
+            }
+        } else if tool_name == "delegate_task" {
+            realtime_emitter.emit_execution_section_once();
+            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
+            match execute_delegate_task_tool(
+                app,
+                app_state,
+                state,
+                session_id,
+                call_id.as_str(),
+                &call.arguments,
+                effective_allowed_tool_names,
+            )
+            .await
+            {
+                Ok(result) => {
+                    synthesized = true;
+                    let meta = serde_json::json!({
+                        "id": call_id.as_str(),
+                        "name": tool_name,
+                        "status": "success",
+                        "result": result,
+                    });
+                    let mut streamed_blocks = Vec::new();
+                    append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                    realtime_emitter.emit_blocks(streamed_blocks);
+                    tool_call_meta.push(meta);
+                    results.push(format!(
+                        "Delegated task result:\n{}",
+                        serde_json::to_string_pretty(&result).unwrap_or_else(|_| "{}".to_string())
+                    ));
+                }
+                Err(err) => {
+                    synthesized = true;
+                    push_local_tool_call_error_meta(
+                        &mut tool_call_meta,
+                        &mut results,
+                        realtime_emitter,
+                        Some(call_id.as_str()),
+                        &tool_name,
+                        "DELEGATE_TASK_FAILED",
+                        err,
+                    );
+                }
+            }
         } else if tool_name == "query_task_policy" {
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
             let query = call
@@ -1779,6 +2200,7 @@ async fn process_chat_tool_calls(
             synthesized,
             tool_call_meta,
             results,
+            skill_context_update,
         }
     } else {
         LocalToolCallProcessingOutcome::Interrupted {
@@ -1786,6 +2208,7 @@ async fn process_chat_tool_calls(
             tool_call_meta,
             results,
             capability_update,
+            skill_context_update,
         }
     }
 }

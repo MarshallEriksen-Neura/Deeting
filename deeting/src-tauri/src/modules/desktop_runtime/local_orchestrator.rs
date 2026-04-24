@@ -72,7 +72,10 @@ use retrieval::{
 };
 use workflow::{build_desktop_local_chat_engine, unix_seconds, LocalWorkflowContext};
 #[cfg(test)]
-use workflow::{render_skill_recipe_prompt, status_patch, ContextPatch, LocalStepResult};
+use workflow::{
+    extract_explicit_skill_mentions, render_skill_recipe_prompt, status_patch, ContextPatch,
+    LocalStepResult,
+};
 
 pub use message_utils::extract_user_text_from_messages;
 pub(crate) use workflow::{

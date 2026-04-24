@@ -179,6 +179,8 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::custom_task_agents::commands::reindex_custom_task_agents,
         crate::modules::custom_task_agents::commands::preview_claude_agent_import,
         crate::modules::custom_task_agents::commands::import_claude_agents,
+        crate::modules::custom_task_agents::commands::scan_external_task_agents,
+        crate::modules::custom_task_agents::commands::import_external_task_agents,
         // Provider Commands
         crate::modules::providers::commands::list_local_provider_presets,
         crate::modules::providers::commands::get_local_user_secretary,
@@ -282,6 +284,10 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::chat_assets::commands::read_local_chat_asset,
         crate::modules::chat_assets::commands::delete_local_chat_asset,
         crate::modules::chat_assets::commands::cleanup_conversation_chat_assets,
+        // Generated File Commands
+        crate::modules::generated_files::download::open_generated_file,
+        crate::modules::generated_files::download::save_generated_file_as,
+        crate::modules::generated_files::download::reveal_generated_file_in_folder,
         // Island Window Commands
         crate::modules::island_window::hide_main_show_island,
         crate::modules::island_window::minimize_main_hide_island,

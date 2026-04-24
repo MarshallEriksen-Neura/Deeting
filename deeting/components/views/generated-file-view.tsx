@@ -1,18 +1,21 @@
 "use client"
 
-import { memo, useMemo, useCallback } from "react"
-import { Download, FileText, Presentation, Table, File, Eye } from "lucide-react"
+import { memo } from "react"
+import { Download, FileText, FolderOpen, Presentation, Table, File, Eye, ExternalLink } from "lucide-react"
+import { toast } from "sonner"
 import { MarkdownViewer } from "@/components/chat/markdown-viewer"
 import { Button } from "@/ui/shadcn/button"
 import { useI18n } from "@/hooks/use-i18n"
 import { formatFileSize } from "@/lib/utils/file"
 import { cn } from "@/lib/utils"
 import { useArtifactStore } from "@/store/artifact-store"
+import { isTauriRuntime } from "@/lib/runtime/tauri"
 import type { NativeViewProps } from "./registry"
 
 type PreviewKind = "text" | "markdown" | "html" | "none"
 
 interface GeneratedFilePayload {
+  file_id?: string
   name?: string
   path?: string
   size?: number
@@ -46,6 +49,7 @@ const GeneratedFileView = memo<NativeViewProps>(function GeneratedFileView({ dat
   }
 
   const name = payload.name?.trim() || payload.path?.trim() || t("views.generatedFile.untitled")
+  const fileId = payload.file_id?.trim() || ""
   const downloadUrl = payload.download_url?.trim() || ""
   const contentType = payload.content_type?.trim() || payload.mime_type?.trim() || t("views.generatedFile.unknown")
   const sizeLabel =
@@ -55,7 +59,7 @@ const GeneratedFileView = memo<NativeViewProps>(function GeneratedFileView({ dat
   const previewKind = normalizePreviewKind(payload.preview_kind)
   const previewText = typeof payload.preview_text === "string" ? payload.preview_text : ""
 
-  const fileType = useMemo(() => {
+  const fileType = (() => {
     const ext = name.split('.').pop()?.toLowerCase() || ''
     const mime = contentType.toLowerCase()
     
@@ -72,16 +76,69 @@ const GeneratedFileView = memo<NativeViewProps>(function GeneratedFileView({ dat
       return { label: 'PDF', color: 'text-red-600 dark:text-red-400', icon: FileText, bg: 'bg-red-50 dark:bg-red-900/20' }
     }
     return { label: 'File', color: 'text-zinc-600 dark:text-zinc-400', icon: File, bg: 'bg-zinc-50 dark:bg-zinc-900/20' }
-  }, [name, contentType])
+  })()
 
-  const handlePreview = useCallback(() => {
+  const handlePreview = () => {
     setActiveArtifact({
-      id: name,
+      id: fileId || name,
       name,
       type: fileType.label.toLowerCase(),
       payload: payload,
     })
-  }, [name, fileType.label, payload, setActiveArtifact])
+  }
+
+  const handleDownload = async () => {
+    if (!fileId || !isTauriRuntime()) {
+      if (downloadUrl) {
+        window.open(downloadUrl, "_blank", "noopener,noreferrer")
+        return
+      }
+      toast.error(t("views.generatedFile.exportFailed"))
+      return
+    }
+
+    try {
+      const { invoke } = await import("@tauri-apps/api/core")
+      const result = await invoke<{ saved: boolean; path?: string | null }>("save_generated_file_as", { fileId })
+      if (result?.saved) {
+        toast.success(result.path ? t("views.generatedFile.exportedTo", { path: result.path }) : t("views.generatedFile.exported"))
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const handleOpen = async () => {
+    if (!fileId || !isTauriRuntime()) {
+      if (downloadUrl) {
+        window.open(downloadUrl, "_blank", "noopener,noreferrer")
+        return
+      }
+      toast.error(t("views.generatedFile.openFailed"))
+      return
+    }
+
+    try {
+      const { invoke } = await import("@tauri-apps/api/core")
+      await invoke("open_generated_file", { fileId })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const handleReveal = async () => {
+    if (!fileId || !isTauriRuntime()) {
+      toast.error(t("views.generatedFile.revealFailed"))
+      return
+    }
+
+    try {
+      const { invoke } = await import("@tauri-apps/api/core")
+      await invoke("reveal_generated_file_in_folder", { fileId })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    }
+  }
 
   const renderPreview = () => {
     if (!previewText) return null
@@ -142,7 +199,7 @@ const GeneratedFileView = memo<NativeViewProps>(function GeneratedFileView({ dat
         </div>
 
         {/* Action Buttons */}
-        <div className="flex shrink-0 items-center gap-1.5 ml-2">
+        <div className="ml-2 flex shrink-0 items-center gap-1.5">
           <Button 
             onClick={handlePreview}
             size="icon" 
@@ -152,12 +209,41 @@ const GeneratedFileView = memo<NativeViewProps>(function GeneratedFileView({ dat
           >
             <Eye size={16} className="text-zinc-500" />
           </Button>
-          {downloadUrl && (
-            <Button asChild size="icon" variant="ghost" className="h-8 w-8 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800" title={t("views.generatedFile.download")}>
-              <a href={downloadUrl} target="_blank" rel="noopener noreferrer">
-                <Download size={16} className="text-zinc-500" />
-              </a>
-            </Button>
+          {(downloadUrl || fileId) && (
+            <>
+              <Button
+                onClick={handleOpen}
+                size="sm"
+                variant="ghost"
+                className="h-8 rounded-full px-3 text-xs"
+                title={t("views.generatedFile.open")}
+              >
+                <ExternalLink size={14} className="mr-1.5 text-zinc-500" />
+                {t("views.generatedFile.open")}
+              </Button>
+              <Button
+                onClick={handleDownload}
+                size="sm"
+                variant="ghost"
+                className="h-8 rounded-full px-3 text-xs"
+                title={t("views.generatedFile.saveAs")}
+              >
+                <Download size={14} className="mr-1.5 text-zinc-500" />
+                {t("views.generatedFile.saveAs")}
+              </Button>
+              {fileId && isTauriRuntime() && (
+                <Button
+                  onClick={handleReveal}
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 rounded-full px-3 text-xs"
+                  title={t("views.generatedFile.revealInFolder")}
+                >
+                  <FolderOpen size={14} className="mr-1.5 text-zinc-500" />
+                  {t("views.generatedFile.revealInFolder")}
+                </Button>
+              )}
+            </>
           )}
         </div>
       </div>

@@ -8,6 +8,13 @@ use crate::modules::execution::core_tool::{
     shell_execute_tool_description, SHELL_EXECUTE_TOOL_NAME,
 };
 
+use crate::modules::generated_files::docx_generator::{
+    write_docx_input_schema, write_docx_tool_description,
+};
+use crate::modules::generated_files::pptx_generator::{
+    write_pptx_input_schema, write_pptx_tool_description,
+};
+
 const LEGACY_CORE_TOOL_PACKAGE_ID: &str = "code_mode.core";
 const CORE_TOOL_PACKAGE_ID: &str = "desktop_runtime.core";
 
@@ -225,6 +232,153 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
             mutating: false,
             risk_level: "LOW",
             example_arguments: json!({"tool_name": "browser_open_tab"}),
+        },
+        CoreToolContract {
+            name: "activate_skill",
+            description: "Activate an installed skill package for the current request and load its full SKILL.md instructions plus a bounded package-local resource index. Use this after search_sdk identifies a relevant skill recipe. This is read-only context expansion, not command execution.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "skill_id": {
+                        "type": "string",
+                        "description": "Stable skill id returned by search_sdk, for example official.skills.crawler."
+                    }
+                },
+                "required": ["skill_id"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string"},
+                    "scope": {"type": "string"},
+                    "skill_id": {"type": "string"},
+                    "instructions_path": {"type": "string"},
+                    "instructions": {"type": "string"},
+                    "instructions_hash": {"type": ["string", "null"]},
+                    "instructions_length": {"type": "integer"},
+                    "instructions_truncated": {"type": "boolean"},
+                    "resource_index": {"type": "array"},
+                    "next_step": {"type": "string"}
+                },
+                "required": ["status", "skill_id", "resource_index"]
+            }),
+            permission_scope: &["local_catalog_read", "skill_context_read"],
+            read_only: true,
+            mutating: false,
+            risk_level: "LOW",
+            example_arguments: json!({"skill_id": "official.skills.crawler"}),
+        },
+        CoreToolContract {
+            name: "read_skill_resource",
+            description: "Read a text resource inside an installed skill package after activation. Paths must be package-relative and stay under the skill root. Use for references, examples, templates, or script source named by SKILL.md. Do not use this for command execution.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "skill_id": {
+                        "type": "string",
+                        "description": "Optional stable skill id. May be omitted when the intended skill is already active in this request."
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Package-relative resource path such as references/guide.md."
+                    },
+                    "max_bytes": {
+                        "type": "integer",
+                        "description": "Maximum bytes to return. The runtime enforces a hard cap.",
+                        "default": 24576
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Byte offset for continuing a truncated read.",
+                        "default": 0
+                    }
+                },
+                "required": ["path"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "skill_id": {"type": "string"},
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                    "offset": {"type": "integer"},
+                    "bytes_returned": {"type": "integer"},
+                    "total_bytes": {"type": "integer"},
+                    "truncated": {"type": "boolean"},
+                    "next_offset": {"type": ["integer", "null"]}
+                },
+                "required": ["skill_id", "path", "content", "truncated"]
+            }),
+            permission_scope: &["local_catalog_read", "skill_context_read"],
+            read_only: true,
+            mutating: false,
+            risk_level: "LOW",
+            example_arguments: json!({"skill_id": "official.skills.crawler", "path": "references/usage.md"}),
+        },
+        CoreToolContract {
+            name: "delegate_task",
+            description: "Delegate one bounded subtask to an enabled local custom task agent and return a canonical delegated_result object. Use this only when the task is separable, a specialist local agent is available, and the parent assistant can integrate the result afterward. Do not use it for simple direct answers or to avoid final responsibility.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "agent_id": {
+                        "type": "string",
+                        "description": "Optional explicit custom task agent id discovered from search_sdk. If omitted, the runtime selects the best enabled discoverable agent."
+                    },
+                    "task": {
+                        "type": "string",
+                        "description": "Required bounded task for the delegated agent. Include only the subtask, not broad orchestration instructions."
+                    },
+                    "context_refs": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Optional concise references to current files, messages, assets, or evidence the child should consider."
+                    },
+                    "constraints": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Optional hard constraints, non-goals, or safety boundaries for the delegated subtask."
+                    },
+                    "expected_output": {
+                        "type": "object",
+                        "description": "Optional expected output contract such as {kind, schema}."
+                    },
+                    "max_rounds": {
+                        "type": "integer",
+                        "description": "Optional maximum child-agent tool rounds. The runtime enforces its own cap.",
+                        "default": 4
+                    }
+                },
+                "required": ["task"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string"},
+                    "schema_version": {"type": "integer"},
+                    "kind": {"type": "string"},
+                    "authoritative": {"type": "boolean"},
+                    "status": {"type": "string"},
+                    "execution_id": {"type": "string"},
+                    "target": {"type": "object"},
+                    "selection": {"type": "object"},
+                    "packet_receipt": {"type": "object"},
+                    "summary": {"type": ["string", "null"]},
+                    "primary_output": {"type": ["object", "null"]},
+                    "error": {"type": ["string", "null"]}
+                },
+                "required": ["type", "schema_version", "status", "execution_id", "target"]
+            }),
+            permission_scope: &["local_runtime", "agent_delegation"],
+            read_only: false,
+            mutating: true,
+            risk_level: "MEDIUM",
+            example_arguments: json!({
+                "task": "Review this bounded implementation plan for missing runtime constraints.",
+                "constraints": ["Do not modify files", "Return findings and risks only"],
+                "expected_output": {"kind": "findings"},
+                "max_rounds": 4
+            }),
         },
         CoreToolContract {
             name: "execute_code_plan",
@@ -821,6 +975,8 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
             example_arguments: json!({"tab_id": 42, "target": {"selector": "input[name='q']"}, "text": "browser agent"}),
         },
         build_shell_execute_core_tool_contract(),
+        write_docx_contract(),
+        write_pptx_contract(),
     ]
 }
 
@@ -849,15 +1005,109 @@ fn core_tool_execution_surface(tool_name: &str) -> &'static str {
         "browser_retry_with_relocate" => "host",
         "browser_click" => "host",
         "browser_type" => "host",
-        "save_asset" => "host",
-        "shell_execute" => "host",
+        "save_asset" => "sandbox",
+        "shell_execute" => "sandbox",
+        "write_docx" => "sandbox",
+        "write_pptx" => "sandbox",
         _ => "host",
     }
 }
 
 fn core_tool_risk_runtime_state(tool_name: &str) -> &'static str {
-    let _ = tool_name;
-    "ready"
+    match tool_name {
+        "write_docx" | "write_pptx" => "ready",
+        _ => "ready",
+    }
+}
+
+fn write_docx_contract() -> CoreToolContract {
+    CoreToolContract {
+        name: "write_docx",
+        description: write_docx_tool_description(),
+        input_schema: write_docx_input_schema(),
+        output_schema: json!({
+            "type": "object",
+            "properties": {
+                "file_id": {"type": "string"},
+                "filename": {"type": "string"},
+                "size": {"type": "integer"},
+                "content_type": {"type": "string"},
+                "message": {"type": "string"},
+                "render_blocks": {"type": "array"}
+            },
+            "required": ["file_id", "filename", "size", "content_type", "message"]
+        }),
+        permission_scope: &["file_write", "local_state_write"],
+        read_only: false,
+        mutating: true,
+        risk_level: "LOW",
+        example_arguments: json!({
+            "filename": "report.docx",
+            "title": "季度总结",
+            "sections": [
+                {
+                    "heading": "背景",
+                    "paragraphs": [
+                        {"runs": [{"text": "本项目状态："}, {"text": "按计划推进", "bold": true}]}
+                    ],
+                    "bullets": [
+                        "关键里程碑完成",
+                        {"text": "风险项持续跟踪", "level": 2}
+                    ],
+                    "tables": [
+                        {
+                            "title": "核心指标",
+                            "headers": ["指标", "当前值"],
+                            "rows": [["激活率", "42%"], ["留存率", "68%"]]
+                        }
+                    ]
+                }
+            ]
+        }),
+    }
+}
+
+fn write_pptx_contract() -> CoreToolContract {
+    CoreToolContract {
+        name: "write_pptx",
+        description: write_pptx_tool_description(),
+        input_schema: write_pptx_input_schema(),
+        output_schema: json!({
+            "type": "object",
+            "properties": {
+                "file_id": {"type": "string"},
+                "filename": {"type": "string"},
+                "size": {"type": "integer"},
+                "content_type": {"type": "string"},
+                "message": {"type": "string"},
+                "render_blocks": {"type": "array"}
+            },
+            "required": ["file_id", "filename", "size", "content_type", "message"]
+        }),
+        permission_scope: &["file_write", "local_state_write"],
+        read_only: false,
+        mutating: true,
+        risk_level: "LOW",
+        example_arguments: json!({
+            "filename": "deck.pptx",
+            "slides": [
+                {
+                    "layout": "cover",
+                    "title": "项目汇报",
+                    "subtitle": "2026",
+                    "cover_template": "split"
+                },
+                {
+                    "layout": "two_column",
+                    "title": "本周进展",
+                    "left_title": "已完成",
+                    "left_bullets": ["完成 API 联调", "上线预演通过"],
+                    "right_title": "下一步",
+                    "right_bullets": ["推进灰度发布", "补齐监控面板"]
+                }
+            ]
+        }),
+    }
 }
 
 pub(crate) fn build_core_tool_registry_entries(

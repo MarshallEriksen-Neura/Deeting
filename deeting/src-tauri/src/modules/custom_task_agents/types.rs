@@ -244,3 +244,57 @@ pub struct UploadedClaudeAgentDocument {
     pub relative_path: Option<String>,
     pub content: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanExternalAgentsRequest {
+    #[serde(default)]
+    pub roots: Vec<String>,
+    #[serde(default)]
+    pub include_user_defaults: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalAgentCandidate {
+    pub source_kind: String,
+    pub source_path: String,
+    pub relative_path: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub task_prompt: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub inferred_mcp_tool_ids: Vec<String>,
+    #[serde(default)]
+    pub inferred_guidance_skill_ids: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_config: Option<Value>,
+    pub source_hash: String,
+    pub exists: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub existing_agent_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub existing_agent_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanExternalAgentsResponse {
+    #[serde(default)]
+    pub roots: Vec<String>,
+    #[serde(default)]
+    pub candidates: Vec<ExternalAgentCandidate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportExternalAgentsRequest {
+    #[serde(default)]
+    pub candidates: Vec<ExternalAgentCandidate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportExternalAgentsResponse {
+    pub created_count: usize,
+    pub updated_count: usize,
+    #[serde(default)]
+    pub profiles: Vec<CustomTaskAgentProfile>,
+}

@@ -16,6 +16,7 @@ pub mod prompt_plan;
 pub mod route_selector;
 pub mod search_feedback;
 pub mod semantic_recall;
+pub mod skill_context;
 pub mod sovereign;
 pub mod task_learning;
 pub mod tool_catalog;
@@ -66,7 +67,11 @@ pub(crate) use execution_graph_store::{
     migrate_execution_graph_runtime_bootstrap, persist_execution_graph_runtime_context,
     persist_execution_graph_snapshot,
 };
-pub(crate) use execution_plane::{run_local_execution_plane, LocalExecutionRequest};
+pub(crate) use execution_plane::{
+    build_delegated_result_feedback_messages, run_local_execution_plane, DelegatedExecutionKind,
+    DelegatedExecutionPacketReceipt, DelegatedExecutionRecord, DelegatedExecutionSelection,
+    DelegatedExecutionStatus, DelegatedExecutionTarget, LocalExecutionRequest,
+};
 pub(crate) use posterior_signal::{
     resolve_posterior_signal, resolve_posterior_signal_ingress, should_apply_posterior_signal,
     PosteriorSignalInput,
@@ -75,6 +80,9 @@ pub(crate) use route_selector::{
     render_local_route_prompt, select_local_route_with_evidence, LocalRouteDecision, LocalRouteKind,
 };
 pub(crate) use semantic_recall::should_run_semantic_recall;
+pub(crate) use skill_context::{
+    activate_skill_from_args, read_skill_resource_from_args, ActiveSkillContextState,
+};
 pub(crate) use task_learning::{
     apply_policy_delta, apply_route_prior, apply_task_learning_revision, build_task_fingerprint,
     compute_route_bandit_scores, evaluate_task_learning_with_runtime,
@@ -103,4 +111,6 @@ pub(crate) use tool_trace::{
     append_streamable_local_tool_result_blocks, build_local_tool_trace_blocks,
     resolve_tool_trace_call_id,
 };
-pub(crate) use worker_dispatch::select_worker_custom_task_agent;
+pub(crate) use worker_dispatch::{
+    build_worker_task_packet, select_worker_custom_task_agent, WorkerTaskPacketInput,
+};

@@ -132,6 +132,34 @@ export const ImportClaudeAgentsResponseSchema = z.object({
   profiles: z.array(CustomTaskAgentProfileSchema).default([]),
 })
 
+export const ExternalAgentCandidateSchema = z.object({
+  source_kind: z.string(),
+  source_path: z.string(),
+  relative_path: z.string(),
+  name: z.string(),
+  description: z.string().nullish(),
+  task_prompt: z.string(),
+  tags: z.array(z.string()).default([]),
+  inferred_mcp_tool_ids: z.array(z.string()).default([]),
+  inferred_guidance_skill_ids: z.array(z.string()).default([]),
+  model_config: CustomTaskAgentModelConfigSchema,
+  source_hash: z.string(),
+  exists: z.boolean(),
+  existing_agent_id: z.string().nullish(),
+  existing_agent_name: z.string().nullish(),
+})
+
+export const ScanExternalAgentsResponseSchema = z.object({
+  roots: z.array(z.string()).default([]),
+  candidates: z.array(ExternalAgentCandidateSchema).default([]),
+})
+
+export const ImportExternalAgentsResponseSchema = z.object({
+  created_count: z.number(),
+  updated_count: z.number(),
+  profiles: z.array(CustomTaskAgentProfileSchema).default([]),
+})
+
 export type CustomTaskAgentInvocationKind = z.infer<
   typeof CustomTaskAgentInvocationKindSchema
 >
@@ -161,6 +189,15 @@ export type ClaudeAgentImportPreviewResponse = z.infer<
 >
 export type ImportClaudeAgentsResponse = z.infer<
   typeof ImportClaudeAgentsResponseSchema
+>
+export type ExternalAgentCandidate = z.infer<
+  typeof ExternalAgentCandidateSchema
+>
+export type ScanExternalAgentsResponse = z.infer<
+  typeof ScanExternalAgentsResponseSchema
+>
+export type ImportExternalAgentsResponse = z.infer<
+  typeof ImportExternalAgentsResponseSchema
 >
 
 export interface UploadedClaudeAgentDocument {
@@ -341,4 +378,26 @@ export async function importClaudeAgents(payload?: {
     },
   })
   return ImportClaudeAgentsResponseSchema.parse(data)
+}
+
+export async function scanExternalTaskAgents(payload?: {
+  roots?: string[]
+  include_user_defaults?: boolean
+}): Promise<ScanExternalAgentsResponse> {
+  const data = await invokeTauri<unknown>("scan_external_task_agents", {
+    payload: {
+      roots: payload?.roots ?? [],
+      include_user_defaults: payload?.include_user_defaults ?? true,
+    },
+  })
+  return ScanExternalAgentsResponseSchema.parse(data)
+}
+
+export async function importExternalTaskAgents(payload: {
+  candidates: ExternalAgentCandidate[]
+}): Promise<ImportExternalAgentsResponse> {
+  const data = await invokeTauri<unknown>("import_external_task_agents", {
+    payload,
+  })
+  return ImportExternalAgentsResponseSchema.parse(data)
 }

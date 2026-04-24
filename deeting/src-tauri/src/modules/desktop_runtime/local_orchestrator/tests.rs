@@ -518,33 +518,75 @@ fn build_route_selection_status_meta_embeds_execution_policy() {
 
 #[test]
 fn render_skill_recipe_prompt_defers_execution_truth_to_search_sdk() {
-    let prompt = render_skill_recipe_prompt(&[json!({
-        "name": "Planner",
-        "description": "Design execution plans",
-        "docs_excerpt": "Read the planning checklist before execution.",
-        "docs_paths": ["SKILL.md", "examples/plan.md"],
-        "status": {
-            "recommended_action": "read_skill_docs",
-            "reason": "skill_routed_via_docs"
-        },
-        "entry": {
-            "backend": "main.py"
-        }
-    })])
+    let prompt = render_skill_recipe_prompt(
+        &[json!({
+            "name": "Planner",
+            "description": "Design execution plans",
+            "docs_excerpt": "Read the planning checklist before execution.",
+            "docs_paths": ["SKILL.md", "examples/plan.md"],
+            "status": {
+                "recommended_action": "read_skill_docs",
+                "reason": "skill_routed_via_docs"
+            },
+            "entry": {
+                "backend": "main.py"
+            }
+        })],
+        &[],
+    )
     .expect("skill recipe prompt");
 
     assert!(prompt.contains("## Installed Skills"));
     assert!(prompt.contains("Planner"));
-    assert!(prompt.contains("source of truth"));
-    assert!(prompt.contains("callable direct capability"));
-    assert!(prompt.contains("CLI or terminal workflow"));
+    assert!(prompt.contains("recipe preview is not the full skill"));
+    assert!(prompt.contains("call `activate_skill`"));
+    assert!(prompt.contains("read_skill_resource"));
     assert!(prompt.contains("`shell_execute`"));
-    assert!(prompt.contains("missing dedicated skill action"));
-    assert!(prompt.contains("manual handoff"));
+    assert!(prompt.contains("actual host command execution"));
+    assert!(prompt.contains("Next: activate_skill"));
     assert!(prompt.contains("read_skill_docs"));
     assert!(prompt.contains("SKILL.md"));
     assert!(prompt.contains("Bundle backend: main.py"));
     assert!(!prompt.contains("ui/index.html"));
+}
+
+#[test]
+fn extract_explicit_skill_mentions_deduplicates_dollar_skill_names() {
+    let mentions = extract_explicit_skill_mentions(
+        "Use $planner, then $official.skills.planner and ignore $100.",
+    );
+
+    assert_eq!(
+        mentions,
+        vec!["planner".to_string(), "official.skills.planner".to_string()]
+    );
+}
+
+#[test]
+fn render_skill_recipe_prompt_prioritizes_explicit_skill_mentions() {
+    let prompt = render_skill_recipe_prompt(
+        &[
+            json!({
+                "name": "Writer",
+                "description": "Draft prose",
+                "skill_id": "official.skills.writer",
+            }),
+            json!({
+                "name": "Planner",
+                "description": "Design execution plans",
+                "skill_id": "official.skills.planner",
+            }),
+        ],
+        &["planner".to_string()],
+    )
+    .expect("skill recipe prompt");
+
+    let planner_index = prompt.find("- Planner -").expect("planner line");
+    let writer_index = prompt.find("- Writer -").expect("writer line");
+    assert!(planner_index < writer_index);
+    assert!(prompt.contains("Explicit user skill mentions in this request: $planner"));
+    assert!(prompt.contains("Explicit mention match: true"));
+    assert!(prompt.contains("Next: activate_skill(skill_id=\"official.skills.planner\")"));
 }
 
 #[test]

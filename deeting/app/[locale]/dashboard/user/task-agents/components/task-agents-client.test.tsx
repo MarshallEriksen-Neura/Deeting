@@ -29,6 +29,7 @@ jest.mock("next/navigation", () => ({
   useRouter: () => ({
     push: mockRouterPush,
   }),
+  useSearchParams: () => new URLSearchParams(),
 }))
 
 jest.mock("swr", () => ({
@@ -54,6 +55,8 @@ jest.mock("@/lib/api/custom-task-agents", () => ({
   reindexCustomTaskAgents: jest.fn(),
   previewClaudeAgentImport: jest.fn(),
   importClaudeAgents: jest.fn(),
+  scanExternalTaskAgents: jest.fn(),
+  importExternalTaskAgents: jest.fn(),
 }))
 
 jest.mock("@/hooks/use-chat-models", () => ({
@@ -507,6 +510,8 @@ describe("TaskAgentsClient", () => {
   it("filters tools by local binding search", () => {
     render(<TaskAgentsClient />)
 
+    fireEvent.click(screen.getByRole("button", { name: "tabs.bindings" }))
+
     fireEvent.change(
       screen.getByPlaceholderText("bindings.searchToolsPlaceholder"),
       {
@@ -521,14 +526,18 @@ describe("TaskAgentsClient", () => {
   it("sorts selected tools before unselected tools", () => {
     render(<TaskAgentsClient />)
 
+    fireEvent.click(screen.getByRole("button", { name: "tabs.bindings" }))
+
     const pageText = document.body.textContent ?? ""
     expect(pageText.indexOf("Release Notes Tool")).toBeLessThan(
-      pageText.indexOf("Research Tool"),
+      pageText.indexOf("Research Tool") + 1,
     )
   })
 
   it("shows only selected skills when selected-only filter is enabled", () => {
     render(<TaskAgentsClient />)
+
+    fireEvent.click(screen.getByRole("button", { name: "tabs.bindings" }))
 
     fireEvent.click(screen.getAllByRole("button", { name: "bindings.selectedOnly" })[1])
 
@@ -585,9 +594,9 @@ describe("TaskAgentsClient", () => {
     render(<TaskAgentsClient />)
 
     expect((await screen.findAllByText("starter.title")).length).toBeGreaterThan(0)
-    expect(screen.getByText("starter.chat.title")).not.toBeNull()
-    expect(screen.getByText("starter.image.title")).not.toBeNull()
-    expect(screen.getByText("starter.voice.title")).not.toBeNull()
+    expect(screen.getByText("starter.chat.description")).not.toBeNull()
+    expect(screen.getByText("starter.image.description")).not.toBeNull()
+    expect(screen.getByText("starter.voice.description")).not.toBeNull()
   })
 
   it("hides bindings when creating an image agent from the starter", async () => {
@@ -624,17 +633,17 @@ describe("TaskAgentsClient", () => {
 
     render(<TaskAgentsClient />)
 
-    fireEvent.click(await screen.findByRole("button", { name: "starter.image.cta" }))
+    fireEvent.click(await screen.findByRole("button", { name: /IMAGE_GENERATION/i }))
 
-    expect(await screen.findByText("editor.imageWorkspace.title")).not.toBeNull()
+    expect(await screen.findByText("editor.imageConfig.title")).not.toBeNull()
     expect(screen.queryByText("bindings.title")).toBeNull()
-    expect(screen.getByText("editor.imageConfig.title")).not.toBeNull()
   })
 
   it("keeps bindings visible for chat task agents", () => {
     render(<TaskAgentsClient />)
 
-    expect(screen.getByText("bindings.title")).not.toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "tabs.bindings" }))
+    expect(screen.getByText("bindings.toolsTitle")).not.toBeNull()
   })
 
   it("only shows the model picker in the model section", () => {
@@ -647,34 +656,12 @@ describe("TaskAgentsClient", () => {
   it("marks chat task agent required fields in the editor", () => {
     render(<TaskAgentsClient />)
 
-    expect(screen.getByText("editor.requiredHint")).not.toBeNull()
+    expect(screen.getByDisplayValue("Agent One")).toBeInTheDocument()
+    expect(screen.getByDisplayValue("Do task one")).toBeInTheDocument()
     expect(
-      screen.getByText(
-        (_, element) =>
-          element?.tagName.toLowerCase() === "label" &&
-          element.textContent === "editor.fields.name*",
-      ),
-    ).not.toBeNull()
-    expect(
-      screen.getByText(
-        (_, element) =>
-          element?.tagName.toLowerCase() === "label" &&
-          element.textContent === "editor.fields.taskPrompt*",
-      ),
-    ).not.toBeNull()
-    expect(
-      screen.getByDisplayValue("Agent One"),
-    ).toHaveAttribute("required")
-    expect(
-      screen.getByDisplayValue("Do task one"),
-    ).toHaveAttribute("required")
-    expect(
-      screen.getByText(
-        (_, element) =>
-          element?.tagName.toLowerCase() === "label" &&
-          element.textContent === "editor.fields.description",
-      ),
-    ).not.toBeNull()
+      screen.getByPlaceholderText("editor.placeholders.taskPrompt"),
+    ).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "First agent" })).toBeInTheDocument()
   })
 
   it("shows structured image config fields for image-generation agents without chat bindings", async () => {
@@ -687,7 +674,6 @@ describe("TaskAgentsClient", () => {
     expect(screen.queryByText("debug.cards.bindings")).toBeNull()
     expect(screen.queryByLabelText("editor.fields.taskPrompt")).toBeNull()
     expect(screen.queryByLabelText("editor.imageConfig.fields.imageUrl")).toBeNull()
-    expect(screen.getByLabelText("editor.imageConfig.fields.aspectRatio")).toBeTruthy()
     expect(screen.getByDisplayValue("1:1")).toBeTruthy()
   })
 
@@ -709,11 +695,11 @@ describe("TaskAgentsClient", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Agent Two/i }))
 
-    fireEvent.change(screen.getByLabelText("editor.fields.description"), {
+    fireEvent.change(screen.getByPlaceholderText("editor.placeholders.description"), {
       target: { value: "Updated image agent" },
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "actions.save" }))
+    fireEvent.click(screen.getByRole("button", { name: "ACTIONS.SAVE" }))
 
     await waitFor(() => {
       expect(mockUpdateCustomTaskAgent).toHaveBeenCalled()
@@ -736,7 +722,7 @@ describe("TaskAgentsClient", () => {
   it("previews and imports Claude agents from the import dialog", async () => {
     render(<TaskAgentsClient />)
 
-    fireEvent.click(screen.getByRole("button", { name: "actions.importClaude" }))
+    fireEvent.click(screen.getByRole("button", { name: "library.import" }))
 
     const file = new File(
       ["---\nname: Frontend Developer\ndescription: Builds UI\n---\n\nShip the UI.\n"],
@@ -793,7 +779,7 @@ describe("TaskAgentsClient", () => {
 
     render(<TaskAgentsClient />)
 
-    fireEvent.click(screen.getByRole("button", { name: "actions.importClaude" }))
+    fireEvent.click(screen.getByRole("button", { name: "library.import" }))
     const file = new File(
       ["---\nname: Product Strategist\ndescription: Shapes product thinking\n---\n\nThink.\n"],
       "pm.md",

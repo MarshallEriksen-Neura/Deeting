@@ -18,6 +18,7 @@ pub mod im;
 pub mod image_generation;
 pub mod island_window;
 pub mod knowledge;
+pub mod generated_files;
 pub mod llm_wiki;
 pub mod mcp;
 pub mod memory;

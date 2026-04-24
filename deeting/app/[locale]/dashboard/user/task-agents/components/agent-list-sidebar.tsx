@@ -75,15 +75,19 @@ export function AgentListSidebar({
                 : t("library.kindLabels.chat")
           
           return (
-            <button
+            <div
               key={agent.id}
-              onClick={() => onSelectAgent(agent.id)}
               className={cn(
-                "group relative flex w-full flex-col gap-0.5 border-b border-[var(--hairline-subtle)] py-6 pr-4 transition-all duration-300 text-left",
+                "group relative border-b border-[var(--hairline-subtle)] py-6 pr-4 transition-all duration-300",
                 selected ? "bg-[var(--accent-soft)]/20" : "hover:bg-[var(--panel-bg-inset)]/20"
               )}
             >
               <div className="flex items-start justify-between gap-4 px-2">
+                <button
+                  type="button"
+                  onClick={() => onSelectAgent(agent.id)}
+                  className="flex min-w-0 flex-1 flex-col text-left"
+                >
                 <div className="flex flex-col min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <span className={cn(
@@ -104,6 +108,20 @@ export function AgentListSidebar({
                     {agent.name || t("library.unnamed")}
                   </h3>
                 </div>
+
+                <div className="flex items-center gap-4 mt-2 opacity-30 group-hover:opacity-60 transition-opacity">
+                  <span className="font-mono text-[8px] tracking-widest text-[var(--ink-4)]">
+                    {t("library.modifiedShort", {
+                      value: new Date(agent.updated_at).toLocaleDateString(undefined, {
+                        month: "2-digit",
+                        day: "2-digit",
+                        year: "numeric",
+                      }),
+                    })}
+                  </span>
+                  <div className="h-px flex-1 bg-[var(--hairline-strong)]" />
+                </div>
+                </button>
 
                 <div className="flex flex-col items-end gap-1 flex-none pt-1">
                    <span className="font-mono text-[10px] text-[var(--ink-4)] tabular-nums group-hover:text-[var(--ink-3)] transition-colors">
@@ -132,24 +150,11 @@ export function AgentListSidebar({
                 </div>
               </div>
 
-              <div className="flex items-center gap-4 mt-2 px-2 opacity-30 group-hover:opacity-60 transition-opacity">
-                <span className="font-mono text-[8px] tracking-widest text-[var(--ink-4)]">
-                   {t("library.modifiedShort", {
-                     value: new Date(agent.updated_at).toLocaleDateString(undefined, {
-                       month: "2-digit",
-                       day: "2-digit",
-                       year: "numeric",
-                     }),
-                   })}
-                </span>
-                <div className="h-px flex-1 bg-[var(--hairline-strong)]" />
-              </div>
-
               {/* Selection Mark */}
               {selected && (
                 <div className="absolute left-[-2px] top-1/2 -translate-y-1/2 w-1 h-8 bg-[var(--accent-strong)] animate-in slide-in-from-left-2 duration-500" />
               )}
-            </button>
+            </div>
           )
         })}
       </div>
