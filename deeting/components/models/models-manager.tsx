@@ -2,10 +2,10 @@
 
 import * as React from "react"
 import { useTranslations } from "next-intl"
-import { RefreshCw, Sparkles, X, Database, Zap, Search } from "lucide-react"
+import { RefreshCw, Sparkles, X, Database, Zap, Search, Trash2 } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
 
-import { useProviderModels, useSyncProviderModels, useProviderInstances, useUpdateProviderModel, useTestProviderModel, useQuickAddProviderModels, useProviderModelPurchase } from "@/hooks/use-providers"
+import { useProviderModels, useSyncProviderModels, useProviderInstances, useUpdateProviderModel, useTestProviderModel, useQuickAddProviderModels, useProviderModelPurchase, useUpdateProviderInstance, useDeleteProviderInstance } from "@/hooks/use-providers"
 import { useDebounce } from "@/hooks/use-debounce"
 import {
   hasVersionedPath,
@@ -65,6 +65,8 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
   const { test: testModelApi } = useTestProviderModel()
   const { quickAdd } = useQuickAddProviderModels()
   const { purchase: purchaseModel } = useProviderModelPurchase()
+  const { update: updateInstance } = useUpdateProviderInstance()
+  const { remove: deleteInstance } = useDeleteProviderInstance()
 
   // State
   const [isSyncing, setIsSyncing] = React.useState(false)
@@ -76,6 +78,9 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
   const [purchasingModelUuid, setPurchasingModelUuid] = React.useState<string | null>(null)
   const [selectedModelId, setSelectedModelId] = React.useState<string | null>(null)
   const [localSearch, setLocalSearch] = React.useState("")
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
+  const [isDeleting, setIsDeleting] = React.useState(false)
+  const [isTogglingEnabled, setIsTogglingEnabled] = React.useState(false)
   const debouncedSearch = useDebounce(localSearch, 300)
   const [filters, setFilters] = React.useState<ModelFilterState>({
     search: "",
@@ -352,6 +357,35 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
     [mutateModels, purchaseModel, t]
   )
 
+  const handleToggleEnabled = React.useCallback(async (enabled: boolean) => {
+    if (!instance) return
+    setIsTogglingEnabled(true)
+    try {
+      await updateInstance(instanceId, { is_enabled: enabled })
+      await mutateInstance()
+      toast.success(t("toast.updateSuccess"))
+    } catch {
+      toast.error(t("toast.updateFailed"))
+    } finally {
+      setIsTogglingEnabled(false)
+    }
+  }, [instance, instanceId, updateInstance, mutateInstance, t])
+
+  const handleDeleteInstance = React.useCallback(async () => {
+    if (!instance) return
+    setIsDeleting(true)
+    try {
+      await deleteInstance(instanceId)
+      await mutateInstance()
+      toast.success(t("toast.deleteSuccess"))
+    } catch {
+      toast.error(t("toast.deleteFailed"))
+    } finally {
+      setIsDeleting(false)
+      setDeleteDialogOpen(false)
+    }
+  }, [instance, instanceId, deleteInstance, mutateInstance, t])
+
   const handleSendTestMessage = React.useCallback(async (message: string) => {
     if (!testModel) {
       return {
@@ -404,6 +438,8 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
               error: null,
             }}
             onSettings={() => setEditDrawerOpen(true)}
+            onToggleEnabled={handleToggleEnabled}
+            onDelete={() => setDeleteDialogOpen(true)}
           />
         )}
       </div>
@@ -655,6 +691,33 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
               className="ws-control h-10 px-8 rounded-xl bg-[var(--accent-strong)] text-white font-bold text-[12px] shadow-lg shadow-[var(--accent-soft)] hover:brightness-110 active:scale-95 disabled:opacity-50 transition-all"
             >
               {quickAddLoading ? t("quickAdd.submitting").toUpperCase() : t("quickAdd.submit").toUpperCase()}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="max-w-sm ws-bezel-inner border-[var(--hairline-strong)] shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="ws-view-title">{t("deleteProvider.title")}</DialogTitle>
+            <DialogDescription className="ws-body text-xs opacity-60 leading-relaxed">
+              {t("deleteProvider.description", { name: instance?.name })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-3 mt-4">
+            <button 
+              onClick={() => setDeleteDialogOpen(false)} 
+              disabled={isDeleting}
+              className="ws-control h-10 px-6 rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg)] text-[var(--ink-3)] font-bold text-[12px] hover:bg-[var(--panel-bg-inset)] transition-all"
+            >
+              {t("deleteProvider.cancel").toUpperCase()}
+            </button>
+            <button 
+              onClick={handleDeleteInstance} 
+              disabled={isDeleting}
+              className="ws-control h-10 px-8 rounded-xl bg-[var(--danger)] text-white font-bold text-[12px] shadow-lg shadow-[var(--danger-soft)] hover:brightness-110 active:scale-95 disabled:opacity-50 transition-all"
+            >
+              {isDeleting ? t("deleteProvider.deleting").toUpperCase() : t("deleteProvider.confirm").toUpperCase()}
             </button>
           </DialogFooter>
         </DialogContent>

@@ -111,7 +111,7 @@ export function ExternalEcosystemSettingsCard({
             {t("ecosystem.empty")}
           </div>
         ) : (
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-4 xl:grid-cols-2">
             {sources.map((source) => (
               <ExternalSourceCard
                 key={source.id}

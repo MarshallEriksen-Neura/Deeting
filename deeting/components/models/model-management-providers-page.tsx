@@ -1,20 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { Bot, Server, MoreHorizontal, Layers } from "lucide-react";
+import { Bot, Server, Layers } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { ProviderIcon } from "@/components/models/provider-icon";
 import { useProviderInstances } from "@/hooks/use-providers";
 import { ModelsManager } from "@/components/models/models-manager";
 import { cn } from "@/lib/utils";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuPortal
-} from "@/components/ui/shadcn/dropdown-menu";
 
 export function ModelManagementProvidersPage() {
   const t = useTranslations("providers.manager");
@@ -119,29 +112,7 @@ export function ModelManagementProvidersPage() {
                       )} />
                     </button>
 
-                    <div onClick={(event) => event.stopPropagation()}>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            type="button"
-                            aria-label={`${instance.name} actions`}
-                            className="absolute right-2 top-1/2 z-20 -translate-y-1/2 rounded-lg p-1.5 opacity-0 transition-all hover:bg-[var(--panel-bg)] group-hover:opacity-100 data-[state=open]:opacity-100 data-[state=open]:bg-[var(--panel-bg)]"
-                          >
-                            <MoreHorizontal className="size-3.5 text-[var(--ink-3)]" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuPortal>
-                          <DropdownMenuContent
-                            align="end"
-                            className="ws-bezel-inner min-w-[160px] border-[var(--hairline-strong)] p-1"
-                            onClick={(event) => event.stopPropagation()}
-                          >
-                            <DropdownMenuItem className="ws-control cursor-pointer rounded-lg px-3 py-2 text-[12px] font-semibold tracking-tight transition-colors focus:bg-[var(--accent-soft)] focus:text-[var(--accent-ink)]">{t("edit")}</DropdownMenuItem>
-                            <DropdownMenuItem className="ws-control cursor-pointer rounded-lg px-3 py-2 text-[12px] font-semibold tracking-tight text-[var(--danger)] transition-colors focus:bg-[var(--danger-soft)] focus:text-[var(--danger)]">{t("disconnect")}</DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenuPortal>
-                      </DropdownMenu>
-                    </div>
+
                   </div>
                 );
               })

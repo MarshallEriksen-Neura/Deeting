@@ -2,11 +2,12 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { Settings, Cloud, Server, Cpu, Activity, Globe, ShieldCheck } from "lucide-react";
+import { Settings, Cloud, Server, Cpu, Activity, Globe, ShieldCheck, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { GlassButton } from "@/components/ui/common/glass-button";
 import { Badge } from "@/components/ui/shadcn/badge";
+import { Switch } from "@/components/ui/shadcn/switch";
 import { ProviderIcon } from "@/components/models/provider-icon";
 import type { ProviderInstance, ProviderStatus, SyncState } from "./types";
 
@@ -14,6 +15,8 @@ interface InstanceDashboardProps {
   instance: ProviderInstance;
   syncState?: SyncState;
   onSettings?: () => void;
+  onToggleEnabled?: (enabled: boolean) => void;
+  onDelete?: () => void;
   className?: string;
 }
 
@@ -55,7 +58,7 @@ function StatusIndicator({ status, latency }: { status?: ProviderStatus; latency
   );
 }
 
-export function InstanceDashboard({ instance, syncState, onSettings, className }: InstanceDashboardProps) {
+export function InstanceDashboard({ instance, syncState, onSettings, onToggleEnabled, onDelete, className }: InstanceDashboardProps) {
   const t = useTranslations("models");
   const providerKey = instance.provider ?? instance.provider_display_name ?? instance.preset_slug ?? instance.name ?? "default";
   const theme = PROVIDER_THEMES[providerKey.toLowerCase()] || PROVIDER_THEMES.default;
@@ -143,14 +146,35 @@ export function InstanceDashboard({ instance, syncState, onSettings, className }
             </div>
           </div>
 
-          <GlassButton
-            variant="ghost"
-            size="icon"
-            onClick={onSettings}
-            className="size-8 rounded-lg ring-1 ring-[var(--hairline)] hover:bg-[var(--panel-bg-inset)]"
-          >
-            <Settings className="size-4 text-[var(--ink-3)]" />
-          </GlassButton>
+          <div className="flex items-center gap-2">
+            {onToggleEnabled && (
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={instance.is_enabled}
+                  onCheckedChange={onToggleEnabled}
+                  aria-label={instance.is_enabled ? t("instance.disable") : t("instance.enable")}
+                />
+              </div>
+            )}
+            <GlassButton
+              variant="ghost"
+              size="icon"
+              onClick={onSettings}
+              className="size-8 rounded-lg ring-1 ring-[var(--hairline)] hover:bg-[var(--panel-bg-inset)]"
+            >
+              <Settings className="size-4 text-[var(--ink-3)]" />
+            </GlassButton>
+            {onDelete && (
+              <GlassButton
+                variant="ghost"
+                size="icon"
+                onClick={onDelete}
+                className="size-8 rounded-lg ring-1 ring-[var(--hairline)] hover:bg-[var(--danger-soft)] hover:text-[var(--danger)]"
+              >
+                <Trash2 className="size-4 text-[var(--ink-3)]" />
+              </GlassButton>
+            )}
+          </div>
         </div>
       </div>
     </div>

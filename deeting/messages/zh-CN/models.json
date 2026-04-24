@@ -17,7 +17,16 @@
       "updateSuccess": "模型更新成功",
       "updateFailed": "模型更新失败",
       "purchaseSuccess": "模型解锁成功",
-      "purchaseFailed": "模型解锁失败"
+      "purchaseFailed": "模型解锁失败",
+      "deleteSuccess": "删除成功",
+      "deleteFailed": "删除失败"
+    },
+    "deleteProvider": {
+      "title": "删除提供商",
+      "description": "确定要删除提供商「{name}」吗？此操作不可撤销。",
+      "cancel": "取消",
+      "confirm": "确认删除",
+      "deleting": "删除中..."
     },
     "confirmDelete": "确定要删除该提供商实例吗？",
     "page": {

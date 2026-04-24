@@ -332,8 +332,8 @@ export function ExternalSourceCard({
 
         <div className="space-y-6 px-6 py-6">
           {/* Name + Enable */}
-          <div className="grid gap-5 md:grid-cols-2">
-            <div className="space-y-2">
+          <div className="flex flex-col gap-5 sm:flex-row sm:flex-wrap">
+            <div className="min-w-[180px] flex-1 space-y-2">
               <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {t("ecosystem.fields.name")}
               </Label>
@@ -344,7 +344,7 @@ export function ExternalSourceCard({
                 className="rounded-xl border-border/60 bg-background/80 transition-colors focus-visible:bg-background"
               />
             </div>
-            <div className="relative overflow-hidden rounded-xl border border-border/40 bg-muted/20 px-4 py-3.5 dark:bg-muted/10">
+            <div className="relative min-w-[240px] flex-1 overflow-hidden rounded-xl border border-border/40 bg-muted/20 px-4 py-3.5 dark:bg-muted/10">
               <div className="absolute inset-y-0 left-0 w-[2px] bg-gradient-to-b from-sky-500/40 to-indigo-500/20" />
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0 space-y-0.5">
@@ -384,8 +384,8 @@ export function ExternalSourceCard({
           ) : null}
 
           {/* Sync mode + interval */}
-          <div className="grid gap-5 md:grid-cols-2">
-            <div className="space-y-2">
+          <div className="flex flex-col gap-5 sm:flex-row sm:flex-wrap">
+            <div className="min-w-[180px] flex-1 space-y-2">
               <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {t("ecosystem.fields.syncMode")}
               </Label>
@@ -409,7 +409,7 @@ export function ExternalSourceCard({
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
+            <div className="min-w-[180px] flex-1 space-y-2">
               <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {t("ecosystem.fields.interval")}
               </Label>

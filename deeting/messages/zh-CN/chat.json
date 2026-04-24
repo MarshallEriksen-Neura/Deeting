@@ -671,22 +671,22 @@
         "loadError": "插件视图加载失败"
       },
       "generatedFile": {
-        "untitled": "?????",
-        "unknown": "??",
-        "preview": "??",
-        "download": "??",
-        "open": "??",
-        "saveAs": "???",
-        "revealInFolder": "???????",
-        "exported": "?????",
-        "exportedTo": "???? {path}",
-        "openFailed": "???????",
-        "exportFailed": "???????",
-        "revealFailed": "??????????",
-        "mimeType": "??",
-        "fileSize": "??",
-        "noPreview": "?????????????????????",
-        "truncated": "???????????? 12000 ????"
+        "untitled": "未命名",
+        "unknown": "未知",
+        "preview": "预览",
+        "download": "下载",
+        "open": "打开",
+        "saveAs": "另存为",
+        "revealInFolder": "在文件夹中显示",
+        "exported": "已导出",
+        "exportedTo": "已导出到 {path}",
+        "openFailed": "打开失败",
+        "exportFailed": "导出失败",
+        "revealFailed": "在文件夹中显示失败",
+        "mimeType": "类型",
+        "fileSize": "大小",
+        "noPreview": "暂无预览",
+        "truncated": "内容已截断，超过 12000 字"
       }
     }
   }
