@@ -135,22 +135,23 @@ export function RuntimeServerListSection({
       platform === "desktop" && missingIndexTools.length > 0 && Boolean(onReindexMissingTools)
 
     return (
-      <motion.section 
-        initial={{ opacity: 0, y: 12 }} 
-        animate={{ opacity: 1, y: 0 }} 
+      <motion.section
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
         transition={{ type: "spring", stiffness: 240, damping: 28, mass: 1 }}
         className="w-full min-w-0 space-y-5"
       >
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-2">
             <button
-              className="flex h-[32px] items-center justify-center gap-1.5 rounded-[8px] bg-[var(--panel-bg)] px-3 text-[12px] font-[500] text-[var(--ink-2)] ring-1 ring-[var(--hairline)] shadow-sm transition-all hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)] hover:ring-[var(--hairline-strong)]"
+              type="button"
+              className="flex h-[32px] items-center justify-center gap-1.5 rounded-[var(--r-8)] bg-[var(--panel-bg)] px-3 text-[12px] font-medium text-[var(--ink-2)] ring-1 ring-[var(--hairline)] shadow-sm transition-all hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)] hover:ring-[var(--hairline-strong)]"
               onClick={() => setSelectedGroupId(null)}
             >
               <ArrowLeft size={14} />
               {t("runtime.workspace.back")}
             </button>
-            <div className="flex h-[32px] items-center rounded-[8px] bg-[var(--panel-bg-inset)] px-3 text-[12px] font-[500] text-[var(--ink-3)] ring-1 ring-[var(--hairline)]">
+            <div className="flex h-[32px] items-center rounded-[var(--r-8)] bg-[var(--panel-bg-inset)] px-3 text-[12px] font-medium text-[var(--ink-3)] ring-1 ring-[var(--hairline)]">
               {t("runtime.workspace.summary", {
                 name: selectedGroup.name,
                 count: selectedGroup.toolCount,
@@ -161,7 +162,8 @@ export function RuntimeServerListSection({
           <div className="flex items-center gap-2">
             {canReindexMissing && (
               <button
-                className="flex h-[28px] items-center justify-center gap-1.5 rounded-[8px] bg-[var(--panel-bg)] px-3 text-[11px] font-[500] text-[var(--ink)] ring-1 ring-[var(--hairline)] transition-all hover:bg-[var(--panel-bg-inset)] hover:ring-[var(--hairline-strong)]"
+                type="button"
+                className="flex h-[28px] items-center justify-center gap-1.5 rounded-[var(--r-6)] bg-[var(--panel-bg)] px-3 text-[11px] font-medium text-[var(--ink)] ring-1 ring-[var(--hairline)] transition-all hover:bg-[var(--panel-bg-inset)] hover:ring-[var(--hairline-strong)]"
                 onClick={() => onReindexMissingTools?.(missingIndexTools)}
               >
                 <Sparkles size={13} className={reindexMissingLoading ? "animate-spin" : ""} />
@@ -170,7 +172,8 @@ export function RuntimeServerListSection({
             )}
             {canReviewGroup && (
               <button
-                className="flex h-[28px] items-center justify-center gap-1.5 rounded-[8px] bg-[var(--panel-bg)] px-3 text-[11px] font-[500] text-[var(--ink)] ring-1 ring-[var(--hairline)] transition-all hover:bg-[var(--panel-bg-inset)] hover:ring-[var(--hairline-strong)]"
+                type="button"
+                className="flex h-[28px] items-center justify-center gap-1.5 rounded-[var(--r-6)] bg-[var(--panel-bg)] px-3 text-[11px] font-medium text-[var(--ink)] ring-1 ring-[var(--hairline)] transition-all hover:bg-[var(--panel-bg-inset)] hover:ring-[var(--hairline-strong)]"
                 onClick={() => onResolveConflict?.(representativeTool)}
               >
                 <Search size={13} />
@@ -179,7 +182,8 @@ export function RuntimeServerListSection({
             )}
             {canSyncGroup && (
               <button
-                className="flex h-[28px] w-[28px] items-center justify-center rounded-[8px] text-[var(--ink-3)] transition-colors hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)]"
+                type="button"
+                className="flex h-[28px] w-[28px] items-center justify-center rounded-[var(--r-6)] text-[var(--ink-3)] transition-colors hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)]"
                 onClick={() => onSyncTool?.(representativeTool)}
               >
                 <RefreshCw size={14} className={groupSyncLoading ? "animate-spin" : ""} />
@@ -187,7 +191,8 @@ export function RuntimeServerListSection({
             )}
             {canEditGroup && (
               <button
-                className="flex h-[28px] w-[28px] items-center justify-center rounded-[8px] text-[var(--ink-3)] transition-colors hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)]"
+                type="button"
+                className="flex h-[28px] w-[28px] items-center justify-center rounded-[var(--r-6)] text-[var(--ink-3)] transition-colors hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)]"
                 onClick={() => onEditServer?.(representativeTool)}
               >
                 <Pencil size={14} />
@@ -196,59 +201,61 @@ export function RuntimeServerListSection({
           </div>
         </div>
 
-        <div className="rounded-[18px] p-[6px] bg-[var(--panel-bg-inset)] ring-1 ring-[var(--hairline)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-          <Card className="relative overflow-hidden rounded-[12px] bg-[var(--panel-bg)] border-0 py-0 ring-1 ring-[var(--hairline)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-            <div className={cn("absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r", tone.bar)} />
+        <div className="ws-bezel">
+          <div className="ws-bezel-inner">
+            <Card className="relative overflow-hidden rounded-[calc(var(--r-18)-6px)] bg-[var(--panel-bg)] border-0 py-0 ring-1 ring-[var(--hairline)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+              <div className={cn("absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r", tone.bar)} />
 
-            <div className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex min-w-0 items-start gap-4">
-                <div className={cn("flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-[12px] border shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]", tone.icon)}>
-                  <Folder size={20} className={tone.iconText} />
-                </div>
-                <div className="min-w-0 flex-1 flex flex-col gap-1.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="truncate text-[17px] font-[600] tracking-[-0.2px] text-[var(--ink)]">{selectedGroup.name}</h3>
-                    <Badge className={cn("h-[20px] rounded-full px-2 text-[10px] font-[600] uppercase tracking-[0.04em] shadow-none", tone.badge)}>
-                      {selectedGroup.runningCount > 0 ? t("runtime.server.running") : t("tool.status.stopped")}
-                    </Badge>
-                    {selectedGroup.conflictCount > 0 && (
-                      <Badge variant="outline" className="h-[20px] rounded-full border-[var(--warn-border)] bg-[var(--warn-soft)] px-2 text-[10px] font-[600] uppercase tracking-[0.04em] text-[var(--warn)] shadow-none">
-                        {selectedGroup.conflictCount} {t("runtime.server.conflicts")}
+              <div className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex min-w-0 items-start gap-4">
+                  <div className={cn("flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-[var(--r-10)] border shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]", tone.icon)}>
+                    <Folder size={20} className={tone.iconText} />
+                  </div>
+                  <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="truncate text-[17px] font-semibold tracking-[-0.2px] text-[var(--ink)]">{selectedGroup.name}</h3>
+                      <Badge className={cn("h-[20px] rounded-full px-2 text-[10px] font-semibold uppercase tracking-[0.04em] shadow-none", tone.badge)}>
+                        {selectedGroup.runningCount > 0 ? t("runtime.server.running") : t("tool.status.stopped")}
                       </Badge>
-                    )}
-                  </div>
-                  <p className="line-clamp-2 text-[13px] leading-[1.5] text-[var(--ink-2)]">
-                    {selectedGroup.description || t("runtime.server.noDescription")}
-                  </p>
-                  <div className="flex flex-wrap gap-2 text-[11px] font-mono text-[var(--ink-3)]">
-                    <span className="rounded-[4px] bg-[var(--panel-bg-inset)] px-1.5 py-[2px] border border-[var(--hairline)] tabular-nums">
-                      {selectedGroup.toolCount} {t("runtime.server.toolCount")}
-                    </span>
-                    {selectedGroup.source?.pathOrUrl && (
-                      <span className="max-w-[min(48rem,70vw)] truncate rounded-[4px] bg-[var(--panel-bg-inset)] px-1.5 py-[2px] border border-[var(--hairline)]">
-                        {selectedGroup.source.pathOrUrl}
+                      {selectedGroup.conflictCount > 0 && (
+                        <Badge variant="outline" className="h-[20px] rounded-full border-[var(--warn-border)] bg-[var(--warn-soft)] px-2 text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--warn)] shadow-none">
+                          {selectedGroup.conflictCount} {t("runtime.server.conflicts")}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="line-clamp-2 text-[13px] leading-[1.5] text-[var(--ink-2)]">
+                      {selectedGroup.description || t("runtime.server.noDescription")}
+                    </p>
+                    <div className="flex flex-wrap gap-2 text-[11px] font-mono text-[var(--ink-3)]">
+                      <span className="rounded-[var(--r-4)] bg-[var(--panel-bg-inset)] px-1.5 py-[2px] border border-[var(--hairline)] tabular-nums">
+                        {selectedGroup.toolCount} {t("runtime.server.toolCount")}
                       </span>
-                    )}
+                      {selectedGroup.source?.pathOrUrl && (
+                        <span className="max-w-[min(48rem,70vw)] truncate rounded-[var(--r-4)] bg-[var(--panel-bg-inset)] px-1.5 py-[2px] border border-[var(--hairline)]">
+                          {selectedGroup.source.pathOrUrl}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className={cn("flex flex-col items-end justify-center rounded-[var(--r-10)] border p-3 min-w-[100px]", tone.metric)}>
+                  <div className="text-[10px] uppercase tracking-[0.22em] opacity-70">
+                    {t("runtime.server.running")}
+                  </div>
+                  <div className="mt-1 font-mono text-[24px] font-semibold tabular-nums tracking-[-0.5px]">
+                    {selectedGroup.runningCount}
+                    <span className="ml-1 text-[16px] font-medium opacity-60">/ {selectedGroup.toolCount}</span>
                   </div>
                 </div>
               </div>
-
-              <div className={cn("flex flex-col items-end justify-center rounded-[12px] border p-3 min-w-[100px]", tone.metric)}>
-                <div className="text-[10px] uppercase tracking-[0.22em] opacity-70">
-                  {t("runtime.server.running")}
-                </div>
-                <div className="mt-1 font-mono text-[24px] font-[600] tabular-nums tracking-[-0.5px]">
-                  {selectedGroup.runningCount}
-                  <span className="ml-1 text-[16px] font-[500] opacity-60">/ {selectedGroup.toolCount}</span>
-                </div>
-              </div>
-            </div>
-          </Card>
+            </Card>
+          </div>
         </div>
 
         <div className="space-y-4">
           <div className="flex items-center justify-between border-b border-[var(--hairline)] pb-2">
-            <h4 className="text-[11px] font-[500] uppercase tracking-[0.2em] text-[var(--ink-3)]">
+            <h4 className="text-[11px] font-medium uppercase tracking-[0.2em] text-[var(--ink-3)]">
               {t("runtime.workspace.tools")} ({selectedGroup.toolCount})
             </h4>
           </div>
@@ -279,21 +286,13 @@ export function RuntimeServerListSection({
   }
 
   return (
-    <motion.section 
-      initial={{ opacity: 0, y: 12 }} 
-      animate={{ opacity: 1, y: 0 }} 
+    <motion.section
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
       transition={{ type: "spring", stiffness: 240, damping: 28, mass: 1 }}
       className="w-full min-w-0 space-y-4"
     >
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex w-full items-center gap-4">
-          <h2 className="whitespace-nowrap text-[14px] font-[600] tracking-[-0.1px] text-[var(--ink)]">{t("runtime.title")}</h2>
-          <div className="h-px flex-1 bg-[var(--hairline)]" />
-        </div>
-      </div>
-
-      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        {/* Workspace Toolbar (Tabs style) */}
+      <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex h-[32px] items-center gap-1 border-b border-[var(--hairline)]">
           {[
             { value: "all", label: t("runtime.tabs.all"), count: null, tone: "slate" },
@@ -307,8 +306,8 @@ export function RuntimeServerListSection({
                 key={item.value}
                 data-active={isActive ? "true" : "false"}
                 className={cn(
-                  "relative flex h-[32px] items-center gap-2 px-3 text-[13px] font-[500] leading-none transition-colors",
-                  isActive ? "text-[var(--ink)] border-b-2 border-[var(--accent)]" : "text-[var(--ink-2)] border-b-2 border-transparent hover:text-[var(--ink)]"
+                  "relative flex h-[32px] items-center gap-2 px-3 text-[13px] font-medium leading-none transition-colors",
+                  isActive ? "text-[var(--ink)] border-b-2 border-[var(--accent-strong)]" : "text-[var(--ink-2)] border-b-2 border-transparent hover:text-[var(--ink)]"
                 )}
                 onClick={() => setActiveTab(item.value)}
               >
@@ -329,7 +328,7 @@ export function RuntimeServerListSection({
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex h-[32px] items-center rounded-[8px] bg-[var(--panel-bg-inset)] px-3 text-[12px] font-[500] text-[var(--ink-3)] ring-1 ring-[var(--hairline)]">
+          <div className="flex h-[32px] items-center rounded-[var(--r-8)] bg-[var(--panel-bg-inset)] px-3 text-[12px] font-medium text-[var(--ink-3)] ring-1 ring-[var(--hairline)]">
             {t("runtime.summary", { visible: filteredGroups.length, total: groups.length })}
           </div>
           {onSyncAll && (
@@ -337,15 +336,16 @@ export function RuntimeServerListSection({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
-                    className="flex h-[32px] items-center justify-center gap-1.5 rounded-[8px] bg-[var(--panel-bg)] px-3 text-[12px] font-[500] text-[var(--ink)] ring-1 ring-[var(--hairline)] transition-all hover:bg-[var(--panel-bg-inset)] hover:ring-[var(--hairline-strong)]"
+                    type="button"
+                    className="flex h-[32px] items-center justify-center gap-1.5 rounded-[var(--r-8)] bg-[var(--panel-bg)] px-3 text-[12px] font-medium text-[var(--ink)] ring-1 ring-[var(--hairline)] transition-all hover:bg-[var(--panel-bg-inset)] hover:ring-[var(--hairline-strong)]"
                     onClick={() => onSyncAll?.()}
                     disabled={syncAllLoading}
                   >
-                    <RefreshCw size={14} className={syncAllLoading ? "animate-spin text-[var(--accent)]" : ""} />
+                    <RefreshCw size={14} className={syncAllLoading ? "animate-spin text-[var(--accent-strong)]" : ""} />
                     {syncAllLoading ? t("runtime.syncing") : t("runtime.sync")}
                   </button>
                 </TooltipTrigger>
-                <TooltipContent className="rounded-[8px] bg-[var(--panel-bg)] text-[11px] font-[500] text-[var(--ink)] shadow-xl ring-1 ring-[var(--hairline-strong)]">
+                <TooltipContent className="rounded-[var(--r-8)] bg-[var(--panel-bg)] text-[11px] font-medium text-[var(--ink)] shadow-xl ring-1 ring-[var(--hairline-strong)]">
                   <p>{t("runtime.sync")}</p>
                 </TooltipContent>
               </Tooltip>
@@ -363,12 +363,12 @@ export function RuntimeServerListSection({
             const statusLabel = group.runningCount > 0 ? t("runtime.server.running") : t("tool.status.stopped")
 
             return (
-              <motion.div 
-                layout 
+              <motion.div
+                layout
                 key={group.id}
-                className="group relative rounded-[18px] p-[6px] bg-[var(--panel-bg-inset)] ring-1 ring-[var(--hairline)] transition-all duration-[220ms] ease-[cubic-bezier(0.32,0.72,0,1)] hover:ring-[var(--hairline-strong)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                className="group relative rounded-[var(--r-18)] p-[6px] bg-[var(--panel-bg-inset)] ring-1 ring-[var(--hairline)] transition-all duration-[220ms] ease-[cubic-bezier(0.32,0.72,0,1)] hover:ring-[var(--hairline-strong)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
               >
-                <Card className="relative overflow-hidden rounded-[12px] bg-[var(--panel-bg)] border-0 py-0 ring-1 ring-[var(--hairline)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition-colors hover:bg-[var(--panel-bg-inset)]">
+                <Card className="relative overflow-hidden rounded-[calc(var(--r-18)-6px)] bg-[var(--panel-bg)] border-0 py-0 ring-1 ring-[var(--hairline)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition-colors hover:bg-[var(--panel-bg-inset)]">
                   <button
                     type="button"
                     className="relative flex w-full flex-col text-left focus-visible:outline-none"
@@ -377,14 +377,14 @@ export function RuntimeServerListSection({
                     <div className={cn("absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r", tone.bar)} />
 
                     <div className="flex w-full items-start gap-3 p-4">
-                      <div className={cn("flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-[10px] border shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]", tone.icon)}>
+                      <div className={cn("flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-[var(--r-10)] border shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]", tone.icon)}>
                         <Folder size={16} className={tone.iconText} />
                       </div>
 
                       <div className="min-w-0 flex-1 flex flex-col gap-1.5">
                         <div className="flex min-w-0 items-center gap-2">
-                          <h3 className="truncate text-[14px] font-[600] tracking-[-0.1px] text-[var(--ink)]">{group.name}</h3>
-                          <Badge variant="outline" className={cn("h-[18px] rounded-full px-2 text-[9px] font-[600] uppercase tracking-[0.04em] shadow-none", tone.badge)}>
+                          <h3 className="truncate text-[14px] font-semibold tracking-[-0.1px] text-[var(--ink)]">{group.name}</h3>
+                          <Badge variant="outline" className={cn("h-[18px] rounded-full px-2 text-[9px] font-semibold uppercase tracking-[0.04em] shadow-none", tone.badge)}>
                             {statusLabel}
                           </Badge>
                         </div>
@@ -392,11 +392,11 @@ export function RuntimeServerListSection({
                           {group.description || t("runtime.server.noDescription")}
                         </p>
                         <div className="flex flex-wrap gap-1.5 text-[10px] font-mono text-[var(--ink-3)]">
-                          <span className="rounded-[4px] bg-[var(--panel-bg)] px-1.5 py-0.5 border border-[var(--hairline)] tabular-nums">
+                          <span className="rounded-[var(--r-4)] bg-[var(--panel-bg)] px-1.5 py-0.5 border border-[var(--hairline)] tabular-nums">
                             {group.toolCount} {t("runtime.server.toolCount")}
                           </span>
                           {group.source?.pathOrUrl && (
-                            <span className="max-w-[min(20rem,50vw)] truncate rounded-[4px] bg-[var(--panel-bg)] px-1.5 py-0.5 border border-[var(--hairline)]">
+                            <span className="max-w-[min(20rem,50vw)] truncate rounded-[var(--r-4)] bg-[var(--panel-bg)] px-1.5 py-0.5 border border-[var(--hairline)]">
                               {group.source.pathOrUrl}
                             </span>
                           )}
@@ -404,13 +404,13 @@ export function RuntimeServerListSection({
                       </div>
 
                       <div className="flex shrink-0 items-center gap-3">
-                        <div className={cn("flex min-w-[76px] flex-col items-end justify-center rounded-[8px] border px-2.5 py-1.5", tone.metric)}>
+                        <div className={cn("flex min-w-[76px] flex-col items-end justify-center rounded-[var(--r-8)] border px-2.5 py-1.5", tone.metric)}>
                           <div className="text-[9px] uppercase tracking-[0.2em] opacity-70">
                             {t("runtime.server.running")}
                           </div>
-                          <div className="mt-0.5 font-mono text-[16px] font-[600] tabular-nums tracking-[-0.5px]">
+                          <div className="mt-0.5 font-mono text-[16px] font-semibold tabular-nums tracking-[-0.5px]">
                             {group.runningCount}
-                            <span className="ml-[2px] text-[11px] font-[500] opacity-60">/ {group.toolCount}</span>
+                            <span className="ml-[2px] text-[11px] font-medium opacity-60">/ {group.toolCount}</span>
                           </div>
                         </div>
                         <ChevronRight size={16} className="text-[var(--ink-3)] transition-transform group-hover:translate-x-[2px]" />
@@ -433,12 +433,12 @@ export function RuntimeServerListSection({
         </AnimatePresence>
 
         {filteredGroups.length === 0 && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            className="col-span-full flex min-w-0 flex-col items-center justify-center rounded-[18px] border border-dashed border-[var(--hairline-strong)] bg-[var(--panel-bg-inset)] py-[56px] text-[var(--ink-3)]"
+            className="col-span-full flex min-w-0 flex-col items-center justify-center rounded-[var(--r-18)] border border-dashed border-[var(--hairline-strong)] bg-[var(--panel-bg-inset)] py-[56px] text-[var(--ink-3)]"
           >
             <Terminal size={32} className="mb-3 opacity-30" strokeWidth={1} />
-            <p className="text-[13px] font-[500]">{t("runtime.empty")}</p>
+            <p className="text-[13px] font-medium">{t("runtime.empty")}</p>
             <p className="mt-1 text-[11px] text-[var(--ink-4)]">Press ⌘K to search</p>
           </motion.div>
         )}

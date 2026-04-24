@@ -70,6 +70,10 @@
         "description": "识别吞金兽模型",
         "total": "总成本"
       },
+      "trafficSummary": {
+        "description": "观察今日请求量、较前一日趋势与小时分布",
+        "total": "今日请求量"
+      },
       "errorDist": {
         "title": "错误分布",
         "description": "快速定责",
@@ -81,10 +85,30 @@
           "clientError": "客户端错误"
         }
       },
+      "speedSummary": {
+        "description": "监控平均首字延迟与周期变化",
+        "average": "平均 TTFT",
+        "trend": "较上一周期",
+        "lowerBetter": "越低越好",
+        "faster": "更快",
+        "slower": "更慢",
+        "stable": "持平"
+      },
       "keyActivity": {
         "title": "Key 活跃度 Top 5",
         "description": "按请求速率排名的最活跃 API 密钥",
         "rpm": "每分钟请求数"
+      },
+      "healthSummary": {
+        "description": "监控最近周期的请求成功率",
+        "successRate": "成功率",
+        "successful": "成功请求",
+        "failed": "失败请求",
+        "total": "总请求",
+        "requestsLabel": "请求",
+        "stableState": "稳定",
+        "watchState": "关注",
+        "riskState": "风险"
       }
     },
     "units": {

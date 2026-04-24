@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useTranslations } from "next-intl"
 import { AlertTriangle } from "lucide-react"
@@ -8,129 +8,140 @@ import {
   GlassCardDescription,
   GlassCardHeader,
   GlassCardTitle,
-} from "@/ui/common/glass-card"
+} from "@/components/ui/common/glass-card"
 import { Cell, Pie, PieChart } from "recharts"
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/ui/shadcn/chart"
-import { useErrorDistribution } from "@/lib/swr/use-error-distribution"
-import type { MonitoringFilters } from "./monitoring-control-bar"
+import { ChartContainer } from "@/ui/shadcn/chart"
+import { cn } from "@/lib/utils"
+import type { DashboardStats } from "@/lib/api/dashboard"
 
 /**
- * Error Distribution Component
- *
- * Donut chart categorizing errors:
- * - 429: Rate limiting (money issue)
- * - 5xx: Upstream failures (provider issue)
- * - 4xx: Client errors (code issue)
- *
- * Purpose: Quick fault attribution
+ * Error Distribution - Blueprint Edition
  */
 export function ErrorDistribution({
-  filters,
+  stats,
+  isLoading = false,
 }: {
-  filters: MonitoringFilters
+  stats?: DashboardStats
+  isLoading?: boolean
 }) {
-  const t = useTranslations("monitoring.dimensional.errorDist")
-  const { data, isLoading } = useErrorDistribution(filters, {
-    autoRefresh: filters.autoRefresh,
-  })
+  const t = useTranslations("monitoring.dimensional.speedSummary")
+  const tKpi = useTranslations("dashboard.kpi")
 
-  const errorLabelMap: Record<string, string> = {
-    "429": t("labels.rateLimit"),
-    "5xx": t("labels.serverError"),
-    "4xx": t("labels.clientError"),
-  }
-  const errorData = (data?.categories ?? []).map((item) => ({
-    ...item,
-    label: errorLabelMap[item.category] ?? item.label ?? item.category,
-  }))
-
-  const totalErrors = errorData.reduce((sum, e) => sum + e.count, 0)
+  const avgTTFT = Math.max(0, stats?.speed.avgTTFT ?? 0)
+  const trendPercent = stats?.speed.trendPercent
+  const normalizedLatency = Math.min(avgTTFT, 2000)
+  const dialData = [
+    { key: "ttft", value: normalizedLatency, color: "#2DD4BF" },
+    { key: "rest", value: Math.max(0, 2000 - normalizedLatency), color: "rgba(148, 163, 184, 0.18)" },
+  ]
+  const trendTone =
+    trendPercent == null || trendPercent === 0 ? "neutral" : trendPercent < 0 ? "better" : "worse"
+  const trendLabel =
+    trendTone === "better" ? t("faster") : trendTone === "worse" ? t("slower") : t("stable")
 
   const chartConfig = {
-    "429": { label: errorLabelMap["429"], color: "var(--chart-3))" },
-    "5xx": { label: errorLabelMap["5xx"], color: "var(--chart-1))" },
-    "4xx": { label: errorLabelMap["4xx"], color: "var(--chart-4))" },
+    ttft: { label: t("average"), color: "#2DD4BF" },
+    rest: { label: "Scale", color: "rgba(148, 163, 184, 0.18)" },
   }
 
   return (
-    <GlassCard className="bg-[var(--card)]">
-      <GlassCardHeader>
-        <GlassCardTitle className="flex items-center gap-2">
-          <AlertTriangle className="h-5 w-5 text-red-400" />
-          {t("title")}
-        </GlassCardTitle>
-        <GlassCardDescription className="mt-1">
-          {t("description")}
-        </GlassCardDescription>
+    <GlassCard theme="blueprint" hover="none" padding="none">
+      <GlassCardHeader blueprint>
+        <div className="flex flex-col gap-0.5">
+          <GlassCardTitle blueprint>{tKpi("speed.label")}</GlassCardTitle>
+          <GlassCardDescription blueprint>{t("description")}</GlassCardDescription>
+        </div>
+        <AlertTriangle className="h-4 w-4 text-[var(--danger)]/70" />
       </GlassCardHeader>
-      <GlassCardContent>
+      <GlassCardContent blueprint>
         {isLoading ? (
           <div className="flex h-64 items-center justify-center">
-            <div className="text-[var(--muted)]">{t("loading")}</div>
+            <div className="text-[var(--muted)]">{t("average")}</div>
           </div>
         ) : (
-          <div className="space-y-4">
-            {/* Donut Chart */}
-            <ChartContainer config={chartConfig} className="mx-auto h-48 w-48">
-              <PieChart>
-                <Pie
-                  data={errorData}
-                  dataKey="count"
-                  nameKey="label"
-                  innerRadius={50}
-                  outerRadius={80}
-                  paddingAngle={2}
-                >
-                  {errorData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <ChartTooltip content={<ChartTooltipContent />} />
-              </PieChart>
-            </ChartContainer>
+          <div className="space-y-8 flex flex-col items-center">
+            <div className="relative w-full aspect-square max-w-[200px]">
+              <ChartContainer config={chartConfig} className="h-full w-full">
+                <PieChart>
+                  <Pie
+                    data={dialData}
+                    dataKey="value"
+                    nameKey="key"
+                    innerRadius={65}
+                    outerRadius={85}
+                    paddingAngle={4}
+                    stroke="none"
+                    isAnimationActive={false}
+                  >
+                    {dialData.map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={entry.color}
+                        className="opacity-80 hover:opacity-100 transition-opacity"
+                      />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ChartContainer>
 
-            {/* Total in center (simulated) */}
-            <div className="text-center -mt-32 mb-24">
-              <div className="text-3xl font-bold text-[var(--foreground)] tabular-nums">
-                {totalErrors}
+              {/* Blueprint Center Value */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="font-mono text-3xl font-bold tracking-tighter tabular-nums text-[var(--foreground)]">
+                  {Math.round(avgTTFT)}
+                  <span className="ml-1 text-base">ms</span>
+                </span>
+                <span className="font-mono text-[9px] uppercase tracking-widest text-[var(--ink-4)]">
+                  {t("average")}
+                </span>
               </div>
-              <div className="text-xs text-[var(--muted)]">{t("totalErrors")}</div>
             </div>
 
-            {/* Legend with details */}
-            <div className="space-y-2">
-              {errorData.map((error) => (
-                <ErrorLegendItem key={error.category} error={error} total={totalErrors} />
+            {/* Blueprint Detail List */}
+            <div className="w-full space-y-1">
+              {[
+                {
+                  key: "average",
+                  label: t("average"),
+                  value: `${Math.round(avgTTFT)}ms`,
+                  muted: false,
+                },
+                {
+                  key: "trend",
+                  label: t("trend"),
+                  value:
+                    trendPercent != null ? `${trendPercent > 0 ? "+" : ""}${trendPercent.toFixed(1)}%` : "--",
+                  muted: false,
+                  tone: trendTone,
+                },
+                {
+                  key: "status",
+                  label: t("lowerBetter"),
+                  value: trendLabel,
+                  muted: true,
+                },
+              ].map((item) => (
+                <div key={item.key} className="flex items-center justify-between border-t border-[var(--border)] pt-2 pb-1">
+                  <div className="flex items-center gap-2">
+                    <div className="size-1.5 bg-[var(--accent)]/70" />
+                    <span className="font-mono text-[10px] uppercase font-bold text-[var(--foreground)]">{item.label}</span>
+                  </div>
+                  <span
+                    className={cn(
+                      "font-mono text-xs font-bold tabular-nums text-[var(--foreground)]",
+                      item.tone === "better" && "text-[var(--ok)]",
+                      item.tone === "worse" && "text-[var(--danger)]",
+                      item.muted && "text-[var(--ink-4)]"
+                    )}
+                  >
+                    {item.value}
+                  </span>
+                </div>
               ))}
             </div>
           </div>
         )}
       </GlassCardContent>
+      <div className="h-1 w-full bg-[var(--border)] opacity-30" />
     </GlassCard>
-  )
-}
-
-function ErrorLegendItem({
-  error,
-  total,
-}: {
-  error: { category: string; label: string; count: number; color: string }
-  total: number
-}) {
-  const percentage = total > 0 ? ((error.count / total) * 100).toFixed(1) : "0.0"
-
-  return (
-    <div className="flex items-center justify-between rounded-lg border border-[var(--border)] p-2">
-      <div className="flex items-center gap-2">
-        <div className="h-3 w-3 rounded-full" style={{ backgroundColor: error.color }} />
-        <span className="text-sm font-medium text-[var(--foreground)]">{error.label}</span>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold text-[var(--foreground)] tabular-nums">
-          {error.count}
-        </span>
-        <span className="text-xs text-[var(--muted)]">({percentage}%)</span>
-      </div>
-    </div>
   )
 }

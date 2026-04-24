@@ -97,6 +97,17 @@ const glassButtonVariants = cva(
           "hover:brightness-110",
           "border border-white/10",
         ],
+        // Blueprint 工业蓝图风格
+        blueprint: [
+          "bg-transparent",
+          "text-[var(--foreground)]",
+          "border border-[var(--border)]",
+          "rounded-none",
+          "font-mono text-[11px] font-bold uppercase tracking-widest",
+          "hover:bg-[var(--primary)]/5 hover:border-[var(--primary)]/50",
+          "active:bg-[var(--primary)]/10 active:scale-[0.98]",
+          "shadow-none",
+        ],
       },
       size: {
         sm: "h-8 px-3 text-xs rounded-lg",

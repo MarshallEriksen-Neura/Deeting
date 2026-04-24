@@ -1,8 +1,7 @@
-import { setRequestLocale, getTranslations } from "next-intl/server"
-import { Container } from "@/components/ui/common/container"
+﻿import { setRequestLocale, getTranslations } from "next-intl/server"
+import { Container } from "@/ui/common/container"
 
 import { MonitoringClient } from "./components/monitoring-client"
-import { TokenThroughputChart } from "./components/token-throughput-chart"
 
 export default async function MonitoringPage({
   params,
@@ -26,8 +25,6 @@ export default async function MonitoringPage({
         </h1>
         <p className="mt-1 text-[var(--muted)]">{t("description")}</p>
       </div>
-
-      <TokenThroughputChart />
 
       <MonitoringClient />
     </Container>

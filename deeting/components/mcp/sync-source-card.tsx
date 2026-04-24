@@ -13,22 +13,21 @@ interface SyncSourceCardProps {
   onSync?: () => void
 }
 
-// Source type visual theme
 const sourceTheme = {
   modelscope: {
-    bar: "from-violet-400 via-purple-500 to-indigo-500",
-    iconBg: "bg-gradient-to-br from-violet-500/10 to-indigo-500/6 border-violet-300/35",
-    iconText: "text-violet-700",
+    bar: "from-[var(--accent-strong)] via-[var(--accent-ink)] to-[var(--info)]",
+    iconBg: "bg-[var(--accent-soft)] border-[var(--accent-border)]",
+    iconText: "text-[var(--accent-strong)]",
   },
   github: {
-    bar: "from-slate-500 via-slate-600 to-slate-700",
-    iconBg: "bg-gradient-to-br from-slate-500/10 to-slate-600/5 border-slate-300/40",
-    iconText: "text-blue-600",
+    bar: "from-[var(--ink-3)] via-[var(--ink-2)] to-[var(--ink)]",
+    iconBg: "bg-[var(--panel-bg-inset)] border-[var(--hairline)]",
+    iconText: "text-[var(--ink-2)]",
   },
   url: {
-    bar: "from-emerald-400 via-teal-500 to-cyan-500",
-    iconBg: "bg-gradient-to-br from-emerald-500/10 to-cyan-500/6 border-emerald-300/35",
-    iconText: "text-emerald-700",
+    bar: "from-[var(--ok)] via-[var(--info)] to-[var(--accent-strong)]",
+    iconBg: "bg-[var(--ok-soft)] border-[var(--ok-border)]",
+    iconText: "text-[var(--ok)]",
   },
   local: {
     bar: "from-[var(--ink-4)] via-[var(--ink-3)] to-[var(--ink-2)]",
@@ -97,14 +96,14 @@ export function SyncSourceCard({ source, onSync }: SyncSourceCardProps) {
       hover="lift"
       padding="none"
       className={cn(
-        "group overflow-hidden rounded-[1.6rem] border-[var(--hairline)] bg-[var(--panel-bg)] shadow-[0_20px_40px_-28px_rgba(0,0,0,0.38)] transition-all duration-300",
-        isModelScope && "ring-1 ring-[var(--primary)]/15"
+        "group overflow-hidden rounded-[var(--r-18)] border-[var(--hairline)] bg-[var(--panel-bg)] shadow-[0_20px_40px_-28px_rgba(0,0,0,0.38)] transition-all duration-300",
+        isModelScope && "ring-1 ring-[var(--accent-strong)]/15"
       )}
     >
       {/* Source type accent bar */}
       <div
         className={cn(
-          "h-[2px] rounded-t-[1.6rem] bg-gradient-to-r transition-all duration-500",
+          "h-[2px] rounded-t-[var(--r-18)] bg-gradient-to-r transition-all duration-500",
           theme.bar,
           isDraft && "opacity-30"
         )}
@@ -116,7 +115,7 @@ export function SyncSourceCard({ source, onSync }: SyncSourceCardProps) {
           {/* Icon with source-type tint */}
           <div
             className={cn(
-              "flex size-11 shrink-0 items-center justify-center rounded-2xl border backdrop-blur-sm transition-all duration-300",
+              "flex size-11 shrink-0 items-center justify-center rounded-[var(--r-10)] border backdrop-blur-sm transition-all duration-300",
               theme.iconBg
             )}
           >
@@ -142,7 +141,7 @@ export function SyncSourceCard({ source, onSync }: SyncSourceCardProps) {
         </div>
 
         {/* Footer: Status + Sync button */}
-        <div className="flex items-center justify-between rounded-[1rem] border border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-3 py-2.5">
+        <div className="flex items-center justify-between rounded-[var(--r-10)] border border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-3 py-2.5">
           <div className="flex items-center gap-1.5 text-xs text-[var(--ink-2)]">
             {isDraft ? (
               <span className="flex items-center gap-1.5 text-[var(--warn)]">
@@ -161,8 +160,8 @@ export function SyncSourceCard({ source, onSync }: SyncSourceCardProps) {
             ) : (
               <span className="flex items-center gap-1.5">
                 <span className="relative flex h-1.5 w-1.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500 shadow-sm shadow-emerald-500/50" />
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--ok)] opacity-75" />
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[var(--ok)] shadow-sm" />
                 </span>
                 {t("source.status.activeLocal")}
               </span>

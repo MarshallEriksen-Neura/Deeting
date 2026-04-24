@@ -235,66 +235,73 @@ export function MCPRegistryClient({
   const visibleSources = sources.filter((source) => source.type !== "cloud");
 
   return (
-    <div className="relative min-h-0 w-full min-w-0">
-      <div className="relative w-full min-w-0 space-y-6">
-        <RegistryHeader onCreateManual={handleImportConfig} />
+    <div className="relative min-h-0 w-full min-w-0 space-y-8">
+      <RegistryHeader onCreateManual={handleImportConfig} />
 
-        <SupplyChainSection
-          sources={visibleSources}
-          onSync={handleSyncSource}
-          onCreateSource={handleCreateSource}
-        />
+      <SupplyChainSection
+        sources={visibleSources}
+        onSync={handleSyncSource}
+        onCreateSource={handleCreateSource}
+      />
 
-        <div className="w-full min-w-0 rounded-[2rem] border border-[var(--hairline)] bg-[var(--panel-bg)] p-4 shadow-[0_32px_80px_-36px_rgba(0,0,0,0.38)] sm:p-5 lg:p-6">
-          {indexProgress && indexProgress.total > 0 ? (
-            <div className="mb-4 rounded-xl border border-[var(--info-border)] bg-[var(--info-soft)] p-3">
-              <div className="mb-1 flex items-center justify-between text-[12px] text-[var(--info)]">
-                <span>{t("actions.reindexingMissing")}</span>
-                <span>
-                  {indexProgress.processed}/{indexProgress.total}
-                </span>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-[var(--panel-bg-inset)]">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-[var(--info)] to-[var(--accent-strong)] transition-all duration-300"
-                  style={{
-                    width: `${
-                      indexProgress.total > 0
-                        ? Math.min(
-                            100,
-                            Math.round(
-                              (indexProgress.processed / indexProgress.total) * 100
-                            )
-                          )
-                        : 100
-                    }%`,
-                  }}
-                />
-              </div>
-              <div className="mt-1 text-[11px] text-[var(--info)] opacity-90">
-                {indexProgress.phase === "completed"
-                  ? `${t("tool.labels.index")}: ${indexProgress.indexed}/${indexProgress.total}`
-                  : `${t("tool.labels.index")}: ${indexProgress.indexed}/${indexProgress.total}${
-                      indexProgress.current ? ` - ${indexProgress.current}` : ""
-                    }`}
-              </div>
-            </div>
-          ) : null}
-
-          <RuntimeServerListSection
-            groups={runtimeGroups}
-            conflictCount={conflictCount}
-            platform="desktop"
-            toggleMode="runtime"
-            onToggleTool={(tool, enabled) => handleToggleTool(tool, enabled)}
-            onPrimaryAction={handlePrimaryAction}
-            onResolveConflict={handleOpenConflict}
-            onDeleteServer={handleDeleteTool}
-            onReindexMissingTools={handleReindexMissingTools}
-            reindexMissingLoading={reindexingMissingTools}
-          />
+      <section className="space-y-4">
+        <div className="flex items-center gap-3">
+          <h2 className="ws-pane-title">{t("runtime.title")}</h2>
+          <div className="h-px flex-1 bg-[var(--hairline)]" />
         </div>
-      </div>
+
+        {indexProgress && indexProgress.total > 0 ? (
+          <div className="rounded-[var(--r-12)] border border-[var(--info-border)] bg-[var(--info-soft)] p-3">
+            <div className="mb-1 flex items-center justify-between text-[12px] text-[var(--info)]">
+              <span>{t("actions.reindexingMissing")}</span>
+              <span>
+                {indexProgress.processed}/{indexProgress.total}
+              </span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-[var(--panel-bg-inset)]">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-[var(--info)] to-[var(--accent-strong)] transition-all duration-300"
+                style={{
+                  width: `${
+                    indexProgress.total > 0
+                      ? Math.min(
+                          100,
+                          Math.round(
+                            (indexProgress.processed / indexProgress.total) * 100
+                          )
+                        )
+                      : 100
+                  }%`,
+                }}
+              />
+            </div>
+            <div className="mt-1 text-[11px] text-[var(--info)] opacity-90">
+              {indexProgress.phase === "completed"
+                ? `${t("tool.labels.index")}: ${indexProgress.indexed}/${indexProgress.total}`
+                : `${t("tool.labels.index")}: ${indexProgress.indexed}/${indexProgress.total}${
+                    indexProgress.current ? ` - ${indexProgress.current}` : ""
+                  }`}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="ws-bezel">
+          <div className="ws-bezel-inner p-4 sm:p-5">
+            <RuntimeServerListSection
+              groups={runtimeGroups}
+              conflictCount={conflictCount}
+              platform="desktop"
+              toggleMode="runtime"
+              onToggleTool={(tool, enabled) => handleToggleTool(tool, enabled)}
+              onPrimaryAction={handlePrimaryAction}
+              onResolveConflict={handleOpenConflict}
+              onDeleteServer={handleDeleteTool}
+              onReindexMissingTools={handleReindexMissingTools}
+              reindexMissingLoading={reindexingMissingTools}
+            />
+          </div>
+        </div>
+      </section>
 
       <ServerLogsSheet
         tool={selectedTool}
@@ -334,11 +341,13 @@ function McpSectionSkeleton({
 
       <div className={`grid grid-cols-1 gap-4 ${columnsClassName}`}>
         {Array.from({ length: cardCount }).map((_, index) => (
-          <div key={index} className="rounded-3xl border border-[var(--hairline)] bg-[var(--panel-bg)] p-6">
-            <div className="space-y-4">
-              <Skeleton className="h-6 w-32" />
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-28 w-full" />
+          <div key={index} className="ws-bezel">
+            <div className="ws-bezel-inner p-6">
+              <div className="space-y-4">
+                <Skeleton className="h-6 w-32" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-28 w-full" />
+              </div>
             </div>
           </div>
         ))}

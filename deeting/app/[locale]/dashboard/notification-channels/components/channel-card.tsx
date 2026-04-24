@@ -49,6 +49,14 @@ import {
   rejectLocalWechatPairing,
   startLocalWechatPairing,
 } from "@/lib/api/wechat-connection"
+import {
+  GlassCard,
+  GlassCardContent,
+  GlassCardHeader,
+  GlassCardTitle,
+  GlassCardDescription,
+  GlassCardFooter,
+} from "@/components/ui/common/glass-card"
 
 import { ChannelFormField } from "./channel-form-field"
 import {
@@ -566,45 +574,40 @@ export function ChannelCard({
 
   return (
     <>
-      <div className="flex flex-col border border-[color:var(--border)] bg-[color:var(--card)] transition-colors hover:bg-muted/30">
-        <div className="flex flex-col gap-6 px-6 py-8">
-          <div className="flex items-start justify-between">
-            <div className="flex items-start gap-4">
-              <div
-                className={`flex size-12 shrink-0 items-center justify-center rounded-lg border border-[color:var(--border)] bg-muted/30 ${CHANNEL_COLORS[channel.channel]} text-primary`}
-              >
-                <Icon className="size-6" />
-              </div>
-
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <div className={cn("size-1.5 rounded-full", ledColor)} />
-                  <h3 className="text-lg font-semibold tracking-tight text-foreground">
-                    {channelTitle}
-                  </h3>
-                </div>
-                <div className="mt-1 flex items-center gap-2 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                  <span>{channelTypeLabel}</span>
-                  <span className="text-[color:var(--border)]">|</span>
-                  <span>{runtimeLabel}</span>
-                </div>
-              </div>
+      <GlassCard theme="blueprint" hover="none" padding="none" className="transition-colors hover:bg-muted/10">
+        <GlassCardHeader blueprint className="px-4 py-3">
+          <div className="flex items-center gap-3">
+            <div className="flex size-8 shrink-0 items-center justify-center border border-[color:var(--border)] bg-muted/20 text-primary">
+              <Icon className="size-4" />
             </div>
-
-            <div className="flex items-center gap-3">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                {t("notificationChannels.channelCard.systemActive")}
-              </span>
-              <Switch
-                checked={channel.is_active}
-                onCheckedChange={() => void handleToggle()}
-                disabled={toggling}
-                className="scale-75"
-              />
+            <div className="flex items-center gap-2">
+              <div className={cn("size-1.5", ledColor)} />
+              <GlassCardTitle blueprint className="text-sm">
+                {channelTitle}
+              </GlassCardTitle>
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[9px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
+              {t("notificationChannels.channelCard.systemActive")}
+            </span>
+            <Switch
+              checked={channel.is_active}
+              onCheckedChange={() => void handleToggle()}
+              disabled={toggling}
+              className="scale-75"
+            />
+          </div>
+        </GlassCardHeader>
 
-          <div className="grid gap-px overflow-hidden rounded-md border border-[color:var(--border)] bg-[color:var(--border)] sm:grid-cols-3">
+        <GlassCardContent blueprint className="px-4 py-4">
+          <div className="mb-4 flex items-center gap-2 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+            <span>{channelTypeLabel}</span>
+            <span className="text-[color:var(--border)]">/</span>
+            <span>{runtimeLabel}</span>
+          </div>
+
+          <div className="grid gap-px overflow-hidden border border-[color:var(--border)] bg-[color:var(--border)] sm:grid-cols-3">
             <MetaCell label={t("notificationChannels.channelCard.meta.protocol")} value={channelTypeLabel} icon={Settings2} />
             <MetaCell
               label={t("notificationChannels.channelCard.meta.configIntegrity")}
@@ -614,14 +617,14 @@ export function ChannelCard({
             />
             <MetaCell label={t("notificationChannels.channelCard.meta.lastActive")} value={lastUsedLabel} icon={Activity} />
           </div>
-        </div>
+        </GlassCardContent>
 
-        <div className="flex flex-wrap items-center gap-2 border-t border-[color:var(--border)] px-6 py-4">
+        <div className="flex flex-wrap items-center gap-2 border-t border-[color:var(--border)] px-4 py-3">
           <Button
             variant="outline"
             size="sm"
             onClick={() => setExpanded((current) => !current)}
-            className="h-8 border-[color:var(--border)] px-3 text-[11px] font-medium"
+            className="h-7 border-[color:var(--border)] px-3 text-[10px] font-medium"
           >
             {expanded ? <ChevronUp className="mr-1.5 size-3" /> : <ChevronDown className="mr-1.5 size-3" />}
             {expanded ? t("notificationChannels.channelCard.actions.closeEditor") : t("notificationChannels.channelCard.actions.configure")}
@@ -632,7 +635,7 @@ export function ChannelCard({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 border-[color:var(--border)] px-3 text-[11px] font-medium"
+                className="h-7 border-[color:var(--border)] px-3 text-[10px] font-medium"
                 onClick={() => {
                   setWechatDialogOpen(true)
                   if (wechatConnectionState.state === "disconnected") {
@@ -646,7 +649,7 @@ export function ChannelCard({
               {wechatConnectionState.state === "connected" && (
                 <button
                   onClick={() => void handleWechatDisconnect()}
-                  className="px-2 text-[10px] font-bold text-destructive uppercase transition-opacity hover:opacity-80"
+                  className="px-2 font-mono text-[9px] font-bold uppercase tracking-wider text-[#E61919] transition-opacity hover:opacity-80"
                 >
                   {t("notificationChannels.channelCard.actions.disconnect")}
                 </button>
@@ -661,7 +664,7 @@ export function ChannelCard({
                 size="sm"
                 onClick={handleTest}
                 disabled={testing || loadingConfig || !configReady}
-                className="h-8 text-[11px] font-medium"
+                className="h-7 text-[10px] font-medium"
               >
                 <Send className={cn("mr-1.5 size-3", testing && "animate-spin")} />
                 {t("notificationChannels.channelCard.actions.testing")}
@@ -672,7 +675,7 @@ export function ChannelCard({
               size="sm"
               onClick={() => setDeleteDialogOpen(true)}
               disabled={deleting}
-              className="h-8 text-destructive hover:bg-destructive/10"
+              className="h-7 text-[#E61919] hover:bg-[#E61919]/10"
             >
               <Trash2 className="size-3.5" />
             </Button>
@@ -680,35 +683,35 @@ export function ChannelCard({
         </div>
 
         {expanded && (
-          <div className="border-t border-[color:var(--border)] bg-muted/10 p-6">
+          <div className="border-t border-[color:var(--border)] bg-muted/5 p-4">
             <div className="space-y-6">
               <div className="space-y-2">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                <label className="font-mono text-[9px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
                   {t("notificationChannels.channelCard.instanceAlias")}
                 </label>
                 <Input
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   placeholder={channelTypeLabel}
-                  className="h-10 border-[color:var(--border)] bg-transparent text-sm focus-visible:ring-primary/30"
+                  className="h-9 border-[color:var(--border)] bg-transparent text-sm focus-visible:ring-primary/30"
                 />
               </div>
 
               {channel.channel === "wechat" ? (
                 <div className="space-y-6">
-                  <div className="grid grid-cols-2 gap-4 rounded-md border border-[color:var(--border)] bg-muted/20 p-4">
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                  <div className="grid grid-cols-2 gap-px overflow-hidden border border-[color:var(--border)] bg-[color:var(--border)]">
+                    <div className="bg-[color:var(--card)] p-3">
+                      <span className="font-mono text-[9px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
                         {t("notificationChannels.channelCard.wechat.handshakeState")}
                       </span>
-                      <div className="flex items-center gap-2">
+                      <div className="mt-1.5 flex items-center gap-2">
                         <div
                           className={cn(
-                            "size-1.5 rounded-full",
+                            "size-1.5",
                             wechatConnectionState.state === "connected" ? "bg-emerald-500" : "bg-amber-500",
                           )}
                         />
-                        <span className="text-xs font-medium uppercase tracking-tight">
+                        <span className="font-mono text-[11px] font-medium uppercase tracking-tight">
                           {wechatConnectionState.state === "connected"
                             ? wechatConnectionState.accountLabel || t("notificationChannels.channelCard.wechat.established")
                             : wechatConnectionState.state === "connecting"
@@ -717,11 +720,11 @@ export function ChannelCard({
                         </span>
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                    <div className="bg-[color:var(--card)] p-3">
+                      <span className="font-mono text-[9px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
                         {t("notificationChannels.channelCard.wechat.pairingMetadata")}
                       </span>
-                      <div className="flex items-center gap-2 text-xs font-medium">
+                      <div className="mt-1.5 flex items-center gap-2 font-mono text-[11px] font-medium">
                         <span className="text-primary">{t("notificationChannels.channelCard.wechat.allowedNodes", { count: wechatStats.allowlistSize })}</span>
                       </div>
                     </div>
@@ -756,7 +759,7 @@ export function ChannelCard({
 
                   {selectedWechatNotifyContacts.length > 0 && (
                     <div className="space-y-2">
-                      <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                      <label className="font-mono text-[9px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
                         {t("notificationChannels.channelCard.wechat.deliveryNodes")}
                       </label>
                       <div className="flex flex-wrap gap-2">
@@ -767,7 +770,7 @@ export function ChannelCard({
                               const next = selectedWechatNotifyContacts.filter((item) => item !== contactId)
                               setValue("notify_contact_ids", next.join("\n"))
                             }}
-                            className="rounded-sm border border-[color:var(--border)] bg-muted/30 px-2 py-1 text-[10px] font-medium transition-colors hover:bg-destructive/10 hover:text-destructive"
+                            className="border border-[color:var(--border)] bg-muted/20 px-2 py-1 font-mono text-[10px] font-medium transition-colors hover:bg-[#E61919]/10 hover:text-[#E61919]"
                           >
                             {contactId}
                           </button>
@@ -783,10 +786,10 @@ export function ChannelCard({
                   {FEISHU_FIELD_GROUPS.map((group) => (
                     <div key={group.titleKey} className="space-y-4">
                       <div className="space-y-1">
-                        <div className="text-[11px] font-bold uppercase tracking-widest text-primary">
+                        <div className="font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-primary">
                           {t(group.titleKey)}
                         </div>
-                        <div className="text-[11px] text-muted-foreground">{t(group.descriptionKey)}</div>
+                        <div className="font-mono text-[10px] text-muted-foreground">{t(group.descriptionKey)}</div>
                       </div>
                       <div className="grid gap-6 md:grid-cols-2">
                         {group.keys.map((key) => {
@@ -807,21 +810,23 @@ export function ChannelCard({
                   size="sm"
                   onClick={handleSave}
                   disabled={saving || loadingConfig || !configReady}
-                  className="h-9 px-6 font-medium shadow-none"
+                  className="h-8 px-6 font-medium shadow-none"
                 >
                   {saving && <RadioTower className="mr-2 size-4 animate-spin" />}
                   {t("notificationChannels.channelCard.actions.syncChanges")}
                 </Button>
               </div>
               {feedback && (
-                <p className="text-center text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                <p className="text-center font-mono text-xs font-medium text-emerald-600 dark:text-emerald-400">
                   {feedback}
                 </p>
               )}
             </div>
           </div>
         )}
-      </div>
+
+        <GlassCardFooter blueprint />
+      </GlassCard>
 
       <WechatConnectDialog
         open={wechatDialogOpen}
@@ -878,15 +883,15 @@ function MetaCell({
   className?: string
 }) {
   return (
-    <div className={cn("bg-[color:var(--card)] p-4", className)}>
+    <div className={cn("bg-[color:var(--card)] p-3", className)}>
       <div className="flex items-center gap-2">
         {Icon && <Icon className="size-3 text-muted-foreground/60" />}
-        <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+        <div className="font-mono text-[9px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
           {label}
         </div>
       </div>
       <div className={cn(
-        "mt-1.5 text-sm font-medium",
+        "mt-1.5 font-mono text-sm font-medium",
         tone === "ok" ? "text-emerald-600" : tone === "warn" ? "text-amber-600" : "text-foreground"
       )}>
         {value}

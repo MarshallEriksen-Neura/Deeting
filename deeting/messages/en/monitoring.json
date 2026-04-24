@@ -70,6 +70,10 @@
         "description": "Identify budget-consuming models",
         "total": "Total Cost"
       },
+      "trafficSummary": {
+        "description": "Track today's request volume, day-over-day trend, and hourly distribution",
+        "total": "Today's Requests"
+      },
       "errorDist": {
         "title": "Error Distribution",
         "description": "Quick fault attribution",
@@ -81,10 +85,30 @@
           "clientError": "Client Error"
         }
       },
+      "speedSummary": {
+        "description": "Monitor average time-to-first-token and period-over-period change",
+        "average": "Average TTFT",
+        "trend": "vs previous period",
+        "lowerBetter": "Lower is better",
+        "faster": "Faster",
+        "slower": "Slower",
+        "stable": "Stable"
+      },
       "keyActivity": {
         "title": "Top 5 Active Keys",
         "description": "Most active API keys by request rate",
         "rpm": "RPM"
+      },
+      "healthSummary": {
+        "description": "Monitor recent request success rate",
+        "successRate": "Success Rate",
+        "successful": "Successful Requests",
+        "failed": "Failed Requests",
+        "total": "Total Requests",
+        "requestsLabel": "requests",
+        "stableState": "stable",
+        "watchState": "watch",
+        "riskState": "risk"
       }
     },
     "units": {

@@ -46,11 +46,11 @@ export function TokenThroughputChart({
   const chartConfig = {
     inputTokens: {
       label: t("inputTokens"),
-      color: "var(--chart-1))",
+      color: "var(--chart-1)",
     },
     outputTokens: {
       label: t("outputTokens"),
-      color: "var(--chart-2))",
+      color: "var(--chart-2)",
     },
   }
 
@@ -61,34 +61,32 @@ export function TokenThroughputChart({
   const ratio = data?.ratio ?? (totalInput > 0 ? totalOutput / totalInput : 0)
 
   return (
-    <GlassCard className="h-full">
-      <GlassCardHeader>
-        <div className="flex items-start justify-between">
-          <div>
-            <GlassCardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5 text-[var(--primary)]" />
-              {t("title")}
-            </GlassCardTitle>
-            <GlassCardDescription className="mt-1">
-              {t("description")}
-            </GlassCardDescription>
-          </div>
+    <GlassCard theme="blueprint" hover="none" padding="none" className="h-full">
+      <GlassCardHeader blueprint>
+        <div className="flex flex-col gap-0.5">
+          <GlassCardTitle blueprint>{t("title")}</GlassCardTitle>
+          <GlassCardDescription blueprint>{t("description")}</GlassCardDescription>
+        </div>
+        <div className="flex items-center gap-4">
           <div className="text-right">
-            <div className="text-sm text-[var(--muted)]">{t("ratio")}</div>
-            <div className="text-xl font-bold text-[var(--foreground)] tabular-nums">
+            <div className="font-mono text-[9px] uppercase tracking-wider text-[var(--muted-foreground)]">
+              {t("ratio")}
+            </div>
+            <div className="font-mono text-sm font-bold text-[var(--foreground)] tabular-nums">
               {isLoading ? (
-                <span className="inline-block h-6 w-16 animate-pulse rounded bg-[var(--foreground)]/10" />
+                <span className="inline-block h-5 w-14 animate-pulse bg-[var(--border)]" />
               ) : (
                 `1:${ratio.toFixed(2)}`
               )}
             </div>
           </div>
+          <TrendingUp className="h-4 w-4 text-[var(--primary)]" />
         </div>
       </GlassCardHeader>
-      <GlassCardContent>
+      <GlassCardContent blueprint>
         {isLoading ? (
           <div className="flex h-[300px] items-center justify-center">
-            <div className="text-[var(--muted)]">{t("loading")}</div>
+            <div className="font-mono text-xs text-[var(--muted)]">{t("loading")}</div>
           </div>
         ) : (
           <ChartContainer config={chartConfig} className="h-[300px] w-full">
@@ -100,24 +98,24 @@ export function TokenThroughputChart({
                 <linearGradient id="inputGradient" x1="0" y1="0" x2="0" y2="1">
                   <stop
                     offset="5%"
-                    stopColor="var(--chart-1))"
+                    stopColor="var(--chart-1)"
                     stopOpacity={0.8}
                   />
                   <stop
                     offset="95%"
-                    stopColor="var(--chart-1))"
+                    stopColor="var(--chart-1)"
                     stopOpacity={0.1}
                   />
                 </linearGradient>
                 <linearGradient id="outputGradient" x1="0" y1="0" x2="0" y2="1">
                   <stop
                     offset="5%"
-                    stopColor="var(--chart-2))"
+                    stopColor="var(--chart-2)"
                     stopOpacity={0.8}
                   />
                   <stop
                     offset="95%"
-                    stopColor="var(--chart-2))"
+                    stopColor="var(--chart-2)"
                     stopOpacity={0.1}
                   />
                 </linearGradient>
@@ -160,7 +158,7 @@ export function TokenThroughputChart({
                 type="monotone"
                 dataKey="inputTokens"
                 stackId="1"
-                stroke="var(--chart-1))"
+                stroke="var(--chart-1)"
                 fill="url(#inputGradient)"
                 strokeWidth={2}
               />
@@ -168,7 +166,7 @@ export function TokenThroughputChart({
                 type="monotone"
                 dataKey="outputTokens"
                 stackId="1"
-                stroke="var(--chart-2))"
+                stroke="var(--chart-2)"
                 fill="url(#outputGradient)"
                 strokeWidth={2}
               />
@@ -178,25 +176,26 @@ export function TokenThroughputChart({
         )}
 
         {/* Summary Statistics */}
-        <div className="mt-4 grid grid-cols-2 gap-4 border-t border-[var(--border)]/50 pt-4">
+        <div className="mt-4 grid grid-cols-2 gap-4 border-t border-[var(--border)] pt-4">
           <div>
-            <div className="text-xs text-[var(--muted)] uppercase tracking-wide">
+            <div className="font-mono text-[9px] uppercase tracking-widest text-[var(--muted-foreground)]">
               {t("totalInput")}
             </div>
-            <div className="mt-1 text-lg font-bold text-[var(--foreground)] tabular-nums">
+            <div className="mt-1 font-mono text-lg font-bold text-[var(--foreground)] tabular-nums">
               {formatTokens(totalInput)}
             </div>
           </div>
           <div>
-            <div className="text-xs text-[var(--muted)] uppercase tracking-wide">
+            <div className="font-mono text-[9px] uppercase tracking-widest text-[var(--muted-foreground)]">
               {t("totalOutput")}
             </div>
-            <div className="mt-1 text-lg font-bold text-[var(--foreground)] tabular-nums">
+            <div className="mt-1 font-mono text-lg font-bold text-[var(--foreground)] tabular-nums">
               {formatTokens(totalOutput)}
             </div>
           </div>
         </div>
       </GlassCardContent>
+      <div className="h-1 w-full bg-[var(--border)] opacity-30" />
     </GlassCard>
   )
 }

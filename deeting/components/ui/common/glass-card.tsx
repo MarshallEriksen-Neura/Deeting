@@ -59,6 +59,14 @@ const glassCardVariants = cva(
           "[--glass-border:rgba(255,255,255,0.05)]",
           "[--glass-shine:rgba(255,255,255,0.03)]",
         ],
+        blueprint: [
+          "rounded-none",
+          "bg-[var(--card)]",
+          "border-[var(--border)]",
+          "shadow-none",
+          "[--glass-border:transparent]",
+          "[--glass-shine:transparent]",
+        ],
       },
       // 悬停效果
       hover: {
@@ -95,15 +103,37 @@ export interface GlassCardProps
 
 const GlassCard = React.forwardRef<HTMLDivElement, GlassCardProps>(
   ({ className, blur, theme, hover, padding, shine = true, innerBorder = true, children, ...props }, ref) => {
+    const isBlueprint = theme === "blueprint"
+
     return (
       <div
         ref={ref}
         data-slot="glass-card"
+        data-theme={theme}
         className={cn(glassCardVariants({ blur, theme, hover, padding, className }))}
         {...props}
       >
+        {/* Blueprint corner decorations */}
+        {isBlueprint && (
+          <>
+            <div className="pointer-events-none absolute -top-px -left-px size-3 border-l-2 border-t-2 border-[var(--muted-foreground)] opacity-30" />
+            <div className="pointer-events-none absolute -bottom-px -right-px size-3 border-r-2 border-b-2 border-[var(--muted-foreground)] opacity-30" />
+          </>
+        )}
+
+        {/* Blueprint background grid */}
+        {isBlueprint && (
+          <div
+            className="pointer-events-none absolute inset-0 z-0 opacity-[0.03]"
+            style={{
+              backgroundImage: `linear-gradient(var(--foreground) 1px, transparent 1px), linear-gradient(90deg, var(--foreground) 1px, transparent 1px)`,
+              backgroundSize: '24px 24px'
+            }}
+          />
+        )}
+
         {/* 顶部高光 - 模拟光线效果 */}
-        {shine && (
+        {shine && !isBlueprint && (
           <div
             className="pointer-events-none absolute inset-x-0 top-0 h-px"
             style={{
@@ -113,7 +143,7 @@ const GlassCard = React.forwardRef<HTMLDivElement, GlassCardProps>(
         )}
 
         {/* 内边框 - 增加层次感 */}
-        {innerBorder && (
+        {innerBorder && !isBlueprint && (
           <div
             className="pointer-events-none absolute inset-0 rounded-2xl"
             style={{
@@ -131,60 +161,76 @@ const GlassCard = React.forwardRef<HTMLDivElement, GlassCardProps>(
 GlassCard.displayName = "GlassCard"
 
 // GlassCard 子组件
-const GlassCardHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...props }, ref) => (
+const GlassCardHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement> & { blueprint?: boolean }>(
+  ({ className, blueprint, ...props }, ref) => (
     <div
       ref={ref}
       data-slot="glass-card-header"
-      className={cn("flex flex-col gap-1.5", className)}
+      className={cn(
+        "flex flex-col gap-1.5",
+        blueprint && "relative z-10 flex-row items-center justify-between border-b border-[var(--border)] px-4 py-3 gap-0",
+        className
+      )}
       {...props}
     />
   )
 )
 GlassCardHeader.displayName = "GlassCardHeader"
 
-const GlassCardTitle = React.forwardRef<HTMLHeadingElement, React.HTMLAttributes<HTMLHeadingElement>>(
-  ({ className, ...props }, ref) => (
+const GlassCardTitle = React.forwardRef<HTMLHeadingElement, React.HTMLAttributes<HTMLHeadingElement> & { blueprint?: boolean }>(
+  ({ className, blueprint, ...props }, ref) => (
     <h3
       ref={ref}
       data-slot="glass-card-title"
-      className={cn("text-lg font-semibold text-[var(--foreground)]", className)}
+      className={cn(
+        "text-lg font-semibold text-[var(--foreground)]",
+        blueprint && "font-mono text-[11px] font-bold uppercase tracking-widest",
+        className
+      )}
       {...props}
     />
   )
 )
 GlassCardTitle.displayName = "GlassCardTitle"
 
-const GlassCardDescription = React.forwardRef<HTMLParagraphElement, React.HTMLAttributes<HTMLParagraphElement>>(
-  ({ className, ...props }, ref) => (
+const GlassCardDescription = React.forwardRef<HTMLParagraphElement, React.HTMLAttributes<HTMLParagraphElement> & { blueprint?: boolean }>(
+  ({ className, blueprint, ...props }, ref) => (
     <p
       ref={ref}
       data-slot="glass-card-description"
-      className={cn("text-sm text-[var(--muted)]", className)}
+      className={cn(
+        "text-sm text-[var(--muted)]",
+        blueprint && "font-mono text-[9px] text-[var(--muted-foreground)] uppercase",
+        className
+      )}
       {...props}
     />
   )
 )
 GlassCardDescription.displayName = "GlassCardDescription"
 
-const GlassCardContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...props }, ref) => (
+const GlassCardContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement> & { blueprint?: boolean }>(
+  ({ className, blueprint, ...props }, ref) => (
     <div
       ref={ref}
       data-slot="glass-card-content"
-      className={cn("", className)}
+      className={cn(blueprint && "relative z-10 flex-1 p-4", className)}
       {...props}
     />
   )
 )
 GlassCardContent.displayName = "GlassCardContent"
 
-const GlassCardFooter = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...props }, ref) => (
+const GlassCardFooter = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement> & { blueprint?: boolean }>(
+  ({ className, blueprint, ...props }, ref) => (
     <div
       ref={ref}
       data-slot="glass-card-footer"
-      className={cn("flex items-center gap-3 pt-4", className)}
+      className={cn(
+        "flex items-center gap-3 pt-4",
+        blueprint && "h-1 w-full bg-[var(--border)] opacity-30 pt-0",
+        className
+      )}
       {...props}
     />
   )

@@ -79,8 +79,8 @@ const statusTheme: Record<MCPToolStatus, {
     label: "text-[var(--info)]",
   },
   updating: {
-    bar: "from-[var(--accent)] to-[#A6B0FF]",
-    dot: "bg-[var(--accent)] shadow-[0_0_8px_rgba(109,92,255,0.6)] animate-pulse",
+    bar: "from-[var(--accent-strong)] to-[#A6B0FF]",
+    dot: "bg-[var(--accent-strong)] shadow-[0_0_8px_rgba(109,92,255,0.6)] animate-pulse",
     iconBg: "bg-[var(--accent-soft)] border-[var(--accent-border)]",
     iconText: "text-[var(--accent-ink)]",
     label: "text-[var(--accent-ink)]",
@@ -131,10 +131,10 @@ const StatusDot = ({ status }: { status: MCPToolStatus }) => {
 
 const itemVariants = {
   hidden: { opacity: 0, y: 12 },
-  visible: { 
-    opacity: 1, 
-    y: 0, 
-    transition: { type: "spring", stiffness: 240, damping: 28, mass: 1 } 
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { type: "spring", stiffness: 240, damping: 28, mass: 1 }
   }
 }
 
@@ -181,7 +181,7 @@ export function ServerCard({
       layout
       variants={itemVariants}
       className={cn(
-        "group relative rounded-[18px] p-[6px] transition-all duration-[220ms] ease-[cubic-bezier(0.32,0.72,0,1)]",
+        "group relative rounded-[var(--r-18)] p-[6px] transition-all duration-[220ms] ease-[cubic-bezier(0.32,0.72,0,1)]",
         "bg-[var(--panel-bg-inset)] ring-1 ring-[var(--hairline)] hover:ring-[var(--hairline-strong)]",
         "shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
         (showConflict || showUpdate) && "ring-[var(--warn-border)] bg-[var(--warn-soft)]"
@@ -189,7 +189,7 @@ export function ServerCard({
     >
       <Card className={cn(
         "relative flex flex-col gap-0 overflow-hidden border-0 py-0",
-        "rounded-[12px] bg-[var(--panel-bg)] ring-1 ring-[var(--hairline)]",
+        "rounded-[calc(var(--r-18)-6px)] bg-[var(--panel-bg)] ring-1 ring-[var(--hairline)]",
         "shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
         isCompact ? "h-full" : "min-h-[160px]"
       )}>
@@ -213,7 +213,7 @@ export function ServerCard({
                     <div
                       className={cn(
                         "relative shrink-0 transition-all duration-[320ms]",
-                        "rounded-[10px] border shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]",
+                        "rounded-[var(--r-10)] border shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]",
                         isCompact ? "p-2" : "p-2.5",
                         isActive ? theme.iconBg : isSynced ? "bg-[var(--accent-soft)] border-[var(--accent-border)]" : "bg-[var(--panel-bg-inset)] border-[var(--hairline)]"
                       )}
@@ -223,12 +223,12 @@ export function ServerCard({
                         strokeWidth={1.5}
                         className={cn(
                           "transition-colors duration-300",
-                          isActive ? theme.iconText : isSynced ? "text-[var(--accent)]" : "text-[var(--ink-2)]"
+                          isActive ? theme.iconText : isSynced ? "text-[var(--accent-strong)]" : "text-[var(--ink-2)]"
                         )}
                       />
                     </div>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom" align="start" className="rounded-[8px] bg-[var(--panel-bg)] text-[11px] font-[500] text-[var(--ink)] shadow-xl ring-1 ring-[var(--hairline-strong)]">
+                  <TooltipContent side="bottom" align="start" className="rounded-[var(--r-8)] bg-[var(--panel-bg)] text-[11px] font-medium text-[var(--ink)] shadow-xl ring-1 ring-[var(--hairline-strong)]">
                     <p className="font-mono tabular-nums tracking-wide">
                       {tool.identifier || tool.id}
                     </p>
@@ -240,38 +240,38 @@ export function ServerCard({
               <div className="flex flex-1 min-w-0 flex-col gap-1 mt-0.5">
                 <div className="flex items-center gap-2">
                   <h3 className={cn(
-                    "truncate font-[600] text-[var(--ink)] tracking-[-0.1px]",
+                    "truncate font-semibold text-[var(--ink)] tracking-[-0.1px]",
                     isCompact ? "text-[13px]" : "text-[14px]"
                   )}>
                     {tool.name}
                   </h3>
-                  
+
                   {/* Status Pills */}
                   <AnimatePresence>
                     {showConflict && (
                       <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
-                        <Badge variant="outline" className="h-[20px] rounded-full border-[var(--warn-border)] bg-[var(--warn-soft)] px-2 text-[10px] font-[600] uppercase tracking-[0.04em] text-[var(--warn)] shadow-none" onClick={(e) => { e.stopPropagation(); onResolveConflict?.(); }}>
+                        <Badge variant="outline" className="h-[20px] rounded-full border-[var(--warn-border)] bg-[var(--warn-soft)] px-2 text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--warn)] shadow-none" onClick={(e) => { e.stopPropagation(); onResolveConflict?.(); }}>
                           <AlertCircle size={10} className="mr-1" /> {t("tool.badges.conflict")}
                         </Badge>
                       </motion.div>
                     )}
                     {showUpdate && !showConflict && (
                       <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
-                        <Badge variant="outline" className="h-[20px] rounded-full border-[var(--warn-border)] bg-[var(--warn-soft)] px-2 text-[10px] font-[600] uppercase tracking-[0.04em] text-[var(--warn)] shadow-none" onClick={(e) => { e.stopPropagation(); onResolveConflict?.(); }}>
+                        <Badge variant="outline" className="h-[20px] rounded-full border-[var(--warn-border)] bg-[var(--warn-soft)] px-2 text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--warn)] shadow-none" onClick={(e) => { e.stopPropagation(); onResolveConflict?.(); }}>
                           <AlertCircle size={10} className="mr-1" /> {t("tool.badges.update")}
                         </Badge>
                       </motion.div>
                     )}
                     {showNew && (
                       <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
-                        <Badge variant="outline" className="h-[20px] rounded-full border-[var(--ok-border)] bg-[var(--ok-soft)] px-2 text-[10px] font-[600] uppercase tracking-[0.04em] text-[var(--ok)] shadow-none">
+                        <Badge variant="outline" className="h-[20px] rounded-full border-[var(--ok-border)] bg-[var(--ok-soft)] px-2 text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--ok)] shadow-none">
                           {t("tool.badges.new")}
                         </Badge>
                       </motion.div>
                     )}
                     {!showConflict && !showUpdate && runtimeHintKey && (
                       <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
-                        <Badge variant="outline" className="h-[20px] rounded-full border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-2 text-[10px] font-[600] uppercase tracking-[0.04em] text-[var(--ink-2)] shadow-none">
+                        <Badge variant="outline" className="h-[20px] rounded-full border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-2 text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--ink-2)] shadow-none">
                           {t(runtimeLabelKey)}
                         </Badge>
                       </motion.div>
@@ -279,19 +279,19 @@ export function ServerCard({
                   </AnimatePresence>
                 </div>
 
-                <div className="flex items-center flex-wrap gap-1.5 text-[11px] font-[500] uppercase tracking-[0.02em]">
-                  <div className="flex items-center gap-1.5 rounded-[4px] bg-[var(--panel-bg-inset)] px-1.5 py-[2px] ring-1 ring-[var(--hairline)]">
+                <div className="flex items-center flex-wrap gap-1.5 text-[11px] font-medium uppercase tracking-[0.02em]">
+                  <div className="flex items-center gap-1.5 rounded-[var(--r-4)] bg-[var(--panel-bg-inset)] px-1.5 py-[2px] ring-1 ring-[var(--hairline)]">
                     <StatusDot status={tool.status} />
                     <span className={theme.label}>{t(`tool.status.${tool.status}`)}</span>
                   </div>
-                  
+
                   {tool.ping !== "-" && isRunning && (
                     <span className="font-mono tabular-nums text-[var(--ink-3)] tracking-[0] flex items-center gap-1">
                       <span className="h-[3px] w-[3px] rounded-full bg-[var(--hairline-strong)]" />
                       {tool.ping}
                     </span>
                   )}
-                  
+
                   <span className="flex items-center gap-1 text-[var(--ink-3)]">
                     <span className="h-[3px] w-[3px] rounded-full bg-[var(--hairline-strong)]" />
                     {isSynced ? t("tool.badges.synced") : t("tool.badges.local")}
@@ -306,41 +306,41 @@ export function ServerCard({
                 <button
                   type="button"
                   className={cn(
-                    "flex h-[28px] items-center justify-center rounded-[8px] px-3 text-[12px] font-[500] shadow-[0_1px_0_var(--hairline)_inset] transition-all duration-150 active:translate-y-[1px]",
-                    tool.recommendedAction === "review" 
-                      ? "bg-[var(--panel-bg)] text-[var(--ink)] ring-1 ring-[var(--hairline)] hover:bg-[var(--panel-bg-inset)] hover:ring-[var(--hairline-strong)]" 
-                      : "bg-[var(--accent)] text-white hover:brightness-110"
+                    "flex h-[28px] items-center justify-center rounded-[var(--r-6)] px-3 text-[12px] font-medium shadow-[0_1px_0_var(--hairline)_inset] transition-all duration-150 active:translate-y-[1px]",
+                    tool.recommendedAction === "review"
+                      ? "bg-[var(--panel-bg)] text-[var(--ink)] ring-1 ring-[var(--hairline)] hover:bg-[var(--panel-bg-inset)] hover:ring-[var(--hairline-strong)]"
+                      : "bg-[var(--accent-strong)] text-white hover:brightness-110"
                   )}
                   onClick={(e) => { e.stopPropagation(); onPrimaryAction?.(); }}
                 >
                   {t(primaryActionLabelKey)}
                 </button>
               )}
-              
+
               {showInlineToggle && (
-                <div className="flex h-[28px] items-center rounded-[8px] bg-[var(--panel-bg-inset)] px-2 ring-1 ring-[var(--hairline)] transition-all focus-within:ring-[var(--hairline-strong)]">
+                <div className="flex h-[28px] items-center rounded-[var(--r-6)] bg-[var(--panel-bg-inset)] px-2 ring-1 ring-[var(--hairline)] transition-all focus-within:ring-[var(--hairline-strong)]">
                   <Switch
                     checked={toggleChecked}
                     onCheckedChange={(checked) => onToggle?.(tool, checked)}
                     disabled={toggleDisabled}
-                    className="scale-[0.8] data-[state=checked]:bg-[var(--accent)]"
+                    className="scale-[0.8] data-[state=checked]:bg-[var(--accent-strong)]"
                   />
                 </div>
               )}
-              
+
               {isSynced && onSync && (
                 <TooltipProvider delayDuration={200}>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
                         type="button"
-                        className="flex h-[28px] w-[28px] items-center justify-center rounded-[8px] bg-transparent text-[var(--ink-3)] transition-colors hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)]"
+                        className="flex h-[28px] w-[28px] items-center justify-center rounded-[var(--r-6)] bg-transparent text-[var(--ink-3)] transition-colors hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)]"
                         onClick={(e) => { e.stopPropagation(); onSync?.(); }}
                       >
-                        <RefreshCw size={14} className={syncLoading ? "animate-spin text-[var(--accent)]" : ""} />
+                        <RefreshCw size={14} className={syncLoading ? "animate-spin text-[var(--accent-strong)]" : ""} />
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent className="rounded-[8px] bg-[var(--panel-bg)] text-[11px] font-[500] text-[var(--ink)] ring-1 ring-[var(--hairline-strong)]">
+                    <TooltipContent className="rounded-[var(--r-8)] bg-[var(--panel-bg)] text-[11px] font-medium text-[var(--ink)] ring-1 ring-[var(--hairline-strong)]">
                       Sync
                     </TooltipContent>
                   </Tooltip>
@@ -352,16 +352,16 @@ export function ServerCard({
                   <GlassDropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="flex h-[28px] w-[28px] items-center justify-center rounded-[8px] bg-transparent text-[var(--ink-3)] transition-colors hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-[var(--window-bg)]"
+                      className="flex h-[28px] w-[28px] items-center justify-center rounded-[var(--r-6)] bg-transparent text-[var(--ink-3)] transition-colors hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-strong)] focus-visible:ring-offset-[var(--window-bg)]"
                     >
                       <MoreHorizontal size={14} />
                     </button>
                   </GlassDropdownMenuTrigger>
-                  <GlassDropdownMenuContent align="end" className="w-[180px] rounded-[12px] bg-[var(--panel-bg)] p-1 text-[12px] shadow-[0_20px_48px_-24px_rgba(0,0,0,0.22)] ring-1 ring-[var(--hairline-strong)]">
+                  <GlassDropdownMenuContent align="end" className="w-[180px] rounded-[var(--r-12)] bg-[var(--panel-bg)] p-1 text-[12px] shadow-[0_20px_48px_-24px_rgba(0,0,0,0.22)] ring-1 ring-[var(--hairline-strong)]">
                     {showDesktopToggleAction && (
                       <GlassDropdownMenuItem
                         disabled={toggleDisabled}
-                        className="rounded-[6px] px-2.5 py-1.5 focus:bg-[var(--accent-soft)] focus:text-[var(--accent-ink)] cursor-pointer"
+                        className="rounded-[var(--r-6)] px-2.5 py-1.5 focus:bg-[var(--accent-soft)] focus:text-[var(--accent-ink)] cursor-pointer"
                         onSelect={(e) => { e.preventDefault(); e.stopPropagation(); onToggle?.(tool, !toggleChecked); }}
                       >
                         {t(toggleActionLabelKey)}
@@ -369,7 +369,7 @@ export function ServerCard({
                     )}
                     {onEdit && (
                       <GlassDropdownMenuItem
-                        className="flex items-center gap-2 rounded-[6px] px-2.5 py-1.5 focus:bg-[var(--panel-bg-inset)] cursor-pointer"
+                        className="flex items-center gap-2 rounded-[var(--r-6)] px-2.5 py-1.5 focus:bg-[var(--panel-bg-inset)] cursor-pointer"
                         onClick={(e) => { e.stopPropagation(); onEdit?.(); }}
                       >
                         <Pencil size={13} className="text-[var(--ink-3)]" />
@@ -380,17 +380,17 @@ export function ServerCard({
                       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
                         <AlertDialogTrigger asChild>
                           <GlassDropdownMenuItem
-                            className="flex items-center gap-2 rounded-[6px] px-2.5 py-1.5 text-[var(--danger)] focus:bg-[var(--danger-soft)] focus:text-[var(--danger)] cursor-pointer"
+                            className="flex items-center gap-2 rounded-[var(--r-6)] px-2.5 py-1.5 text-[var(--danger)] focus:bg-[var(--danger-soft)] focus:text-[var(--danger)] cursor-pointer"
                             onSelect={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmOpen(true); }}
                           >
                             <Trash2 size={13} />
                             {t(deleteActionLabelKey)}
                           </GlassDropdownMenuItem>
                         </AlertDialogTrigger>
-                        <AlertDialogContent className="rounded-[18px] bg-[var(--panel-bg)] p-[6px] ring-1 ring-[var(--hairline)] sm:max-w-[420px]">
-                          <div className="rounded-[12px] bg-[var(--panel-bg)] ring-1 ring-[var(--hairline)] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                        <AlertDialogContent className="rounded-[var(--r-18)] bg-[var(--panel-bg)] p-[6px] ring-1 ring-[var(--hairline)] sm:max-w-[420px]">
+                          <div className="rounded-[calc(var(--r-18)-6px)] bg-[var(--panel-bg)] ring-1 ring-[var(--hairline)] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
                             <AlertDialogHeader>
-                              <AlertDialogTitle className="text-[17px] font-[600] tracking-[-0.2px] text-[var(--ink)]">
+                              <AlertDialogTitle className="text-[17px] font-semibold tracking-[-0.2px] text-[var(--ink)]">
                                 {t(`${deleteDialogKeyPrefix}.title`)}
                               </AlertDialogTitle>
                               <AlertDialogDescription className="text-[13px] leading-[1.5] text-[var(--ink-2)]">
@@ -398,11 +398,11 @@ export function ServerCard({
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter className="mt-6 gap-2 sm:space-x-0">
-                              <AlertDialogCancel className="h-[32px] rounded-[8px] bg-[var(--panel-bg)] px-3.5 text-[12px] font-[500] text-[var(--ink)] ring-1 ring-[var(--hairline)] hover:bg-[var(--panel-bg-inset)]">
+                              <AlertDialogCancel className="h-[32px] rounded-[var(--r-6)] bg-[var(--panel-bg)] px-3.5 text-[12px] font-medium text-[var(--ink)] ring-1 ring-[var(--hairline)] hover:bg-[var(--panel-bg-inset)]">
                                 {t(`${deleteDialogKeyPrefix}.cancel`)}
                               </AlertDialogCancel>
                               <AlertDialogAction
-                                className="h-[32px] rounded-[8px] bg-[var(--danger)] px-3.5 text-[12px] font-[500] text-white shadow-[0_1px_0_rgba(255,255,255,0.2)_inset] hover:brightness-110 border border-[var(--danger-border)]"
+                                className="h-[32px] rounded-[var(--r-6)] bg-[var(--danger)] px-3.5 text-[12px] font-medium text-white shadow-[0_1px_0_rgba(255,255,255,0.2)_inset] hover:brightness-110 border border-[var(--danger-border)]"
                                 onClick={() => { onDelete?.(); setConfirmOpen(false); }}
                               >
                                 {t(`${deleteDialogKeyPrefix}.confirm`)}
@@ -421,28 +421,28 @@ export function ServerCard({
           {/* Description */}
           <div className="flex-1 mt-1">
             <p className={cn(
-              "text-[var(--ink-2)] font-[400] leading-[1.5] tracking-[0]",
+              "text-[var(--ink-2)] font-normal leading-[1.5] tracking-[0]",
               isCompact ? "line-clamp-1 text-[12px]" : "line-clamp-2 text-[13px]"
             )}>
               {tool.description}
             </p>
-            
+
             {/* Contextual Errors / Messages */}
             <AnimatePresence>
               {(tool.status === "crashed" || tool.status === "error") && tool.error && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-                  <div className="mt-2 rounded-[6px] bg-[var(--danger-soft)] px-2.5 py-1.5 border border-[var(--danger-border)]">
+                  <div className="mt-2 rounded-[var(--r-6)] bg-[var(--danger-soft)] px-2.5 py-1.5 border border-[var(--danger-border)]">
                     <span className="text-[11px] font-mono text-[var(--danger)] line-clamp-2">
-                      <strong className="font-[600]">{t("tool.labels.error")}:</strong> {tool.error}
+                      <strong className="font-semibold">{t("tool.labels.error")}:</strong> {tool.error}
                     </span>
                   </div>
                 </motion.div>
               )}
               {tool.indexStatus === "missing" && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-                  <div className="mt-2 rounded-[6px] bg-[var(--accent-soft)] px-2.5 py-1.5 border border-[var(--accent-border)]">
+                  <div className="mt-2 rounded-[var(--r-6)] bg-[var(--accent-soft)] px-2.5 py-1.5 border border-[var(--accent-border)]">
                     <span className="text-[11px] text-[var(--accent-ink)]">
-                      <strong className="font-[600]">{t("tool.labels.index")}:</strong> {t(indexLabelKey)}
+                      <strong className="font-semibold">{t("tool.labels.index")}:</strong> {t(indexLabelKey)}
                     </span>
                   </div>
                 </motion.div>
@@ -456,7 +456,7 @@ export function ServerCard({
               {tool.capabilities.map((cap) => (
                 <span
                   key={cap}
-                  className="rounded-[4px] border border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-1.5 py-[2px] font-mono text-[10px] tracking-[0.2px] text-[var(--ink-3)] uppercase"
+                  className="rounded-[var(--r-4)] border border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-1.5 py-[2px] font-mono text-[10px] tracking-[0.2px] text-[var(--ink-3)] uppercase"
                 >
                   {cap}
                 </span>

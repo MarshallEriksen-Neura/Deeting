@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useMemo } from "react"
 import { useTranslations } from "next-intl"
@@ -76,69 +76,66 @@ export function LatencyHeatmap({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="overflow-x-auto rounded-lg border border-[var(--border)] bg-[var(--background)] p-4">
-        <div className="min-w-[720px]">
-          <ChartContainer config={chartConfig} className="h-[360px] w-full">
-            <ScatterChart margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="var(--border)"
-                opacity={0.3}
-                vertical={false}
-              />
-              <XAxis
-                type="number"
-                dataKey="hour"
-                domain={[0, 24]}
-                ticks={TIME_TICKS}
-                tickFormatter={formatHourLabel}
-                tickLine={false}
-                axisLine={false}
-                tickMargin={8}
-                allowDecimals={false}
-                tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
-              />
-              <YAxis
-                type="number"
-                dataKey="latency"
-                domain={[0, LATENCY_MAX_MS]}
-                ticks={LATENCY_TICKS}
-                tickFormatter={(value) => formatMs(value)}
-                tickLine={false}
-                axisLine={false}
-                tickMargin={8}
-                allowDecimals={false}
-                tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
-              />
-              <ChartTooltip
-                cursor={false}
-                content={
-                  <HeatmapTooltip
-                    formatMs={formatMs}
-                    formatRequests={formatRequests}
-                  />
-                }
-              />
-              <Scatter
-                data={heatmapPoints}
-                shape={<HeatmapCellShape />}
-                isAnimationActive={false}
-              />
-            </ScatterChart>
-          </ChartContainer>
-        </div>
+    <div className="space-y-6">
+      <div className="min-w-[720px]">
+        <ChartContainer config={chartConfig} className="h-[320px] w-full">
+          <ScatterChart margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+            <CartesianGrid
+              strokeDasharray="2 4"
+              stroke="var(--border)"
+              vertical={true}
+            />
+            <XAxis
+              type="number"
+              dataKey="hour"
+              domain={[0, 24]}
+              ticks={TIME_TICKS}
+              tickFormatter={formatHourLabel}
+              tickLine={false}
+              axisLine={false}
+              tickMargin={12}
+              allowDecimals={false}
+              tick={{ fill: "var(--muted-foreground)", fontSize: 10, fontFamily: "var(--font-mono)" }}
+            />
+            <YAxis
+              type="number"
+              dataKey="latency"
+              domain={[0, LATENCY_MAX_MS]}
+              ticks={LATENCY_TICKS}
+              tickFormatter={(value) => formatMs(value)}
+              tickLine={false}
+              axisLine={false}
+              tickMargin={12}
+              allowDecimals={false}
+              tick={{ fill: "var(--muted-foreground)", fontSize: 10, fontFamily: "var(--font-mono)" }}
+            />
+            <ChartTooltip
+              cursor={{ stroke: 'var(--primary)', strokeWidth: 1, strokeDasharray: '4 4' }}
+              content={
+                <HeatmapTooltip
+                  formatMs={formatMs}
+                  formatRequests={formatRequests}
+                />
+              }
+            />
+            <Scatter
+              data={heatmapPoints}
+              shape={<HeatmapCellShape />}
+              isAnimationActive={false}
+            />
+          </ScatterChart>
+        </ChartContainer>
       </div>
 
-      {/* Legend */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2 text-sm text-[var(--muted)]">
-          <span>{t("legend.label")}:</span>
+      {/* Legend & Stats */}
+      <div className="flex items-end justify-between border-t border-[var(--border)] pt-4">
+        <div className="flex flex-col gap-2">
+          <span className="font-mono text-[9px] uppercase tracking-wider text-[var(--ink-4)]">{t("legend.label")}</span>
           <div className="flex items-center gap-1">
-            {[0.2, 0.4, 0.6, 0.8, 1.0].map((intensity) => (
+            {[0.1, 0.3, 0.5, 0.7, 0.9].map((intensity) => (
               <div
                 key={intensity}
-                className="h-4 w-8 rounded"
+                className="h-2 w-8"
                 style={{
                   backgroundColor: "var(--primary)",
                   opacity: intensity,
@@ -146,20 +143,18 @@ export function LatencyHeatmap({
               />
             ))}
           </div>
-          <span className="ml-2">{t("legend.more")}</span>
         </div>
 
-        {/* Stats */}
-        <div className="flex flex-wrap gap-4 text-sm">
-          <div>
-            <span className="text-[var(--muted)]">{t("stats.peak")}: </span>
-            <span className="font-semibold text-[var(--foreground)]">
+        <div className="flex gap-8 font-mono">
+          <div className="flex flex-col items-end">
+            <span className="text-[9px] uppercase text-[var(--ink-4)]">{t("stats.peak")}</span>
+            <span className="text-sm font-bold text-[var(--foreground)]">
               {formatMs(data?.peakLatency ?? 0)}
             </span>
           </div>
-          <div>
-            <span className="text-[var(--muted)]">{t("stats.median")}: </span>
-            <span className="font-semibold text-[var(--foreground)]">
+          <div className="flex flex-col items-end">
+            <span className="text-[9px] uppercase text-[var(--ink-4)]">{t("stats.median")}</span>
+            <span className="text-sm font-bold text-[var(--foreground)]">
               {formatMs(data?.medianLatency ?? 0)}
             </span>
           </div>

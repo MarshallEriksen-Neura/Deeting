@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useTranslations } from "next-intl"
 import { Line, LineChart, CartesianGrid, XAxis, YAxis } from "recharts"

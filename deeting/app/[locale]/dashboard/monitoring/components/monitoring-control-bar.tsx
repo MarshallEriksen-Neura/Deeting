@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useTranslations } from "next-intl"
 import { Clock, Bot, Key, Tag, RefreshCw, ChevronDown } from "lucide-react"
