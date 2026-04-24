@@ -343,7 +343,7 @@ export function WorkstationSidebar() {
       data-state={state}
       data-collapsible={isCollapsed ? "icon" : "expanded"}
       className={cn(
-        "group/sidebar group relative flex h-full min-h-0 flex-col",
+        "group/sidebar group relative flex h-full min-h-0 flex-col select-none",
         "bg-[linear-gradient(177deg,color-mix(in_srgb,var(--sidebar-bg)_96%,white_4%)_0%,color-mix(in_srgb,var(--sidebar-bg)_90%,transparent)_78%,color-mix(in_srgb,var(--sidebar-bg)_82%,var(--window-bg)_18%)_100%)]",
         "shadow-[2px_0_10px_-8px_color-mix(in_srgb,var(--ink)_22%,transparent)]",
         "after:pointer-events-none after:absolute after:inset-y-0 after:-right-2 after:w-2 after:content-[''] after:bg-[linear-gradient(90deg,color-mix(in_srgb,var(--ink)_4%,transparent),transparent)]",

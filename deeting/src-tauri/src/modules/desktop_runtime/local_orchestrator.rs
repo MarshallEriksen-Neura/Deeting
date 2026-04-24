@@ -815,6 +815,23 @@ pub async fn execute_local_orchestrated_chat(
                 );
             }
         }
+
+        let fact_state = app_state.clone();
+        let fact_session_id = session_id.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(err) = crate::modules::conversations::fact_sync::refresh_session_auto_extracted_facts_after_chat_turn(
+                fact_state,
+                &fact_session_id,
+            )
+            .await
+            {
+                log::warn!(
+                    "chat turn fact extraction refresh failed session={} err={}",
+                    fact_session_id,
+                    err
+                );
+            }
+        });
     }
 
     let delegated_execution_learning = delegated_execution.as_ref().map(|execution| {

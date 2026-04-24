@@ -20,6 +20,7 @@ const FACT_EXTRACTION_LAST_RUN_AT_KEY_PREFIX: &str = "fact_extraction.last_run_a
 const FACT_EXTRACTION_LAST_VERSION_KEY_PREFIX: &str = "fact_extraction.last_version";
 const FACT_EXTRACTION_ENGINE_VERSION: &str = "2026-04-16-heuristic-v1";
 const FACT_EXTRACTION_COMPARE_FINALIZE_COOLDOWN_SECONDS: i64 = 120;
+const FACT_EXTRACTION_CHAT_TURN_MIN_INTERVAL_SECONDS: i64 = 120;
 const FACT_EXTRACTION_STALE_DELETE_AFTER_ROUNDS: i64 = 2;
 
 pub(crate) fn build_fact_extraction_last_hash_key(session_id: &str) -> String {
@@ -73,6 +74,13 @@ pub(crate) async fn refresh_session_auto_extracted_facts(
     refresh_session_auto_extracted_facts_with_source(app_state, session_id, "new_chat").await
 }
 
+pub(crate) async fn refresh_session_auto_extracted_facts_after_chat_turn(
+    app_state: AppState,
+    session_id: &str,
+) -> Result<FactExtractionOutcome, String> {
+    refresh_session_auto_extracted_facts_with_source(app_state, session_id, "chat_turn").await
+}
+
 async fn refresh_session_auto_extracted_facts_with_source(
     app_state: AppState,
     session_id: &str,
@@ -84,29 +92,31 @@ async fn refresh_session_auto_extracted_facts_with_source(
     }
     let normalized_trigger_source = trigger_source.trim().to_string();
     let last_run_at_key = build_fact_extraction_last_run_at_key(&normalized_session_id);
-    if normalized_trigger_source == "compare_finalize" {
-        let existing_last_run_at = app_state
-            .mcp
-            .store
-            .get_desktop_config(&last_run_at_key)
-            .await
-            .map_err(|err| err.to_string())?;
-        let now_epoch = now_unix_epoch().map_err(|err| err.to_string())?;
-        if let Some(last_run_at) = existing_last_run_at
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .and_then(|value| value.parse::<i64>().ok())
-        {
-            if now_epoch.saturating_sub(last_run_at)
-                < FACT_EXTRACTION_COMPARE_FINALIZE_COOLDOWN_SECONDS
-            {
-                log::info!(
-                    "fact extraction refresh skipped compare_finalize cooldown session={}",
-                    normalized_session_id
-                );
-                return Ok(FactExtractionOutcome::Skipped);
-            }
+    let existing_last_run_at = app_state
+        .mcp
+        .store
+        .get_desktop_config(&last_run_at_key)
+        .await
+        .map_err(|err| err.to_string())?;
+    let now_epoch = now_unix_epoch().map_err(|err| err.to_string())?;
+    if let Some(last_run_at) = existing_last_run_at
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| value.parse::<i64>().ok())
+    {
+        let min_interval = if normalized_trigger_source == "compare_finalize" {
+            FACT_EXTRACTION_COMPARE_FINALIZE_COOLDOWN_SECONDS
+        } else {
+            FACT_EXTRACTION_CHAT_TURN_MIN_INTERVAL_SECONDS
+        };
+        if now_epoch.saturating_sub(last_run_at) < min_interval {
+            log::info!(
+                "fact extraction refresh skipped {} cooldown session={}",
+                normalized_trigger_source,
+                normalized_session_id
+            );
+            return Ok(FactExtractionOutcome::Skipped);
         }
     }
 
@@ -493,11 +503,31 @@ fn history_message_text(content: Option<&Value>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_fact_rebuild_conversation_text, clear_session_auto_extraction_memories};
+    use super::{
+        build_fact_extraction_last_run_at_key, build_fact_rebuild_conversation_text,
+        clear_session_auto_extraction_memories, refresh_session_auto_extracted_facts_after_chat_turn,
+        FactExtractionOutcome,
+    };
+    use crate::modules::browser_agent::BrowserAgentState;
+    use crate::modules::code_mode::CodemodeToolState;
+    use crate::modules::im::wechat::WechatState;
+    use crate::modules::knowledge::KnowledgeState;
+    use crate::modules::mcp::McpRuntimeState;
     use crate::modules::memory::types::{CreateLocalMemoryRequest, LocalMemoryListQuery};
+    use crate::modules::monitor::MonitorState;
+    use crate::modules::providers::ProviderState;
+    use crate::modules::sandbox::SandboxState;
+    use crate::state::AppState;
+    use axum::{extract::State as AxumState, routing::post, Json, Router};
     use mcp_session::context::LocalConversationRuntimeWindow;
-    use mcp_session::conversation::LocalConversationHistoryMessage;
+    use mcp_session::conversation::{
+        CreateConversationMessageRequest, LocalConversationCreateRequest,
+        LocalConversationHistoryMessage,
+    };
     use serde_json::json;
+    use std::collections::HashMap;
+    use std::time::Duration;
+    use tokio::net::TcpListener;
     use uuid::Uuid;
 
     async fn create_test_memory_state(test_name: &str) -> crate::modules::memory::MemoryState {
@@ -511,6 +541,233 @@ mod tests {
         crate::modules::memory::MemoryState::new(&lancedb_uri)
             .await
             .expect("create test memory state")
+    }
+
+
+    async fn insert_embedding_instance(
+        store: &crate::modules::providers::store::ProviderStore,
+        base_url: &str,
+    ) -> String {
+        let instance_id = Uuid::new_v4().to_string();
+        let credential_id = Uuid::new_v4().to_string();
+        let now = crate::modules::providers::store::utils::now_rfc3339().expect("time");
+        let meta = serde_json::json!({
+            "protocol": "openai",
+            "auto_append_v1": true,
+        })
+        .to_string();
+        sqlx::query(
+            "INSERT INTO provider_instances (
+                id, preset_slug, name, base_url, description, icon, priority, meta,
+                is_enabled, is_local, credentials_ref, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&instance_id)
+        .bind("openai")
+        .bind("Mock Embedding Provider")
+        .bind(base_url)
+        .bind::<Option<&str>>(None)
+        .bind::<Option<&str>>(None)
+        .bind(0_i64)
+        .bind(&meta)
+        .bind(1_i64)
+        .bind(1_i64)
+        .bind(format!("db:{credential_id}"))
+        .bind(&now)
+        .bind(&now)
+        .execute(&store.pool)
+        .await
+        .expect("insert embedding instance");
+
+        sqlx::query(
+            "INSERT INTO provider_credentials (id, instance_id, alias, secret_key, created_at)
+             VALUES (?, ?, 'default', 'test-secret', ?)",
+        )
+        .bind(&credential_id)
+        .bind(&instance_id)
+        .bind(&now)
+        .execute(&store.pool)
+        .await
+        .expect("insert embedding credential");
+
+        instance_id
+    }
+
+    async fn create_test_provider_state(
+        test_name: &str,
+        base_url: &str,
+    ) -> ProviderState {
+        let mut db_path = std::env::temp_dir();
+        db_path.push(format!(
+            "deeting-tauri-fact-sync-provider-{test_name}-{}.db",
+            Uuid::new_v4()
+        ));
+        let database_url = format!("sqlite:{}", db_path.to_string_lossy().replace('\\', "/"));
+        let state = ProviderState::new(&database_url)
+            .await
+            .expect("create test provider state");
+        let instance_id = insert_embedding_instance(state.store.as_ref(), base_url).await;
+        state
+            .store
+            .quick_add_models(
+                &instance_id,
+                vec!["text-embedding-3-small".to_string()],
+                None,
+            )
+            .await
+            .expect("quick add embedding model");
+        let models = state
+            .store
+            .list_models(Some(instance_id), None)
+            .await
+            .expect("list provider models");
+        let embedding_model = models
+            .into_iter()
+            .find(|model| model.model_id == "text-embedding-3-small")
+            .expect("embedding model");
+        let _ = state
+            .store
+            .get_or_create_user_embedding_config()
+            .await
+            .expect("init embedding config");
+        state
+            .store
+            .update_user_embedding_config(
+                crate::modules::providers::types::UserEmbeddingConfigUpdateRequest {
+                    provider_model_id: Some(Some(embedding_model.id.to_string())),
+                    multimodal_provider_model_id: None,
+                },
+            )
+            .await
+            .expect("set embedding model");
+        state
+    }
+
+    #[derive(Clone)]
+    struct MockEmbeddingServerState {
+        vectors: HashMap<String, Vec<f32>>,
+    }
+
+    async fn mock_embedding_handler(
+        AxumState(state): AxumState<MockEmbeddingServerState>,
+        Json(payload): Json<serde_json::Value>,
+    ) -> Json<serde_json::Value> {
+        let input = payload
+            .get("input")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_lowercase();
+        let embedding = state
+            .vectors
+            .get(&input)
+            .cloned()
+            .unwrap_or_else(|| vec![0.0, 0.0, 0.0]);
+        Json(serde_json::json!({
+            "data": [
+                {
+                    "embedding": embedding,
+                }
+            ]
+        }))
+    }
+
+    async fn start_mock_embedding_server(
+        vectors: HashMap<String, Vec<f32>>,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind mock embedding listener");
+        let addr = listener
+            .local_addr()
+            .expect("read mock embedding listener addr");
+        let app = Router::new()
+            .route("/embeddings", post(mock_embedding_handler))
+            .route("/v1/embeddings", post(mock_embedding_handler))
+            .with_state(MockEmbeddingServerState { vectors });
+        let server = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        (format!("http://{}", addr), server)
+    }
+
+    async fn create_test_app_state(test_name: &str) -> (AppState, tokio::task::JoinHandle<()>) {
+        let vectors = HashMap::from([
+            ("user: i live in shanghai.".to_string(), vec![1.0, 0.0, 0.0]),
+            (
+                "user: i live in shanghai.\nuser: please remember that for next time.".to_string(),
+                vec![0.9, 0.1, 0.0],
+            ),
+        ]);
+        let (base_url, server) = start_mock_embedding_server(vectors).await;
+
+        let mut db_path = std::env::temp_dir();
+        db_path.push(format!(
+            "deeting-tauri-fact-sync-{test_name}-{}.db",
+            Uuid::new_v4()
+        ));
+        let database_url = format!("sqlite:{}", db_path.to_string_lossy().replace('\\', "/"));
+        let store = crate::modules::mcp::store::McpStore::new(&database_url)
+            .await
+            .expect("create test mcp store");
+        store.init().await.expect("init test mcp store");
+        let _ = store
+            .ensure_local_source()
+            .await
+            .expect("ensure local source");
+        crate::modules::code_mode::core_tool_contracts::sync_core_tool_registry_entries(&store)
+            .await
+            .expect("sync core tool registry");
+        store
+            .sync_all_mcp_tool_registry_entries()
+            .await
+            .expect("sync mcp tool registry");
+        store
+            .sync_all_assistant_registry_entries()
+            .await
+            .expect("sync assistant registry");
+
+        let pool = store.pool.clone();
+        let provider_state = create_test_provider_state(test_name, &base_url).await;
+        let memory_state = create_test_memory_state(test_name).await;
+        memory_state
+            .service
+            .recreate_local_asset_table(3)
+            .await
+            .expect("recreate local asset table");
+        let knowledge_state = KnowledgeState::with_pool(pool.clone())
+            .await
+            .expect("create knowledge state");
+        let code_mode = CodemodeToolState::with_pool(pool.clone())
+            .await
+            .expect("create code mode state");
+        let wechat = WechatState::with_pool(pool.clone(), &database_url)
+            .await
+            .expect("create wechat state");
+        let monitor = MonitorState::with_pool(pool.clone(), provider_state.store.clone(), None)
+            .await
+            .expect("create monitor state");
+
+        let app_state = AppState::new(
+            McpRuntimeState::new(
+                std::sync::Arc::new(store),
+                crate::modules::mcp::process::ProcessManager::new(),
+                "http://127.0.0.1".to_string(),
+            ),
+            BrowserAgentState::new(),
+            knowledge_state,
+            provider_state,
+            memory_state,
+            SandboxState::new(
+                std::env::temp_dir().join(format!("deeting-fact-sync-sandbox-{}", Uuid::new_v4())),
+            ),
+            code_mode,
+            monitor,
+            wechat,
+        );
+
+        (app_state, server)
     }
 
     #[tokio::test]
@@ -573,6 +830,70 @@ mod tests {
             .items
             .iter()
             .all(|item| item.source.as_deref() == Some("manual")));
+    }
+
+    #[tokio::test]
+    async fn refresh_after_chat_turn_marks_last_run_for_desktop_chat_path() {
+        let (app_state, server) = create_test_app_state("chat-turn-trigger").await;
+        let session = app_state
+            .mcp
+            .store
+            .create_local_conversation(LocalConversationCreateRequest {
+                assistant_id: None,
+                title: Some("Fact Trigger".to_string()),
+            })
+            .await
+            .expect("create local conversation");
+
+        app_state
+            .mcp
+            .store
+            .append_local_conversation_message(CreateConversationMessageRequest {
+                session_id: session.session_id.clone(),
+                role: "user".to_string(),
+                content: "I live in Shanghai.".to_string(),
+                name: None,
+                meta_info: None,
+                is_truncated: Some(false),
+                parent_message_id: None,
+            })
+            .await
+            .expect("append user message");
+        app_state
+            .mcp
+            .store
+            .append_local_conversation_message(CreateConversationMessageRequest {
+                session_id: session.session_id.clone(),
+                role: "assistant".to_string(),
+                content: "I will remember that.".to_string(),
+                name: None,
+                meta_info: None,
+                is_truncated: Some(false),
+                parent_message_id: None,
+            })
+            .await
+            .expect("append assistant message");
+
+        let outcome = refresh_session_auto_extracted_facts_after_chat_turn(
+            app_state.clone(),
+            &session.session_id,
+        )
+        .await
+        .expect("refresh facts after chat turn");
+
+        assert!(!matches!(outcome, FactExtractionOutcome::Skipped));
+
+        let last_run_at = app_state
+            .mcp
+            .store
+            .get_desktop_config(&build_fact_extraction_last_run_at_key(&session.session_id))
+            .await
+            .expect("read last run marker");
+        assert!(last_run_at
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty()));
+
+        server.abort();
     }
 
     #[test]

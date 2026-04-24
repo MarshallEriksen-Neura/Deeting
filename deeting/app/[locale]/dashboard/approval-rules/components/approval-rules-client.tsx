@@ -188,7 +188,7 @@ function LearningTable({
   getOperationLabel: (v: string) => string
   getTargetLabel: (v: string) => string
   getBoundaryLabel: (v: string) => string
-  t: (key: string, values?: Record<string, unknown>) => string
+  t: (key: string, values?: Record<string, string | number | Date>) => string
   maxRows?: number
 }) {
   const displayRows = maxRows ? rows.slice(0, maxRows) : rows
@@ -384,6 +384,22 @@ export function ApprovalRulesClient() {
     { key: "logs" as const, label: t("tabs.logs") },
   ]
 
+  const filterButtonClass = (item: RuleFilter) => {
+    if (filter !== item) {
+      return "border-transparent bg-transparent text-[var(--ink-2)] hover:border-[var(--hairline)] hover:bg-white/70 hover:text-[var(--ink)]"
+    }
+
+    if (item === "allow") {
+      return "border-emerald-200 bg-emerald-50 text-emerald-600 shadow-[0_6px_20px_rgba(16,185,129,0.12)]"
+    }
+
+    if (item === "deny") {
+      return "border-rose-200 bg-rose-50 text-rose-600 shadow-[0_6px_20px_rgba(244,63,94,0.12)]"
+    }
+
+    return "border-[rgba(84,104,255,0.28)] bg-[rgba(84,104,255,0.08)] text-[var(--accent-strong)] shadow-[0_6px_20px_rgba(84,104,255,0.12)]"
+  }
+
   return (
     <Container as="main" gutter="md" size="full" className="py-6 md:py-8 !mx-0 !max-w-none">
       <div className="space-y-6">
@@ -448,13 +464,13 @@ export function ApprovalRulesClient() {
         </GlassCard>
 
         {/* Tabs */}
-        <div className="flex items-center gap-1 border-b border-[var(--hairline)]">
+        <div className="flex items-center gap-2 border-b border-[var(--hairline)] px-1">
           {tabs.map((tab) => (
-            <button
+            <GlassButton
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
               className={cn(
-                "relative px-4 py-2.5 text-sm font-medium transition-colors",
+                "relative px-3 py-2 text-sm font-semibold tracking-[-0.01em] transition-colors",
                 activeTab === tab.key
                   ? "text-[var(--accent-strong)]"
                   : "text-[var(--ink-3)] hover:text-[var(--ink-2)]"
@@ -462,9 +478,9 @@ export function ApprovalRulesClient() {
             >
               {tab.label}
               {activeTab === tab.key && (
-                <span className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-[var(--accent-strong)]" />
+                <span className="absolute bottom-0 left-1 right-1 h-0.5 rounded-full bg-[var(--accent-strong)]" />
               )}
-            </button>
+            </GlassButton>
           ))}
         </div>
 
@@ -473,35 +489,32 @@ export function ApprovalRulesClient() {
           <div className="space-y-6">
             <GlassCard theme="surface" hover="none">
               {/* Filter bar */}
-              <GlassCardHeader className="gap-4">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between w-full">
-                  <div className="flex flex-wrap gap-2">
+              <GlassCardHeader className="gap-3 pb-4">
+                <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="inline-flex w-full flex-wrap items-center gap-2 rounded-[18px] border border-[var(--hairline)] bg-white/75 p-2 shadow-[0_8px_30px_rgba(15,23,42,0.04)] lg:w-auto lg:flex-nowrap">
                     {(["all", "allow", "deny"] as const).map((item) => (
                       <GlassButton
                         key={item}
                         type="button"
-                        size="sm"
-                        variant={filter === item ? "outline" : "ghost"}
                         onClick={() => setFilter(item)}
                         className={cn(
-                          "min-w-[88px]",
-                          filter === item
-                            ? "border-[var(--accent-border)] text-[var(--accent-strong)] bg-[var(--accent-soft)]"
-                            : "text-[var(--ink-2)]"
+                          "inline-flex h-10 min-w-[92px] items-center justify-center rounded-xl border px-4 text-sm font-semibold transition-all",
+                          filterButtonClass(item)
                         )}
                       >
                         {t(`filters.${item}`)}
                       </GlassButton>
                     ))}
                   </div>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--ink-3)]" />
+                  <div className="relative w-full lg:max-w-[360px]">
+                    <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[var(--ink-3)]" />
                     <Input
                       value={query}
                       onChange={(event) => setQuery(event.target.value)}
                       placeholder={t("filters.searchPlaceholder")}
-                      className="w-full min-w-[260px] pl-9 border-[var(--hairline)] bg-[var(--panel-bg)]/65 text-[var(--ink)] placeholder:text-[var(--ink-3)] lg:max-w-sm"
+                      className="h-10 w-full rounded-xl border-[var(--hairline)] bg-white pl-10 pr-10 text-sm text-[var(--ink)] shadow-[0_8px_24px_rgba(15,23,42,0.04)] placeholder:text-[var(--ink-3)]"
                     />
+                    <Search className="pointer-events-none absolute right-3.5 top-1/2 size-4 -translate-y-1/2 text-[var(--ink-3)]" />
                   </div>
                 </div>
               </GlassCardHeader>
@@ -649,13 +662,13 @@ export function ApprovalRulesClient() {
                     <BrainCircuit className="size-4 text-[var(--info)]" />
                     <GlassCardTitle className="text-base">{t("sections.learning")}</GlassCardTitle>
                   </div>
-                  <button
+                  <GlassButton
                     onClick={() => setActiveTab("learning")}
                     className="inline-flex items-center gap-0.5 text-xs text-[var(--accent-strong)] hover:underline"
                   >
                     {t("learning.viewAll")}
                     <ChevronRight className="size-3" />
-                  </button>
+                  </GlassButton>
                 </GlassCardHeader>
                 <GlassCardDescription className="px-6 pb-2 text-[var(--ink-2)]">
                   {t("learning.description")}

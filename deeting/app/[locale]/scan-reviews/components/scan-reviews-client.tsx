@@ -1,9 +1,9 @@
 "use client"
 
+import type { CSSProperties, ComponentType } from "react"
 import { useEffect, useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
-import {
-  AlertTriangle,
+import {
   ArrowUpRight,
   Database,
   FileSearch,
@@ -13,8 +13,7 @@ import {
   ScanSearch,
   ShieldAlert,
   Sparkles,
-  Terminal,
-  Activity,
+  Terminal,
   Search
 } from "lucide-react"
 
@@ -26,9 +25,7 @@ import {
   runScanReviewAction,
   runScanReviewActions,
   scanDirectoryReview,
-  scanFileReview,
-  type LocalScanFindingAction,
-  type LocalScanReviewBatchResult,
+  scanFileReview,
   type LocalScanRun,
 } from "@/lib/api/local-scan"
 import { cn } from "@/lib/utils"
@@ -83,7 +80,9 @@ function readErrorMessage(error: unknown, fallback: string) {
 
 // --- Blueprint Specific Components ---
 
-function BlueprintLED({ tone }: { tone: "ok" | "warn" | "danger" | "info" | "default" }) {
+type BlueprintTone = "ok" | "warn" | "danger" | "info" | "default"
+
+function BlueprintLED({ tone }: { tone: BlueprintTone }) {
   const colors = {
     ok: "#22c55e",
     warn: "#f59e0b",
@@ -91,10 +90,21 @@ function BlueprintLED({ tone }: { tone: "ok" | "warn" | "danger" | "info" | "def
     info: "#6d5cff",
     default: "rgba(20,21,28,0.2)"
   }
-  return <div className="ws-led" style={{ "--led-color": colors[tone] } as any} />
+  const style = { "--led-color": colors[tone] } as CSSProperties
+  return <div className="ws-led" style={style} />
 }
 
-function BlueprintStat({ label, value, tone, icon: Icon }: any) {
+function BlueprintStat({
+  label,
+  value,
+  tone,
+  icon: Icon,
+}: {
+  label: string
+  value: number
+  tone: BlueprintTone
+  icon: ComponentType<{ className?: string }>
+}) {
   return (
     <div className="flex items-center justify-between border border-[var(--border)] p-4 bg-[var(--card)] group hover:border-[var(--primary)]/30 transition-colors">
       <div className="flex flex-col gap-1">
@@ -120,6 +130,10 @@ type ScanTab = "documents" | "findings"
 
 export function ScanReviewsClient() {
   const t = useTranslations("dashboard.scanReviewsPage")
+  const tConsole = useTranslations("dashboard.scanReviewsPage.console")
+  const tDiagnostics = useTranslations("dashboard.scanReviewsPage.diagnostics")
+  const tTelemetry = useTranslations("dashboard.scanReviewsPage.telemetry")
+  const tAnalysis = useTranslations("dashboard.scanReviewsPage.analysis")
   const locale = useLocale()
   const [supported, setSupported] = useState(false)
   const [targetPath, setTargetPath] = useState("")
@@ -129,11 +143,11 @@ export function ScanReviewsClient() {
   const [lastScanRequest, setLastScanRequest] = useState<ScanRequest | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [severityFilter, setSeverityFilter] = useState("")
-  const [boundaryFilter, setBoundaryFilter] = useState("")
-  const [operationFilter, setOperationFilter] = useState("")
+  const [boundaryFilter] = useState("")
+  const [operationFilter] = useState("")
   const [activeTab, setActiveTab] = useState<ScanTab>("findings")
-  const [feedback, setFeedback] = useState<string | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
+  const [, setFeedback] = useState<string | null>(null)
+  const [, setActionError] = useState<string | null>(null)
   const [actioningId, setActioningId] = useState<string | null>(null)
   const [batchRunning, setBatchRunning] = useState(false)
 
@@ -310,14 +324,14 @@ export function ScanReviewsClient() {
         <section className="space-y-6">
           <div className="flex items-center gap-4">
             <div className="h-px w-8 bg-[var(--primary)]" />
-            <h2 className="font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--primary)] font-bold">01 / Scan Initialization</h2>
+            <h2 className="font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--primary)] font-bold">{tConsole("sectionLabel")}</h2>
             <div className="h-px flex-1 bg-[var(--border)]" />
           </div>
 
           <BlueprintCard 
             className="overflow-hidden"
-            title="Inspection Terminal"
-            subtitle="Local directory & file audit subsystem"
+            title={tConsole("card.title")}
+            subtitle={tConsole("card.subtitle")}
             headerAction={<Terminal className="size-4 text-[var(--primary)]" />}
           >
             {isScanning && <div className="ws-scanner-sweep" />}
@@ -360,11 +374,11 @@ export function ScanReviewsClient() {
                 {scanError && <p className="font-mono text-[10px] text-[var(--danger)] uppercase">{scanError}</p>}
                 
                 <div className="grid grid-cols-3 gap-px bg-[var(--border)] border border-[var(--border)]">
-                  {["Target Path", "Audit Scope", "Protocol"].map((label, i) => (
+                  {[tConsole("parameters.targetPathLabel"), tConsole("parameters.auditScopeLabel"), tConsole("parameters.protocolLabel")].map((label, i) => (
                     <div key={label} className="bg-[var(--card)] p-3">
-                      <span className="font-mono text-[8px] uppercase text-[var(--ink-4)]">Param 0{i+1}</span>
+                      <span className="font-mono text-[8px] uppercase text-[var(--ink-4)]">{tConsole("parameters.paramLabel", { index: i + 1 })}</span>
                       <div className="font-mono text-[10px] font-bold mt-1 truncate">
-                        {i === 0 ? (targetPath || "DEFAULT") : i === 1 ? "FS_LOCAL" : "TAURI_BRIDGE_v2"}
+                        {i === 0 ? (targetPath || tConsole("parameters.defaultValue")) : i === 1 ? tConsole("parameters.auditScopeValue") : tConsole("parameters.protocolValue")}
                       </div>
                     </div>
                   ))}
@@ -374,22 +388,22 @@ export function ScanReviewsClient() {
               <div className="border-l border-[var(--border)] pl-8 hidden lg:block">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <span className="font-mono text-[9px] uppercase text-[var(--ink-4)]">System Status</span>
+                    <span className="font-mono text-[9px] uppercase text-[var(--ink-4)]">{tDiagnostics("systemStatus")}</span>
                     <BlueprintLED tone={supported ? "ok" : "warn"} />
                   </div>
                   <div className="font-mono text-[11px] leading-relaxed text-[var(--ink-3)]">
-                    <p className="text-[var(--foreground)] font-bold mb-1 underline">DIAGNOSTIC_SUMMARY</p>
+                    <p className="text-[var(--foreground)] font-bold mb-1 underline">{tDiagnostics("summaryTitle")}</p>
                     <div className="flex justify-between">
-                      <span>Timestamp:</span>
+                      <span>{tDiagnostics("timestamp")}</span>
                       <span className="text-[var(--foreground)]">{formatDate(data?.finished_at, locale)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Findings:</span>
+                      <span>{tDiagnostics("findings")}</span>
                       <span className="text-[var(--foreground)]">{data?.summary.finding_count ?? 0}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Runtime:</span>
-                      <span className="text-[var(--foreground)]">{supported ? "DESKTOP" : "NULL"}</span>
+                      <span>{tDiagnostics("runtime")}</span>
+                      <span className="text-[var(--foreground)]">{supported ? tDiagnostics("runtimeDesktop") : tDiagnostics("runtimeUnavailable")}</span>
                     </div>
                   </div>
                 </div>
@@ -404,7 +418,7 @@ export function ScanReviewsClient() {
             <section className="space-y-6">
               <div className="flex items-center gap-4">
                 <div className="h-px w-8 bg-[var(--primary)]" />
-                <h2 className="font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--primary)] font-bold">02 / Telemetry Output</h2>
+                <h2 className="font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--primary)] font-bold">{tTelemetry("sectionLabel")}</h2>
                 <div className="h-px flex-1 bg-[var(--border)]" />
               </div>
               <div className="grid gap-px bg-[var(--border)] border border-[var(--border)] md:grid-cols-4">
@@ -416,35 +430,35 @@ export function ScanReviewsClient() {
             <section className="space-y-6">
               <div className="flex items-center gap-4">
                 <div className="h-px w-8 bg-[var(--primary)]" />
-                <h2 className="font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--primary)] font-bold">03 / Analysis Lane</h2>
+                <h2 className="font-mono text-[10px] uppercase tracking-[0.3em] text-[var(--primary)] font-bold">{tAnalysis("sectionLabel")}</h2>
                 <div className="h-px flex-1 bg-[var(--border)]" />
               </div>
 
-              <BlueprintCard title="Review Lane" subtitle="Detailed audit logs and intervention points">
+              <BlueprintCard title={tAnalysis("card.title")} subtitle={tAnalysis("card.subtitle")}>
                 <div className="flex flex-col gap-6">
                   {/* Filters Bar */}
                   <div className="flex flex-col gap-4 xl:flex-row xl:items-end justify-between border-b border-[var(--border)] pb-6">
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 flex-1">
                       <div className="space-y-1.5">
-                        <label className="font-mono text-[8px] uppercase text-[var(--ink-4)] ml-1">Search_Query</label>
+                        <label className="font-mono text-[8px] uppercase text-[var(--ink-4)] ml-1">{tAnalysis("filters.searchLabel")}</label>
                         <Input 
                           value={searchQuery} 
                           onChange={(e) => setSearchQuery(e.target.value)} 
-                          placeholder="grep..." 
+                          placeholder={t("filters.searchPlaceholder")} 
                           className="h-9 font-mono text-[11px] rounded-none border-[var(--border)]" 
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="font-mono text-[8px] uppercase text-[var(--ink-4)] ml-1">Severity_Filter</label>
+                        <label className="font-mono text-[8px] uppercase text-[var(--ink-4)] ml-1">{tAnalysis("filters.severityLabel")}</label>
                         <select 
                           value={severityFilter} 
                           onChange={(e) => setSeverityFilter(e.target.value)} 
                           className="w-full h-9 font-mono text-[11px] rounded-none border border-[var(--border)] bg-transparent px-2"
                         >
-                          <option value="">ALL_SEVERITIES</option>
-                          <option value="error">ERROR</option>
-                          <option value="warn">WARNING</option>
-                          <option value="info">INFO</option>
+                          <option value="">{tAnalysis("filters.allSeverities")}</option>
+                          <option value="error">{t("severity.error")}</option>
+                          <option value="warn">{t("severity.warn")}</option>
+                          <option value="info">{t("severity.info")}</option>
                         </select>
                       </div>
                       {/* ... other filters ... */}
@@ -478,19 +492,19 @@ export function ScanReviewsClient() {
                         value="findings" 
                         className="bg-transparent border-b-2 border-transparent data-[state=active]:border-[var(--primary)] rounded-none px-0 py-2 font-mono text-[11px] uppercase tracking-widest text-[var(--ink-4)] data-[state=active]:text-[var(--foreground)]"
                       >
-                        Findings ({findings.length})
+                        {t("table.findings.title")} ({findings.length})
                       </TabsTrigger>
                       <TabsTrigger 
                         value="documents" 
                         className="bg-transparent border-b-2 border-transparent data-[state=active]:border-[var(--primary)] rounded-none px-0 py-2 font-mono text-[11px] uppercase tracking-widest text-[var(--ink-4)] data-[state=active]:text-[var(--foreground)]"
                       >
-                        Documents ({documents.length})
+                        {t("table.documents.title")} ({documents.length})
                       </TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="findings" className="space-y-px bg-[var(--border)] border border-[var(--border)]">
                       {findings.length === 0 ? (
-                        <div className="bg-[var(--card)] p-12 text-center font-mono text-[11px] text-[var(--ink-4)] uppercase italic">No issues detected in current lane.</div>
+                        <div className="bg-[var(--card)] p-12 text-center font-mono text-[11px] text-[var(--ink-4)] uppercase italic">{tAnalysis("empty.noIssues")}</div>
                       ) : findings.map((finding) => {
                         const riskMeta = readRiskMetadata(finding.metadata)
                         const riskLine = formatTuple([riskMeta?.riskLevel, riskMeta?.operationClass, riskMeta?.boundaryClass])
@@ -510,7 +524,7 @@ export function ScanReviewsClient() {
                                 <p className="text-[13px] font-bold text-[var(--foreground)] tracking-tight">{finding.message}</p>
                                 <p className="font-mono text-[10px] text-[var(--ink-3)] truncate opacity-60">{finding.document_path}</p>
                               </div>
-                              {riskLine && <div className="font-mono text-[9px] text-[var(--primary)]/60 uppercase">Risk_Profile: {riskLine}</div>}
+                              {riskLine && <div className="font-mono text-[9px] text-[var(--primary)]/60 uppercase">{tAnalysis("riskProfile")} {riskLine}</div>}
                             </div>
                             {finding.action && (
                               <Button 
@@ -540,3 +554,6 @@ export function ScanReviewsClient() {
     </div>
   )
 }
+
+
+

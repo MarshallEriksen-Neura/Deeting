@@ -463,6 +463,54 @@
         "failed": "Failed to load scan results",
         "noDocuments": "No documents found",
         "noFindings": "No findings found"
+      },
+      "console": {
+        "sectionLabel": "01 / Scan Initialization",
+        "card": {
+          "title": "Inspection Terminal",
+          "subtitle": "Local directory and file audit subsystem"
+        },
+        "actions": {
+          "execute": "Execute"
+        },
+        "parameters": {
+          "targetPathLabel": "Target Path",
+          "auditScopeLabel": "Audit Scope",
+          "protocolLabel": "Protocol",
+          "paramLabel": "Param 0{index}",
+          "defaultValue": "DEFAULT",
+          "auditScopeValue": "FS_LOCAL",
+          "protocolValue": "TAURI_BRIDGE_v2"
+        }
+      },
+      "diagnostics": {
+        "systemStatus": "System Status",
+        "summaryTitle": "DIAGNOSTIC_SUMMARY",
+        "timestamp": "Timestamp:",
+        "findings": "Findings:",
+        "runtime": "Runtime:",
+        "runtimeDesktop": "DESKTOP",
+        "runtimeUnavailable": "NULL"
+      },
+      "telemetry": {
+        "sectionLabel": "02 / Telemetry Output"
+      },
+      "analysis": {
+        "sectionLabel": "03 / Analysis Lane",
+        "card": {
+          "title": "Review Lane",
+          "subtitle": "Detailed audit logs and intervention points"
+        },
+        "filters": {
+          "searchLabel": "Search Query",
+          "severityLabel": "Severity Filter",
+          "allSeverities": "ALL_SEVERITIES"
+        },
+        "empty": {
+          "noIssues": "No issues detected in current lane."
+        },
+        "riskProfile": "Risk Profile:",
+        "patchAction": "Patch"
       }
     },
     "assetsPage": {

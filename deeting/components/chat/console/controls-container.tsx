@@ -11,7 +11,7 @@ import { useI18n } from '@/hooks/use-i18n';
 import { useOpenWorkflow } from '@/hooks/use-open-workflow';
 import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
 import { Button } from '@/ui/shadcn/button';
-import { ButtonGroup } from '@/ui/common/button-group';
+import { GlassButton } from '@/ui/common/glass-button';
 import { Input } from '@/ui/shadcn/input';
 import { Switch } from '@/ui/shadcn/switch';
 import { BrowserModeConfirmationBar } from '@/components/chat/browser-mode/browser-mode-confirmation-bar';
@@ -1009,30 +1009,30 @@ function ControlsContainer() {
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-2">
           {/* New Chat Button */}
-          <Button
+          <GlassButton
              type="button"
-             variant="ios"
+             variant="secondary"
              size="icon"
              onClick={handleNewChat}
              aria-label={t("header.newChat")}
-             className="min-h-[44px] min-w-[44px] size-11 cursor-pointer"
+             className="min-h-[44px] min-w-[44px] cursor-pointer"
           >
              <MessageSquarePlus className="w-5 h-5" />
-          </Button>
+          </GlassButton>
 
           {isTauriRuntime ? (
             <Popover open={isKnowledgePickerOpen} onOpenChange={handleKnowledgePickerOpenChange}>
               <PopoverTrigger asChild>
-                <Button
+                <GlassButton
                   type="button"
-                  variant="ios"
+                  variant="secondary"
                   size="icon"
                   aria-label={t("controls.knowledge")}
-                  className="min-h-[44px] min-w-[44px] size-10 cursor-pointer"
+                  className="min-h-[44px] min-w-[44px] cursor-pointer"
                   disabled={isLoading}
                 >
                   <FileText className="w-5 h-5" />
-                </Button>
+                </GlassButton>
               </PopoverTrigger>
               <PopoverContent
                 side="top"
@@ -1105,12 +1105,12 @@ function ControlsContainer() {
           ) : null}
 
           {isTauriRuntime ? (
-            <Button
+            <GlassButton
               type="button"
-              variant="ios"
+              variant="secondary"
               size="sm"
               aria-label={t("controls.attachCurrentPage")}
-              className="h-10 px-4 text-xs"
+              className="h-10 px-4 text-xs cursor-pointer"
               onClick={() => {
                 void handleAttachCurrentPageContext();
               }}
@@ -1126,44 +1126,44 @@ function ControlsContainer() {
                   ? t("controls.attachingCurrentPage")
                   : t("controls.attachCurrentPage")}
               </span>
-            </Button>
+            </GlassButton>
           ) : null}
 
           {isTauriRuntime ? (
             <>
-              <ButtonGroup variant="ios" className="gap-1 p-1">
-                <Button
+              <div className="flex items-center rounded-[calc(var(--radius)+999px)] border border-[var(--hairline)]/50 bg-[var(--panel-bg)]/60 p-1 backdrop-blur-xl shadow-[0_2px_8px_-2px_rgba(0,0,0,0.1)]">
+                <GlassButton
                   type="button"
-                  variant={composerMode === 'chat' ? 'ios-segment-active' : 'ios-segment'}
+                  variant={composerMode === 'chat' ? 'secondary' : 'ghost'}
                   size="sm"
                   onClick={() => setComposerMode('chat')}
                   aria-label={t("controls.modeChat")}
-                  className="h-9 px-4 text-xs"
+                  className="h-8 px-4 text-xs rounded-full border-0 shadow-none"
                 >
                   {t("controls.modeChat")}
-                </Button>
-                <Button
+                </GlassButton>
+                <GlassButton
                   type="button"
-                  variant={composerMode === 'workflow' ? 'ios-segment-active' : 'ios-segment'}
+                  variant={composerMode === 'workflow' ? 'secondary' : 'ghost'}
                   size="sm"
                   onClick={() => setComposerMode('workflow')}
                   aria-label={t("controls.modeWorkflow")}
-                  className="h-9 px-4 text-xs"
+                  className="h-8 px-4 text-xs rounded-full border-0 shadow-none"
                 >
                   {t("controls.modeWorkflow")}
-                </Button>
-              </ButtonGroup>
+                </GlassButton>
+              </div>
 
-              <Button
+              <GlassButton
                 type="button"
-                variant="ios"
+                variant="secondary"
                 size="sm"
                 onClick={() => {
                   setComposerMode('workflow');
                   void handleGeneratePlan();
                 }}
                 aria-label={t("controls.generatePlan")}
-                className="h-10 px-4 text-xs"
+                className="h-10 px-4 text-xs cursor-pointer"
                 disabled={!canGeneratePlan}
               >
                 {isPlanningWorkflow ? (
@@ -1172,30 +1172,30 @@ function ControlsContainer() {
                   <FileText className="h-4 w-4" />
                 )}
                 <span>{t("controls.generatePlan")}</span>
-              </Button>
+              </GlassButton>
             </>
           ) : null}
 
-          <Button
+          <GlassButton
             type="button"
-            variant="ios"
+            variant="secondary"
             size="icon"
             aria-label={t("input.attachment.add")}
             onClick={handleFileInputClick}
-            className="min-h-[44px] min-w-[44px] size-10 cursor-pointer"
+            className="min-h-[44px] min-w-[44px] cursor-pointer"
             disabled={isLoading}
           >
             <Paperclip className="w-5 h-5" />
-          </Button>
+          </GlassButton>
         </div>
 
         {/* HUD Controls + Send */}
         <div className="flex items-center gap-2">
-          <Button
+          <GlassButton
             type="button"
             onClick={handleSendOrCancel}
             disabled={sendButtonDisabled}
-            variant="ios-primary"
+            variant="default"
             size="icon-lg"
             className={cn(
               "min-h-[46px] min-w-[46px] rounded-full",
@@ -1225,7 +1225,7 @@ function ControlsContainer() {
             ) : (
               <ArrowUp className="w-5 h-5" />
             )}
-          </Button>
+          </GlassButton>
         </div>
       </div>
 

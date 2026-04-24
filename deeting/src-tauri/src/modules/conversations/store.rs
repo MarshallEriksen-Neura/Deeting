@@ -27,8 +27,7 @@ const CONVERSATION_SUMMARY_JOB_STATUS_FAILED: &str = "failed";
 const CONVERSATION_SUMMARY_JOB_MAX_ATTEMPTS: i64 = 5;
 const LOCAL_CONVERSATION_ACTIVE_WINDOW_TURN_CAP_INTERNAL: i64 = 48;
 const LOCAL_CONVERSATION_ACTIVE_WINDOW_TOKENS_INTERNAL: i64 = 32768;
-const LOCAL_CONVERSATION_FLUSH_THRESHOLD_TOKENS: i64 = 32768;
-const LOCAL_CONVERSATION_SUMMARY_MIN_INTERVAL_SECONDS: i64 = 120;
+const LOCAL_CONVERSATION_FLUSH_THRESHOLD_TOKENS: i64 = 262144;
 const LOCAL_CONVERSATION_SUMMARY_IDLE_SECONDS: i64 = 600;
 const LOCAL_CONVERSATION_IDLE_CHECK_BATCH_SIZE: i64 = 50;
 const LOCAL_PERIODIC_TASK_MAX_ERROR_CHARS: usize = 2000;
@@ -4257,7 +4256,11 @@ impl McpStore {
 
         let total_tokens = session_row.try_get::<i64, _>("total_tokens").unwrap_or(0);
         let summarizing = session_row.try_get::<i64, _>("summarizing").unwrap_or(0) != 0;
-        if total_tokens < LOCAL_CONVERSATION_FLUSH_THRESHOLD_TOKENS || summarizing {
+        let message_count = session_row.try_get::<i64, _>("message_count").unwrap_or(0);
+        if total_tokens < LOCAL_CONVERSATION_FLUSH_THRESHOLD_TOKENS
+            || summarizing
+            || message_count < 20
+        {
             return Ok(false);
         }
 
@@ -4330,6 +4333,10 @@ impl McpStore {
             if message_count <= 0 {
                 continue;
             }
+            // 最少需要 20 轮对话才允许空闲触发摘要，避免短对话被过早压缩
+            if message_count < 20 {
+                continue;
+            }
             let summarizing = session_row.try_get::<i64, _>("summarizing").unwrap_or(0) != 0;
             if summarizing {
                 continue;
@@ -4373,22 +4380,6 @@ impl McpStore {
                         .try_get::<i64, _>("covered_to_turn")
                         .unwrap_or(0);
                     if covered_to_turn >= last_turn {
-                        continue;
-                    }
-                }
-            }
-
-            let last_summary_generated_at: Option<String> = session_row
-                .try_get("last_summary_generated_at")
-                .ok()
-                .flatten();
-            if let Some(last_summary_generated_at) = last_summary_generated_at {
-                if let Some(last_summary_epoch) =
-                    parse_rfc3339_to_unix_epoch(last_summary_generated_at.as_str())
-                {
-                    if now_epoch.saturating_sub(last_summary_epoch)
-                        < LOCAL_CONVERSATION_SUMMARY_MIN_INTERVAL_SECONDS
-                    {
                         continue;
                     }
                 }
