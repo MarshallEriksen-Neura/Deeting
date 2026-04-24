@@ -3,7 +3,7 @@
 import { useMemo } from "react"
 import { useTranslations } from "next-intl"
 import { CartesianGrid, Scatter, ScatterChart, XAxis, YAxis } from "recharts"
-import { ChartContainer, ChartTooltip } from "@/components/ui/shadcn/chart"
+import { ChartContainer, ChartTooltip } from "@/ui/shadcn/chart"
 import { useLatencyHeatmap } from "@/lib/swr/use-latency-heatmap"
 import type { MonitoringFilters } from "./monitoring-control-bar"
 
@@ -51,7 +51,7 @@ export function LatencyHeatmap({
   const formatMs = (value: number) => tUnits("msValue", { value })
   const formatRequests = (count: number) => t("requests", { count })
   const chartConfig = {
-    intensity: { label: t("legend.label"), color: "hsl(var(--primary))" },
+    intensity: { label: t("legend.label"), color: "var(--primary)" },
   }
 
   const heatmapPoints = useMemo(
@@ -67,6 +67,14 @@ export function LatencyHeatmap({
     )
   }
 
+  if (!heatmapPoints.length) {
+    return (
+      <div className="flex h-[400px] items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--background)]">
+        <div className="text-sm text-[var(--muted)]">{t("empty")}</div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
       <div className="overflow-x-auto rounded-lg border border-[var(--border)] bg-[var(--background)] p-4">
@@ -75,7 +83,7 @@ export function LatencyHeatmap({
             <ScatterChart margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
               <CartesianGrid
                 strokeDasharray="3 3"
-                stroke="hsl(var(--border))"
+                stroke="var(--border)"
                 opacity={0.3}
                 vertical={false}
               />
@@ -89,7 +97,7 @@ export function LatencyHeatmap({
                 axisLine={false}
                 tickMargin={8}
                 allowDecimals={false}
-                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+                tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
               />
               <YAxis
                 type="number"
@@ -101,7 +109,7 @@ export function LatencyHeatmap({
                 axisLine={false}
                 tickMargin={8}
                 allowDecimals={false}
-                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+                tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
               />
               <ChartTooltip
                 cursor={false}
@@ -132,7 +140,8 @@ export function LatencyHeatmap({
                 key={intensity}
                 className="h-4 w-8 rounded"
                 style={{
-                  backgroundColor: `hsl(var(--primary) / ${intensity})`,
+                  backgroundColor: "var(--primary)",
+                  opacity: intensity,
                 }}
               />
             ))}
@@ -184,8 +193,9 @@ function HeatmapCellShape({
       height={size}
       rx={2}
       ry={2}
-      fill={`hsl(var(--primary) / ${intensity})`}
-      stroke="hsl(var(--border))"
+      fill="var(--primary)"
+      fillOpacity={intensity}
+      stroke="var(--border)"
       strokeOpacity={0.25}
     />
   )
@@ -231,14 +241,20 @@ function buildHeatmapPoints(grid: HeatmapCellData[][], cellSize: number): Heatma
   const latencyStep = rows > 1 ? LATENCY_MAX_MS / (rows - 1) : LATENCY_MAX_MS
 
   return grid.flatMap((column, colIndex) =>
-    column.map((cell, rowIndex) => ({
-      hour: colIndex,
-      latency: Math.round(rowIndex * latencyStep),
-      intensity: cell.intensity,
-      count: cell.count,
-      timeLabel: formatHourLabel(colIndex),
-      size: cellSize,
-    }))
+    column.flatMap((cell, rowIndex) =>
+      cell.count > 0
+        ? [
+            {
+              hour: colIndex,
+              latency: Math.round(rowIndex * latencyStep),
+              intensity: cell.intensity,
+              count: cell.count,
+              timeLabel: formatHourLabel(colIndex),
+              size: cellSize,
+            },
+          ]
+        : []
+    )
   )
 }
 

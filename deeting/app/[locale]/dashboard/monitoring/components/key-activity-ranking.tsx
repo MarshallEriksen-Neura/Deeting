@@ -8,7 +8,7 @@ import {
   GlassCardDescription,
   GlassCardHeader,
   GlassCardTitle,
-} from "@/components/ui/common/glass-card"
+} from "@/ui/common/glass-card"
 import { useKeyActivityRanking } from "@/lib/swr/use-key-activity-ranking"
 import { cn } from "@/lib/utils"
 import type { MonitoringFilters } from "./monitoring-control-bar"

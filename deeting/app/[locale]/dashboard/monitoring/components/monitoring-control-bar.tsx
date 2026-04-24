@@ -3,7 +3,7 @@
 import { useTranslations } from "next-intl"
 import { Clock, Bot, Key, Tag, RefreshCw, ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { GlassButton } from "@/components/ui/common/glass-button"
+import { GlassButton } from "@/ui/common/glass-button"
 import {
   GlassDropdownMenu,
   GlassDropdownMenuContent,
@@ -11,7 +11,7 @@ import {
   GlassDropdownMenuLabel,
   GlassDropdownMenuSeparator,
   GlassDropdownMenuTrigger,
-} from "@/components/ui/common/glass-dropdown"
+} from "@/ui/common/glass-dropdown"
 import type { MonitoringTimeRange } from "@/lib/api/monitoring"
 import { useModelCostBreakdown } from "@/lib/swr/use-model-cost-breakdown"
 import { useKeyActivityRanking } from "@/lib/swr/use-key-activity-ranking"

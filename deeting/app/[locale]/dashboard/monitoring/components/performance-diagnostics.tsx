@@ -8,7 +8,7 @@ import {
   GlassCardDescription,
   GlassCardHeader,
   GlassCardTitle,
-} from "@/components/ui/common/glass-card"
+} from "@/ui/common/glass-card"
 import { LatencyHeatmap } from "./latency-heatmap"
 import { PercentileTrends } from "./percentile-trends"
 import type { MonitoringFilters } from "./monitoring-control-bar"
