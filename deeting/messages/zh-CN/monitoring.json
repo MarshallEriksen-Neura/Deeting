@@ -457,6 +457,32 @@
           "confirm": "Confirm"
         }
       }
+    },
+    "stats": {
+      "uptime": "运行时间",
+      "latency": "延迟",
+      "requests": "请求量",
+      "queries": "查询量"
+    },
+    "systemStatus": {
+      "title": "系统状态",
+      "online": "在线"
+    },
+    "system": {
+      "database": "数据库",
+      "cache": "缓存",
+      "api": "API",
+      "storage": "存储"
+    },
+    "status": {
+      "ok": "正常",
+      "warning": "警告",
+      "error": "错误"
+    },
+    "errorLog": {
+      "title": "错误日志",
+      "rateLimit": "超出限流",
+      "cacheEviction": "缓存失效"
     }
   }
 }

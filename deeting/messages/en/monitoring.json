@@ -457,6 +457,32 @@
           "confirm": "Confirm"
         }
       }
+    },
+    "stats": {
+      "uptime": "Uptime",
+      "latency": "Latency",
+      "requests": "Requests",
+      "queries": "Queries"
+    },
+    "systemStatus": {
+      "title": "System Status",
+      "online": "Online"
+    },
+    "system": {
+      "database": "Database",
+      "cache": "Cache",
+      "api": "API",
+      "storage": "Storage"
+    },
+    "status": {
+      "ok": "OK",
+      "warning": "Warning",
+      "error": "Error"
+    },
+    "errorLog": {
+      "title": "Error Log",
+      "rateLimit": "Rate limit exceeded",
+      "cacheEviction": "Cache eviction"
     }
   }
 }
