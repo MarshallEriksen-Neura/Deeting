@@ -136,6 +136,7 @@
       },
       "ingest": {
         "title": "导入选择内容",
+        "collapsibleTitle": "导入内容",
         "description": "把 vault 中已有路径注册进受控 wiki。Markdown 会生成来源页，文件会复制到 raw 来源层。",
         "placeholder": "research/meeting-notes.md\nattachments/roadmap.pdf",
         "hint": "输入一个或多个相对 vault 的路径，可用换行或逗号分隔。",
@@ -305,6 +306,7 @@
       "description": "系统会在合适的时候提醒你同步资料、检查更新或交给维护助手处理，不会在后台悄悄改动这套 wiki。",
       "settings": {
         "title": "自动处理开关",
+        "collapsibleTitle": "自动整理偏好",
         "autoSyncOnVaultBound": {
           "title": "连接后自动准备资料",
           "description": "连接笔记库后，自动做第一次资料同步，让后续整理马上可用。"
@@ -347,7 +349,14 @@
         "empty": "当前没有需要你处理的自动整理建议。",
         "execute": "立即处理",
         "executing": "处理中...",
-        "dismiss": "先忽略"
+        "dismiss": "先忽略",
+        "dismissing": "忽略中...",
+        "batchExecute": "一键处理",
+        "batchExecuting": "处理中...",
+        "batchDismiss": "全部忽略",
+        "count": "{count} 条整理建议",
+        "emptyTitle": "当前没有待处理的整理建议",
+        "emptySubtitle": "系统会在有需要时自动生成建议"
       },
       "suggestionCopy": {
         "initialCorpusSync": {

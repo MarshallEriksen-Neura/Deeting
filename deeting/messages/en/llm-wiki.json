@@ -136,6 +136,7 @@
       },
       "ingest": {
         "title": "Ingest Selection",
+        "collapsibleTitle": "Import content",
         "description": "Register existing vault paths into the managed wiki. Markdown becomes source pages; files are copied into raw sources.",
         "placeholder": "research/meeting-notes.md\nattachments/roadmap.pdf",
         "hint": "Enter one or more vault-relative paths, separated by new lines or commas.",
@@ -305,6 +306,7 @@
       "description": "The system can remind you to refresh materials, review updates, or hand work to the maintenance agent without quietly changing the wiki in the background.",
       "settings": {
         "title": "Automation switches",
+        "collapsibleTitle": "Automation preferences",
         "autoSyncOnVaultBound": {
           "title": "Prepare materials after connect",
           "description": "When a vault is connected, run the first sync automatically so maintenance can start immediately."
@@ -347,7 +349,14 @@
         "empty": "There are no automation suggestions waiting for you right now.",
         "execute": "Handle now",
         "executing": "Handling...",
-        "dismiss": "Ignore for now"
+        "dismiss": "Ignore for now",
+        "dismissing": "Dismissing...",
+        "batchExecute": "Handle all",
+        "batchExecuting": "Handling...",
+        "batchDismiss": "Dismiss all",
+        "count": "{count} suggestions",
+        "emptyTitle": "No pending suggestions",
+        "emptySubtitle": "The system will generate suggestions when needed"
       },
       "suggestionCopy": {
         "initialCorpusSync": {
