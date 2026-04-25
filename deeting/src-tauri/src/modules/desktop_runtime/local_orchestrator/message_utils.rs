@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use crate::modules::desktop_runtime::runtime::LocalControlPlaneResult;
-use mcp_core::types::LocalChatInputMessage;
+use mcp_core::types::{LocalChatInputMessage, LocalChatToolCall};
 use mcp_session::conversation::LocalConversationHistoryMessage;
 
 pub(super) fn extract_summary_text(summary: Option<&Value>) -> Option<String> {
@@ -120,6 +120,8 @@ pub(super) fn build_compare_only_messages(
 pub(super) fn convert_history_message_to_chat_input(
     message: LocalConversationHistoryMessage,
 ) -> LocalChatInputMessage {
+    let tool_calls = extract_tool_calls_from_message(&message);
+    let tool_call_id = extract_tool_call_id_from_message(&message);
     let content = message
         .content
         .as_ref()
@@ -136,10 +138,73 @@ pub(super) fn convert_history_message_to_chat_input(
     LocalChatInputMessage {
         role: message.role,
         content,
-        tool_calls: vec![],
-        tool_call_id: None,
-        name: None,
+        tool_calls,
+        tool_call_id,
+        name: message.name,
     }
+}
+
+fn extract_tool_calls_from_message(
+    message: &LocalConversationHistoryMessage,
+) -> Vec<LocalChatToolCall> {
+    let Some(meta_info) = message.meta_info.as_ref() else {
+        return Vec::new();
+    };
+    let Some(blocks) = meta_info.get("blocks").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+
+    blocks
+        .iter()
+        .filter_map(|block| {
+            if block.get("type").and_then(Value::as_str) != Some("tool_call") {
+                return None;
+            }
+
+            let name = block
+                .get("toolName")
+                .or_else(|| block.get("name"))
+                .and_then(Value::as_str)?
+                .trim()
+                .to_string();
+            if name.is_empty() {
+                return None;
+            }
+
+            Some(LocalChatToolCall {
+                id: block
+                    .get("toolCallId")
+                    .or_else(|| block.get("id"))
+                    .and_then(Value::as_str)
+                    .map(|value| value.to_string()),
+                name,
+                arguments: block
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or(Value::Object(serde_json::Map::new())),
+                extra_content: block.get("extra_content").cloned(),
+            })
+        })
+        .collect()
+}
+
+fn extract_tool_call_id_from_message(message: &LocalConversationHistoryMessage) -> Option<String> {
+    if !message.role.eq_ignore_ascii_case("tool") {
+        return None;
+    }
+
+    let meta_info = message.meta_info.as_ref()?;
+    let blocks = meta_info.get("blocks").and_then(Value::as_array)?;
+    blocks.iter().find_map(|block| {
+        if block.get("type").and_then(Value::as_str) != Some("tool_result") {
+            return None;
+        }
+        block
+            .get("toolCallId")
+            .or_else(|| block.get("tool_call_id"))
+            .and_then(Value::as_str)
+            .map(|value| value.to_string())
+    })
 }
 
 pub fn extract_user_text_from_messages(messages: &[Value]) -> Option<String> {

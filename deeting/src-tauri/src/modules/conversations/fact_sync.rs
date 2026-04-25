@@ -505,8 +505,8 @@ fn history_message_text(content: Option<&Value>) -> Option<String> {
 mod tests {
     use super::{
         build_fact_extraction_last_run_at_key, build_fact_rebuild_conversation_text,
-        clear_session_auto_extraction_memories, refresh_session_auto_extracted_facts_after_chat_turn,
-        FactExtractionOutcome,
+        clear_session_auto_extraction_memories,
+        refresh_session_auto_extracted_facts_after_chat_turn, FactExtractionOutcome,
     };
     use crate::modules::browser_agent::BrowserAgentState;
     use crate::modules::code_mode::CodemodeToolState;
@@ -542,7 +542,6 @@ mod tests {
             .await
             .expect("create test memory state")
     }
-
 
     async fn insert_embedding_instance(
         store: &crate::modules::providers::store::ProviderStore,
@@ -593,10 +592,7 @@ mod tests {
         instance_id
     }
 
-    async fn create_test_provider_state(
-        test_name: &str,
-        base_url: &str,
-    ) -> ProviderState {
+    async fn create_test_provider_state(test_name: &str, base_url: &str) -> ProviderState {
         let mut db_path = std::env::temp_dir();
         db_path.push(format!(
             "deeting-tauri-fact-sync-provider-{test_name}-{}.db",

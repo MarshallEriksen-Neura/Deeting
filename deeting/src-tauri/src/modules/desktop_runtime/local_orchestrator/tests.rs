@@ -773,6 +773,61 @@ fn build_compare_only_messages_requires_latest_assistant_answer() {
 }
 
 #[test]
+fn convert_history_message_to_chat_input_preserves_tool_trace_blocks() {
+    let assistant = mcp_session::conversation::LocalConversationHistoryMessage {
+        role: "assistant".to_string(),
+        content: Some(json!("I'll check that.")),
+        turn_index: Some(1),
+        created_at: None,
+        is_truncated: Some(false),
+        name: None,
+        meta_info: Some(json!({
+            "blocks": [
+                {
+                    "type": "tool_call",
+                    "toolCallId": "call-1",
+                    "toolName": "search_sdk",
+                    "arguments": { "query": "hello" }
+                }
+            ]
+        })),
+    };
+
+    let assistant_input = convert_history_message_to_chat_input(assistant);
+    assert_eq!(assistant_input.tool_calls.len(), 1);
+    assert_eq!(assistant_input.tool_calls[0].id.as_deref(), Some("call-1"));
+    assert_eq!(assistant_input.tool_calls[0].name, "search_sdk");
+    assert_eq!(
+        assistant_input.tool_calls[0].arguments,
+        json!({ "query": "hello" })
+    );
+
+    let tool = mcp_session::conversation::LocalConversationHistoryMessage {
+        role: "tool".to_string(),
+        content: Some(json!(r#"{"ok":true}"#)),
+        turn_index: Some(2),
+        created_at: None,
+        is_truncated: Some(false),
+        name: Some("search_sdk".to_string()),
+        meta_info: Some(json!({
+            "blocks": [
+                {
+                    "type": "tool_result",
+                    "toolCallId": "call-1",
+                    "toolName": "search_sdk",
+                    "status": "success",
+                    "result": { "ok": true }
+                }
+            ]
+        })),
+    };
+
+    let tool_input = convert_history_message_to_chat_input(tool);
+    assert_eq!(tool_input.tool_call_id.as_deref(), Some("call-1"));
+    assert_eq!(tool_input.name.as_deref(), Some("search_sdk"));
+}
+
+#[test]
 fn recall_when_matching_uses_substring_and_keywords() {
     assert!(matches_recall_when(
         "Please keep the response style concise for this reply",

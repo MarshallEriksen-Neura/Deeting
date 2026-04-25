@@ -53,24 +53,24 @@ export function LlmWikiCorpusCard({
     isSearchingCorpus || !state?.binding || !corpusQuery.trim()
 
   return (
-    <Card className="h-full gap-0 py-0 border-[var(--hairline)] bg-[var(--panel-bg)] shadow-[0_18px_40px_-30px_rgba(15,17,28,0.22)]">
-      <CardHeader className="border-b border-[var(--hairline)] pb-5">
-        <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 rounded-full bg-indigo-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-700">
+    <Card className="h-full gap-0 py-0 border-[var(--hairline)] bg-[var(--panel-bg)] shadow-sm">
+      <CardHeader className="border-b border-[var(--hairline)] pb-4">
+        <div className="space-y-1.5">
+          <div className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-indigo-700">
             <DatabaseZap className="size-3.5" />
             {t("corpus.eyebrow")}
           </div>
-          <CardTitle className="text-[var(--ink)]">
+          <CardTitle className="text-base text-[var(--ink)]">
             {t("corpus.title")}
           </CardTitle>
-          <CardDescription className="text-[var(--ink-3)]">
+          <CardDescription className="text-sm text-[var(--ink-3)]">
             {t("corpus.description")}
           </CardDescription>
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-5 pt-6">
-        <div className="grid gap-3 sm:grid-cols-3">
+      <CardContent className="space-y-3 pt-4">
+        <div className="grid gap-2 sm:grid-cols-3">
           <CorpusMetric
             label={t("corpus.metrics.indexed")}
             value={corpus?.indexedNoteCount ?? "--"}
@@ -85,26 +85,26 @@ export function LlmWikiCorpusCard({
           />
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-3">
           <CorpusMetric label="Pending" value={corpus?.pendingNoteCount ?? "--"} />
           <CorpusMetric label="Failed" value={corpus?.failedNoteCount ?? "--"} />
           <CorpusMetric label="Queued" value={corpus?.queuedChangeCount ?? "--"} />
         </div>
 
-        <div className="rounded-[1.5rem] border border-white/70 bg-slate-50/85 p-4 text-sm text-slate-700">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+        <div className="rounded-xl border border-white/70 bg-slate-50/85 p-3 text-sm text-slate-700">
+          <div className="text-[11px] font-medium uppercase tracking-[0.1em] text-slate-400">
             {t("corpus.lastSynced")}
           </div>
-          <div className="mt-2 text-base font-semibold text-slate-900">
+          <div className="mt-1 text-base font-semibold text-slate-900">
             {corpus?.lastSyncedAt ?? t("corpus.notSynced")}
           </div>
-          <div className="mt-1 text-xs leading-5 text-slate-500">
+          <div className="mt-1 text-xs leading-4 text-slate-500">
             {t("corpus.note")}
           </div>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[0.92fr_1.08fr]">
-          <div className="space-y-3 rounded-[1.6rem] border border-slate-200/70 bg-white/84 p-4 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.32)]">
+        <div className="grid gap-3 xl:grid-cols-[0.92fr_1.08fr]">
+          <div className="space-y-2 rounded-xl border border-slate-200/70 bg-white/84 p-3">
             <div className="flex items-center gap-2">
               <Search className="size-4 text-slate-400" />
               <div className="text-sm font-semibold text-slate-900">
@@ -124,29 +124,29 @@ export function LlmWikiCorpusCard({
                 value={corpusQuery}
                 onChange={(event) => onCorpusQueryChange(event.target.value)}
                 placeholder={t("corpus.preview.placeholder")}
-                className="h-11 rounded-2xl border-white/70 bg-white/90"
+                className="h-9 rounded-lg border-white/70 bg-white/90"
               />
               <Button
                 type="submit"
                 disabled={searchDisabled}
-                className="h-11 rounded-2xl bg-slate-950 px-4 text-white sm:min-w-[120px]"
+                className="h-9 rounded-lg bg-slate-950 px-4 text-white sm:min-w-[100px]"
               >
                 {isSearchingCorpus ? (
-                  <RefreshCw className="mr-2 size-4 animate-spin" />
+                  <RefreshCw className="mr-1.5 size-3.5 animate-spin" />
                 ) : (
-                  <Search className="mr-2 size-4" />
+                  <Search className="mr-1.5 size-3.5" />
                 )}
                 {isSearchingCorpus
                   ? t("corpus.preview.searching")
                   : t("corpus.preview.search")}
               </Button>
             </form>
-            <div className="text-xs leading-5 text-slate-500">
+            <div className="text-xs leading-4 text-slate-500">
               {t("corpus.preview.hint")}
             </div>
 
             {isSearchingCorpus ? (
-              <div className="inline-flex items-center gap-2 rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700">
+              <div className="inline-flex items-center gap-2 rounded-md border border-sky-100 bg-sky-50 px-2.5 py-0.5 text-xs font-medium text-sky-700">
                 <RefreshCw className="size-3.5 animate-spin" />
                 {t("corpus.preview.loading")}
               </div>
@@ -165,14 +165,14 @@ export function LlmWikiCorpusCard({
                       key={hit.assetId}
                       onClick={() => onSelectCorpusHit(hit.assetId)}
                       className={[
-                        "w-full rounded-2xl border px-3 py-3 text-left transition",
+                        "w-full rounded-lg border px-3 py-2.5 text-left transition",
                         selected
-                          ? "border-indigo-300 bg-indigo-50/90 shadow-[0_18px_30px_-24px_rgba(79,70,229,0.45)]"
+                          ? "border-indigo-300 bg-indigo-50/90"
                           : "border-slate-200/80 bg-slate-50/80 hover:border-slate-300 hover:bg-white",
                       ].join(" ")}
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-1">
+                        <div className="space-y-0.5">
                           <div className="text-sm font-semibold text-slate-900">
                             {hit.title}
                           </div>
@@ -182,11 +182,11 @@ export function LlmWikiCorpusCard({
                         </div>
                         <ScopeBadge scope={hit.scope} t={t} />
                       </div>
-                      <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                      <div className="mt-1.5 flex flex-wrap gap-2 text-[11px] text-slate-500">
                         <span>{`doc ${hit.docId}`}</span>
                         <span>{`chunk ${hit.chunkIndex}`}</span>
                       </div>
-                      <div className="mt-2 text-xs leading-5 text-slate-600">
+                      <div className="mt-1 text-xs leading-4 text-slate-600">
                         {hit.summary}
                       </div>
                     </button>
@@ -196,7 +196,7 @@ export function LlmWikiCorpusCard({
             </div>
           </div>
 
-          <div className="space-y-3 rounded-[1.6rem] border border-slate-200/70 bg-slate-950/[0.95] p-4 text-slate-100 shadow-[0_30px_70px_-40px_rgba(15,23,42,0.58)]">
+          <div className="space-y-2 rounded-xl border border-slate-200/70 bg-slate-950/[0.95] p-3 text-slate-100">
             <div className="flex items-center gap-2">
               <FileSearch className="size-4 text-indigo-300" />
               <div className="text-sm font-semibold">
@@ -205,21 +205,21 @@ export function LlmWikiCorpusCard({
             </div>
 
             {corpusSearchError ? (
-              <div className="rounded-2xl border border-rose-400/20 bg-rose-400/10 p-6 text-sm leading-6 text-rose-50">
+              <div className="rounded-lg border border-rose-400/20 bg-rose-400/10 p-4 text-sm leading-5 text-rose-50">
                 {corpusSearchError}
               </div>
             ) : selectedCorpusHit ? (
-              <div className="space-y-3">
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                  <div className="text-base font-semibold text-white">
+              <div className="space-y-2">
+                <div className="rounded-lg border border-white/10 bg-white/[0.04] p-3">
+                  <div className="text-sm font-semibold text-white">
                     {selectedCorpusHit.title}
                   </div>
-                  <div className="mt-1 break-all text-xs text-slate-400">
+                  <div className="mt-0.5 break-all text-xs text-slate-400">
                     {selectedCorpusHit.relativePath}
                   </div>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-2 sm:grid-cols-2">
                   <InspectorMetric
                     label={t("corpus.inspector.scope")}
                     value={t(`corpus.scopes.${selectedCorpusHit.scope}`)}
@@ -238,27 +238,27 @@ export function LlmWikiCorpusCard({
                   />
                 </div>
 
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-xs text-slate-300">
+                <div className="rounded-lg border border-white/10 bg-white/[0.04] p-3 text-xs text-slate-300">
                   {`doc ${selectedCorpusHit.docId} | chunk ${selectedCorpusHit.chunkIndex}`}
                 </div>
 
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                <div className="rounded-lg border border-white/10 bg-white/[0.04] p-3">
+                  <div className="text-[11px] font-medium uppercase tracking-[0.1em] text-slate-400">
                     {t("corpus.inspector.summary")}
                   </div>
-                  <div className="mt-2 text-sm leading-6 text-slate-200">
+                  <div className="mt-1 text-sm leading-5 text-slate-200">
                     {selectedCorpusHit.summary}
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-indigo-400/20 bg-indigo-400/10 p-4 text-sm text-indigo-50">
-                  <div className="flex items-start gap-3">
+                <div className="rounded-lg border border-indigo-400/20 bg-indigo-400/10 p-3 text-sm text-indigo-50">
+                  <div className="flex items-start gap-2.5">
                     <Sparkles className="mt-0.5 size-4 shrink-0 text-indigo-200" />
                     <div>
                       <div className="font-semibold">
                         {t("corpus.inspector.agentUses.title")}
                       </div>
-                      <div className="mt-1 text-indigo-100/85">
+                      <div className="mt-0.5 text-indigo-100/85">
                         {t("corpus.inspector.agentUses.description")}
                       </div>
                     </div>
@@ -266,7 +266,7 @@ export function LlmWikiCorpusCard({
                 </div>
               </div>
             ) : (
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-6 text-sm leading-6 text-slate-300">
+              <div className="rounded-lg border border-white/10 bg-white/[0.04] p-4 text-sm leading-5 text-slate-300">
                 {t("corpus.inspector.empty")}
               </div>
             )}
@@ -274,16 +274,16 @@ export function LlmWikiCorpusCard({
         </div>
       </CardContent>
 
-      <CardFooter className="flex-wrap gap-3 border-t border-[var(--hairline)] pt-5">
+      <CardFooter className="flex-wrap gap-2 border-t border-[var(--hairline)] pt-4">
         <Button
           onClick={onSyncCorpus}
           disabled={isSyncingCorpus || !state?.binding}
-          className="h-11 rounded-full bg-[linear-gradient(135deg,#312e81,#2563eb)] px-6 text-white shadow-[0_20px_40px_-24px_rgba(37,99,235,0.55)]"
+          className="h-9 rounded-lg bg-[linear-gradient(135deg,#312e81,#2563eb)] px-5 text-white"
         >
           {isSyncingCorpus ? (
-            <RefreshCw className="mr-2 size-4 animate-spin" />
+            <RefreshCw className="mr-1.5 size-3.5 animate-spin" />
           ) : (
-            <DatabaseZap className="mr-2 size-4" />
+            <DatabaseZap className="mr-1.5 size-3.5" />
           )}
           {isSyncingCorpus ? t("corpus.syncing") : t("corpus.sync")}
         </Button>
@@ -300,11 +300,11 @@ function CorpusMetric({
   value: string | number
 }) {
   return (
-    <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+    <div className="rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2">
+      <div className="text-[11px] font-medium uppercase tracking-[0.1em] text-slate-400">
         {label}
       </div>
-      <div className="mt-1 text-base font-semibold text-slate-900">{value}</div>
+      <div className="mt-0.5 text-base font-semibold text-slate-900">{value}</div>
     </div>
   )
 }
@@ -318,7 +318,7 @@ function ScopeBadge({
 }) {
   const label = t(`corpus.scopes.${scope}`)
   return (
-    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+    <span className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium uppercase tracking-[0.1em] text-slate-500">
       {label}
     </span>
   )
@@ -332,11 +332,11 @@ function InspectorMetric({
   value: string
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+    <div className="rounded-lg border border-white/10 bg-white/[0.04] p-2.5">
+      <div className="text-[11px] font-medium uppercase tracking-[0.1em] text-slate-400">
         {label}
       </div>
-      <div className="mt-1 text-sm font-semibold text-slate-100">{value}</div>
+      <div className="mt-0.5 text-sm font-semibold text-slate-100">{value}</div>
     </div>
   )
 }
@@ -349,7 +349,7 @@ function EmptyPreviewState({
   hasSearched: boolean
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 text-sm leading-6 text-slate-500">
+    <div className="rounded-lg border border-slate-200/80 bg-slate-50/70 p-3 text-sm leading-5 text-slate-500">
       {hasSearched ? t("corpus.preview.noResults") : t("corpus.preview.empty")}
     </div>
   )
@@ -361,7 +361,7 @@ function PreviewErrorState({
   message: string
 }) {
   return (
-    <div className="rounded-2xl border border-rose-200 bg-rose-50/90 p-4 text-sm leading-6 text-rose-700">
+    <div className="rounded-lg border border-rose-200 bg-rose-50/90 p-3 text-sm leading-5 text-rose-700">
       {message}
     </div>
   )

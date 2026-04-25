@@ -87,7 +87,9 @@ fn resolve_tool_trace_result(item: &serde_json::Value) -> serde_json::Value {
     if let Some(reasoning) = trimmed_json_string(item.get("reasoning")) {
         return serde_json::Value::String(reasoning);
     }
-    item.get("result").cloned().unwrap_or_else(|| serde_json::json!({}))
+    item.get("result")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}))
 }
 
 pub(crate) fn build_local_tool_trace_blocks(

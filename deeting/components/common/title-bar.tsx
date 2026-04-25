@@ -87,10 +87,37 @@ export function TitleBar() {
 
   const handleClose = async () => {
     try {
-      const { getCurrentWindow } = await import("@tauri-apps/api/window");
-      await getCurrentWindow().close();
+      const { getDesktopWindowCloseAction } = await import(
+        "@/lib/api/desktop-config"
+      );
+      const action = await getDesktopWindowCloseAction();
+
+      switch (action) {
+        case "show_island": {
+          const { invoke } = await import("@tauri-apps/api/core");
+          await invoke("hide_main_show_island");
+          break;
+        }
+        case "minimize": {
+          const { invoke } = await import("@tauri-apps/api/core");
+          await invoke("minimize_main_hide_island");
+          break;
+        }
+        case "quit":
+        default: {
+          const { exit } = await import("@tauri-apps/plugin-process");
+          await exit(0);
+        }
+      }
     } catch (error) {
-      console.error("Failed to close window:", error);
+      console.error("Failed to execute close action:", error);
+      // fallback: try direct close
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        await getCurrentWindow().close();
+      } catch {
+        // ignore fallback failure
+      }
     }
   };
 

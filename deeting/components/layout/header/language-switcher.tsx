@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, startTransition, useCallback, useEffect, useMemo } from "react";
+import { Suspense, startTransition, useCallback, useEffect, useMemo, useState } from "react";
 import { Languages } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
@@ -17,10 +17,17 @@ import { useLanguageStore } from "@/store/language-store";
 import { usePathname, useRouter, type AppLocale } from "@/i18n/routing";
 import { useInterfaceTransitionStore } from "@/store/interface-transition-store";
 
+function useMounted() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  return mounted;
+}
+
 function LanguageSwitcherContent() {
   const tCommon = useTranslations("common");
   const locale = useLocale() as AppLocale;
   const searchParams = useSearchParams();
+  const mounted = useMounted();
   const pathname = usePathname();
   const router = useRouter();
   const { language, hydrated, setLanguage } = useLanguageStore();
@@ -95,6 +102,10 @@ function LanguageSwitcherContent() {
       });
     }, 90);
   };
+
+  if (!mounted) {
+    return <LanguageSwitcherFallback />;
+  }
 
   return (
     <DropdownMenu modal={false}>

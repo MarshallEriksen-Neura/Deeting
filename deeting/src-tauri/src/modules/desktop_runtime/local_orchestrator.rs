@@ -816,7 +816,6 @@ pub async fn execute_local_orchestrated_chat(
                 );
             }
         }
-
     }
 
     let delegated_execution_learning = delegated_execution.as_ref().map(|execution| {

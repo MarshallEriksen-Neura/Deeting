@@ -59,18 +59,18 @@ export function LlmWikiBindingCard({
   const isAdoptMode = bindingMode === "adopt_existing_folder"
 
   return (
-    <Card className="h-full gap-0 py-0 border-[var(--hairline)] bg-[var(--panel-bg)] shadow-[0_18px_40px_-30px_rgba(15,17,28,0.22)]">
-      <CardHeader className="border-b border-[var(--hairline)] pb-5">
+    <Card className="h-full gap-0 py-0 border-[var(--hairline)] bg-[var(--panel-bg)] shadow-sm">
+      <CardHeader className="border-b border-[var(--hairline)] pb-4">
         <div className="flex items-start justify-between gap-3">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 rounded-full bg-sky-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-600">
+          <div className="space-y-1.5">
+            <div className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-sky-600">
               <FolderSearch className="size-3.5" />
               {t("binding.eyebrow")}
             </div>
-            <CardTitle className="text-[var(--ink)]">
+            <CardTitle className="text-base text-[var(--ink)]">
               {t("binding.title")}
             </CardTitle>
-            <CardDescription className="max-w-xl text-[var(--ink-3)]">
+            <CardDescription className="max-w-xl text-sm text-[var(--ink-3)]">
               {t("binding.description")}
             </CardDescription>
           </div>
@@ -79,15 +79,15 @@ export function LlmWikiBindingCard({
             variant="ghost"
             size="sm"
             onClick={onRefresh}
-            className="rounded-full border border-[var(--hairline)] bg-[var(--panel-bg-inset)] text-[var(--ink-2)] shadow-sm"
+            className="rounded-lg border border-[var(--hairline)] bg-[var(--panel-bg-inset)] text-[var(--ink-2)] shadow-sm"
           >
-            <RefreshCw className="mr-2 size-4" />
+            <RefreshCw className="mr-1.5 size-3.5" />
             {t("binding.refresh")}
           </Button>
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-5 pt-6">
+      <CardContent className="space-y-4 pt-4">
         <div className="grid gap-2 sm:grid-cols-2">
           <ModeButton
             active={!isAdoptMode}
@@ -111,12 +111,12 @@ export function LlmWikiBindingCard({
             value={vaultRoot}
             onChange={(event) => onVaultRootChange(event.target.value)}
             placeholder={t("binding.fields.vaultRoot.placeholder")}
-            className="h-12 rounded-2xl border-white/70 bg-white/75 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]"
+            className="h-10 rounded-lg border-white/70 bg-white/75 text-sm"
           />
         </LabeledField>
 
         {isAdoptMode ? (
-          <div className="space-y-4">
+          <div className="space-y-3">
             <LabeledField
               label={t("binding.fields.adoptFolder.label")}
               description={t("binding.fields.adoptFolder.description")}
@@ -125,22 +125,22 @@ export function LlmWikiBindingCard({
                 value={adoptFolderRelativePath}
                 onChange={(event) => onAdoptFolderRelativePathChange(event.target.value)}
                 placeholder={t("binding.fields.adoptFolder.placeholder")}
-                className="h-12 rounded-2xl border-white/70 bg-white/75 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]"
+                className="h-10 rounded-lg border-white/70 bg-white/75 text-sm"
               />
             </LabeledField>
 
             {candidateFolders.length > 0 ? (
-              <div className="rounded-[1.5rem] border border-white/70 bg-white/78 p-4 shadow-[0_20px_45px_-32px_rgba(15,23,42,0.32)]">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+              <div className="rounded-xl border border-white/70 bg-white/78 p-3">
+                <div className="text-[11px] font-medium uppercase tracking-[0.1em] text-slate-400">
                   {t("binding.adoption.candidates")}
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-2 flex flex-wrap gap-2">
                   {candidateFolders.map((folder) => (
                     <button
                       key={folder.relativePath}
                       type="button"
                       onClick={() => onAdoptFolderRelativePathChange(folder.relativePath)}
-                      className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-white"
+                      className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-white"
                     >
                       {folder.relativePath}
                     </button>
@@ -150,20 +150,20 @@ export function LlmWikiBindingCard({
             ) : null}
 
             {adoptionPreview ? (
-              <div className="rounded-[1.5rem] border border-amber-200/70 bg-amber-50/85 p-4 text-sm text-amber-950">
+              <div className="rounded-xl border border-amber-200/70 bg-amber-50/85 p-3 text-sm text-amber-950">
                 <div className="font-semibold">{t("binding.adoption.previewTitle")}</div>
-                <div className="mt-2 leading-6 text-amber-900/85">
+                <div className="mt-1.5 leading-5 text-amber-900/85">
                   {adoptionPreview.summaryMessage}
                 </div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
                   {adoptionPreview.bucketedCounts.map((bucket) => (
-                    <div key={bucket.kind} className="rounded-2xl border border-amber-200 bg-white/70 px-3 py-3">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">
+                    <div key={bucket.kind} className="rounded-lg border border-amber-200 bg-white/70 px-3 py-2.5">
+                      <div className="text-[11px] font-medium uppercase tracking-[0.1em] text-amber-700">
                         {t(`binding.adoption.buckets.${bucket.kind}`)}
                       </div>
-                      <div className="mt-1 text-base font-semibold text-amber-950">{bucket.count}</div>
+                      <div className="mt-0.5 text-base font-semibold text-amber-950">{bucket.count}</div>
                       {bucket.examples.length > 0 ? (
-                        <div className="mt-2 text-xs leading-5 text-amber-900/80">
+                        <div className="mt-1 text-xs leading-5 text-amber-900/80">
                           {bucket.examples.join(" / ")}
                         </div>
                       ) : null}
@@ -184,19 +184,19 @@ export function LlmWikiBindingCard({
                 onWorkspaceRelativePathChange(event.target.value)
               }
               placeholder={t("binding.fields.workspacePath.placeholder")}
-              className="h-12 rounded-2xl border-white/70 bg-white/75 text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]"
+              className="h-10 rounded-lg border-white/70 bg-white/75 text-sm"
             />
           </LabeledField>
         )}
 
-        <div className="grid gap-3 rounded-[1.5rem] border border-emerald-200/70 bg-emerald-50/80 p-4 text-sm text-emerald-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
-          <div className="flex items-start gap-3">
+        <div className="grid gap-2 rounded-xl border border-emerald-200/70 bg-emerald-50/80 p-3 text-sm text-emerald-900">
+          <div className="flex items-start gap-2.5">
             <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-600" />
             <div>
               <div className="font-semibold">
                 {t("binding.safety.title")}
               </div>
-              <div className="mt-1 text-emerald-800/85">
+              <div className="mt-0.5 text-emerald-800/85">
                 {t("binding.safety.description")}
               </div>
             </div>
@@ -204,7 +204,7 @@ export function LlmWikiBindingCard({
         </div>
 
         {binding && (
-          <div className="grid gap-3 rounded-[1.75rem] border border-white/70 bg-white/78 p-4 shadow-[0_20px_45px_-32px_rgba(15,23,42,0.32)] sm:grid-cols-2">
+          <div className="grid gap-2 rounded-xl border border-white/70 bg-white/78 p-3 sm:grid-cols-2">
             <BindingInsight
               label={t("binding.insights.vaultName")}
               value={binding.vaultName}
@@ -229,16 +229,16 @@ export function LlmWikiBindingCard({
         )}
       </CardContent>
 
-      <CardFooter className="flex-wrap gap-3 border-t border-[var(--hairline)] pt-5">
+      <CardFooter className="flex-wrap gap-2 border-t border-[var(--hairline)] pt-4">
         <Button
           onClick={onAnalyze}
           disabled={isAnalyzing || isPreviewingAdoption}
-          className="h-11 rounded-full bg-[linear-gradient(135deg,#0f172a,#1d4ed8)] px-6 text-white shadow-[0_20px_40px_-24px_rgba(29,78,216,0.65)]"
+          className="h-9 rounded-lg bg-[linear-gradient(135deg,#0f172a,#1d4ed8)] px-5 text-white"
         >
           {isAnalyzing || isPreviewingAdoption ? (
-            <RefreshCw className="mr-2 size-4 animate-spin" />
+            <RefreshCw className="mr-1.5 size-3.5 animate-spin" />
           ) : (
-            <FolderSearch className="mr-2 size-4" />
+            <FolderSearch className="mr-1.5 size-3.5" />
           )}
           {isAdoptMode
             ? isPreviewingAdoption
@@ -252,12 +252,12 @@ export function LlmWikiBindingCard({
           <Button
             onClick={onConfirmAdoption}
             disabled={isConfirmingAdoption || !adoptionPreview?.canAdopt}
-            className="h-11 rounded-full bg-[linear-gradient(135deg,#7c2d12,#d97706)] px-6 text-white shadow-[0_20px_40px_-24px_rgba(217,119,6,0.55)]"
+            className="h-9 rounded-lg bg-[linear-gradient(135deg,#7c2d12,#d97706)] px-5 text-white"
           >
             {isConfirmingAdoption ? (
-              <RefreshCw className="mr-2 size-4 animate-spin" />
+              <RefreshCw className="mr-1.5 size-3.5 animate-spin" />
             ) : (
-              <FolderOpen className="mr-2 size-4" />
+              <FolderOpen className="mr-1.5 size-3.5" />
             )}
             {t("binding.adoption.confirm")}
           </Button>
@@ -283,14 +283,14 @@ function ModeButton({
       type="button"
       onClick={onClick}
       className={[
-        "rounded-[1.25rem] border px-4 py-3 text-left transition",
+        "rounded-lg border px-3 py-2.5 text-left transition",
         active
-          ? "border-sky-300 bg-sky-50/90 shadow-[0_18px_30px_-24px_rgba(14,165,233,0.35)]"
+          ? "border-sky-300 bg-sky-50/90"
           : "border-white/70 bg-white/78 hover:bg-white",
       ].join(" ")}
     >
       <div className="text-sm font-semibold text-slate-900">{title}</div>
-      <div className="mt-1 text-xs leading-5 text-slate-500">{description}</div>
+      <div className="mt-0.5 text-xs leading-4 text-slate-500">{description}</div>
     </button>
   )
 }
@@ -305,10 +305,10 @@ function LabeledField({
   children: React.ReactNode
 }) {
   return (
-    <label className="block space-y-2.5">
-      <div className="space-y-1">
+    <label className="block space-y-2">
+      <div className="space-y-0.5">
         <div className="text-sm font-semibold text-slate-800">{label}</div>
-        <div className="text-xs leading-5 text-slate-500">{description}</div>
+        <div className="text-xs leading-4 text-slate-500">{description}</div>
       </div>
       {children}
     </label>
@@ -323,11 +323,11 @@ function BindingInsight({
   value: string | number
 }) {
   return (
-    <div className="rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+    <div className="rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2">
+      <div className="text-[11px] font-medium uppercase tracking-[0.1em] text-slate-400">
         {label}
       </div>
-      <div className="mt-1 text-base font-semibold text-slate-900">{value}</div>
+      <div className="mt-0.5 text-base font-semibold text-slate-900">{value}</div>
     </div>
   )
 }

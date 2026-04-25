@@ -11,7 +11,6 @@ import { LlmWikiAgentCard } from "./llm-wiki-agent-card"
 import { LlmWikiAutomationCard } from "./llm-wiki-automation-card"
 import { LlmWikiBindingCard } from "./llm-wiki-binding-card"
 import { LlmWikiCorpusCard } from "./llm-wiki-corpus-card"
-import { LlmWikiJourneyCard } from "./llm-wiki-journey-card"
 import { LlmWikiLifecycleCard } from "./llm-wiki-lifecycle-card"
 import { LlmWikiMaintenanceCard } from "./llm-wiki-maintenance-card"
 import { useLlmWiki } from "./use-llm-wiki"
@@ -82,11 +81,6 @@ export function LlmWikiClient() {
     setActiveTab(value as LlmWikiTabValue)
   }, [])
 
-  const handleJourneyNavigate = React.useCallback((tab: LlmWikiTabValue) => {
-    setActiveTab(tab)
-    tabsAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-  }, [])
-
   if (desktopSupported === null && isLoading) {
     return (
       <div className="flex justify-center">
@@ -119,47 +113,34 @@ export function LlmWikiClient() {
   }
 
   return (
-    <div className="space-y-6">
-      <LlmWikiJourneyCard
-        t={t}
-        state={state}
-        hasSearchedCorpus={hasSearchedCorpus}
-        corpusHitCount={corpusHits.length}
-        isAnalyzing={isAnalyzing}
-        isBootstrapping={isBootstrapping}
-        isSyncingCorpus={isSyncingCorpus}
-        isSearchingCorpus={isSearchingCorpus}
-        isSyncingAgent={isSyncingAgent}
-        onNavigateTab={handleJourneyNavigate}
-      />
-
+    <div className="space-y-4">
       <div ref={tabsAnchorRef}>
-        <Tabs value={activeTab} onValueChange={handleTabChange} className="gap-5">
-          <TabsList className="grid h-auto w-full grid-cols-2 rounded-[20px] border border-[var(--hairline)] bg-[var(--panel-bg)]/88 p-1 shadow-[0_18px_40px_-32px_rgba(15,17,28,0.22)] backdrop-blur-xl md:grid-cols-4">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="gap-4">
+          <TabsList className="grid h-auto w-full grid-cols-2 rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg)]/88 p-1 shadow-sm backdrop-blur-xl md:grid-cols-4">
             <TabsTrigger
               value="setup"
-              className="h-auto min-h-14 flex-col gap-1 rounded-[16px] px-3 py-3 text-center text-xs leading-tight whitespace-normal text-[var(--ink-3)] data-[state=active]:bg-[var(--accent-soft)] data-[state=active]:text-[var(--accent-ink)] data-[state=active]:shadow-none sm:text-sm"
+              className="h-auto min-h-10 flex-col gap-0.5 rounded-lg px-3 py-2 text-center text-xs leading-tight whitespace-normal text-[var(--ink-3)] data-[state=active]:bg-[var(--accent-soft)] data-[state=active]:text-[var(--accent-ink)] data-[state=active]:shadow-none sm:text-sm"
             >
               <HardDrive className="size-4" />
               {t("tabs.setup")}
             </TabsTrigger>
             <TabsTrigger
               value="operations"
-              className="h-auto min-h-14 flex-col gap-1 rounded-[16px] px-3 py-3 text-center text-xs leading-tight whitespace-normal text-[var(--ink-3)] data-[state=active]:bg-[var(--accent-soft)] data-[state=active]:text-[var(--accent-ink)] data-[state=active]:shadow-none sm:text-sm"
+              className="h-auto min-h-10 flex-col gap-0.5 rounded-lg px-3 py-2 text-center text-xs leading-tight whitespace-normal text-[var(--ink-3)] data-[state=active]:bg-[var(--accent-soft)] data-[state=active]:text-[var(--accent-ink)] data-[state=active]:shadow-none sm:text-sm"
             >
               <Wrench className="size-4" />
               {t("tabs.operations")}
             </TabsTrigger>
             <TabsTrigger
               value="corpus"
-              className="h-auto min-h-14 flex-col gap-1 rounded-[16px] px-3 py-3 text-center text-xs leading-tight whitespace-normal text-[var(--ink-3)] data-[state=active]:bg-[var(--accent-soft)] data-[state=active]:text-[var(--accent-ink)] data-[state=active]:shadow-none sm:text-sm"
+              className="h-auto min-h-10 flex-col gap-0.5 rounded-lg px-3 py-2 text-center text-xs leading-tight whitespace-normal text-[var(--ink-3)] data-[state=active]:bg-[var(--accent-soft)] data-[state=active]:text-[var(--accent-ink)] data-[state=active]:shadow-none sm:text-sm"
             >
               <Database className="size-4" />
               {t("tabs.corpus")}
             </TabsTrigger>
             <TabsTrigger
               value="agent"
-              className="h-auto min-h-14 flex-col gap-1 rounded-[16px] px-3 py-3 text-center text-xs leading-tight whitespace-normal text-[var(--ink-3)] data-[state=active]:bg-[var(--accent-soft)] data-[state=active]:text-[var(--accent-ink)] data-[state=active]:shadow-none sm:text-sm"
+              className="h-auto min-h-10 flex-col gap-0.5 rounded-lg px-3 py-2 text-center text-xs leading-tight whitespace-normal text-[var(--ink-3)] data-[state=active]:bg-[var(--accent-soft)] data-[state=active]:text-[var(--accent-ink)] data-[state=active]:shadow-none sm:text-sm"
             >
               <Bot className="size-4" />
               {t("tabs.agent")}
@@ -167,7 +148,7 @@ export function LlmWikiClient() {
           </TabsList>
 
           <TabsContent value="setup" className="m-0">
-            <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+            <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
               <LlmWikiBindingCard
                 t={t}
                 state={state}
@@ -200,7 +181,7 @@ export function LlmWikiClient() {
           </TabsContent>
 
           <TabsContent value="operations" className="m-0">
-            <div className="grid gap-6">
+            <div className="grid gap-4">
               <LlmWikiAutomationCard
                 t={t}
                 settings={automation?.settings ?? null}
@@ -234,7 +215,7 @@ export function LlmWikiClient() {
           </TabsContent>
 
           <TabsContent value="corpus" className="m-0">
-            <div className="grid gap-6">
+            <div className="grid gap-4">
               <LlmWikiLifecycleCard t={t} />
               <LlmWikiCorpusCard
                 t={t}

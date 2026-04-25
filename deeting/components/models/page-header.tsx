@@ -17,10 +17,10 @@ export function PageHeader({
   ...props
 }: PageHeaderProps) {
   return (
-    <div className={cn("mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between", className)} {...props}>
-      <div className="space-y-1">
-        <h1 className="flex items-center gap-3 text-2xl font-bold tracking-[-0.04em] text-[var(--ink)] md:text-3xl">
-          {Icon ? <Icon className="size-7 text-[var(--accent-strong)]" /> : null}
+    <div className={cn("mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between", className)} {...props}>
+      <div className="space-y-0.5">
+        <h1 className="flex items-center gap-2 text-xl font-bold tracking-[-0.02em] text-[var(--ink)] md:text-2xl">
+          {Icon ? <Icon className="size-6 text-[var(--accent-strong)]" /> : null}
           {title}
         </h1>
         {description ? <p className="text-sm text-[var(--ink-2)]">{description}</p> : null}

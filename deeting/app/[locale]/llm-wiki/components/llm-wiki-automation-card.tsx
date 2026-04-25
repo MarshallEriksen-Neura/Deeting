@@ -141,29 +141,29 @@ export function LlmWikiAutomationCard({
   ]
 
   return (
-    <Card className="gap-0 py-0 border-[var(--hairline)] bg-[var(--panel-bg)] shadow-[0_18px_40px_-30px_rgba(15,17,28,0.22)]">
-      <CardHeader className="border-b border-[var(--hairline)] pb-5">
-        <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 rounded-full bg-amber-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-700">
+    <Card className="gap-0 py-0 border-[var(--hairline)] bg-[var(--panel-bg)] shadow-sm">
+      <CardHeader className="border-b border-[var(--hairline)] pb-4">
+        <div className="space-y-1.5">
+          <div className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-amber-700">
             <Settings2 className="size-3.5" />
             {t("automation.eyebrow")}
           </div>
-          <CardTitle className="text-[var(--ink)]">
+          <CardTitle className="text-base text-[var(--ink)]">
             {t("automation.title")}
           </CardTitle>
-          <CardDescription className="text-[var(--ink-3)]">
+          <CardDescription className="text-sm text-[var(--ink-3)]">
             {t("automation.description")}
           </CardDescription>
         </div>
       </CardHeader>
 
-      <CardContent className="grid gap-6 pt-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="space-y-4">
-          <div className="rounded-[1.75rem] border border-white/70 bg-white/78 p-4 shadow-[0_20px_45px_-32px_rgba(15,23,42,0.32)]">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+      <CardContent className="grid gap-4 pt-4 xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="space-y-3">
+          <div className="rounded-xl border border-white/70 bg-white/78 p-3">
+            <div className="text-[11px] font-medium uppercase tracking-[0.1em] text-slate-400">
               {t("automation.settings.title")}
             </div>
-            <div className="mt-4 grid gap-3">
+            <div className="mt-3 grid gap-2">
               {toggles.map((toggle) => (
                 <AutomationToggleRow
                   key={toggle.key}
@@ -178,14 +178,14 @@ export function LlmWikiAutomationCard({
             </div>
           </div>
 
-          <div className="rounded-[1.75rem] border border-white/70 bg-white/78 p-4 shadow-[0_20px_45px_-32px_rgba(15,23,42,0.32)]">
-            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+          <div className="rounded-xl border border-white/70 bg-white/78 p-3">
+            <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.1em] text-slate-400">
               <Sparkles className="size-3.5 text-amber-500" />
               {t("automation.suggestions.title")}
             </div>
-            <div className="mt-4 space-y-3">
+            <div className="mt-3 space-y-2">
               {pendingSuggestions.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-4 text-sm text-slate-500">
+                <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/70 px-3 py-3 text-sm text-slate-500">
                   {t("automation.suggestions.empty")}
                 </div>
               ) : (
@@ -195,32 +195,32 @@ export function LlmWikiAutomationCard({
                   return (
                     <div
                       key={suggestion.id}
-                      className="rounded-[1.5rem] border border-slate-200/80 bg-slate-50/80 p-4"
+                      className="rounded-lg border border-slate-200/80 bg-slate-50/80 p-3"
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-1">
+                        <div className="space-y-0.5">
                           <div className="text-sm font-semibold text-slate-900">
                             {copy.title}
                           </div>
-                          <div className="text-xs uppercase tracking-[0.16em] text-slate-400">
+                          <div className="text-xs uppercase tracking-[0.1em] text-slate-400">
                             {t(`automation.triggers.${suggestion.trigger}`)}
                           </div>
                         </div>
-                        <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700">
+                        <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-[0.1em] text-amber-700">
                           {t(`automation.actions.${suggestion.actionKind}`)}
                         </span>
                       </div>
-                      <div className="mt-3 text-sm leading-6 text-slate-600">
+                      <div className="mt-2 text-sm leading-5 text-slate-600">
                         {copy.description}
                       </div>
-                      <div className="mt-4 flex flex-wrap gap-2">
+                      <div className="mt-3 flex flex-wrap gap-2">
                         <Button
                           size="sm"
                           onClick={() => onExecuteSuggestion(suggestion)}
                           disabled={executingSuggestionId === suggestion.id}
-                          className="rounded-full bg-[linear-gradient(135deg,#0f172a,#2563eb)] px-4 text-white"
+                          className="rounded-lg bg-[linear-gradient(135deg,#0f172a,#2563eb)] px-4 text-white"
                         >
-                          <Play className="mr-2 size-3.5" />
+                          <Play className="mr-1.5 size-3.5" />
                           {executingSuggestionId === suggestion.id
                             ? t("automation.suggestions.executing")
                             : t("automation.suggestions.execute")}
@@ -230,9 +230,9 @@ export function LlmWikiAutomationCard({
                           size="sm"
                           onClick={() => onDismissSuggestion(suggestion.id)}
                           disabled={dismissingSuggestionId === suggestion.id}
-                          className="rounded-full border border-slate-200 bg-white px-4 text-slate-600"
+                          className="rounded-lg border border-slate-200 bg-white px-4 text-slate-600"
                         >
-                          <X className="mr-2 size-3.5" />
+                          <X className="mr-1.5 size-3.5" />
                           {t("automation.suggestions.dismiss")}
                         </Button>
                       </div>
@@ -244,34 +244,34 @@ export function LlmWikiAutomationCard({
           </div>
         </div>
 
-        <div className="space-y-4">
-          <div className="rounded-[1.75rem] border border-white/70 bg-slate-950/[0.94] p-4 text-slate-100 shadow-[0_28px_70px_-40px_rgba(15,23,42,0.58)]">
-            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+        <div className="space-y-3">
+          <div className="rounded-xl border border-white/70 bg-slate-950/[0.94] p-3 text-slate-100">
+            <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.1em] text-slate-400">
               <Clock3 className="size-3.5 text-sky-400" />
               {t("automation.audit.title")}
             </div>
-            <div className="mt-4 space-y-3">
+            <div className="mt-3 space-y-2">
               {auditEntries.length === 0 ? (
-                <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-slate-400">
+                <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-3 text-sm text-slate-400">
                   {t("automation.audit.empty")}
                 </div>
               ) : (
                 auditEntries.map((entry) => (
                   <div
                     key={entry.id}
-                    className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3"
+                    className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5"
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-slate-400">
+                      <div className="flex items-center gap-2 text-xs uppercase tracking-[0.1em] text-slate-400">
                         <AuditPill level={entry.level} t={t} />
                         <span>{t(`automation.triggers.${entry.trigger}`)}</span>
                       </div>
                       <div className="text-[11px] text-slate-500">{entry.createdAt}</div>
                     </div>
-                    <div className="mt-2 text-sm leading-6 text-slate-100">
+                    <div className="mt-1.5 text-sm leading-5 text-slate-100">
                       {getAuditMessage(entry, t)}
                     </div>
-                    <div className="mt-2 text-xs text-slate-500">
+                    <div className="mt-1 text-xs text-slate-500">
                       {t(`automation.dispositions.${entry.disposition}`)}
                     </div>
                   </div>
@@ -280,12 +280,12 @@ export function LlmWikiAutomationCard({
             </div>
           </div>
 
-          <div className="rounded-[1.75rem] border border-amber-200/70 bg-amber-50/85 p-4 text-sm text-amber-950">
-            <div className="flex items-start gap-3">
+          <div className="rounded-xl border border-amber-200/70 bg-amber-50/85 p-3 text-sm text-amber-950">
+            <div className="flex items-start gap-2.5">
               <Bot className="mt-0.5 size-4 shrink-0 text-amber-600" />
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 <div className="font-semibold">{t("automation.boundary.title")}</div>
-                <div className="leading-6 text-amber-900/85">
+                <div className="leading-5 text-amber-900/85">
                   {t("automation.boundary.description")}
                 </div>
               </div>
@@ -315,15 +315,15 @@ function AutomationToggleRow({
   return (
     <div
       className={[
-        "flex items-start justify-between gap-4 rounded-[1.25rem] border px-4 py-3",
+        "flex items-start justify-between gap-4 rounded-lg border px-3 py-2.5",
         tone === "safe"
           ? "border-emerald-100 bg-emerald-50/50"
           : "border-amber-100 bg-amber-50/50",
       ].join(" ")}
     >
-      <div className="space-y-1">
+      <div className="space-y-0.5">
         <div className="text-sm font-semibold text-slate-900">{title}</div>
-        <div className="text-xs leading-5 text-slate-500">{description}</div>
+        <div className="text-xs leading-4 text-slate-500">{description}</div>
       </div>
       <Switch checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
     </div>
@@ -348,7 +348,7 @@ function AuditPill({
         : "border-emerald-300 bg-emerald-400/10 text-emerald-300"
 
   return (
-    <span className={["rounded-full border px-2 py-0.5 text-[10px] font-semibold", palette].join(" ")}>
+    <span className={["rounded-md border px-1.5 py-0.5 text-[10px] font-medium", palette].join(" ")}>
       <CheckCircle2 className="mr-1 inline size-3" />
       {normalizedLevel ? t(`automation.levels.${normalizedLevel}`) : level}
     </span>
