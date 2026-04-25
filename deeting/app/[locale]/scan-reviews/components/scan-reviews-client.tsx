@@ -25,11 +25,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/shadcn/tabs"
 import { isTauriRuntime } from "@/lib/api/desktop-config"
 import {
   runScanReviewAction,
-  runScanReviewActions,
   scanDirectoryReview,
   scanFileReview,
-
-
   type LocalScanRun,
 } from "@/lib/api/local-scan"
 import { cn } from "@/lib/utils"
@@ -154,6 +151,8 @@ export function ScanReviewsClient() {
   const [, setActionError] = useState<string | null>(null)
   const [actioningId, setActioningId] = useState<string | null>(null)
   const [batchRunning, setBatchRunning] = useState(false)
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null)
+  const [batchResults, setBatchResults] = useState<Record<string, { status: "pending" | "applied" | "failed"; message?: string }>>({})
 
   useEffect(() => {
     setSupported(isTauriRuntime())
@@ -284,24 +283,69 @@ export function ScanReviewsClient() {
     setActionError(null)
     setScanError(null)
     setBatchRunning(true)
+    setBatchProgress({ current: 0, total: actionableFindings.length })
+    setBatchResults({})
+
+    let applied = 0
+    let failed = 0
+    let skipped = 0
+    const seen = new Set<string>()
+
     try {
-      const result = await runScanReviewActions(actionableFindings)
-      if (result) {
-        if (result.applied > 0 || result.skipped > 0 || result.failed === 0) {
-          setFeedback(t("feedback.batchApplied", { applied: result.applied, failed: result.failed, skipped: result.skipped }))
+      for (let i = 0; i < actionableFindings.length; i++) {
+        const action = actionableFindings[i]
+        const dedupKey = `${action.kind}:${action.bundle_id ?? ""}:${action.path ?? ""}`
+        setBatchProgress({ current: i + 1, total: actionableFindings.length })
+
+        if (seen.has(dedupKey)) {
+          skipped += 1
+          setBatchResults((prev) => ({
+            ...prev,
+            [dedupKey]: { status: "applied", message: "Skipped duplicate" },
+          }))
+          continue
         }
-        if (result.failed > 0) {
-           const failed = result.results.find((item) => item.status === "failed" && item.message.trim().length > 0)
-           setActionError(failed?.message ?? t("feedback.actionFailed"))
+        seen.add(dedupKey)
+
+        setBatchResults((prev) => ({
+          ...prev,
+          [dedupKey]: { status: "pending" },
+        }))
+
+        try {
+          const result = await runScanReviewAction(action)
+          if (result?.status === "failed") {
+            failed += 1
+            setBatchResults((prev) => ({
+              ...prev,
+              [dedupKey]: { status: "failed", message: result.message },
+            }))
+          } else {
+            applied += 1
+            setBatchResults((prev) => ({
+              ...prev,
+              [dedupKey]: { status: "applied", message: result?.message },
+            }))
+          }
+        } catch (error) {
+          failed += 1
+          setBatchResults((prev) => ({
+            ...prev,
+            [dedupKey]: { status: "failed", message: readErrorMessage(error, t("feedback.actionFailed")) },
+          }))
         }
-        if (result.applied > 0) await handleRescan({ preserveFeedback: true })
-      } else {
-        setFeedback(t("feedback.actionApplied"))
       }
-    } catch (error) {
-      setActionError(readErrorMessage(error, t("feedback.actionFailed")))
+
+      if (applied > 0 || skipped > 0 || failed === 0) {
+        setFeedback(t("feedback.batchApplied", { applied, failed, skipped }))
+      }
+      if (failed > 0) {
+        setActionError(t("feedback.actionFailed"))
+      }
+      if (applied > 0) await handleRescan({ preserveFeedback: true })
     } finally {
       setBatchRunning(false)
+      setBatchProgress(null)
     }
   }
 
@@ -469,14 +513,16 @@ export function ScanReviewsClient() {
                     </div>
 
                     <div className="flex gap-2">
-                      <Button 
-                        variant="outline" 
-                        onClick={() => void handleBatchFix()} 
-                        disabled={batchRunning || actionableFindings.length === 0} 
+                      <Button
+                        variant="outline"
+                        onClick={() => void handleBatchFix()}
+                        disabled={batchRunning || actionableFindings.length === 0}
                         className="h-9 rounded-none border-[var(--border)] font-mono text-[10px] uppercase tracking-tighter px-4"
                       >
                         {batchRunning ? <Loader2 className="mr-2 size-3 animate-spin" /> : null}
-                        {t("actions.fixAll")}
+                        {batchRunning && batchProgress
+                          ? t("actions.fixingAll") + ` ${batchProgress.current}/${batchProgress.total}`
+                          : t("actions.fixAll")}
                       </Button>
                       <Button 
                         variant="outline" 
@@ -512,6 +558,11 @@ export function ScanReviewsClient() {
                       ) : findings.map((finding) => {
                         const riskMeta = readRiskMetadata(finding.metadata)
                         const riskLine = formatTuple([riskMeta?.riskLevel, riskMeta?.operationClass, riskMeta?.boundaryClass])
+                        const actionKey = finding.action ? `${finding.action.kind}:${finding.action.bundle_id ?? ""}:${finding.action.path ?? ""}` : ""
+                        const batchResult = batchResults[actionKey]
+                        const isBatchPending = batchResult?.status === "pending"
+                        const isBatchApplied = batchResult?.status === "applied"
+                        const isBatchFailed = batchResult?.status === "failed"
                         return (
                           <div key={finding.id} className="bg-[var(--card)] p-4 group hover:bg-[var(--primary)]/[0.02] transition-colors flex justify-between items-start gap-6">
                             <div className="space-y-3 min-w-0">
@@ -523,22 +574,35 @@ export function ScanReviewsClient() {
                                   {finding.severity}
                                 </span>
                                 <span className="font-mono text-[9px] text-[var(--ink-4)]">[{finding.code}]</span>
+                                {isBatchApplied && (
+                                  <span className="font-mono text-[9px] px-1.5 py-0.5 border border-[var(--success)]/50 text-[var(--success)] uppercase">
+                                    {t("status.applied")}
+                                  </span>
+                                )}
+                                {isBatchFailed && (
+                                  <span className="font-mono text-[9px] px-1.5 py-0.5 border border-[var(--danger)]/50 text-[var(--danger)] uppercase">
+                                    {t("status.failed")}
+                                  </span>
+                                )}
                               </div>
                               <div className="space-y-1">
                                 <p className="text-[13px] font-bold text-[var(--foreground)] tracking-tight">{finding.message}</p>
                                 <p className="font-mono text-[10px] text-[var(--ink-3)] truncate opacity-60">{finding.document_path}</p>
                               </div>
                               {riskLine && <div className="font-mono text-[9px] text-[var(--primary)]/60 uppercase">{tAnalysis("riskProfile")} {riskLine}</div>}
+                              {isBatchFailed && batchResult?.message && (
+                                <p className="font-mono text-[9px] text-[var(--danger)]">{batchResult.message}</p>
+                              )}
                             </div>
                             {finding.action && (
-                              <Button 
-                                variant="outline" 
-                                size="sm" 
-                                onClick={() => void handleFindingAction(finding)} 
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => void handleFindingAction(finding)}
                                 disabled={batchRunning || actioningId === finding.id}
                                 className="rounded-none border-[var(--border)] font-mono text-[9px] h-7 px-3 uppercase hover:bg-[var(--primary)] hover:text-white"
                               >
-                                {actioningId === finding.id ? <Loader2 className="size-3 animate-spin" /> : <ArrowUpRight className="size-3 mr-1" />}
+                                {actioningId === finding.id || isBatchPending ? <Loader2 className="size-3 animate-spin" /> : <ArrowUpRight className="size-3 mr-1" />}
                                 {tAnalysis("patchAction")}
                               </Button>
                             )}
@@ -546,8 +610,57 @@ export function ScanReviewsClient() {
                         )
                       })}
                     </TabsContent>
-                    
-                    {/* ... Documents Content Simplified ... */}
+
+                    <TabsContent value="documents" className="space-y-px bg-[var(--border)] border border-[var(--border)]">
+                      {documents.length === 0 ? (
+                        <div className="bg-[var(--card)] p-12 text-center font-mono text-[11px] text-[var(--ink-4)] uppercase italic">{t("empty.noDocuments")}</div>
+                      ) : documents.map((document) => {
+                        const executionMeta = readExecutionMetadata(document.metadata)
+                        const executionLine = formatTuple([
+                          executionMeta?.adapterKind,
+                          executionMeta?.executionSurface,
+                          executionMeta?.ecosystem,
+                        ])
+                        const documentPath = document.relative_path ?? document.path
+                        const statusLabel =
+                          document.status === "healthy"
+                            ? t("status.healthy")
+                            : document.status === "needs_review"
+                              ? t("status.needs_review")
+                              : document.status
+                        return (
+                          <div key={document.id} className="grid gap-px bg-[var(--border)] md:grid-cols-[minmax(0,1.35fr)_120px_120px_minmax(0,1fr)]">
+                            <div className="bg-[var(--card)] p-4 min-w-0">
+                              <span className="font-mono text-[8px] uppercase tracking-widest text-[var(--ink-4)]">{t("table.documents.headers.document")}</span>
+                              <p className="mt-2 truncate text-[13px] font-bold tracking-tight text-[var(--foreground)]">{document.display_name}</p>
+                              <p className="mt-1 truncate font-mono text-[10px] text-[var(--ink-3)] opacity-70">{documentPath}</p>
+                              {document.bundle_id && (
+                                <p className="mt-2 truncate font-mono text-[9px] uppercase text-[var(--primary)]/70">{document.bundle_id}</p>
+                              )}
+                            </div>
+                            <div className="bg-[var(--card)] p-4">
+                              <span className="font-mono text-[8px] uppercase tracking-widest text-[var(--ink-4)]">{t("table.documents.headers.status")}</span>
+                              <div className="mt-2 flex items-center gap-2">
+                                <BlueprintLED tone={document.status === "healthy" ? "ok" : "warn"} />
+                                <span className="font-mono text-[10px] font-bold uppercase text-[var(--foreground)]">{statusLabel}</span>
+                              </div>
+                            </div>
+                            <div className="bg-[var(--card)] p-4 min-w-0">
+                              <span className="font-mono text-[8px] uppercase tracking-widest text-[var(--ink-4)]">{t("table.documents.headers.kind")}</span>
+                              <p className="mt-2 truncate font-mono text-[10px] font-bold uppercase text-[var(--foreground)]">{document.document_kind}</p>
+                              {executionLine && (
+                                <p className="mt-1 truncate font-mono text-[9px] uppercase text-[var(--ink-4)]">{executionLine}</p>
+                              )}
+                            </div>
+                            <div className="bg-[var(--card)] p-4 min-w-0">
+                              <span className="font-mono text-[8px] uppercase tracking-widest text-[var(--ink-4)]">{t("table.documents.headers.summary")}</span>
+                              <p className="mt-2 line-clamp-2 text-[12px] leading-relaxed text-[var(--ink-3)]">{document.excerpt ?? "--"}</p>
+                              <p className="mt-2 truncate font-mono text-[9px] text-[var(--ink-4)]">{formatDate(document.modified_at, locale)}</p>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </TabsContent>
                   </Tabs>
                 </div>
               </BlueprintCard>

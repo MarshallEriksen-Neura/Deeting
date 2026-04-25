@@ -406,7 +406,9 @@
       },
       "status": {
         "healthy": "Healthy",
-        "needs_review": "Needs Review"
+        "needs_review": "Needs Review",
+        "applied": "Applied",
+        "failed": "Failed"
       },
       "actions": {
         "fixAll": "Fix all actionable findings",

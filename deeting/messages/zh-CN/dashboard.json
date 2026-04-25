@@ -406,7 +406,9 @@
       },
       "status": {
         "healthy": "健康",
-        "needs_review": "待审查"
+        "needs_review": "待审查",
+        "applied": "已修复",
+        "failed": "失败"
       },
       "actions": {
         "fixAll": "修复全部可执行发现项",
