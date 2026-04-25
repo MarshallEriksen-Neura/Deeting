@@ -1,5 +1,6 @@
 use tauri::{AppHandle, Emitter};
 
+use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUNDS_CONFIG_KEY};
 use crate::modules::workflow::context;
 use crate::modules::workflow::result_packet;
 use crate::modules::workflow::run_dir;
@@ -181,6 +182,15 @@ async fn execute_single_phase(
     )
     .await;
 
+    let configured_max_rounds = app_state
+        .mcp
+        .store
+        .get_desktop_config(MAX_AGENTIC_ROUNDS_CONFIG_KEY)
+        .await
+        .ok()
+        .flatten();
+    let max_rounds = parse_max_agentic_rounds(configured_max_rounds.as_deref()) as u32;
+
     let execution_input = WorkerExecutionInput {
         run_id: run_id.clone(),
         phase_id: phase.phase_id.clone(),
@@ -188,7 +198,7 @@ async fn execute_single_phase(
         context_packet,
         temperature: None,
         max_tokens: None,
-        max_rounds: None,
+        max_rounds: Some(max_rounds),
     };
 
     match worker_adapter::execute_phase(app_handle, app_state, &execution_input, &resolved).await {
