@@ -122,7 +122,9 @@ fn delegate_task_preflight_blocks_when_selected_agent_has_no_executable_surface(
 
     let delegated_result = record.delegated_result();
     assert_eq!(
-        delegated_result.get("status").and_then(serde_json::Value::as_str),
+        delegated_result
+            .get("status")
+            .and_then(serde_json::Value::as_str),
         Some("blocked")
     );
     assert_eq!(

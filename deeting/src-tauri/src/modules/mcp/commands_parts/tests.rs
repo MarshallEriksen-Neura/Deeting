@@ -33,7 +33,9 @@ mod tests {
     };
     use crate::modules::mcp::commands::tool_approval_impl::list_pending_mcp_approvals_inner;
     #[cfg(not(target_os = "windows"))]
-    use crate::modules::mcp::commands::tool_management_impl::start_mcp_tool_inner;
+    use crate::modules::mcp::commands::tool_management_impl::{
+        start_mcp_tool_inner, stop_mcp_tool_inner,
+    };
     use crate::modules::mcp::commands::tool_management_impl::{
         build_remote_transport_log_entries, start_remote_transport_tool, stop_remote_transport_tool,
     };
@@ -4305,6 +4307,119 @@ for raw_line in sys.stdin:
             .close_tool_session(&healthy_tool, None)
             .await
             .expect("close started stdio mcp session");
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test]
+    async fn start_mcp_tool_inner_only_updates_target_stdio_peer_status() {
+        let store =
+            std::sync::Arc::new(create_test_store("start-stdio-mcp-peer-boundary").await);
+        let script_path = write_mock_stdio_mcp_server_script("start-stdio-mcp-peer-boundary");
+        let target_tool = upsert_test_stdio_mcp_tool(&store, "mock_stdio", "write_file", &script_path).await;
+        let peer_tool = upsert_test_stdio_mcp_tool(&store, "mock_stdio", "read_file", &script_path).await;
+        let app = tauri::test::mock_app();
+        let process_manager =
+            crate::modules::mcp::process::ProcessManager::new(store.clone(), app.handle().clone());
+        let runtime = crate::modules::mcp::McpRuntimeState::new(
+            store.clone(),
+            process_manager,
+            "http://127.0.0.1:8000".to_string(),
+        );
+
+        store
+            .set_tool_status(&target_tool.id, McpToolStatus::Stopped, None, None)
+            .await
+            .expect("seed stopped target stdio tool");
+        store
+            .set_tool_status(&peer_tool.id, McpToolStatus::Stopped, None, None)
+            .await
+            .expect("seed stopped peer stdio tool");
+
+        start_mcp_tool_inner(&runtime, &target_tool.id)
+            .await
+            .expect("start target stdio mcp tool");
+
+        let reloaded_target = store
+            .get_tool(&target_tool.id)
+            .await
+            .expect("reload target stdio tool")
+            .expect("target stdio tool exists");
+        let reloaded_peer = store
+            .get_tool(&peer_tool.id)
+            .await
+            .expect("reload peer stdio tool")
+            .expect("peer stdio tool exists");
+
+        assert_eq!(reloaded_target.status, McpToolStatus::Healthy);
+        assert_eq!(reloaded_peer.status, McpToolStatus::Stopped);
+
+        runtime
+            .stdio_mcp_sessions
+            .close_tool_session(&reloaded_target, None)
+            .await
+            .expect("close started target stdio mcp session");
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test]
+    async fn stop_mcp_tool_inner_only_updates_target_stdio_peer_status() {
+        let store =
+            std::sync::Arc::new(create_test_store("stop-stdio-mcp-peer-boundary").await);
+        let script_path = write_mock_stdio_mcp_server_script("stop-stdio-mcp-peer-boundary");
+        let target_tool = upsert_test_stdio_mcp_tool(&store, "mock_stdio", "write_file", &script_path).await;
+        let peer_tool = upsert_test_stdio_mcp_tool(&store, "mock_stdio", "read_file", &script_path).await;
+        let app = tauri::test::mock_app();
+        let process_manager =
+            crate::modules::mcp::process::ProcessManager::new(store.clone(), app.handle().clone());
+        let runtime = crate::modules::mcp::McpRuntimeState::new(
+            store.clone(),
+            process_manager,
+            "http://127.0.0.1:8000".to_string(),
+        );
+
+        store
+            .set_tool_status(&target_tool.id, McpToolStatus::Healthy, None, None)
+            .await
+            .expect("seed healthy target stdio tool");
+        store
+            .set_tool_status(&peer_tool.id, McpToolStatus::Healthy, None, None)
+            .await
+            .expect("seed healthy peer stdio tool");
+
+        runtime
+            .stdio_mcp_sessions
+            .ensure_tool_session(&target_tool, None)
+            .await
+            .expect("ensure target stdio session");
+        runtime
+            .stdio_mcp_sessions
+            .ensure_tool_session(&peer_tool, None)
+            .await
+            .expect("ensure peer stdio session");
+
+        stop_mcp_tool_inner(&runtime, &target_tool.id)
+            .await
+            .expect("stop target stdio mcp tool");
+
+        let reloaded_target = store
+            .get_tool(&target_tool.id)
+            .await
+            .expect("reload stopped target stdio tool")
+            .expect("stopped target stdio tool exists");
+        let reloaded_peer = store
+            .get_tool(&peer_tool.id)
+            .await
+            .expect("reload peer stdio tool after target stop")
+            .expect("peer stdio tool exists");
+
+        assert_eq!(reloaded_target.status, McpToolStatus::Stopped);
+        assert_eq!(reloaded_peer.status, McpToolStatus::Healthy);
+
+        runtime
+            .stdio_mcp_sessions
+            .close_tool_session(&reloaded_peer, None)
+            .await
+            .expect("close peer stdio mcp session");
     }
 
     #[cfg(not(target_os = "windows"))]

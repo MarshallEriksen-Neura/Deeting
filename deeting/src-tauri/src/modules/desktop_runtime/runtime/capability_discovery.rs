@@ -2024,7 +2024,17 @@ impl QueryProfile {
             "weather"
         } else if contains_any(
             &normalized,
-            &["网页", "网站", "url", "html", "web", "抓取", "页面", "标题", "浏览器"],
+            &[
+                "网页",
+                "网站",
+                "url",
+                "html",
+                "web",
+                "抓取",
+                "页面",
+                "标题",
+                "浏览器",
+            ],
         ) {
             "web"
         } else if contains_any(&normalized, &["股票", "stock", "quote", "行情"]) {

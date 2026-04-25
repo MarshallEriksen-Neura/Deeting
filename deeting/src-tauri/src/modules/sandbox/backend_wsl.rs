@@ -538,9 +538,7 @@ fn classify_wsl_warmup_failure(detail: &str) -> SandboxError {
         ));
     }
 
-    SandboxError::Unavailable(format!(
-        "WSL initialization failed: {detail}"
-    ))
+    SandboxError::Unavailable(format!("WSL initialization failed: {detail}"))
 }
 
 #[cfg(test)]

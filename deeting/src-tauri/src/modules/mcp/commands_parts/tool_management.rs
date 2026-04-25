@@ -79,14 +79,12 @@ pub(crate) async fn start_mcp_tool_inner(
             .await
         {
             Ok(()) => {
-                crate::modules::mcp::update_stdio_mcp_server_statuses(
-                    state.store.as_ref(),
-                    &tool,
-                    McpToolStatus::Healthy,
-                    None,
-                )
-                .await
-                .map_err(to_string)?;
+                state
+                    .store
+                    .set_tool_status(&tool.id, McpToolStatus::Healthy, None, None)
+                    .await
+                    .map_err(to_string)?;
+                let _ = state.store.set_tool_new_flag(&tool.id, false).await;
                 return Ok(serde_json::json!({
                     "status": "STARTED",
                     "tool_id": tool_id,
@@ -94,13 +92,10 @@ pub(crate) async fn start_mcp_tool_inner(
                 }));
             }
             Err(err) => {
-                let _ = crate::modules::mcp::update_stdio_mcp_server_statuses(
-                    state.store.as_ref(),
-                    &tool,
-                    McpToolStatus::Error,
-                    Some(err.clone()),
-                )
-                .await;
+                let _ = state
+                    .store
+                    .set_tool_status(&tool.id, McpToolStatus::Error, None, Some(err.clone()))
+                    .await;
                 return Err(err);
             }
         }
@@ -143,14 +138,11 @@ pub(crate) async fn stop_mcp_tool_inner(
             .close_tool_session(&tool, env.as_ref())
             .await
             .map_err(to_string)?;
-        crate::modules::mcp::update_stdio_mcp_server_statuses(
-            state.store.as_ref(),
-            &tool,
-            McpToolStatus::Stopped,
-            None,
-        )
-        .await
-        .map_err(to_string)?;
+        state
+            .store
+            .set_tool_status(&tool.id, McpToolStatus::Stopped, None, None)
+            .await
+            .map_err(to_string)?;
         return Ok(());
     }
 
