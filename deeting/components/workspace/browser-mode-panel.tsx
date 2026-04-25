@@ -69,7 +69,7 @@ function StatusChip({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full border border-border/70 bg-background/80 px-2.5 py-1 text-[11px] font-medium text-muted-foreground",
+        "inline-flex items-center rounded-[4px] border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider",
         className
       )}
     >
@@ -90,11 +90,11 @@ function InspectorSection({
   return (
     <section
       className={cn(
-        "grid gap-3 rounded-[1.25rem] border border-border/60 bg-background/70 p-4 shadow-[0_1px_0_rgba(255,255,255,0.04)_inset]",
+        "grid gap-4 py-4 border-b border-border/40",
         className
       )}
     >
-      <span className="text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground/90">
+      <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-muted-foreground/70">
         {label}
       </span>
       {children}
@@ -120,24 +120,24 @@ function MetricStack({
   return (
     <div
       className={cn(
-        "grid gap-2 rounded-2xl border border-border/50 bg-muted/[0.12] p-3.5",
+        "grid gap-1.5 border-l border-border/40 pl-3.5",
         className
       )}
     >
-      <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-        <span className="flex h-7 w-7 items-center justify-center rounded-full border border-border/60 bg-background/80 text-foreground/70">
+      <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70 font-mono">
+        <span className="text-foreground/50">
           {icon}
         </span>
         <span>{label}</span>
       </div>
-      <div className="grid gap-1.5">
-        <span className="text-sm font-medium leading-6 text-foreground">{primary}</span>
+      <div className="grid gap-1">
+        <span className="text-xs font-medium leading-5 text-foreground truncate">{primary}</span>
         {secondary ? (
-          <span className="text-xs font-medium leading-5 text-muted-foreground">
+          <span className="text-[10px] leading-4 text-muted-foreground">
             {secondary}
           </span>
         ) : null}
-        {detail ? <div className="text-xs leading-5 text-muted-foreground">{detail}</div> : null}
+        {detail ? <div className="text-[10px] leading-relaxed text-muted-foreground/80 font-mono mt-1">{detail}</div> : null}
       </div>
     </div>
   )
@@ -189,43 +189,44 @@ function TimelineEntry({
   children?: ReactNode
   className?: string
 }) {
+  const isRunning = phase.includes("waiting") || phase.includes("recovering") || phase.includes("verifying");
+
   return (
-    <div
-      className={cn(
-        "relative pl-6",
-        className
-      )}
-    >
-      <span
-        className={cn(
-          "absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full ring-4 ring-background",
-          phase === "browserMode.panel.execution.waiting" &&
-            "bg-sky-500 shadow-[0_0_0_1px_rgba(14,165,233,0.15)]",
-          phase === "browserMode.panel.execution.verifying" &&
-            "bg-emerald-500 shadow-[0_0_0_1px_rgba(16,185,129,0.15)]",
-          phase === "browserMode.panel.execution.recovering" &&
-            "bg-amber-500 shadow-[0_0_0_1px_rgba(245,158,11,0.18)]",
-          phase !== "browserMode.panel.execution.waiting" &&
-            phase !== "browserMode.panel.execution.verifying" &&
-            phase !== "browserMode.panel.execution.recovering" &&
-            "bg-foreground/75"
-        )}
-      />
-      <div className="grid gap-2 border-l border-border/60 pl-4 pb-3">
-        <div className="flex items-start justify-between gap-3">
-          <span className="text-sm leading-6 text-foreground">{label}</span>
-          <StatusChip
+    <div className={cn("relative flex gap-4 pb-5 last:pb-0", className)}>
+      <div className="flex flex-col items-center">
+        <div className="relative">
+          <div
             className={cn(
-              "shrink-0 text-[10px] uppercase tracking-wide",
-              getExecutionToneClass(
-                phase.replace("browserMode.panel.execution.", "")
-              )
+              "flex h-3.5 w-3.5 items-center justify-center rounded-full border bg-transparent transition-colors",
+              isRunning ? "border-emerald-400 bg-emerald-400/20" : "border-emerald-500 bg-emerald-500/20"
             )}
-          >
-            {phase}
-          </StatusChip>
+          />
+          {isRunning && (
+            <div className="absolute inset-0 rounded-full border border-emerald-400 animate-ping opacity-60" />
+          )}
         </div>
-        {children}
+        <div className="mt-1 w-px flex-1 bg-border/50" />
+      </div>
+
+      <div className="min-w-0 flex-1 pb-1 pt-0">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="truncate text-[13px] font-medium tracking-wide text-foreground">
+              {label}
+            </span>
+            <StatusChip
+              className={cn(
+                "shrink-0",
+                getExecutionToneClass(
+                  phase.replace("browserMode.panel.execution.", "")
+                )
+              )}
+            >
+              {phase}
+            </StatusChip>
+          </div>
+        </div>
+        {children && <div className="mt-1.5 text-[12px] leading-5 text-muted-foreground/60">{children}</div>}
       </div>
     </div>
   )
@@ -328,148 +329,148 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
   }
 
   return (
-    <div className="flex h-full min-h-0 w-full p-3 md:p-4">
-      <Card className="flex h-full min-h-0 w-full flex-col overflow-hidden border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0))] py-0 shadow-[0_12px_40px_rgba(0,0,0,0.12)] backdrop-blur-sm">
-        <CardHeader className="shrink-0 gap-4 border-b border-border/70 bg-[linear-gradient(180deg,rgba(120,140,180,0.08),rgba(120,140,180,0.01))] px-4 py-4 md:px-5 md:py-4.5">
-          <div className="grid gap-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0 flex-1 space-y-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <StatusChip className="w-fit border-primary/20 bg-primary/6 text-primary">
-                    <Sparkles className="h-3.5 w-3.5" />
-                    {title}
-                  </StatusChip>
-                  <StatusChip className={getExecutionToneClass(executionPhase)}>
-                    {resolvedExecutionLabel}
-                  </StatusChip>
-                  {page?.host ? <StatusChip>{page.host}</StatusChip> : null}
-                </div>
-                <div className="space-y-2">
-                  <CardTitle className="text-xl font-semibold tracking-tight">
-                    {resolvedExecutionLabel}
-                  </CardTitle>
-                  <CardDescription className="max-w-[40ch] text-sm leading-6 text-muted-foreground/90">
-                    {t("browserMode.panel.description")}
-                  </CardDescription>
-                </div>
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-transparent">
+      <div className="shrink-0 border-b border-border/50 px-5 py-4">
+        <div className="grid gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1 space-y-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusChip className="w-fit border-primary/20 bg-primary/6 text-primary">
+                  <Sparkles className="h-3 w-3 mr-1" />
+                  {title}
+                </StatusChip>
+                <StatusChip className={getExecutionToneClass(executionPhase)}>
+                  {resolvedExecutionLabel}
+                </StatusChip>
+                {page?.host ? <StatusChip>{page.host}</StatusChip> : null}
               </div>
-              <div className="grid min-w-[132px] gap-2 rounded-[1.1rem] border border-border/60 bg-background/80 p-2.5 shadow-[0_1px_0_rgba(255,255,255,0.05)_inset]">
-                <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  {t("browserMode.panel.connectionLabel")}
-                </span>
-                <span className="text-sm font-semibold leading-5 text-foreground">
-                  {resolvedConnectionLabel}
-                </span>
-                <span className="text-xs leading-5 text-muted-foreground">
-                  {resolvedStatusDetail}
-                </span>
+              <div className="space-y-1">
+                <h2 className="text-lg font-semibold tracking-tight">
+                  {resolvedExecutionLabel}
+                </h2>
+                <p className="max-w-[40ch] text-[13px] leading-relaxed text-muted-foreground/80">
+                  {t("browserMode.panel.description")}
+                </p>
               </div>
             </div>
+            <div className="grid min-w-[140px] gap-1.5 border-l border-border/40 pl-4 py-1">
+              <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground/70">
+                {t("browserMode.panel.connectionLabel")}
+              </span>
+              <span className="text-sm font-medium leading-5 text-foreground">
+                {resolvedConnectionLabel}
+              </span>
+              <span className="text-[10px] leading-4 text-muted-foreground font-mono">
+                {resolvedStatusDetail}
+              </span>
+            </div>
+          </div>
 
-            <div className="grid gap-3 rounded-[1.25rem] border border-border/60 bg-background/75 p-4 shadow-[0_1px_0_rgba(255,255,255,0.04)_inset]">
-              {requestPrompt ? (
-                <div className="grid gap-1.5">
-                  <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                    {t("browserMode.panel.requestLabel")}
-                  </span>
-                  <span className="line-clamp-3 text-sm leading-6 text-foreground">
-                    {requestPrompt}
-                  </span>
-                </div>
-              ) : null}
+          <div className="grid gap-3 py-2 border-t border-border/40 mt-1">
+            {requestPrompt ? (
+              <div className="grid gap-1.5 border-l border-border/40 pl-3">
+                <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground/70">
+                  {t("browserMode.panel.requestLabel")}
+                </span>
+                <span className="line-clamp-3 text-[13px] leading-6 text-foreground">
+                  {requestPrompt}
+                </span>
+              </div>
+            ) : null}
 
-              <div className="grid gap-2 sm:grid-cols-2">
-                <div className="rounded-[1rem] border border-border/50 bg-muted/[0.12] px-3.5 py-3">
-                  <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                    {t("browserMode.panel.executionLabel")}
+            <div className="grid gap-4 sm:grid-cols-2 mt-2">
+              <div className="border-l border-border/40 pl-3">
+                <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground/70">
+                  {t("browserMode.panel.executionLabel")}
+                </span>
+                <div className="mt-1 grid gap-0.5">
+                  <span className="text-sm font-medium leading-6 text-foreground">
+                    {resolvedExecutionLabel}
                   </span>
-                  <div className="mt-1.5 grid gap-1">
-                    <span className="text-sm font-semibold leading-6 text-foreground">
-                      {resolvedExecutionLabel}
+                  {executionLabel ? (
+                    <span className="text-[11px] leading-5 text-muted-foreground font-mono">
+                      {executionLabel}
                     </span>
-                    {executionLabel ? (
-                      <span className="text-xs leading-5 text-muted-foreground">
-                        {executionLabel}
-                      </span>
-                    ) : null}
-                  </div>
+                  ) : null}
                 </div>
-                <div className="rounded-[1rem] border border-border/50 bg-muted/[0.12] px-3.5 py-3">
-                  <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                    {t("browserMode.panel.pageLabel")}
+              </div>
+              <div className="border-l border-border/40 pl-3">
+                <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground/70">
+                  {t("browserMode.panel.pageLabel")}
+                </span>
+                <div className="mt-1 grid gap-0.5">
+                  <span className="truncate text-sm font-medium leading-6 text-foreground">
+                    {page?.title ?? t("browserMode.panel.pageEmpty")}
                   </span>
-                  <div className="mt-1.5 grid gap-1">
-                    <span className="truncate text-sm font-semibold leading-6 text-foreground">
-                      {page?.title ?? t("browserMode.panel.pageEmpty")}
-                    </span>
-                    <span className="truncate text-xs leading-5 text-muted-foreground">
-                      {page?.url ?? page?.host ?? t("browserMode.panel.pageEmpty")}
-                    </span>
-                  </div>
+                  <span className="truncate text-[11px] leading-5 text-muted-foreground font-mono">
+                    {page?.url ?? page?.host ?? t("browserMode.panel.pageEmpty")}
+                  </span>
                 </div>
               </div>
             </div>
+          </div>
 
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="flex flex-wrap gap-2 pt-2 border-t border-border/40">
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="h-10 rounded-2xl border-border/60 bg-background/80 shadow-none hover:bg-muted/60"
+              className="h-8 rounded-[6px] px-3 font-mono text-[11px] border border-border/40 hover:bg-muted/50"
               onClick={() => void handleInspectPage()}
               aria-label={t("browserMode.panel.inspect")}
               disabled={!page?.tabId || isInspecting}
             >
-              {t("browserMode.panel.inspect")}
+              {'>'} {t("browserMode.panel.inspect")}
             </Button>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="h-10 rounded-2xl border-border/60 bg-background/80 shadow-none hover:bg-muted/60"
+              className="h-8 rounded-[6px] px-3 font-mono text-[11px] border border-border/40 hover:bg-muted/50"
               onClick={() => pause(t("browserMode.panel.pausedStatus"))}
               aria-label={t("browserMode.panel.pause")}
             >
-              {t("browserMode.panel.pause")}
+              {'>'} {t("browserMode.panel.pause")}
             </Button>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="h-10 rounded-2xl border-border/60 bg-background/80 shadow-none hover:bg-muted/60"
+              className="h-8 rounded-[6px] px-3 font-mono text-[11px] border border-border/40 hover:bg-muted/50"
               onClick={handleReconnect}
               aria-label={reconnectLabel}
               disabled={isRefreshing}
             >
-              {reconnectLabel}
+              {'>'} {reconnectLabel}
             </Button>
             <Button
               type="button"
-              variant="destructive"
+              variant="ghost"
               size="sm"
-              className="h-10 rounded-2xl shadow-none"
+              className="h-8 rounded-[6px] px-3 font-mono text-[11px] border border-rose-500/40 text-rose-500 hover:bg-rose-500/10 hover:text-rose-600"
               onClick={handleEnd}
               aria-label={endLabel}
             >
-              {endLabel}
+              [X] {endLabel}
             </Button>
-            </div>
           </div>
-        </CardHeader>
-        <CardContent
-          data-testid="browser-mode-panel-scroll-body"
-          className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-5 md:py-4"
-        >
+        </div>
+      </div>
+      
+      <div
+        data-testid="browser-mode-panel-scroll-body"
+        className="min-h-0 flex-1 overflow-y-auto px-5 py-2"
+      >
           <div className="grid gap-3.5">
             {isRecovering ? (
-              <section className="grid gap-2 rounded-[1.25rem] border border-amber-300/60 bg-amber-50/80 p-4 dark:border-amber-400/20 dark:bg-amber-500/10">
-                <span className="text-[11px] uppercase tracking-[0.2em] text-amber-800/80 dark:text-amber-100/75">
+              <section className="grid gap-2 border-l-2 border-amber-500/40 bg-amber-500/5 py-3 pl-4 pr-2 mb-4">
+                <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-amber-600 dark:text-amber-400">
                   {t("browserMode.panel.executionLabel")}
                 </span>
-                <span className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                <span className="text-[13px] font-medium text-amber-700 dark:text-amber-300">
                   {t("browserMode.panel.recoveryTitle")}
                 </span>
-                <span className="text-xs leading-5 text-amber-800/85 dark:text-amber-100/75">
+                <span className="text-[11px] leading-5 text-amber-700/80 dark:text-amber-300/80 font-mono">
                   {t("browserMode.panel.recoveryDescription")}
                 </span>
               </section>
@@ -532,8 +533,7 @@ export function BrowserModePanel({ viewId, title }: BrowserModePanelProps) {
               </InspectorSection>
             ) : null}
           </div>
-        </CardContent>
-      </Card>
+        </div>
     </div>
   )
 }

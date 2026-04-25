@@ -469,11 +469,6 @@ impl RegistryAvailability {
                     {
                         return availability;
                     }
-                    if matches!(read_path_mode, CapabilityRegistryReadMode::RegistryFirst) {
-                        return Self::missing_registry_readiness(
-                            "core_tool_registry_metadata_missing",
-                        );
-                    }
                     return Self {
                         class: ToolAvailabilityClass::CallableDirect,
                         install_required: false,
