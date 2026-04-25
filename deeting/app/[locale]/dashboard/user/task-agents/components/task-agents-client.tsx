@@ -389,6 +389,7 @@ export function TaskAgentsClient() {
                       <TaskAgentPreviewPanel
                         t={t}
                         selectedAgent={selectedAgent}
+                        draft={draft}
                         previewDraft={previewDraft}
                         previewResult={previewResult}
                         previewError={previewError}

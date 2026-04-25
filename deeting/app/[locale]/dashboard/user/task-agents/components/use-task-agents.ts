@@ -59,6 +59,7 @@ import {
   INTERNAL_IMAGE_AGENT_TASK_PROMPT,
   INTERNAL_TTS_AGENT_TASK_PROMPT,
   NEW_AGENT_ID,
+  buildTaskAgentBindingRecommendations,
   normalizePreviewNumber,
   parseTagsInput,
   resolveSameOriginNavigationHref,
@@ -346,6 +347,11 @@ export function useTaskAgents(t: Translation) {
         return left.skill_id.localeCompare(right.skill_id, undefined, { sensitivity: "base" })
       })
   }, [bindingCatalog, deferredSkillQuery, draft.guidance_skill_ids, showSelectedSkillsOnly])
+
+  const bindingRecommendations = React.useMemo(
+    () => buildTaskAgentBindingRecommendations(draft, bindingCatalog),
+    [bindingCatalog, draft],
+  )
 
   const taskAgentModelOptions = React.useMemo<TaskAgentModelOption[]>(
     () =>
@@ -669,6 +675,24 @@ export function useTaskAgents(t: Translation) {
     [],
   )
 
+  const applyRecommendedBindings = React.useCallback(() => {
+    if (
+      bindingRecommendations.recommendedToolIds.length === 0 &&
+      bindingRecommendations.recommendedSkillIds.length === 0
+    ) {
+      return
+    }
+    setDraft((current) => ({
+      ...current,
+      callable_mcp_tool_ids: Array.from(
+        new Set([...current.callable_mcp_tool_ids, ...bindingRecommendations.recommendedToolIds]),
+      ),
+      guidance_skill_ids: Array.from(
+        new Set([...current.guidance_skill_ids, ...bindingRecommendations.recommendedSkillIds]),
+      ),
+    }))
+  }, [bindingRecommendations])
+
   const handleSave = React.useCallback(async () => {
     if (saveDisabled) return
     try {
@@ -955,6 +979,7 @@ export function useTaskAgents(t: Translation) {
     handleSelectNewAgentType,
     handleTaskAgentModelChange,
     toggleBinding,
+    applyRecommendedBindings,
     handleSave,
     handleDelete,
     handleReindex,

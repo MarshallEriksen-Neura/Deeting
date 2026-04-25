@@ -9,6 +9,7 @@ import {
   findExecutionTreeByRootId,
   extractWorkflowRunIdFromExecutionTree,
 } from "@/lib/chat/execution-tree"
+import { getExecutionLifecycleStatus } from "@/lib/execution-tree/types"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
 
 describe("execution-tree helpers", () => {
@@ -202,5 +203,19 @@ describe("execution-tree helpers", () => {
         }),
       }),
     ])
+  })
+
+  it("prefers delegated_result status over outer execution status", () => {
+    expect(
+      getExecutionLifecycleStatus({
+        execution_status: "integrated",
+        terminal_status: "integrated",
+        delegated_result: {
+          type: "delegated_result",
+          status: "blocked",
+          summary: "Delegation blocked before launch",
+        },
+      })
+    ).toBe("blocked")
   })
 })

@@ -1,4 +1,4 @@
-{
+﻿{
   "task-agents": {
     "title": "Local Task Agents",
     "subtitle": "Create, manage, and run custom task agents stored on this device.",
@@ -121,7 +121,7 @@
       "coreRegistry": "Core Registry / {count} Units",
       "defaultKind": "CHAT_AGENT",
       "diagnostic": "Diagnostic",
-      "copyright": "© {year} DEETING LABS",
+      "copyright": "漏 {year} DEETING LABS",
       "inspector": {
         "title": "Diagnostic.log",
         "efficiencyTitle": "Neural Efficiency",
@@ -307,10 +307,15 @@
       "noSkills": "No installed skills available.",
       "noFilteredTools": "No tools match the current filter.",
       "noFilteredSkills": "No skills match the current filter.",
-      "skillMeta": "Version {version} · Runtime {runtime}",
+      "skillMeta": "Version {version} 路 Runtime {runtime}",
       "unknownVersion": "unknown",
       "unknownRuntime": "unknown",
-      "unknownServer": "Unknown Server"
+      "unknownServer": "Unknown Server",
+      "guidanceOnlyWarningTitle": "Guidance skills are not executable tools",
+      "guidanceOnlyWarningDescription": "This agent only has guidance skills bound right now. Delegation will still block until you bind at least one callable tool or skill action.",
+      "recommendationTitle": "Recommended internal bindings",
+      "recommendationDescription": "Detected {tools} repo-owned tool suggestion(s) and {skills} guidance skill suggestion(s) based on this agent's prompt and tags.",
+      "applyRecommendations": "Apply recommendations"
     },
     "preview": {
       "title": "Live Preview",
@@ -415,3 +420,4 @@
     }
   }
 }
+

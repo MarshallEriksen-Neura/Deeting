@@ -67,6 +67,74 @@ fn classify_local_tool_execution_error_code_detects_mcp_timeout() {
 }
 
 #[test]
+fn delegate_task_preflight_blocks_when_selected_agent_has_no_executable_surface() {
+    let record = DelegatedExecutionRecord {
+        execution_id: "exec-1".to_string(),
+        kind: DelegatedExecutionKind::CustomTaskAgent,
+        status: DelegatedExecutionStatus::Failed,
+        target: DelegatedExecutionTarget {
+            id: "agent-1".to_string(),
+            name: "Guidance Only".to_string(),
+            invocation_kind: Some("chat".to_string()),
+            worker_ref: None,
+            workflow_run_id: None,
+        },
+        selection: DelegatedExecutionSelection {
+            explicit: false,
+            score: Some(91),
+            reason_codes: vec!["semantic_rank".to_string()],
+            reason_text: Some("semantic_rank".to_string()),
+            candidate_count: 3,
+            selected_from_top_k: 1,
+            callable_coverage_score: Some(0.0),
+            modality_fit_score: Some(1.0),
+            profile_prior_score: Some(0.0),
+        },
+        packet_receipt: None,
+        available_actions: vec![DelegatedExecutionAction {
+            kind: "reconfigure_agent".to_string(),
+        }],
+        children: vec![DelegatedExecutionChildRecord {
+            id: "exec-1:preflight".to_string(),
+            phase_id: Some("preflight".to_string()),
+            step_type: Some("capability_check".to_string()),
+            title: "Validate delegated capability surface".to_string(),
+            status: "blocked".to_string(),
+            worker_ref: Some("custom_task_agent:agent-1".to_string()),
+            summary: Some("Delegation blocked before launch because the selected task agent has no executable tools or skill actions bound.".to_string()),
+            error: Some("The selected task agent only has prompt or guidance context. Bind at least one executable MCP tool or callable skill action before using delegate_task.".to_string()),
+            available_actions: vec![DelegatedExecutionAction {
+                kind: "reconfigure_agent".to_string(),
+            }],
+        }],
+        summary: Some("Delegation blocked before launch".to_string()),
+        primary_output: Some(serde_json::json!({
+            "status": "blocked",
+            "reason": "missing_executable_surface",
+            "guidance_skill_ids": ["skill.alpha"],
+            "callable_mcp_tool_ids": [],
+            "callable_skill_action_refs": []
+        })),
+        error: Some("delegate_task blocked: selected task agent has no executable surface".to_string()),
+        started_at_ms: 1,
+        completed_at_ms: Some(2),
+    };
+
+    let delegated_result = record.delegated_result();
+    assert_eq!(
+        delegated_result.get("status").and_then(serde_json::Value::as_str),
+        Some("blocked")
+    );
+    assert_eq!(
+        delegated_result
+            .get("primary_output")
+            .and_then(|value| value.get("reason"))
+            .and_then(serde_json::Value::as_str),
+        Some("missing_executable_surface")
+    );
+}
+
+#[test]
 fn explanatory_answer_requests_skip_policy_gate_forcing() {
     assert!(is_explanatory_answer_request(
         "能否详细的给我解释一下 ai 自学习应用和飞轮有什么关系"

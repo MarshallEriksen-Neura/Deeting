@@ -157,6 +157,14 @@ export function getExecutionLifecycleAvailableActions(
   return Array.isArray(payload.available_actions) ? payload.available_actions : []
 }
 
+export function getExecutionLifecycleStatus(payload: ExecutionLifecyclePayload): string | null {
+  return (
+    toText(getExecutionLifecycleDelegatedResult(payload)?.status) ??
+    toText(payload.terminal_status) ??
+    toText(payload.execution_status)
+  )
+}
+
 export function getExecutionLifecycleSummary(payload: ExecutionLifecyclePayload): string | null {
   return (
     toText(getExecutionLifecycleDelegatedResult(payload)?.summary) ?? toText(payload.summary)

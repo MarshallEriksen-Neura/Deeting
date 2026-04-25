@@ -1,4 +1,4 @@
-import React from "react"
+﻿import React from "react"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 
 import { TaskAgentsClient } from "./task-agents-client"
@@ -794,3 +794,4 @@ describe("TaskAgentsClient", () => {
     expect(screen.getByText("importDialog.noBindings")).not.toBeNull()
   })
 })
+

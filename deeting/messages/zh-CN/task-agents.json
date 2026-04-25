@@ -1,4 +1,4 @@
-{
+﻿{
   "task-agents": {
     "title": "本地任务智能体",
     "subtitle": "创建、管理并运行存储在此设备上的自定义任务智能体。",
@@ -310,7 +310,12 @@
       "skillMeta": "版本 {version} · 运行时 {runtime}",
       "unknownVersion": "未知",
       "unknownRuntime": "未知",
-      "unknownServer": "未知服务"
+      "unknownServer": "未知服务",
+      "guidanceOnlyWarningTitle": "仅绑定 guidance skills 还不能执行",
+      "guidanceOnlyWarningDescription": "当前这个智能体只绑定了 guidance skills，还没有任何可执行工具面。至少再绑定一个可调用工具或 skill action，委托才不会在执行前被拦截。",
+      "recommendationTitle": "内置能力推荐",
+      "recommendationDescription": "已根据这个智能体的提示词和标签，识别出 {tools} 个仓库内置工具建议和 {skills} 个 guidance skill 建议。",
+      "applyRecommendations": "应用推荐"
     },
     "preview": {
       "title": "即时预览",
@@ -352,7 +357,7 @@
         "none": "无",
         "yes": "是",
         "no": "否",
-        "surfaced": "已展示",
+        "surfaced": "已展现",
         "redacted": "已隐藏"
       },
       "rawProfile": "当前载荷"

@@ -992,6 +992,68 @@ async fn execute_delegate_task_tool(
         .await?
         .ok_or_else(|| "no enabled custom task agent matched delegate_task".to_string())?;
     let execution_id = uuid::Uuid::new_v4().to_string();
+    if selection.profile.callable_mcp_tool_ids.is_empty()
+        && selection.profile.callable_skill_action_refs.is_empty()
+    {
+        let started_at_ms = now_unix_ms_i64();
+        let record = DelegatedExecutionRecord {
+            execution_id: execution_id.clone(),
+            kind: DelegatedExecutionKind::CustomTaskAgent,
+            status: DelegatedExecutionStatus::Failed,
+            target: DelegatedExecutionTarget {
+                id: selection.profile.id.clone(),
+                name: selection.profile.name.clone(),
+                invocation_kind: Some(selection.profile.invocation_kind.as_str().to_string()),
+                worker_ref: None,
+                workflow_run_id: None,
+            },
+            selection: DelegatedExecutionSelection {
+                explicit: agent_id.is_some(),
+                score: Some(selection.score),
+                reason_codes: selection.reason_codes.clone(),
+                reason_text: Some(selection.reason.clone()).filter(|value| !value.trim().is_empty()),
+                candidate_count: selection.candidate_count,
+                selected_from_top_k: selection.selected_from_top_k,
+                callable_coverage_score: Some(selection.callable_coverage_score),
+                modality_fit_score: Some(selection.modality_fit_score),
+                profile_prior_score: Some(selection.profile_prior_score),
+            },
+            packet_receipt: None,
+            available_actions: vec![DelegatedExecutionAction {
+                kind: "reconfigure_agent".to_string(),
+            }],
+            children: vec![DelegatedExecutionChildRecord {
+                id: format!("{}:preflight", execution_id),
+                phase_id: Some("preflight".to_string()),
+                step_type: Some("capability_check".to_string()),
+                title: "Validate delegated capability surface".to_string(),
+                status: "blocked".to_string(),
+                worker_ref: Some(format!("custom_task_agent:{}", selection.profile.id)),
+                summary: Some("Delegation blocked before launch because the selected task agent has no executable tools or skill actions bound.".to_string()),
+                error: Some("The selected task agent only has prompt or guidance context. Bind at least one executable MCP tool or callable skill action before using delegate_task.".to_string()),
+                available_actions: vec![DelegatedExecutionAction {
+                    kind: "reconfigure_agent".to_string(),
+                }],
+            }],
+            summary: Some("Delegation blocked before launch".to_string()),
+            primary_output: Some(serde_json::json!({
+                "status": "blocked",
+                "agent_id": selection.profile.id,
+                "agent_name": selection.profile.name,
+                "reason": "missing_executable_surface",
+                "message": "The selected task agent has no executable MCP tools or callable skill actions bound.",
+                "callable_mcp_tool_ids": [],
+                "guidance_skill_ids": selection.profile.guidance_skill_ids,
+                "callable_skill_action_refs": [],
+                "session_id": session_id,
+                "tool_call_id": call_id,
+            })),
+            error: Some("delegate_task blocked: selected task agent has no executable surface".to_string()),
+            started_at_ms,
+            completed_at_ms: Some(now_unix_ms_i64()),
+        };
+        return Ok(record.delegated_result());
+    }
     let constraints = arguments
         .get("constraints")
         .and_then(serde_json::Value::as_array)

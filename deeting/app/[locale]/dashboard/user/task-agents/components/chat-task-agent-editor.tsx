@@ -3,7 +3,9 @@
 import type { ModelGroup } from "@/lib/api/models"
 import type { LocalAsset } from "@/lib/api/local-assets"
 import type { CustomTaskAgentBindingCatalog } from "@/lib/api/custom-task-agents"
+import { AlertTriangle } from "lucide-react"
 
+import { buildTaskAgentCapabilityHealth, buildTaskAgentBindingRecommendations } from "./task-agents-helpers"
 import { AgentCanvas } from "./chat-editor/agent-canvas"
 import { ChatAssetBindings } from "./chat-editor/chat-asset-bindings"
 import { ChatToolBindings } from "./chat-editor/chat-tool-bindings"
@@ -49,6 +51,7 @@ type ChatTaskAgentEditorProps = {
   setShowSelectedToolsOnly: (updater: (current: boolean) => boolean) => void
   setShowSelectedSkillsOnly: (updater: (current: boolean) => boolean) => void
   toggleBinding: (kind: "tool" | "skill", identifier: string, checked: boolean) => void
+  applyRecommendedBindings: () => void
 }
 
 export function ChatTaskAgentEditor({
@@ -79,7 +82,13 @@ export function ChatTaskAgentEditor({
   setShowSelectedToolsOnly,
   setShowSelectedSkillsOnly,
   toggleBinding,
+  applyRecommendedBindings,
 }: ChatTaskAgentEditorProps) {
+  const capabilityHealth = buildTaskAgentCapabilityHealth(draft)
+  const recommendations = buildTaskAgentBindingRecommendations(draft, bindingCatalog)
+  const hasRecommendations =
+    recommendations.recommendedToolIds.length > 0 || recommendations.recommendedSkillIds.length > 0
+
   if (activeTab === "config") {
     return (
       <AgentCanvas
@@ -106,6 +115,39 @@ export function ChatTaskAgentEditor({
           <p className="text-[13px] text-[var(--ink-4)] leading-relaxed max-w-2xl">
             {t("bindings.description")}
           </p>
+          {capabilityHealth.isGuidanceOnly ? (
+            <div className="flex items-start gap-3 rounded-2xl border border-[var(--warning-border)] bg-[var(--warning-soft)]/70 px-4 py-3 text-[12px] leading-relaxed text-[var(--warning)]">
+              <AlertTriangle className="mt-0.5 size-4 flex-none" />
+              <div className="space-y-1">
+                <p className="font-semibold text-[var(--ink)]">
+                  {t("bindings.guidanceOnlyWarningTitle")}
+                </p>
+                <p>{t("bindings.guidanceOnlyWarningDescription")}</p>
+              </div>
+            </div>
+          ) : null}
+          {hasRecommendations ? (
+            <div className="flex items-start justify-between gap-4 rounded-2xl border border-[var(--hairline)] bg-[var(--panel-bg-inset)]/50 px-4 py-3 text-[12px] leading-relaxed text-[var(--ink-3)]">
+              <div className="space-y-1">
+                <p className="font-semibold text-[var(--ink)]">
+                  {t("bindings.recommendationTitle")}
+                </p>
+                <p>
+                  {t("bindings.recommendationDescription", {
+                    tools: recommendations.recommendedToolIds.length,
+                    skills: recommendations.recommendedSkillIds.length,
+                  })}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={applyRecommendedBindings}
+                className="shrink-0 rounded-full border border-[var(--accent-border)] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--accent-strong)] transition hover:bg-[var(--accent-soft)]"
+              >
+                {t("bindings.applyRecommendations")}
+              </button>
+            </div>
+          ) : null}
         </section>
 
         <ChatAssetBindings

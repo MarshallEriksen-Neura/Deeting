@@ -1,4 +1,4 @@
-import type { CustomTaskAgentProfile } from "@/lib/api/custom-task-agents"
+﻿import type { CustomTaskAgentProfile } from "@/lib/api/custom-task-agents"
 import {
   buildTaskAgentImageConfigDraft,
   createEmptyTaskAgentImageConfigDraft,
@@ -9,7 +9,7 @@ import {
 } from "./task-agent-voice-config"
 import type { TaskAgentDraft, PreviewDraft } from "./task-agent-editor-types"
 
-// ── Constants ──────────────────────────────────────────────────────────
+// 鈹€鈹€ Constants 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 export const NEW_AGENT_ID = "__new_custom_task_agent__"
 export const DEFAULT_TASK_AGENT_MODEL_VALUE = "__task_agent_model_default__"
@@ -24,8 +24,152 @@ export const defaultPreviewDraft: PreviewDraft = {
   max_tokens: "",
   max_rounds: "",
 }
+export type TaskAgentCapabilityHealth = {
+  executableToolCount: number
+  guidanceSkillCount: number
+  hasCallableSurface: boolean
+  isGuidanceOnly: boolean
+  summaryKey: "ready" | "guidanceOnly" | "empty"
+}
 
-// ── Draft builders ─────────────────────────────────────────────────────
+export type TaskAgentBindingRecommendations = {
+  recommendedToolIds: string[]
+  recommendedSkillIds: string[]
+}
+export function buildTaskAgentCapabilityHealth(input: {
+  callable_mcp_tool_ids: string[]
+  guidance_skill_ids: string[]
+}): TaskAgentCapabilityHealth {
+  const executableToolCount = input.callable_mcp_tool_ids.length
+  const guidanceSkillCount = input.guidance_skill_ids.length
+  const hasCallableSurface = executableToolCount > 0
+  const isGuidanceOnly = guidanceSkillCount > 0 && !hasCallableSurface
+  const summaryKey = hasCallableSurface
+    ? "ready"
+    : isGuidanceOnly
+      ? "guidanceOnly"
+      : "empty"
+
+  return {
+    executableToolCount,
+    guidanceSkillCount,
+    hasCallableSurface,
+    isGuidanceOnly,
+    summaryKey,
+  }
+}
+
+
+function containsAny(text: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => text.includes(pattern))
+}
+
+function dedupe(values: string[]): string[] {
+  return Array.from(new Set(values))
+}
+
+function matchRecommendedToolIds(
+  tools: Array<{ id: string; name: string; description: string }>,
+  patterns: string[],
+): string[] {
+  return tools
+    .filter((tool) => {
+      const haystack = `${tool.id} ${tool.name} ${tool.description}`.toLowerCase()
+      return patterns.some((pattern) => haystack.includes(pattern.toLowerCase()))
+    })
+    .map((tool) => tool.id)
+}
+
+function matchRecommendedSkillIds(
+  skills: Array<{ skill_id: string }>,
+  desiredSkillIds: string[],
+): string[] {
+  const installed = new Set(skills.map((skill) => skill.skill_id))
+  return desiredSkillIds.filter((skillId) => installed.has(skillId))
+}
+
+export function buildTaskAgentBindingRecommendations(
+  draft: Pick<TaskAgentDraft, "name" | "description" | "task_prompt" | "tags_input">,
+  bindingCatalog: {
+    mcp_tools: Array<{ id: string; name: string; description: string }>
+    guidance_skills: Array<{ skill_id: string }>
+  },
+): TaskAgentBindingRecommendations {
+  const text = [draft.name, draft.description, draft.task_prompt, draft.tags_input]
+    .join(" ")
+    .toLowerCase()
+
+  const wantsEngineering = containsAny(text, [
+    "engineering",
+    "developer",
+    "backend",
+    "frontend",
+    "devops",
+    "code",
+    "cli",
+    "terminal",
+  ])
+  const wantsBrowser = containsAny(text, [
+    "browser",
+    "web",
+    "crawler",
+    "scrape",
+    "research",
+    "search",
+    "site",
+  ])
+  const wantsDesign = containsAny(text, [
+    "design",
+    "image",
+    "visual",
+    "ux",
+    "ui",
+    "brand",
+  ])
+
+  const recommendedToolIds: string[] = []
+  const recommendedSkillIds: string[] = []
+
+  if (wantsEngineering) {
+    recommendedToolIds.push(
+      ...matchRecommendedToolIds(bindingCatalog.mcp_tools, ["shell_execute"]),
+    )
+  }
+
+  if (wantsBrowser) {
+    recommendedToolIds.push(
+      ...matchRecommendedToolIds(bindingCatalog.mcp_tools, [
+        "browser_open_tab",
+        "browser_click",
+        "browser_type",
+        "research",
+        "search",
+      ]),
+    )
+    recommendedSkillIds.push(
+      ...matchRecommendedSkillIds(bindingCatalog.guidance_skills, [
+        "official.skills.crawler",
+      ]),
+    )
+  }
+
+  if (wantsDesign) {
+    recommendedToolIds.push(
+      ...matchRecommendedToolIds(bindingCatalog.mcp_tools, [
+        "image",
+        "generate image",
+        "image.generate",
+      ]),
+    )
+  }
+
+  return {
+    recommendedToolIds: dedupe(recommendedToolIds),
+    recommendedSkillIds: dedupe(recommendedSkillIds),
+  }
+}
+
+// 鈹€鈹€ Draft builders 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 export function createEmptyDraft(): TaskAgentDraft {
   return {
@@ -107,7 +251,7 @@ export function buildDraftFromProfile(
   }
 }
 
-// ── Parsing & formatting ───────────────────────────────────────────────
+// 鈹€鈹€ Parsing & formatting 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 export function parseTagsInput(value: string): string[] {
   return value
@@ -170,7 +314,7 @@ export function normalizePreviewNumber(
   return Number.isFinite(parsed) ? parsed : null
 }
 
-// ── Styling helpers ────────────────────────────────────────────────────
+// 鈹€鈹€ Styling helpers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 export function statusToneClass(status: string): string {
   switch (status) {
@@ -191,7 +335,7 @@ export function statusToneClass(status: string): string {
   }
 }
 
-// ── Sorting helpers ────────────────────────────────────────────────────
+// 鈹€鈹€ Sorting helpers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 export function bindingStatusRank(status: string): number {
   switch (status) {
@@ -218,7 +362,7 @@ export function compareBindingText(left: string, right: string): number {
   return left.localeCompare(right, undefined, { sensitivity: "base" })
 }
 
-// ── Model select helpers ───────────────────────────────────────────────
+// 鈹€鈹€ Model select helpers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 export function buildTaskAgentModelOptionValue(
   instanceId: string,
@@ -227,7 +371,7 @@ export function buildTaskAgentModelOptionValue(
   return `${instanceId}::${modelValue}`
 }
 
-// ── Navigation guard ───────────────────────────────────────────────────
+// 鈹€鈹€ Navigation guard 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 export function resolveSameOriginNavigationHref(
   anchor: HTMLAnchorElement,
@@ -248,3 +392,5 @@ export function resolveSameOriginNavigationHref(
 
   return nextPath
 }
+
+

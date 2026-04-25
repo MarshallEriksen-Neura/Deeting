@@ -12,13 +12,15 @@ import {
 import { cn } from "@/lib/utils"
 import type { CustomTaskAgentPreviewResponse } from "@/lib/api/custom-task-agents"
 import AudioResultPanel from "@/components/audio/audio-result-panel"
-import type { PreviewDraft } from "./task-agent-editor-types"
+import type { PreviewDraft, TaskAgentDraft } from "./task-agent-editor-types"
+import { buildTaskAgentCapabilityHealth } from "./task-agents-helpers"
 
 type Translation = (key: string, values?: Record<string, string | number>) => string
 
 type TaskAgentPreviewPanelProps = {
   t: Translation
   selectedAgent: { id: string } | null
+  draft: TaskAgentDraft
   previewDraft: PreviewDraft
   previewResult: CustomTaskAgentPreviewResponse | null
   previewError: string | null
@@ -30,6 +32,7 @@ type TaskAgentPreviewPanelProps = {
 export function TaskAgentPreviewPanel({
   t,
   selectedAgent,
+  draft,
   previewDraft,
   previewResult,
   previewError,
@@ -37,6 +40,8 @@ export function TaskAgentPreviewPanel({
   setPreviewDraft,
   handleRunPreview,
 }: TaskAgentPreviewPanelProps) {
+  const capabilityHealth = buildTaskAgentCapabilityHealth(draft)
+
   return (
     <div className="space-y-16 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div className="grid gap-16 xl:grid-cols-[300px_1fr]">
@@ -101,6 +106,12 @@ export function TaskAgentPreviewPanel({
 
         {/* Execution Output */}
         <main className="min-h-[500px] space-y-12">
+          {capabilityHealth.isGuidanceOnly ? (
+            <div className="border-l-2 border-[var(--warning)] pl-6 py-2 space-y-2">
+              <span className="font-mono text-[10px] font-bold text-[var(--warning)] tracking-widest uppercase">{t("bindings.guidanceOnlyWarningTitle")}</span>
+              <p className="text-sm text-[var(--ink-2)] leading-relaxed">{t("bindings.guidanceOnlyWarningDescription")}</p>
+            </div>
+          ) : null}
           {previewError && (
             <div className="border-l-2 border-[var(--danger)] pl-6 py-2 space-y-2">
               <span className="font-mono text-[10px] font-bold text-[var(--danger)] tracking-widest uppercase">{t("preview.errorTitle")}</span>

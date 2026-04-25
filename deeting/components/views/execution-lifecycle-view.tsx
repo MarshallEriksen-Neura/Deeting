@@ -13,6 +13,7 @@ import {
   getExecutionLifecycleChildren,
   getExecutionLifecycleError,
   getExecutionLifecycleKind,
+  getExecutionLifecycleStatus,
   getExecutionLifecycleSelection,
   getExecutionLifecycleSummary,
   getExecutionLifecycleTarget,
@@ -75,7 +76,7 @@ export default function ExecutionLifecycleView({
     }
   }, [basePayload.persisted_snapshot, rootExecutionId])
 
-  const status = toText(payload.execution_status) ?? "unknown"
+  const status = getExecutionLifecycleStatus(payload) ?? "unknown"
   const terminalStatus = toText(payload.terminal_status)
   const target = getExecutionLifecycleTarget(payload)
   const selection = getExecutionLifecycleSelection(payload)

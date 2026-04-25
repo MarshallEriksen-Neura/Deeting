@@ -6,6 +6,7 @@ import type {
   PreviewDraft,
   TaskAgentDraft,
 } from "../task-agent-editor-types"
+import { buildTaskAgentCapabilityHealth } from "../task-agents-helpers"
 
 type Translation = (key: string, values?: Record<string, string | number>) => string
 
@@ -47,6 +48,8 @@ export function ChatDebugTab({
   previewDraft,
   draftPayload,
 }: ChatDebugTabProps) {
+  const capabilityHealth = buildTaskAgentCapabilityHealth(draft)
+
   return (
     <div className="space-y-16 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <section className="space-y-6">
@@ -73,11 +76,15 @@ export function ChatDebugTab({
             rows={[
               {
                 label: t("editor.fields.boundTools"),
-                value: draft.callable_mcp_tool_ids.length,
+                value: capabilityHealth.executableToolCount,
               },
               {
                 label: t("editor.fields.boundSkills"),
-                value: draft.guidance_skill_ids.length,
+                value: capabilityHealth.guidanceSkillCount,
+              },
+              {
+                label: t("debug.cards.capabilityHealth"),
+                value: t(`debug.capabilityHealth.${capabilityHealth.summaryKey}`),
               },
               {
                 label: t("editor.fields.boundAsset"),
