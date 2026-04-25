@@ -246,6 +246,7 @@
         "prepareStage": {
           "check_endpoint": "Checking BoxLite endpoint...",
           "load_record": "Loading installation record...",
+          "wsl_warmup": "Starting WSL...",
           "start_server": "Starting BoxLite server...",
           "health_check": "Waiting for BoxLite to become ready...",
           "done": "Sandbox ready"

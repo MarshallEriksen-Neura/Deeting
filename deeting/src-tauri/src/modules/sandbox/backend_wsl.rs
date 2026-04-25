@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use boxlite_sidecar_protocol::{
@@ -15,6 +16,7 @@ use crate::modules::sandbox::types::{
     SandboxWslStatus,
 };
 use crate::utils::configure_background_std_command;
+use crate::utils::configure_background_tokio_command;
 
 #[derive(Debug, Clone)]
 pub struct WslBackendOptions {
@@ -371,6 +373,174 @@ fn should_decode_as_utf16le(bytes: &[u8]) -> bool {
         .filter(|byte| **byte == 0)
         .count();
     zero_bytes * 2 >= bytes.len() / 2
+}
+
+/// Detect the default WSL distribution name (first line of `wsl --list --quiet`).
+#[cfg(target_os = "windows")]
+pub fn get_default_wsl_distro() -> Option<String> {
+    let mut command = Command::new("wsl.exe");
+    configure_background_std_command(&mut command);
+    let output = command.args(["--list", "--quiet"]).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = decode_wsl_text(&output.stdout);
+    text.lines().next().map(|s| s.trim().to_string())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn get_default_wsl_distro() -> Option<String> {
+    None
+}
+
+const WSL_WARMUP_TIMEOUT: Duration = Duration::from_secs(20);
+const WSL_WARMUP_RETRIES: usize = 3;
+const WSL_WARMUP_RETRY_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Warm up WSL by executing a lightweight shell command before launching
+/// BoxLite. Retries on cold-start timeout so the user does not have to
+/// open a WSL terminal manually.
+#[cfg(target_os = "windows")]
+pub async fn warm_up_wsl(distro: Option<&str>) -> Result<(), SandboxError> {
+    for attempt in 1..=WSL_WARMUP_RETRIES {
+        let mut command = tokio::process::Command::new("wsl.exe");
+        configure_background_tokio_command(&mut command);
+
+        let mut args: Vec<&str> = Vec::new();
+        if let Some(d) = distro {
+            args.push("-d");
+            args.push(d);
+        }
+        args.extend(["--", "sh", "-lc", "printf deeting-wsl-ready"]);
+
+        let output = match tokio::time::timeout(
+            WSL_WARMUP_TIMEOUT,
+            command
+                .args(&args)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .output(),
+        )
+        .await
+        {
+            Ok(Ok(output)) => output,
+            Ok(Err(err)) => {
+                return Err(SandboxError::Unavailable(format!(
+                    "WSL unavailable: failed to execute wsl.exe: {err}. Install or repair WSL with `wsl --install`."
+                )));
+            }
+            Err(_) => {
+                if attempt < WSL_WARMUP_RETRIES {
+                    log::warn!(
+                        "WSL warm-up timed out (attempt {}/{}), retrying in {}s...",
+                        attempt,
+                        WSL_WARMUP_RETRIES,
+                        WSL_WARMUP_RETRY_INTERVAL.as_secs()
+                    );
+                    tokio::time::sleep(WSL_WARMUP_RETRY_INTERVAL).await;
+                    continue;
+                }
+                return Err(SandboxError::Timeout(
+                    "WSL warm-up timed out after multiple attempts; WSL may still be initializing. Try Prepare again in a moment or open a WSL terminal once.".to_string(),
+                ));
+            }
+        };
+
+        if output.status.success() {
+            log::debug!("WSL warm-up completed (distro={:?})", distro);
+            return Ok(());
+        }
+
+        let stderr = decode_wsl_text(&output.stderr);
+        let stdout = decode_wsl_text(&output.stdout);
+        let detail = if !stderr.is_empty() { stderr } else { stdout };
+        let normalized = detail.to_ascii_lowercase();
+
+        // Cold-start registration or VM-boot failures are retryable.
+        let is_retryable = [
+            "still initializing",
+            "starting",
+            "wslregisterdistribution failed",
+            "the operation timed out",
+            "0x80040326",
+            "0x8004032",
+        ]
+        .iter()
+        .any(|needle| normalized.contains(needle));
+
+        if is_retryable && attempt < WSL_WARMUP_RETRIES {
+            log::warn!(
+                "WSL warm-up failed with retryable error (attempt {}/{}): {}, retrying in {}s...",
+                attempt,
+                WSL_WARMUP_RETRIES,
+                detail,
+                WSL_WARMUP_RETRY_INTERVAL.as_secs()
+            );
+            tokio::time::sleep(WSL_WARMUP_RETRY_INTERVAL).await;
+            continue;
+        }
+
+        return Err(classify_wsl_warmup_failure(&detail));
+    }
+
+    Err(SandboxError::Timeout(
+        "WSL warm-up timed out after multiple attempts; WSL may still be initializing.".to_string(),
+    ))
+}
+
+#[cfg(not(target_os = "windows"))]
+pub async fn warm_up_wsl(_distro: Option<&str>) -> Result<(), SandboxError> {
+    Ok(())
+}
+
+fn classify_wsl_warmup_failure(detail: &str) -> SandboxError {
+    let detail = if detail.trim().is_empty() {
+        "wsl.exe returned a non-zero exit status without diagnostic output".to_string()
+    } else {
+        detail.trim().to_string()
+    };
+    let normalized = detail.to_ascii_lowercase();
+
+    // WSL is not installed at all.
+    let not_installed = [
+        "wsl is not recognized",
+        "'wsl' is not recognized",
+        "the system cannot find the file",
+        "is not recognized as an internal or external command",
+    ]
+    .iter()
+    .any(|needle| normalized.contains(needle));
+
+    if not_installed {
+        return SandboxError::Unavailable(format!(
+            "WSL is not installed: {detail}. Install WSL with `wsl --install` and restart Deeting."
+        ));
+    }
+
+    // Distro exists but has never been launched (first-login setup pending).
+    let not_initialized = [
+        "no installed distributions",
+        "there are no installed distributions",
+        "no default distribution",
+        "default distribution",
+        "not initialized",
+        "wslregisterdistribution failed",
+        "the operation could not be started",
+        "no such file or directory",
+    ]
+    .iter()
+    .any(|needle| normalized.contains(needle));
+
+    if not_initialized {
+        return SandboxError::Unavailable(format!(
+            "WSL distribution not initialized: {detail}. Initialize a Linux distribution with `wsl --install -d Ubuntu` or open WSL once, then prepare the sandbox again."
+        ));
+    }
+
+    SandboxError::Unavailable(format!(
+        "WSL initialization failed: {detail}"
+    ))
 }
 
 #[cfg(test)]

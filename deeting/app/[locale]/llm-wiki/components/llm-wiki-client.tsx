@@ -1,265 +1,179 @@
 "use client"
 
 import * as React from "react"
-import { Bot, Database, HardDrive, Wrench } from "lucide-react"
 import { useTranslations } from "next-intl"
+import { BookOpen, Loader2, RefreshCw, Settings } from "lucide-react"
 
-import { Button } from "@/ui/shadcn/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/shadcn/tabs"
-import { LlmWikiAgentCard } from "./llm-wiki-agent-card"
-import { LlmWikiAutomationCard } from "./llm-wiki-automation-card"
-import { LlmWikiBindingCard } from "./llm-wiki-binding-card"
-import { LlmWikiCorpusCard } from "./llm-wiki-corpus-card"
-import { LlmWikiLifecycleCard } from "./llm-wiki-lifecycle-card"
-import { LlmWikiMaintenanceCard } from "./llm-wiki-maintenance-card"
+import { GlassButton } from "@/components/ui/common/glass-button"
 import { useLlmWiki } from "./use-llm-wiki"
-import { LlmWikiWorkspaceCard } from "./llm-wiki-workspace-card"
-
-type Translation = (key: string, values?: Record<string, string | number>) => string
-type LlmWikiTabValue = "setup" | "operations" | "corpus" | "agent"
+import { StatsBar } from "./llm-wiki-stats-bar"
+import { ListPanel, type ListTab } from "./llm-wiki-list-panel"
+import { DetailPanel } from "./llm-wiki-detail-panel"
+import { BottomSection } from "./llm-wiki-bottom-section"
+import { SetupForm } from "./llm-wiki-setup-form"
 
 export function LlmWikiClient() {
-  const t = useTranslations("llm-wiki") as unknown as Translation
-  const [activeTab, setActiveTab] = React.useState<LlmWikiTabValue>("setup")
-  const tabsAnchorRef = React.useRef<HTMLDivElement | null>(null)
-  const {
-    desktopSupported,
-    state,
-    vaultRoot,
-    workspaceRelativePath,
-    bindingMode,
-    adoptFolderRelativePath,
-    adoptionPreview,
-    isLoading,
-    isAnalyzing,
-    isPreviewingAdoption,
-    isConfirmingAdoption,
-    isBootstrapping,
-    isSyncingAgent,
-    isSyncingCorpus,
-    isSearchingCorpus,
-    lastBootstrap,
-    corpusQuery,
-    corpusHits,
-    selectedCorpusHit,
-    hasSearchedCorpus,
-    corpusSearchError,
-    ingestSelectionInput,
-    isIngestingSelection,
-    lastIngestResult,
-    isRunningLint,
-    automation,
-    lastLintReport,
-    isUpdatingAutomationSettings,
-    executingSuggestionId,
-    dismissingSuggestionId,
-    setVaultRoot,
-    setWorkspaceRelativePath,
-    setBindingMode,
-    setAdoptFolderRelativePath,
-    setCorpusQuery,
-    setSelectedCorpusHitId,
-    setIngestSelectionInput,
-    refresh,
-    analyze,
-    confirmAdoption,
-    bootstrap,
-    copyAgentPrompt,
-    syncMaintainerAgent,
-    syncCorpus,
-    searchCorpus,
-    setAutomationSetting,
-    executeAutomationSuggestion,
-    dismissAutomationSuggestion,
-    openTaskAgentHandoff,
-    ingestSelection,
-    runLint,
-  } = useLlmWiki(t)
+  const t = useTranslations("llm-wiki")
+  const wiki = useLlmWiki(t)
 
-  const handleTabChange = React.useCallback((value: string) => {
-    setActiveTab(value as LlmWikiTabValue)
-  }, [])
+  const [activeTab, setActiveTab] = React.useState<ListTab>("search")
+  const [selectedSuggestionId, setSelectedSuggestionId] = React.useState<string | null>(null)
+  const [showSetup, setShowSetup] = React.useState(false)
 
-  if (desktopSupported === null && isLoading) {
+  const selectedSuggestion = React.useMemo(() => {
+    const suggestions = wiki.state?.automation?.suggestions ?? []
+    return suggestions.find((s) => s.id === selectedSuggestionId) ?? null
+  }, [wiki.state?.automation?.suggestions, selectedSuggestionId])
+
+  // Auto-show setup on first load if not connected
+  React.useEffect(() => {
+    if (!wiki.isLoading && wiki.state && !wiki.state.binding) {
+      setShowSetup(true)
+    }
+  }, [wiki.isLoading, wiki.state])
+
+  if (wiki.desktopSupported === false) {
     return (
-      <div className="flex justify-center">
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled
-          className="rounded-full border border-[var(--hairline)] bg-[var(--panel-bg)] px-5 text-[var(--ink-3)]"
-        >
-          {t("loading")}
-        </Button>
+      <div className="space-y-6">
+        <div className="rounded-[var(--r-14)] border border-[var(--hairline)] bg-[var(--card)]/60 p-8 text-center">
+          <p className="text-lg font-semibold text-[var(--foreground)]">{t("desktopOnly.title")}</p>
+          <p className="mt-2 text-[var(--muted)]">{t("desktopOnly.description")}</p>
+        </div>
       </div>
     )
   }
 
-  if (desktopSupported === false) {
+  if (wiki.isLoading || wiki.desktopSupported === null) {
     return (
-      <Card className="gap-0 py-0 border-[var(--hairline)] bg-[var(--panel-bg)] shadow-[0_18px_40px_-30px_rgba(15,17,28,0.22)]">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-3 text-[var(--ink)]">
-            <HardDrive className="size-5 text-slate-500" />
-            {t("desktopOnly.title")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm leading-7 text-[var(--ink-3)]">
-          {t("desktopOnly.description")}
-        </CardContent>
-      </Card>
+      <div className="flex items-center justify-center py-32">
+        <Loader2 className="size-6 animate-spin text-[var(--accent-strong)]" />
+      </div>
     )
   }
 
   return (
-    <div className="space-y-4">
-      <div ref={tabsAnchorRef}>
-        <Tabs value={activeTab} onValueChange={handleTabChange} className="gap-4">
-          <TabsList className="grid h-auto w-full grid-cols-2 rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg)]/88 p-1 shadow-sm backdrop-blur-xl md:grid-cols-4">
-            <TabsTrigger
-              value="setup"
-              className="h-auto min-h-10 flex-col gap-0.5 rounded-lg px-3 py-2 text-center text-xs leading-tight whitespace-normal text-[var(--ink-3)] data-[state=active]:bg-[var(--accent-soft)] data-[state=active]:text-[var(--accent-ink)] data-[state=active]:shadow-none sm:text-sm"
-            >
-              <HardDrive className="size-4" />
-              {t("tabs.setup")}
-            </TabsTrigger>
-            <TabsTrigger
-              value="operations"
-              className="h-auto min-h-10 flex-col gap-0.5 rounded-lg px-3 py-2 text-center text-xs leading-tight whitespace-normal text-[var(--ink-3)] data-[state=active]:bg-[var(--accent-soft)] data-[state=active]:text-[var(--accent-ink)] data-[state=active]:shadow-none sm:text-sm"
-            >
-              <Wrench className="size-4" />
-              {t("tabs.operations")}
-            </TabsTrigger>
-            <TabsTrigger
-              value="corpus"
-              className="h-auto min-h-10 flex-col gap-0.5 rounded-lg px-3 py-2 text-center text-xs leading-tight whitespace-normal text-[var(--ink-3)] data-[state=active]:bg-[var(--accent-soft)] data-[state=active]:text-[var(--accent-ink)] data-[state=active]:shadow-none sm:text-sm"
-            >
-              <Database className="size-4" />
-              {t("tabs.corpus")}
-            </TabsTrigger>
-            <TabsTrigger
-              value="agent"
-              className="h-auto min-h-10 flex-col gap-0.5 rounded-lg px-3 py-2 text-center text-xs leading-tight whitespace-normal text-[var(--ink-3)] data-[state=active]:bg-[var(--accent-soft)] data-[state=active]:text-[var(--accent-ink)] data-[state=active]:shadow-none sm:text-sm"
-            >
-              <Bot className="size-4" />
-              {t("tabs.agent")}
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="setup" className="m-0">
-            <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-              <LlmWikiBindingCard
-                t={t}
-                state={state}
-                vaultRoot={vaultRoot}
-                workspaceRelativePath={workspaceRelativePath}
-                bindingMode={bindingMode}
-                adoptFolderRelativePath={adoptFolderRelativePath}
-                adoptionPreview={adoptionPreview}
-                isAnalyzing={isAnalyzing}
-                isPreviewingAdoption={isPreviewingAdoption}
-                isConfirmingAdoption={isConfirmingAdoption}
-                onVaultRootChange={setVaultRoot}
-                onWorkspaceRelativePathChange={setWorkspaceRelativePath}
-                onBindingModeChange={setBindingMode}
-                onAdoptFolderRelativePathChange={setAdoptFolderRelativePath}
-                onAnalyze={analyze}
-                onConfirmAdoption={confirmAdoption}
-                onRefresh={refresh}
-              />
-
-              <LlmWikiWorkspaceCard
-                t={t}
-                state={state}
-                bindingMode={bindingMode}
-                lastBootstrap={lastBootstrap}
-                isBootstrapping={isBootstrapping}
-                onBootstrap={bootstrap}
-              />
-            </div>
-          </TabsContent>
-
-          <TabsContent value="operations" className="m-0">
-            <div className="grid gap-4">
-              <LlmWikiAutomationCard
-                t={t}
-                settings={automation?.settings ?? null}
-                suggestions={automation?.suggestions ?? []}
-                audit={automation?.audit ?? []}
-                isUpdatingSettings={isUpdatingAutomationSettings}
-                executingSuggestionId={executingSuggestionId}
-                dismissingSuggestionId={dismissingSuggestionId}
-                onToggleSetting={setAutomationSetting}
-                onExecuteSuggestion={executeAutomationSuggestion}
-                onDismissSuggestion={dismissAutomationSuggestion}
-              />
-
-              <LlmWikiMaintenanceCard
-                t={t}
-                ingestSelectionInput={ingestSelectionInput}
-                onIngestSelectionInputChange={setIngestSelectionInput}
-                onRefresh={refresh}
-                onRebuildIndex={syncCorpus}
-                onIngestSelection={ingestSelection}
-                onRunLint={runLint}
-                isRefreshing={isLoading}
-                isRebuildingIndex={isSyncingCorpus}
-                isIngestingSelection={isIngestingSelection}
-                isRunningLint={isRunningLint}
-                lastIngestResult={lastIngestResult}
-                lastLintReport={lastLintReport}
-                recentLifecycleActions={(automation?.audit ?? []).slice(0, 6)}
-              />
-            </div>
-          </TabsContent>
-
-          <TabsContent value="corpus" className="m-0">
-            <div className="grid gap-4">
-              <LlmWikiLifecycleCard t={t} />
-              <LlmWikiCorpusCard
-                t={t}
-                state={state}
-                corpusQuery={corpusQuery}
-                corpusHits={corpusHits}
-                selectedCorpusHit={selectedCorpusHit}
-                hasSearchedCorpus={hasSearchedCorpus}
-                corpusSearchError={corpusSearchError}
-                isSyncingCorpus={isSyncingCorpus}
-                isSearchingCorpus={isSearchingCorpus}
-                onCorpusQueryChange={setCorpusQuery}
-                onSelectCorpusHit={setSelectedCorpusHitId}
-                onSyncCorpus={syncCorpus}
-                onSearchCorpus={searchCorpus}
-              />
-            </div>
-          </TabsContent>
-
-          <TabsContent value="agent" className="m-0">
-            <LlmWikiAgentCard
-              t={t}
-              state={state}
-              isSyncingAgent={isSyncingAgent}
-              onCopyPrompt={copyAgentPrompt}
-              onSyncMaintainerAgent={syncMaintainerAgent}
-              onOpenTaskAgents={openTaskAgentHandoff}
-            />
-          </TabsContent>
-        </Tabs>
+    <div className="space-y-5 pb-10">
+      {/* Page header */}
+      <div className="flex items-center justify-between">
+        <div className="space-y-0.5">
+          <h1 className="flex items-center gap-2 text-xl font-bold tracking-[-0.02em] text-[var(--ink)] md:text-2xl">
+            <BookOpen className="size-6 text-[var(--accent-strong)]" />
+            {t("hero.title")}
+          </h1>
+          <p className="text-sm text-[var(--ink-2)]">{t("hero.description")}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <GlassButton variant="secondary" size="sm" onClick={() => setShowSetup(true)}>
+            <Settings className="size-3.5" />
+            {t("tabs.setup")}
+          </GlassButton>
+          <GlassButton variant="secondary" size="icon-sm" onClick={wiki.refresh}>
+            <RefreshCw className="size-3.5" />
+          </GlassButton>
+        </div>
       </div>
 
-      {isLoading && (
-        <div className="flex justify-center">
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled
-            className="rounded-full border border-[var(--hairline)] bg-[var(--panel-bg)] px-5 text-[var(--ink-3)]"
-          >
-            {t("loading")}
-          </Button>
+      {/* Stats bar */}
+      <StatsBar t={t} state={wiki.state} />
+
+      {/* Main area: left list + right detail */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5" style={{ minHeight: "420px" }}>
+        {/* Left panel */}
+        <div className="lg:col-span-2">
+          <ListPanel
+            t={t}
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            // Search
+            corpusQuery={wiki.corpusQuery}
+            corpusHits={wiki.corpusHits}
+            selectedCorpusHitId={wiki.selectedCorpusHit?.assetId ?? null}
+            hasSearchedCorpus={wiki.hasSearchedCorpus}
+            corpusSearchError={wiki.corpusSearchError}
+            isSearchingCorpus={wiki.isSearchingCorpus}
+            isSyncingCorpus={wiki.isSyncingCorpus}
+            setCorpusQuery={wiki.setCorpusQuery}
+            setSelectedCorpusHitId={wiki.setSelectedCorpusHitId}
+            searchCorpus={wiki.searchCorpus}
+            syncCorpus={wiki.syncCorpus}
+            // Suggestions
+            suggestions={wiki.state?.automation?.suggestions ?? []}
+            selectedSuggestionId={selectedSuggestionId}
+            setSelectedSuggestionId={setSelectedSuggestionId}
+            executingSuggestionId={wiki.executingSuggestionId}
+            dismissingSuggestionId={wiki.dismissingSuggestionId}
+            batchDismissingActionKind={wiki.batchDismissingActionKind}
+            executeAutomationSuggestion={wiki.executeAutomationSuggestion}
+            dismissAutomationSuggestion={wiki.dismissAutomationSuggestion}
+            dismissBatchAutomationSuggestions={wiki.dismissBatchAutomationSuggestions}
+            // Maintenance
+            state={wiki.state}
+            ingestSelectionInput={wiki.ingestSelectionInput}
+            isIngestingSelection={wiki.isIngestingSelection}
+            lastIngestResult={wiki.lastIngestResult}
+            isRunningLint={wiki.isRunningLint}
+            lastLintReport={wiki.lastLintReport}
+            setIngestSelectionInput={wiki.setIngestSelectionInput}
+            ingestSelection={wiki.ingestSelection}
+            runLint={wiki.runLint}
+          />
         </div>
-      )}
+
+        {/* Right panel */}
+        <div className="lg:col-span-3">
+          <DetailPanel
+            t={t}
+            activeTab={activeTab}
+            selectedCorpusHit={wiki.selectedCorpusHit}
+            selectedSuggestion={selectedSuggestion}
+            executingSuggestionId={wiki.executingSuggestionId}
+            dismissingSuggestionId={wiki.dismissingSuggestionId}
+            batchDismissingActionKind={wiki.batchDismissingActionKind}
+            executeAutomationSuggestion={wiki.executeAutomationSuggestion}
+            dismissAutomationSuggestion={wiki.dismissAutomationSuggestion}
+            showSetup={showSetup}
+            onOpenSetup={() => setShowSetup(true)}
+          />
+        </div>
+      </div>
+
+      {/* Bottom section */}
+      <BottomSection
+        t={t}
+        state={wiki.state}
+        isSyncingAgent={wiki.isSyncingAgent}
+        isUpdatingAutomationSettings={wiki.isUpdatingAutomationSettings}
+        syncMaintainerAgent={wiki.syncMaintainerAgent}
+        copyAgentPrompt={wiki.copyAgentPrompt}
+        openTaskAgentHandoff={wiki.openTaskAgentHandoff}
+        setAutomationSetting={wiki.setAutomationSetting}
+      />
+
+      {/* Setup modal */}
+      <SetupForm
+        t={t}
+        visible={showSetup}
+        onClose={() => setShowSetup(false)}
+        vaultRoot={wiki.vaultRoot}
+        workspaceRelativePath={wiki.workspaceRelativePath}
+        bindingMode={wiki.bindingMode}
+        adoptFolderRelativePath={wiki.adoptFolderRelativePath}
+        adoptionPreview={wiki.adoptionPreview}
+        state={wiki.state}
+        isAnalyzing={wiki.isAnalyzing}
+        isPreviewingAdoption={wiki.isPreviewingAdoption}
+        isConfirmingAdoption={wiki.isConfirmingAdoption}
+        setVaultRoot={wiki.setVaultRoot}
+        setWorkspaceRelativePath={wiki.setWorkspaceRelativePath}
+        setBindingMode={wiki.setBindingMode}
+        setAdoptFolderRelativePath={wiki.setAdoptFolderRelativePath}
+        analyze={wiki.analyze}
+        confirmAdoption={wiki.confirmAdoption}
+        refresh={wiki.refresh}
+        isBootstrapping={wiki.isBootstrapping}
+        lastBootstrap={wiki.lastBootstrap}
+        bootstrap={wiki.bootstrap}
+      />
     </div>
   )
 }

@@ -119,6 +119,8 @@
       "insights": {
         "vaultName": "Vault 名称",
         "obsidian": "Obsidian 标记",
+        "readScope": "读取范围",
+        "writeScope": "写入范围",
         "candidates": "候选 Wiki 目录",
         "directories": "扫描目录数",
         "detected": "已检测到",
@@ -356,7 +358,13 @@
         "batchDismiss": "全部忽略",
         "count": "{count} 条整理建议",
         "emptyTitle": "当前没有待处理的整理建议",
-        "emptySubtitle": "系统会在有需要时自动生成建议"
+        "emptySubtitle": "系统会在有需要时自动生成建议",
+        "resolvedTitle": "已处理的建议",
+        "repeatCount": "已重复 {count} 次",
+        "metaTitle": "附加信息",
+        "metaGoal": "维护目标",
+        "metaMemoryContent": "记忆内容",
+        "metaSessionId": "关联会话 {id}"
       },
       "suggestionCopy": {
         "initialCorpusSync": {
@@ -461,15 +469,23 @@
         "suggestion_dismissed": "建议已忽略",
         "executed": "已执行",
         "acknowledged": "已确认",
-          "auto_executed": "自动执行",
-          "auto_failed": "自动执行失败",
-          "observed": "已记录",
-          "suggested": "已生成建议",
-          "scheduled": "已调度",
-          "execution_failed": "执行失败",
-          "disabled": "已禁用",
-          "skipped": "已跳过",
-          "noop": "无需动作"
+        "auto_executed": "自动执行",
+        "auto_failed": "自动执行失败",
+        "observed": "已记录",
+        "suggested": "已生成建议",
+        "scheduled": "已调度",
+        "execution_failed": "执行失败",
+        "disabled": "已禁用",
+        "skipped": "已跳过",
+        "noop": "无需动作",
+        "pending": "待处理",
+        "completed": "已完成",
+        "superseded": "已取代",
+        "stale": "已过期",
+        "dismissed": "已忽略",
+        "failed": "失败",
+        "promoted": "已提升",
+        "expired": "已失效"
         }
       },
     "toast": {
@@ -496,7 +512,8 @@
       "lintFailed": "运行 LLM Wiki lint 失败。",
       "automationSettingsFailed": "LLM Wiki 自动化设置更新失败。",
       "automationExecutionFailed": "自动化建议执行失败。",
-      "automationDismissFailed": "自动化建议忽略失败。"
+      "automationDismissFailed": "自动化建议忽略失败。",
+      "batchDismissCompleted": "已批量忽略 {count} 条建议。"
     }
   }
 }

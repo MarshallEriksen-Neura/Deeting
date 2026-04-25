@@ -119,6 +119,8 @@
       "insights": {
         "vaultName": "Vault Name",
         "obsidian": "Obsidian Markers",
+        "readScope": "Read Scope",
+        "writeScope": "Write Scope",
         "candidates": "Candidate Wiki Folders",
         "directories": "Directories Scanned",
         "detected": "Detected",
@@ -356,7 +358,13 @@
         "batchDismiss": "Dismiss all",
         "count": "{count} suggestions",
         "emptyTitle": "No pending suggestions",
-        "emptySubtitle": "The system will generate suggestions when needed"
+        "emptySubtitle": "The system will generate suggestions when needed",
+        "resolvedTitle": "Resolved suggestions",
+        "repeatCount": "Repeated {count} times",
+        "metaTitle": "Additional info",
+        "metaGoal": "Maintenance goal",
+        "metaMemoryContent": "Memory content",
+        "metaSessionId": "Session {id}"
       },
       "suggestionCopy": {
         "initialCorpusSync": {
@@ -461,15 +469,23 @@
         "suggestion_dismissed": "Suggestion dismissed",
         "executed": "Executed",
         "acknowledged": "Acknowledged",
-          "auto_executed": "Auto-executed",
-          "auto_failed": "Auto-failed",
-          "observed": "Observed",
-          "suggested": "Suggested",
-          "scheduled": "Scheduled",
-          "execution_failed": "Execution failed",
-          "disabled": "Disabled",
-          "skipped": "Skipped",
-          "noop": "No action"
+        "auto_executed": "Auto-executed",
+        "auto_failed": "Auto-failed",
+        "observed": "Observed",
+        "suggested": "Suggested",
+        "scheduled": "Scheduled",
+        "execution_failed": "Execution failed",
+        "disabled": "Disabled",
+        "skipped": "Skipped",
+        "noop": "No action",
+        "pending": "Pending",
+        "completed": "Completed",
+        "superseded": "Superseded",
+        "stale": "Stale",
+        "dismissed": "Dismissed",
+        "failed": "Failed",
+        "promoted": "Promoted",
+        "expired": "Expired"
         }
       },
     "toast": {
@@ -496,7 +512,8 @@
       "lintFailed": "Failed to run the LLM Wiki lint pass.",
       "automationSettingsFailed": "Failed to update LLM Wiki automation settings.",
       "automationExecutionFailed": "Failed to execute the automation suggestion.",
-      "automationDismissFailed": "Failed to dismiss the automation suggestion."
+      "automationDismissFailed": "Failed to dismiss the automation suggestion.",
+      "batchDismissCompleted": "Dismissed {count} suggestions in batch."
     }
   }
 }

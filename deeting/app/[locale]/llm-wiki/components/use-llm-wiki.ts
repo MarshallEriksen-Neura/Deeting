@@ -72,6 +72,7 @@ export function useLlmWiki(t: Translation) {
   const [isUpdatingAutomationSettings, setIsUpdatingAutomationSettings] = React.useState(false)
   const [executingSuggestionId, setExecutingSuggestionId] = React.useState<string | null>(null)
   const [dismissingSuggestionId, setDismissingSuggestionId] = React.useState<string | null>(null)
+  const [batchDismissingActionKind, setBatchDismissingActionKind] = React.useState<string | null>(null)
 
   const clearCorpusInspector = React.useCallback(() => {
     setCorpusHits([])
@@ -369,6 +370,29 @@ export function useLlmWiki(t: Translation) {
     [t],
   )
 
+  const dismissBatchAutomationSuggestions = React.useCallback(
+    async (actionKind: string, suggestionIds: string[]) => {
+      if (suggestionIds.length === 0) return
+      try {
+        setBatchDismissingActionKind(actionKind)
+        for (const id of suggestionIds) {
+          const next = await dismissLocalLlmWikiAutomationSuggestion(id)
+          setState(next)
+        }
+        toast.success(
+          t("toast.batchDismissCompleted", { count: suggestionIds.length }),
+        )
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : t("toast.automationDismissFailed"),
+        )
+      } finally {
+        setBatchDismissingActionKind(null)
+      }
+    },
+    [t],
+  )
+
   const openTaskAgentHandoff = React.useCallback(() => {
     const maintainer = state?.maintainerAgent
     if (maintainer?.agentId) {
@@ -481,6 +505,7 @@ export function useLlmWiki(t: Translation) {
     isUpdatingAutomationSettings,
     executingSuggestionId,
     dismissingSuggestionId,
+    batchDismissingActionKind,
     setVaultRoot,
     setWorkspaceRelativePath,
     setBindingMode,
@@ -499,6 +524,7 @@ export function useLlmWiki(t: Translation) {
     setAutomationSetting,
     executeAutomationSuggestion,
     dismissAutomationSuggestion,
+    dismissBatchAutomationSuggestions,
     openTaskAgentHandoff,
     ingestSelection,
     runLint,

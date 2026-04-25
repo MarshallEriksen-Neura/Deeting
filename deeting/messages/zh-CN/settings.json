@@ -246,6 +246,7 @@
         "prepareStage": {
           "check_endpoint": "正在检查 BoxLite 端点...",
           "load_record": "正在加载安装记录...",
+          "wsl_warmup": "正在启动 WSL...",
           "start_server": "正在启动 BoxLite 服务...",
           "health_check": "正在等待 BoxLite 就绪...",
           "done": "沙箱已就绪"

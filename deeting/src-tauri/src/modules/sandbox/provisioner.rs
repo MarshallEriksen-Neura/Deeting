@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use crate::modules::desktop_config::network::DesktopNetworkProxyEnvironment;
 #[cfg(target_os = "windows")]
-use crate::modules::sandbox::backend_wsl::shell_quote;
+use crate::modules::sandbox::backend_wsl::{get_default_wsl_distro, shell_quote, warm_up_wsl};
 use crate::modules::sandbox::error::SandboxError;
 use crate::modules::sandbox::installer::{load_installation_record, BoxLiteInstallationRecord};
 use crate::utils::configure_background_tokio_command;
@@ -150,6 +150,10 @@ impl BoxLiteProvisioner {
             })?;
         }
 
+        report_prepare(reporter, "wsl_warmup", 20);
+        let distro = get_default_wsl_distro();
+        warm_up_wsl(distro.as_deref()).await?;
+
         report_prepare(reporter, "start_server", 25);
         let launch_script = build_server_launch_command(
             &record,
@@ -168,7 +172,7 @@ impl BoxLiteProvisioner {
             .spawn()
             .map_err(|e| {
                 SandboxError::Unavailable(format!(
-                    "failed to start the BoxLite server from {}: {}",
+                    "BoxLite server launch failure: failed to start from {}: {}",
                     record.wsl_binary_path, e
                 ))
             })?;
@@ -204,6 +208,8 @@ impl BoxLiteProvisioner {
                 return Ok(());
             }
 
+            self.ensure_child_still_running()?;
+
             log::debug!(
                 "BoxLite health check attempt {}/{} failed, retrying...",
                 attempt + 1,
@@ -217,6 +223,31 @@ impl BoxLiteProvisioner {
             endpoint,
             STARTUP_TIMEOUT.as_secs()
         )))
+    }
+
+    fn ensure_child_still_running(&self) -> Result<(), SandboxError> {
+        let mut guard = self.child.blocking_lock();
+        let status = match guard.as_mut() {
+            Some(child) => child.try_wait().map_err(|err| {
+                SandboxError::Unavailable(format!(
+                    "BoxLite server launch failure: could not inspect the managed process: {err}"
+                ))
+            })?,
+            None => None,
+        };
+
+        if let Some(status) = status {
+            *guard = None;
+            let detail = status
+                .code()
+                .map(|code| format!("exit code {code}"))
+                .unwrap_or_else(|| "terminated by signal".to_string());
+            return Err(SandboxError::Unavailable(format!(
+                "BoxLite server launch failure: the managed server exited before becoming healthy ({detail})."
+            )));
+        }
+
+        Ok(())
     }
 
     pub async fn stop(&self) {

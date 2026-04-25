@@ -21,7 +21,7 @@ interface DesktopSandboxSettingsCardProps {
 }
 
 type InstallStage = "download" | "verify" | "extract" | "done"
-type PrepareStage = "check_endpoint" | "load_record" | "start_server" | "health_check" | "done"
+type PrepareStage = "check_endpoint" | "load_record" | "wsl_warmup" | "start_server" | "health_check" | "done"
 
 interface InstallProgressPayload {
   stage: InstallStage
