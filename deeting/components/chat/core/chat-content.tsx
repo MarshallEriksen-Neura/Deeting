@@ -1,10 +1,14 @@
 "use client"
+import * as React from "react"
 import { ChatMessageList } from "../messages"
 import { useChatStore, type ChatAssistant } from "@/store/chat-store"
 import { useChatRuntimeStore } from "@/store/chat-runtime-store"
 import { useChatMessagingService } from "@/hooks/chat/use-chat-messaging-service"
 import { useHydratePendingToolApproval } from "@/hooks/chat/use-hydrate-pending-tool-approval"
 import { useBrowserModeToolActivity } from "@/hooks/chat/use-browser-mode-tool-activity"
+import { useWorkspaceStore } from "@/store/workspace-store"
+import { useWorkflowStore } from "@/store/workflow-store"
+import { TerminalDashboard } from "@/components/dashboard/terminal-dashboard"
 
 /**
  * ChatContent - 聊天内容组件（重构版）
@@ -36,23 +40,40 @@ export function ChatContent({ agent }: ChatContentProps) {
   useHydratePendingToolApproval(sessionId, messages)
   useBrowserModeToolActivity(messages)
 
+  const activeViewId = useWorkspaceStore((state) => state.activeViewId)
+  const views = useWorkspaceStore((state) => state.views)
+  
+  const isWorkflowActiveInWorkspace = React.useMemo(() => {
+    const activeView = views.find(v => v.id === activeViewId)
+    return activeView?.type === "native-canvas" && activeView.content?.viewType === "workflow"
+  }, [activeViewId, views])
+
+  const workflowViewStatus = useWorkflowStore((state) => state.view)
+  const isWorkflowExecuting = isWorkflowActiveInWorkspace && workflowViewStatus === "execution"
+
   return (
     <div className="flex flex-1 min-h-0 h-full w-full">
-      <ChatMessageList
-        messages={messages}
-        agent={agent}
-        isTyping={isTyping}
-        statusMessageId={statusMessageId}
-        streamEnabled={streamEnabled}
-        statusStage={statusStage}
-        statusCode={statusCode}
-        statusMeta={statusMeta}
-        onRegenerate={regenerateMessage}
-        onLike={(id) => void sendFeedback(id, 1)}
-        onDislike={(id) => void sendFeedback(id, -1)}
-        onCompareWithModel={compareWithModel}
-        onFinalizeCompare={finalizeCompareWinner}
-      />
+      {isWorkflowExecuting ? (
+        <div className="flex-1 w-full h-full animate-in fade-in slide-in-from-bottom-2 duration-500">
+          <TerminalDashboard />
+        </div>
+      ) : (
+        <ChatMessageList
+          messages={messages}
+          agent={agent}
+          isTyping={isTyping}
+          statusMessageId={statusMessageId}
+          streamEnabled={streamEnabled}
+          statusStage={statusStage}
+          statusCode={statusCode}
+          statusMeta={statusMeta}
+          onRegenerate={regenerateMessage}
+          onLike={(id) => void sendFeedback(id, 1)}
+          onDislike={(id) => void sendFeedback(id, -1)}
+          onCompareWithModel={compareWithModel}
+          onFinalizeCompare={finalizeCompareWinner}
+        />
+      )}
     </div>
   )
 }

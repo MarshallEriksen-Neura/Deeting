@@ -1058,17 +1058,21 @@ export function useChatMessagingService() {
       appendMessageBlocks(assistantMessageId, [createErrorBlock(assistantMessageId, message)])
       setErrorMessage(message)
     } finally {
-      setIsLoading(false)
-      syncAssistantActivityStatus({
-        assistantMessageId,
-        setStatus,
-        clearStatus,
-        setActiveMessageId,
-      })
-      cancelRef.current = null
-      requestIdRef.current = null
-      activeRequestRouteRef.current = null
-      activeAssistantMessageIdRef.current = null
+      // 竞争条件保护：只有当前请求仍然是最新请求时才清理全局状态，
+      // 避免旧请求 finally 覆盖新请求的状态
+      if (activeAssistantMessageIdRef.current === assistantMessageId) {
+        setIsLoading(false)
+        syncAssistantActivityStatus({
+          assistantMessageId,
+          setStatus,
+          clearStatus,
+          setActiveMessageId,
+        })
+        cancelRef.current = null
+        requestIdRef.current = null
+        activeRequestRouteRef.current = null
+        activeAssistantMessageIdRef.current = null
+      }
       interruptedMessageIdsRef.current.delete(assistantMessageId)
     }
     return dispatchedToConversation
@@ -1300,17 +1304,20 @@ export function useChatMessagingService() {
       appendMessageBlocks(assistantMessageId, [createErrorBlock(assistantMessageId, message)])
       setErrorMessage(message)
     } finally {
-      setIsLoading(false)
-      syncAssistantActivityStatus({
-        assistantMessageId,
-        setStatus,
-        clearStatus,
-        setActiveMessageId,
-      })
-      cancelRef.current = null
-      requestIdRef.current = null
-      activeRequestRouteRef.current = null
-      activeAssistantMessageIdRef.current = null
+      // 竞争条件保护：只有当前请求仍然是最新请求时才清理全局状态
+      if (activeAssistantMessageIdRef.current === assistantMessageId) {
+        setIsLoading(false)
+        syncAssistantActivityStatus({
+          assistantMessageId,
+          setStatus,
+          clearStatus,
+          setActiveMessageId,
+        })
+        cancelRef.current = null
+        requestIdRef.current = null
+        activeRequestRouteRef.current = null
+        activeAssistantMessageIdRef.current = null
+      }
       interruptedMessageIdsRef.current.delete(assistantMessageId)
     }
   }, [

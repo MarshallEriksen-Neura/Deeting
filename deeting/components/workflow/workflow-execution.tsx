@@ -51,7 +51,7 @@ export function WorkflowExecution({
   const badge = runStatusBadge[run.status] ?? { label: "status.draft", variant: "secondary" as const }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[26px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[color:var(--ios-shell-border)] px-5 py-4">
         <div className="flex items-center gap-3">
@@ -60,7 +60,7 @@ export function WorkflowExecution({
           </Button>
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-semibold tracking-tight">{t("execution.title")}</h2>
-            <Badge variant={badge.variant} className="text-[10px]">
+            <Badge variant={badge.variant} className="h-5 shrink-0 rounded-[4px] px-1.5 font-mono text-[10px] uppercase tracking-wider">
               {t(badge.label)}
             </Badge>
           </div>
@@ -73,12 +73,12 @@ export function WorkflowExecution({
       </div>
 
       {/* Progress */}
-      <div className="space-y-3 border-b border-[color:var(--ios-shell-border)] px-5 py-4">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
+      <div className="space-y-2 border-b border-[color:var(--ios-shell-border)] px-5 py-3">
+        <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-wider text-muted-foreground/70">
           <span>{t("execution.phaseOf", { current: succeededCount, total: totalPhases })}</span>
           <span>{progressPercent}%</span>
         </div>
-        <Progress value={progressPercent} className="h-2 rounded-full bg-white/50 dark:bg-white/8" />
+        <Progress value={progressPercent} className="h-[2px] rounded-none bg-black/5 dark:bg-white/5" indicatorClassName="bg-emerald-500" />
       </div>
 
       {/* Timeline */}

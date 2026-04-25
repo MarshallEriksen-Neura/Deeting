@@ -176,16 +176,14 @@ export function PlanEditor({
         </div>
       </ScrollArea>
 
-      {/* Footer */}
-      <div className="border-t border-[color:var(--ios-shell-border)] p-5">
+      <div className="p-5 pt-0">
         <Button
-          className="w-full"
-          variant="ios-primary"
+          className="w-full h-11 rounded-[14px] bg-[linear-gradient(180deg,#2A2A2A,#1A1A1A)] text-white shadow-[0_4px_14px_-6px_rgba(0,0,0,0.4)] hover:scale-[1.01] transition-transform font-mono text-[13px] tracking-tight dark:bg-[linear-gradient(180deg,#FFFFFF,#F0F0F0)] dark:text-black"
           size="xl"
           onClick={handleCompile}
           disabled={isDisabled || phases.length === 0}
         >
-          {compiling ? t("plan.compiling") : t("plan.compileAndStart")}
+          {compiling ? t("plan.compiling") : `> ${t("plan.compileAndStart")}`}
         </Button>
       </div>
     </div>

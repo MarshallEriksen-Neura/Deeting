@@ -64,6 +64,9 @@ impl CoreToolContract {
             "mutating": self.mutating,
             "risk_level": self.risk_level,
             "example_arguments": self.example_arguments,
+            "activation_state": "enabled",
+            "runtime_state": "ready",
+            "search_index_state": "not_required",
         })
     }
 }

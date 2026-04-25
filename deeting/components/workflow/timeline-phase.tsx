@@ -19,10 +19,10 @@ interface TimelinePhaseProps {
 const statusConfig = {
   pending: { color: "border-muted-foreground/30", bg: "", icon: null, tone: "secondary" as const },
   ready: { color: "border-muted-foreground/40", bg: "", icon: null, tone: "secondary" as const },
-  running: { color: "border-primary", bg: "bg-primary", icon: Loader2, tone: "default" as const },
-  succeeded: { color: "border-emerald-500", bg: "bg-emerald-500", icon: Check, tone: "default" as const },
-  failed: { color: "border-rose-500", bg: "bg-rose-500", icon: X, tone: "destructive" as const },
-  waiting_approval: { color: "border-amber-500", bg: "bg-amber-500", icon: Pause, tone: "default" as const },
+  running: { color: "border-emerald-400", bg: "bg-emerald-400/20", icon: Loader2, tone: "default" as const },
+  succeeded: { color: "border-emerald-500", bg: "bg-emerald-500/20", icon: Check, tone: "outline" as const },
+  failed: { color: "border-rose-500", bg: "bg-rose-500/20", icon: X, tone: "destructive" as const },
+  waiting_approval: { color: "border-amber-500", bg: "bg-amber-500/20", icon: Pause, tone: "outline" as const },
   skipped: { color: "border-muted-foreground/20", bg: "bg-muted-foreground/20", icon: null, tone: "secondary" as const },
   cancelled: { color: "border-muted-foreground/30", bg: "bg-muted-foreground/30", icon: X, tone: "secondary" as const },
   obsolete: { color: "border-muted-foreground/15", bg: "bg-muted-foreground/15", icon: null, tone: "secondary" as const },
@@ -54,17 +54,17 @@ export function TimelinePhase({
         {/* Status dot */}
         <div className="relative">
           <div
-            className={`flex h-4 w-4 items-center justify-center rounded-full border-2 bg-white/90 shadow-[0_8px_20px_-14px_rgba(15,23,42,0.35)] transition-colors dark:bg-slate-950 ${config.color} ${config.bg}`}
+            className={`flex h-3.5 w-3.5 items-center justify-center rounded-full border bg-transparent transition-colors ${config.color} ${config.bg}`}
           >
             {StatusIcon && (
               <StatusIcon
-                className={`h-2.5 w-2.5 text-white ${isRunning ? "animate-spin" : ""}`}
+                className={`h-2 w-2 text-foreground/70 ${isRunning ? "animate-spin text-emerald-500" : ""} ${isCompleted ? "text-emerald-500" : ""}`}
               />
             )}
           </div>
           {/* Pulse ring for running */}
           {isRunning && (
-            <div className="absolute inset-0 rounded-full border-2 border-primary animate-ping opacity-40" />
+            <div className="absolute inset-0 rounded-full border border-emerald-400 animate-ping opacity-60" />
           )}
         </div>
         {/* Vertical line */}
@@ -72,18 +72,18 @@ export function TimelinePhase({
       </div>
 
       {/* Content */}
-      <div className="min-w-0 flex-1 rounded-[22px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] px-4 py-3 shadow-[0_14px_32px_-28px_rgba(15,23,42,0.36)]">
+      <div className="min-w-0 flex-1 pb-1 pt-0">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className={`truncate text-sm font-medium ${isActive ? "text-foreground" : "text-muted-foreground"}`}>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className={`truncate text-[13px] font-medium tracking-wide ${isActive ? "text-foreground" : "text-muted-foreground/70"}`}>
               {step.title || step.phase_id}
             </span>
-            <Badge variant={config.tone} className="h-5 shrink-0 rounded-full px-2 text-[10px]">
+            <Badge variant={config.tone} className={`h-5 shrink-0 rounded-[4px] px-1.5 font-mono text-[10px] uppercase tracking-wider ${isCompleted ? 'border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10' : ''}`}>
               {t(`status.${step.status}`)}
             </Badge>
           </div>
           {duration && (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+            <span className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground/60 shrink-0">
               <Clock className="h-3 w-3" />
               {duration}
             </span>
@@ -92,21 +92,21 @@ export function TimelinePhase({
 
         {/* Goal */}
         {step.goal && (
-          <p className="mt-1.5 line-clamp-2 text-xs text-muted-foreground/80">{step.goal}</p>
+          <p className="mt-1.5 line-clamp-2 text-[12px] leading-5 text-muted-foreground/60">{step.goal}</p>
         )}
 
         {/* Error display */}
         {isFailed && step.error && (
-          <div className="mt-3 rounded-[18px] border border-destructive/20 bg-destructive/5 p-3">
-            <p className="text-xs text-destructive/80">{step.error}</p>
+          <div className="mt-2 border-l-2 border-rose-500/40 bg-rose-500/5 py-2 pl-3 pr-2">
+            <p className="font-mono text-[11px] text-rose-600/80 dark:text-rose-400/80">{step.error}</p>
             {onRerun && (
               <Button
-                variant="outline"
+                variant="ghost"
                 size="xs"
-                className="mt-3"
+                className="mt-2 h-6 px-2 text-[10px] font-mono hover:bg-rose-500/10 hover:text-rose-600"
                 onClick={onRerun}
               >
-                {t("execution.rerunPhase")}
+                {'>'} {t("execution.rerunPhase")}
               </Button>
             )}
           </div>
@@ -116,23 +116,23 @@ export function TimelinePhase({
         {isCompleted && step.worker_trace_summary && (
           <Collapsible open={isExpanded} onOpenChange={onToggleExpand}>
             <CollapsibleTrigger asChild>
-              <Button variant="ghost" size="xs" className="mt-2 px-0 text-xs text-muted-foreground">
-                {isExpanded ? t("execution.hideResults") : t("execution.showResults")}
+              <Button variant="ghost" size="xs" className="mt-1.5 h-6 px-1 font-mono text-[10px] text-muted-foreground/60 hover:bg-transparent hover:text-foreground">
+                {isExpanded ? "[-]" : "[+]"} {isExpanded ? t("execution.hideResults") : t("execution.showResults")}
               </Button>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <div className="mt-3 rounded-[18px] border border-[color:var(--ios-shell-border)] bg-background/40 p-3">
-                <p className="text-xs text-muted-foreground whitespace-pre-wrap line-clamp-10">
+              <div className="mt-2 border-l-2 border-emerald-500/20 bg-emerald-500/5 py-2 pl-3 pr-2">
+                <p className="font-mono text-[10px] leading-relaxed text-muted-foreground/80 whitespace-pre-wrap line-clamp-10">
                   {step.worker_trace_summary}
                 </p>
                 {onViewContext && (
                   <Button
                     variant="ghost"
                     size="xs"
-                    className="mt-3 px-0 text-xs text-muted-foreground"
+                    className="mt-2 h-6 px-0 font-mono text-[10px] text-emerald-600/70 hover:bg-transparent hover:text-emerald-600 dark:text-emerald-400/70 dark:hover:text-emerald-400"
                     onClick={onViewContext}
                   >
-                    {t("execution.viewContext")}
+                    {'>'} {t("execution.viewContext")}
                   </Button>
                 )}
               </div>
