@@ -409,12 +409,12 @@ export function IslandShell() {
                     : "0 18px 40px -26px rgba(0,0,0,0.38)",
           }}
           className={cn(
-            "relative overflow-hidden",
+            "relative overflow-hidden isolate",
             "border border-island-shell-border",
             "bg-island-shell-bg backdrop-blur-2xl",
             mode === "expanded"
-              ? "ring-1 ring-white/20"
-              : "ring-1 ring-white/30",
+              ? "ring-1 ring-white/20 rounded-[34px]"
+              : "ring-1 ring-white/30 rounded-full",
           )}
         >
           <AnimatePresence>

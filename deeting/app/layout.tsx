@@ -4,6 +4,7 @@ import { ThemeProvider } from "next-themes";
 import { DesktopTitlebarShell } from "@/components/common/desktop-titlebar-shell";
 import { AppProviders } from "@/components/providers/app-providers";
 import { PlatformProvider } from "@/lib/platform/provider";
+import { DisableContextMenu } from "@/components/common/disable-context-menu";
 import "./globals.css";
 
 const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true";
@@ -45,6 +46,7 @@ export default function RootLayout({
             disableTransitionOnChange
           >
             <DesktopTitlebarShell />
+            <DisableContextMenu />
             <AppProviders>{children}</AppProviders>
           </ThemeProvider>
         </PlatformProvider>

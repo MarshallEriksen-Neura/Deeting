@@ -26,6 +26,7 @@ export const ModelInfoSchema = z.object({
   icon: z.string().nullable().optional(),
   upstream_model_id: z.string().nullable().optional(),
   provider_model_id: z.string().nullable().optional(),
+  display_name: z.string().nullable().optional(),
   input_types: z.array(z.string()).nullable().optional(),
   request_route: z.enum(["local_invoke", "cloud_http"]).optional(),
   runtime_source: z.enum(["desktop_local", "cloud_internal"]).optional(),
@@ -71,6 +72,7 @@ type LocalProviderModel = {
   instance_id: string
   model_id: string
   unified_model_id?: string | null
+  display_name?: string | null
   capabilities?: string[]
   is_active?: boolean
   routing_config?: Record<string, unknown> | null
@@ -246,6 +248,7 @@ async function fetchDesktopLocalModels(options?: {
             icon: instance.icon ?? null,
             upstream_model_id: model.model_id,
             provider_model_id: model.id,
+            display_name: model.display_name ?? null,
             input_types: inputTypes,
           }
         }),

@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ArrowRight,
   ChevronUp,
   Maximize2,
   MessageSquareText,
@@ -93,8 +92,8 @@ function IslandAssistantPanel({
   approvalEmptyText: string;
 }) {
   return (
-    <div className="relative overflow-hidden rounded-[28px] border border-white/40 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.84),rgba(255,255,255,0.56)_45%,rgba(240,233,224,0.82)_100%)] px-4 py-4 shadow-[0_28px_80px_-42px_rgba(0,0,0,0.32)] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top,rgba(59,47,32,0.9),rgba(28,24,20,0.92)_55%,rgba(18,17,16,0.98)_100%)]">
-      <div className="pointer-events-none absolute inset-x-8 top-0 h-16 rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.45),transparent_72%)] blur-2xl dark:bg-[radial-gradient(circle,rgba(212,184,150,0.16),transparent_72%)]" />
+    <div className="relative px-4 py-4">
+      <div className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(circle_at_center,rgba(212,184,150,0.12),transparent_60%)] blur-2xl dark:bg-[radial-gradient(circle_at_center,rgba(212,184,150,0.08),transparent_60%)]" />
       <div className="relative flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <div className="flex h-9 w-9 items-center justify-center rounded-full border border-island-gold/25 bg-white/65 shadow-[0_8px_20px_-14px_rgba(0,0,0,0.28)] dark:bg-white/8">
@@ -117,7 +116,7 @@ function IslandAssistantPanel({
       <div
         className={cn(
           "relative mt-4",
-          compact ? "min-h-[84px]" : "min-h-[128px]",
+          compact ? "min-h-[160px]" : "min-h-[280px]",
         )}
       >
         {message ? (
@@ -131,7 +130,7 @@ function IslandAssistantPanel({
           <div
             className={cn(
               "flex h-full flex-col items-center justify-center gap-2 text-center",
-              compact ? "min-h-[84px]" : "min-h-[128px]",
+              compact ? "min-h-[160px]" : "min-h-[280px]",
             )}
           >
             <Sparkles className="h-5 w-5 text-island-gold/75" />
@@ -433,31 +432,7 @@ export function IslandExpandedView({
             approvalEmptyText={t("island.approvalEmpty")}
           />
 
-          {!isApprovalFocused ? (
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-[22px] border border-white/35 bg-white/38 px-3.5 py-3 shadow-[0_12px_24px_-20px_rgba(0,0,0,0.26)] dark:border-white/8 dark:bg-white/4">
-                <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/44">
-                  <MessageSquareText className="h-3.5 w-3.5 text-island-gold/72" />
-                  <span>{t("island.modeTitle")}</span>
-                </div>
-                <p className="text-[12px] leading-5 text-foreground/62">
-                  {t("island.modeDescription")}
-                </p>
-              </div>
-              <button
-                onClick={restoreWorkspace}
-                className="group rounded-[22px] border border-island-gold/22 bg-[linear-gradient(180deg,rgba(229,216,197,0.66),rgba(245,239,230,0.46))] px-3.5 py-3 text-left shadow-[0_14px_30px_-22px_rgba(0,0,0,0.28)] transition-colors hover:bg-[linear-gradient(180deg,rgba(232,220,202,0.8),rgba(248,243,237,0.58))] dark:bg-[linear-gradient(180deg,rgba(55,45,31,0.8),rgba(26,22,18,0.92))] dark:hover:bg-[linear-gradient(180deg,rgba(64,52,36,0.88),rgba(30,25,21,0.96))]"
-              >
-                <div className="mb-1.5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/44">
-                  <span>{t("island.workspaceTitle")}</span>
-                  <ArrowRight className="h-3.5 w-3.5 text-island-gold transition-transform group-hover:translate-x-0.5" />
-                </div>
-                <p className="text-[12px] leading-5 text-foreground/68">
-                  {t("island.workspaceDescription")}
-                </p>
-              </button>
-            </div>
-          ) : (
+          {!isApprovalFocused ? null : (
             <div className="rounded-[22px] border border-white/35 bg-white/38 px-3.5 py-3 shadow-[0_12px_24px_-20px_rgba(0,0,0,0.26)] dark:border-white/8 dark:bg-white/4">
               <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/44">
                 <MessageSquareText className="h-3.5 w-3.5 text-island-gold/72" />

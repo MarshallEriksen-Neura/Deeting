@@ -485,13 +485,16 @@ export function IslandWindowShell() {
                       ? "0 22px 46px -24px rgba(16,185,129,0.3)"
                       : "0 18px 40px -26px rgba(0,0,0,0.38)",
             }}
+            style={{
+              WebkitMaskImage: "-webkit-radial-gradient(white, black)",
+            }}
             className={cn(
-              "relative w-full h-full min-h-0 overflow-hidden",
+              "relative w-full h-full min-h-0 overflow-hidden isolate",
               "border border-island-shell-border",
               "bg-island-shell-bg backdrop-blur-2xl",
               mode === "expanded"
-                ? "ring-1 ring-white/20"
-                : "ring-1 ring-white/30",
+                ? "ring-1 ring-white/20 rounded-[34px]"
+                : "ring-1 ring-white/30 rounded-full",
             )}
           >
             <AnimatePresence>

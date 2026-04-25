@@ -6,7 +6,13 @@ import { isLoginHostRoute } from "@/lib/auth/world-model";
 import { usePathname } from "@/i18n/routing";
 
 function shouldBypassShell(pathname: string) {
-  return pathname === "/chat" || pathname.startsWith("/chat/") || isLoginHostRoute(pathname);
+  return (
+    pathname === "/chat" ||
+    pathname.startsWith("/chat/") ||
+    pathname === "/island" ||
+    pathname.startsWith("/island/") ||
+    isLoginHostRoute(pathname)
+  );
 }
 
 export function LocaleShellBoundary({ children }: PropsWithChildren) {
