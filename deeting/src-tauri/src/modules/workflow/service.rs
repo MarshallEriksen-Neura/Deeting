@@ -553,6 +553,29 @@ pub(crate) async fn start_workflow_run(
         .ok_or_else(|| "Run disappeared after execution".to_string())
 }
 
+pub(crate) async fn start_workflow_run_with_stream(
+    app_handle: &tauri::AppHandle,
+    app_state: &AppState,
+    run_id: &str,
+    stream_tx: crate::modules::workflow::scheduler::WorkflowStreamSender,
+) -> Result<WorkflowRun, String> {
+    let store_ref = app_state.mcp.store.as_ref();
+    claim_run_for_start(store_ref, run_id).await?;
+
+    let _final_status = crate::modules::workflow::scheduler::run_workflow_with_stream(
+        app_handle,
+        app_state,
+        run_id,
+        stream_tx,
+    )
+    .await?;
+
+    store::get_workflow_run(store_ref, run_id)
+        .await
+        .map_err(|err| err.to_string())?
+        .ok_or_else(|| "Run disappeared after execution".to_string())
+}
+
 pub(crate) async fn get_workflow_run_status(
     app_state: &AppState,
     run_id: &str,

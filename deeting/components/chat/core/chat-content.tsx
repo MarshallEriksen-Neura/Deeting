@@ -49,13 +49,20 @@ export function ChatContent({ agent }: ChatContentProps) {
   }, [activeViewId, views])
 
   const workflowViewStatus = useWorkflowStore((state) => state.view)
+  const workflowRun = useWorkflowStore((state) => state.run)
+  const workflowSteps = useWorkflowStore((state) => state.steps)
+  const workflowEvents = useWorkflowStore((state) => state.events)
   const isWorkflowExecuting = isWorkflowActiveInWorkspace && workflowViewStatus === "execution"
 
   return (
     <div className="flex flex-1 min-h-0 h-full w-full">
       {isWorkflowExecuting ? (
         <div className="flex-1 w-full h-full animate-in fade-in slide-in-from-bottom-2 duration-500">
-          <TerminalDashboard />
+          <TerminalDashboard
+            workflowRun={workflowRun}
+            workflowSteps={workflowSteps}
+            workflowEvents={workflowEvents}
+          />
         </div>
       ) : (
         <ChatMessageList

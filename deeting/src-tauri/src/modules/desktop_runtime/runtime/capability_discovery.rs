@@ -380,11 +380,12 @@ fn build_search_result_payload(
     direct_callable_capability_count: usize,
     detail_level: SearchSdkDetailLevel,
 ) -> Value {
-    let serialized_capabilities = serialize_search_items(capabilities, detail_level);
+    let visible_capabilities = filter_model_visible_capabilities(capabilities, detail_level);
+    let serialized_capabilities = serialize_search_items(&visible_capabilities, detail_level);
     let serialized_recipes = serialize_search_items(recipes, detail_level);
     let serialized_orchestration_primitives =
         serialize_search_items(orchestration_primitives, detail_level);
-    let capability_groups = build_capability_groups(capabilities, detail_level);
+    let capability_groups = build_capability_groups(&visible_capabilities, detail_level);
     let recipe_groups = build_recipe_groups(recipes, detail_level);
 
     let mut payload = json!({
@@ -422,6 +423,30 @@ fn build_search_result_payload(
     }
 
     payload
+}
+
+fn filter_model_visible_capabilities(
+    capabilities: &[Value],
+    detail_level: SearchSdkDetailLevel,
+) -> Vec<Value> {
+    match detail_level {
+        SearchSdkDetailLevel::Summary => capabilities
+            .iter()
+            .filter(|item| capability_is_model_visible_in_summary(item))
+            .cloned()
+            .collect(),
+        SearchSdkDetailLevel::Full => capabilities.to_vec(),
+    }
+}
+
+fn capability_is_model_visible_in_summary(item: &Value) -> bool {
+    let asset_namespace = item.get("asset_namespace").and_then(Value::as_str);
+    let callable = item
+        .get("status")
+        .and_then(|status| status.get("callable"))
+        .and_then(Value::as_bool);
+
+    !matches!((asset_namespace, callable), (Some("user_mcp"), Some(false)))
 }
 
 fn serialize_search_items(items: &[Value], detail_level: SearchSdkDetailLevel) -> Vec<Value> {
@@ -2352,6 +2377,63 @@ mod tests {
         assert!(summary.get("usage_hint").is_none());
         assert!(summary.get("availability").is_none());
         assert!(summary.get("runtime_protocol_version").is_none());
+    }
+
+    #[test]
+    fn search_result_summary_hides_non_callable_user_mcp_capabilities_only() {
+        let profile = QueryProfile::from_query("search web tools");
+        let summary = build_search_result_payload(
+            "search web tools",
+            &profile,
+            0,
+            "registry_first",
+            &[
+                json!({
+                    "capability_id": "tool.search_web",
+                    "name": "search_web",
+                    "description": "Search the web",
+                    "semantic_kind": "capability",
+                    "asset_namespace": "user_mcp",
+                    "status": {"callable": true, "recommended_action": "execute", "reason": "ready"},
+                }),
+                json!({
+                    "capability_id": "tool.sdk_search",
+                    "name": "sdk_search",
+                    "description": "Search the SDK",
+                    "semantic_kind": "capability",
+                    "asset_namespace": "user_mcp",
+                    "status": {"callable": false, "recommended_action": "review", "reason": "tool_runtime_paused"},
+                }),
+                json!({
+                    "capability_id": "skill.weather.fetch",
+                    "name": "skill.weather.fetch",
+                    "description": "Fetch weather via skill",
+                    "semantic_kind": "capability",
+                    "asset_namespace": "skill",
+                    "status": {"callable": false, "recommended_action": "enable_skill", "reason": "skill_installed_but_disabled"},
+                }),
+            ],
+            &[],
+            &[],
+            1,
+            SearchSdkDetailLevel::Summary,
+        );
+
+        assert_eq!(summary["count"], json!(2));
+        assert_eq!(summary["capabilities"].as_array().map(Vec::len), Some(2));
+        assert_eq!(summary["capabilities"][0]["name"], json!("search_web"));
+        assert_eq!(
+            summary["capabilities"][1]["name"],
+            json!("skill.weather.fetch")
+        );
+        assert_eq!(
+            summary["capability_groups"]["user_mcp_tools"],
+            json!(["search_web"])
+        );
+        assert_eq!(
+            summary["capability_groups"]["skill_tools"],
+            json!(["skill.weather.fetch"])
+        );
     }
 
     #[test]

@@ -12,6 +12,7 @@ import type {
   CompileResult,
   WorkflowProgress,
 } from "@/lib/workflow/types"
+import type { WorkflowStreamEvent } from "@/lib/workflow/commands"
 
 // --- UI State Types ---
 
@@ -59,6 +60,7 @@ export interface WorkflowState {
 
   // Execution actions
   applyProgress: (progress: WorkflowProgress) => void
+  applyStreamEvent: (event: WorkflowStreamEvent) => void
   setActivePhaseId: (phaseId: string | null) => void
   togglePhaseExpanded: (phaseId: string) => void
 
@@ -152,6 +154,20 @@ export const useWorkflowStore = create<WorkflowState>()(
             ? progress.phase_id
             : get().activePhaseId,
         })
+      },
+
+      applyStreamEvent: (event) => {
+        if ("detail" in event && event.detail) {
+          get().setRunDetail(event.detail)
+          return
+        }
+        if (event.type === "workflow.progress") {
+          get().applyProgress(event.progress)
+          return
+        }
+        if (event.type === "workflow.compile_result") {
+          set({ compileErrors: event.compile_result.errors })
+        }
       },
 
       setActivePhaseId: (phaseId) => set({ activePhaseId: phaseId }),

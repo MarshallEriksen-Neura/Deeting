@@ -2,19 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
-import { useWorkflowStore, type WorkflowView } from "@/store/workflow-store"
+import { useWorkflowStore } from "@/store/workflow-store"
 import {
   generateWorkflowProposal,
-  updateWorkflowProposal,
-  compileWorkflowProposal,
-  startWorkflowRun,
   regenerateWorkflowProposal,
   getWorkflowRunStatus,
   getWorkflowPhaseContext,
   approveWorkflow,
   rerunPhase,
+  streamWorkflowCompileAndStart,
 } from "@/lib/workflow/commands"
-import type { WorkflowPhaseContext, WorkflowProgress } from "@/lib/workflow/types"
+import type { WorkflowPhaseContext } from "@/lib/workflow/types"
 import { WorkflowLanding } from "./workflow-landing"
 import { PlanEditor } from "./plan-editor"
 import type { PlanPhaseData } from "./plan-phase-card"
@@ -91,39 +89,6 @@ export function WorkflowRuntime({
     void handleOpenContextViewer(phaseId)
   }, [handleOpenContextViewer, initialContextPhaseId, store.runId])
 
-  // --- Tauri event listener for progress updates ---
-  useEffect(() => {
-    if (!store.isRunning()) return
-
-    let unlisten: (() => void) | null = null
-
-    async function setup() {
-      const { listen } = await import("@tauri-apps/api/event")
-      unlisten = await listen<WorkflowProgress>("workflow-progress", (event) => {
-        store.applyProgress(event.payload)
-      })
-    }
-
-    setup()
-    return () => { unlisten?.() }
-  }, [store.run?.status])
-
-  // --- Poll for status while running ---
-  useEffect(() => {
-    if (!store.runId || !store.isRunning()) return
-
-    const interval = setInterval(async () => {
-      try {
-        const detail = await getWorkflowRunStatus(store.runId!)
-        store.setRunDetail(detail)
-      } catch {
-        // silent polling failure
-      }
-    }, 2000)
-
-    return () => clearInterval(interval)
-  }, [store.runId, store.run?.status])
-
   // --- Landing: create workflow ---
   const handleCreateWorkflow = useCallback(async (goal: string, hints?: string) => {
     store.setLoading(true)
@@ -150,37 +115,33 @@ export function WorkflowRuntime({
   const handleCompileAndStart = useCallback(async () => {
     if (!store.runId || !store.editedProposal) return
     store.setCompileErrors([])
+    store.setLoading(true)
 
     try {
-      // Save edited proposal
-      if (store.proposalDirty) {
-        const updated = await updateWorkflowProposal({
-          run_id: store.runId,
-          proposal_text: store.editedProposal,
-        })
-        store.setRun(updated)
-        store.markProposalClean()
-      }
-
-      // Compile
-      const result = await compileWorkflowProposal(store.runId)
-      if (result.errors.length > 0) {
-        store.setCompileErrors(result.errors)
-        return
-      }
-
-      // Start
-      const run = await startWorkflowRun(store.runId)
-      store.setRun(run)
-
-      // Load full detail
-      const detail = await getWorkflowRunStatus(store.runId)
-      store.setRunDetail(detail)
+      await streamWorkflowCompileAndStart(
+        {
+          runId: store.runId,
+          proposalText: store.editedProposal,
+          proposalDirty: store.proposalDirty,
+          requestId: `workflow-${Date.now()}`,
+        },
+        {
+          onEvent: (event) => {
+            store.applyStreamEvent(event)
+            if (event.type === "workflow.compile_result" && event.compile_result.errors.length === 0) {
+              store.markProposalClean()
+            }
+          },
+        },
+      )
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
+      store.setError(msg)
       toast.error(msg)
+    } finally {
+      store.setLoading(false)
     }
-  }, [store.runId, store.editedProposal, store.proposalDirty])
+  }, [store])
 
   // --- Editor: regenerate ---
   const handleRegenerate = useCallback(async () => {

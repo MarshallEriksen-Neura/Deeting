@@ -14,7 +14,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::json;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, RwLock};
 use tower_http::cors::{AllowOrigin, CorsLayer};
@@ -26,6 +26,7 @@ use crate::modules::desktop_runtime::local_orchestrator::{
 use crate::modules::mcp::commands::tool_approval_impl::{
     approve_mcp_tool_payload, reject_mcp_tool_payload,
 };
+use crate::modules::workflow::types::{CompileResult, UpdateProposalRequest, WorkflowRunDetail};
 use crate::state::AppState;
 use mcp_session::conversation::LocalConversationCompareFinalizeRequest;
 use mcp_transport::gateway::{
@@ -67,6 +68,16 @@ struct LocalToolRejectRequest {
     execution_graph_execution_id: Option<String>,
     #[serde(default, alias = "rejectMode")]
     reject_mode: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct LocalWorkflowCompileAndStartRequest {
+    #[serde(default, alias = "proposalText")]
+    proposal_text: Option<String>,
+    #[serde(default, alias = "proposalDirty")]
+    proposal_dirty: Option<bool>,
+    #[serde(default, alias = "requestId")]
+    request_id: Option<String>,
 }
 
 fn build_approval_status_payload(trace_id: &str, request_id: Option<&str>) -> serde_json::Value {
@@ -126,6 +137,10 @@ impl LocalGatewayServer {
         let app = Router::new()
             .route("/health", get(health_handler))
             .route("/v1/chat/completions", post(chat_completions_handler))
+            .route(
+                "/v1/workflows/:run_id/compile-and-start",
+                post(workflow_compile_and_start_handler),
+            )
             .route("/v1/mcp/tool-approvals/approve", post(approve_tool_handler))
             .route("/v1/mcp/tool-approvals/reject", post(reject_tool_handler))
             .route(
@@ -179,6 +194,181 @@ fn build_local_gateway_cors_layer() -> Result<CorsLayer, String> {
 
 async fn health_handler() -> Json<GatewayHealthResponse> {
     Json(GatewayHealthResponse { status: "ok" })
+}
+
+async fn workflow_compile_and_start_handler(
+    Path(run_id): Path<String>,
+    State(state): State<Arc<LocalGatewayState>>,
+    Json(payload): Json<LocalWorkflowCompileAndStartRequest>,
+) -> Sse<impl futures_util::stream::Stream<Item = Result<Event, Infallible>>> {
+    let trace_id = Uuid::new_v4().to_string();
+    let request_id = normalize_optional_string(payload.request_id.as_deref());
+    let normalized_run_id = run_id.trim().to_string();
+    let (tx, mut rx) = mpsc::unbounded_channel::<serde_json::Value>();
+
+    tokio::spawn(async move {
+        let finish = |tx: &mpsc::UnboundedSender<serde_json::Value>| {
+            let _ = tx.send(serde_json::Value::String("[DONE]".to_string()));
+        };
+
+        if normalized_run_id.is_empty() {
+            let _ = tx.send(build_stream_error_payload(
+                "LOCAL_BAD_REQUEST",
+                "run_id is required",
+                &trace_id,
+                request_id.as_deref(),
+            ));
+            finish(&tx);
+            return;
+        }
+
+        let _ = tx.send(json!({
+            "type": "workflow.compile_started",
+            "run_id": normalized_run_id,
+            "trace_id": trace_id,
+            "request_id": request_id,
+        }));
+
+        if payload.proposal_dirty.unwrap_or(false) {
+            match normalize_optional_string(payload.proposal_text.as_deref()) {
+                Some(proposal_text) => {
+                    let update = UpdateProposalRequest {
+                        run_id: normalized_run_id.clone(),
+                        proposal_text,
+                    };
+                    if let Err(err) = crate::modules::workflow::service::update_proposal_workflow(
+                        state.app_state.mcp.store.as_ref(),
+                        state.app_handle.path().app_data_dir().ok(),
+                        update,
+                    )
+                    .await
+                    {
+                        let _ = tx.send(build_stream_error_payload(
+                            "LOCAL_WORKFLOW_UPDATE_FAILED",
+                            err,
+                            &trace_id,
+                            request_id.as_deref(),
+                        ));
+                        finish(&tx);
+                        return;
+                    }
+                }
+                None => {
+                    let _ = tx.send(build_stream_error_payload(
+                        "LOCAL_BAD_REQUEST",
+                        "proposal_text is required when proposal_dirty is true",
+                        &trace_id,
+                        request_id.as_deref(),
+                    ));
+                    finish(&tx);
+                    return;
+                }
+            }
+        }
+
+        let compile_result = crate::modules::workflow::service::compile_current_proposal(
+            state.app_state.mcp.store.as_ref(),
+            state.app_handle.path().app_data_dir().ok(),
+            &normalized_run_id,
+        )
+        .await;
+
+        let compile_result = match compile_result {
+            Ok(result) => result,
+            Err(err) => {
+                let _ = tx.send(build_stream_error_payload(
+                    "LOCAL_WORKFLOW_COMPILE_FAILED",
+                    err,
+                    &trace_id,
+                    request_id.as_deref(),
+                ));
+                finish(&tx);
+                return;
+            }
+        };
+
+        let _ = tx.send(build_workflow_compile_result_payload(&compile_result));
+        if !compile_result.errors.is_empty() {
+            finish(&tx);
+            return;
+        }
+
+        match crate::modules::workflow::service::get_workflow_run_status(
+            &state.app_state,
+            &normalized_run_id,
+        )
+        .await
+        {
+            Ok(detail) => {
+                let _ = tx.send(build_workflow_detail_payload("workflow.ready", detail));
+            }
+            Err(err) => {
+                let _ = tx.send(build_stream_error_payload(
+                    "LOCAL_WORKFLOW_STATUS_FAILED",
+                    err,
+                    &trace_id,
+                    request_id.as_deref(),
+                ));
+            }
+        }
+
+        let run_result = crate::modules::workflow::service::start_workflow_run_with_stream(
+            &state.app_handle,
+            &state.app_state,
+            &normalized_run_id,
+            tx.clone(),
+        )
+        .await;
+
+        match run_result {
+            Ok(_) => {
+                if let Ok(detail) = crate::modules::workflow::service::get_workflow_run_status(
+                    &state.app_state,
+                    &normalized_run_id,
+                )
+                .await
+                {
+                    let _ = tx.send(build_workflow_detail_payload("workflow.final_detail", detail));
+                }
+            }
+            Err(err) => {
+                let _ = tx.send(build_stream_error_payload(
+                    "LOCAL_WORKFLOW_RUN_FAILED",
+                    err,
+                    &trace_id,
+                    request_id.as_deref(),
+                ));
+            }
+        }
+
+        finish(&tx);
+    });
+
+    let stream = async_stream::stream! {
+        while let Some(payload) = rx.recv().await {
+            let is_done = payload.as_str() == Some("[DONE]");
+            yield Ok(Event::default().data(payload.to_string()));
+            if is_done {
+                break;
+            }
+        }
+    };
+
+    Sse::new(stream)
+}
+
+fn build_workflow_compile_result_payload(result: &CompileResult) -> serde_json::Value {
+    json!({
+        "type": "workflow.compile_result",
+        "compile_result": result,
+    })
+}
+
+fn build_workflow_detail_payload(event_type: &str, detail: WorkflowRunDetail) -> serde_json::Value {
+    json!({
+        "type": event_type,
+        "detail": detail,
+    })
 }
 
 async fn chat_completions_handler(

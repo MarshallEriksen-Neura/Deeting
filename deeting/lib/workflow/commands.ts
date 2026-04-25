@@ -2,6 +2,8 @@
  * Tauri invoke wrappers for the workflow runtime commands.
  * Each function maps to a #[tauri::command] in workflow/commands.rs.
  */
+import { resolveLocalGatewayBaseUrl } from "@/lib/api/chat"
+import { openSSE } from "@/lib/http"
 import type {
   ApproveWorkflowRequest,
   CompileResult,
@@ -15,7 +17,22 @@ import type {
   WorkflowPhaseContext,
   WorkflowRun,
   WorkflowRunDetail,
+  WorkflowProgress,
 } from "./types"
+
+export type WorkflowStreamEvent =
+  | { type: "workflow.compile_started"; run_id?: string; trace_id?: string; request_id?: string | null }
+  | { type: "workflow.compile_result"; compile_result: CompileResult }
+  | { type: "workflow.progress"; progress: WorkflowProgress }
+  | { type: string; detail: WorkflowRunDetail }
+  | { type: "error" | "workflow.error"; message?: string; error_code?: string }
+
+export interface WorkflowCompileAndStartStreamRequest {
+  runId: string
+  proposalText?: string | null
+  proposalDirty?: boolean
+  requestId?: string
+}
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke: tauriInvoke } = await import("@tauri-apps/api/core")
@@ -62,6 +79,70 @@ export async function updateWorkflowProposal(
 
 export async function compileWorkflowProposal(runId: string): Promise<CompileResult> {
   return invoke<CompileResult>("compile_workflow_proposal", { runId })
+}
+
+export async function streamWorkflowCompileAndStart(
+  payload: WorkflowCompileAndStartStreamRequest,
+  handlers: {
+    onEvent?: (event: WorkflowStreamEvent) => void
+  } = {},
+): Promise<void> {
+  const runId = payload.runId.trim()
+  if (!runId) throw new Error("Workflow run id is required")
+
+  const baseUrl = await resolveLocalGatewayBaseUrl()
+  const body = JSON.stringify({
+    proposalText: payload.proposalText ?? null,
+    proposalDirty: payload.proposalDirty ?? false,
+    requestId: payload.requestId,
+  })
+
+  await new Promise<void>((resolve, reject) => {
+    let settled = false
+    let close: () => void = () => {}
+    close = openSSE(`${baseUrl}/v1/workflows/${encodeURIComponent(runId)}/compile-and-start`, {
+      method: "POST",
+      body,
+      credentials: "omit",
+      includeAuthHeader: false,
+      headers: {
+        "Content-Type": "application/json",
+      },
+      onMessage: (message) => {
+        const data = message.data
+        if (data === "[DONE]") {
+          if (settled) return
+          settled = true
+          close()
+          resolve()
+          return
+        }
+
+        if (data && typeof data === "object") {
+          const event = data as WorkflowStreamEvent
+          handlers.onEvent?.(event)
+          if (event.type === "error" || event.type === "workflow.error") {
+            const message = "message" in event && event.message ? event.message : "Workflow stream failed"
+            if (!settled) {
+              settled = true
+              close()
+              reject(new Error(message))
+            }
+          }
+        }
+      },
+      onError: (error) => {
+        if (settled) return
+        settled = true
+        reject(error)
+      },
+      onClose: () => {
+        if (settled) return
+        settled = true
+        resolve()
+      },
+    })
+  })
 }
 
 export async function regenerateWorkflowProposal(

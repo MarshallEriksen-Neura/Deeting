@@ -1,4 +1,5 @@
 use tauri::{AppHandle, Emitter};
+use tokio::sync::mpsc;
 
 use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUNDS_CONFIG_KEY};
 use crate::modules::workflow::context;
@@ -15,10 +16,30 @@ use crate::modules::workflow::types::{
 use crate::modules::workflow::worker_adapter;
 use crate::state::AppState;
 
+pub(crate) type WorkflowStreamSender = mpsc::UnboundedSender<serde_json::Value>;
+
 pub(crate) async fn run_workflow(
     app_handle: &AppHandle,
     app_state: &AppState,
     run_id: &str,
+) -> Result<WorkflowRunStatus, String> {
+    run_workflow_inner(app_handle, app_state, run_id, None).await
+}
+
+pub(crate) async fn run_workflow_with_stream(
+    app_handle: &AppHandle,
+    app_state: &AppState,
+    run_id: &str,
+    stream_tx: WorkflowStreamSender,
+) -> Result<WorkflowRunStatus, String> {
+    run_workflow_inner(app_handle, app_state, run_id, Some(stream_tx)).await
+}
+
+async fn run_workflow_inner(
+    app_handle: &AppHandle,
+    app_state: &AppState,
+    run_id: &str,
+    stream_tx: Option<WorkflowStreamSender>,
 ) -> Result<WorkflowRunStatus, String> {
     let store_ref = app_state.mcp.store.as_ref();
     let run = store::get_workflow_run(store_ref, run_id)
@@ -47,6 +68,7 @@ pub(crate) async fn run_workflow(
         .await
         .map_err(|err| err.to_string())?;
     emit_event(store_ref, run_id, None, "run.started", None).await;
+    send_run_detail(store_ref, stream_tx.as_ref(), "workflow.run_started", run_id).await;
 
     let existing_steps = store::list_workflow_step_runs_by_run(store_ref, run_id)
         .await
@@ -73,6 +95,7 @@ pub(crate) async fn run_workflow(
         let outcome = execute_single_phase(
             app_handle,
             app_state,
+            stream_tx.as_ref(),
             &run,
             &snapshot,
             phase,
@@ -112,6 +135,7 @@ pub(crate) async fn run_workflow(
         None,
     )
     .await;
+    send_run_detail(store_ref, stream_tx.as_ref(), "workflow.run_finished", run_id).await;
 
     Ok(final_status)
 }
@@ -119,6 +143,7 @@ pub(crate) async fn run_workflow(
 async fn execute_single_phase(
     app_handle: &AppHandle,
     app_state: &AppState,
+    stream_tx: Option<&WorkflowStreamSender>,
     run: &WorkflowRun,
     snapshot: &ExecutionSnapshot,
     phase: &CompiledPhase,
@@ -154,6 +179,15 @@ async fn execute_single_phase(
         Some(serde_json::json!({ "phase_id": phase.phase_id })),
     )
     .await;
+    emit_stream_progress(
+        stream_tx,
+        run_id,
+        phase,
+        phase_index,
+        snapshot.phases.len() as i64,
+        "running",
+    );
+    send_run_detail(store_ref, stream_tx, "workflow.step_started", run_id).await;
 
     let phase_dir = run_dir::ensure_phase_dir(run_dir_path, &phase.phase_id)?;
     let _artifacts_dir = run_dir::ensure_artifacts_dir(&phase_dir)?;
@@ -262,6 +296,15 @@ async fn execute_single_phase(
                 })),
             )
             .await;
+            emit_stream_progress(
+                stream_tx,
+                run_id,
+                phase,
+                phase_index,
+                snapshot.phases.len() as i64,
+                "succeeded",
+            );
+            send_run_detail(store_ref, stream_tx, "workflow.step_succeeded", run_id).await;
 
             let revalidation = revalidate_remaining_phases(&packet, phase, &snapshot.phases);
             Ok(PhaseOutcome {
@@ -284,6 +327,15 @@ async fn execute_single_phase(
                 Some(serde_json::json!({ "error": error })),
             )
             .await;
+            emit_stream_progress(
+                stream_tx,
+                run_id,
+                phase,
+                phase_index,
+                snapshot.phases.len() as i64,
+                "failed",
+            );
+            send_run_detail(store_ref, stream_tx, "workflow.step_failed", run_id).await;
             Ok(PhaseOutcome {
                 phase_id: phase.phase_id.clone(),
                 step_run_id: step_run.id,
@@ -475,6 +527,75 @@ fn emit_progress(
         status: outcome.status.as_str().to_string(),
     };
     let _ = app_handle.emit("workflow-progress", &progress);
+}
+
+fn emit_stream_progress(
+    stream_tx: Option<&WorkflowStreamSender>,
+    run_id: &str,
+    phase: &CompiledPhase,
+    phase_index: i64,
+    total_phases: i64,
+    status: &str,
+) {
+    let Some(stream_tx) = stream_tx else {
+        return;
+    };
+    let progress = WorkflowProgress {
+        run_id: run_id.to_string(),
+        phase_id: phase.phase_id.clone(),
+        phase_title: phase.title.clone(),
+        phase_index,
+        total_phases,
+        status: status.to_string(),
+    };
+    let _ = stream_tx.send(serde_json::json!({
+        "type": "workflow.progress",
+        "progress": progress,
+    }));
+}
+
+async fn send_run_detail(
+    store_ref: &crate::modules::mcp::store::McpStore,
+    stream_tx: Option<&WorkflowStreamSender>,
+    event: &str,
+    run_id: &str,
+) {
+    let Some(stream_tx) = stream_tx else {
+        return;
+    };
+    let detail = async {
+        let run = store::get_workflow_run(store_ref, run_id)
+            .await
+            .map_err(|err| err.to_string())?
+            .ok_or_else(|| "workflow run not found".to_string())?;
+        let steps = store::list_workflow_step_runs_by_run(store_ref, run_id)
+            .await
+            .map_err(|err| err.to_string())?;
+        let events = store::list_workflow_events_by_run(store_ref, run_id)
+            .await
+            .map_err(|err| err.to_string())?;
+        Ok::<_, String>(crate::modules::workflow::types::WorkflowRunDetail {
+            run,
+            steps,
+            events,
+        })
+    }
+    .await;
+
+    match detail {
+        Ok(detail) => {
+            let _ = stream_tx.send(serde_json::json!({
+                "type": event,
+                "detail": detail,
+            }));
+        }
+        Err(error) => {
+            let _ = stream_tx.send(serde_json::json!({
+                "type": "workflow.error",
+                "message": error,
+            }));
+        }
+    }
 }
 
 #[cfg(test)]

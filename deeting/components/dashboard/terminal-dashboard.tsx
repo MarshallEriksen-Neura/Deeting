@@ -4,8 +4,19 @@ import { useUserSecretary, useUserEmbeddingConfig } from "@/lib/swr/use-embeddin
 import { usePlatformModels } from "@/lib/swr/use-platform-models"
 import { useChatModels } from "@/hooks/use-chat-models"
 import { isTauriRuntime } from "@/lib/runtime/tauri"
+import type { WorkflowEvent, WorkflowRun, WorkflowStepRun } from "@/lib/workflow/types"
 
-export function TerminalDashboard() {
+interface TerminalDashboardProps {
+  workflowRun?: WorkflowRun | null
+  workflowSteps?: WorkflowStepRun[]
+  workflowEvents?: WorkflowEvent[]
+}
+
+export function TerminalDashboard({
+  workflowRun = null,
+  workflowSteps = [],
+  workflowEvents = [],
+}: TerminalDashboardProps) {
   const { data: secretaryData } = useUserSecretary()
   const { data: embeddingData } = useUserEmbeddingConfig()
   const { models: platformModels } = usePlatformModels()
@@ -31,6 +42,7 @@ export function TerminalDashboard() {
   const [uptime, setUptime] = useState("00:00:00")
   const [nodes, setNodes] = useState<React.ReactNode[]>([])
   const containerRef = useRef<HTMLDivElement>(null)
+  const isLiveWorkflow = Boolean(workflowRun)
 
   useEffect(() => {
     const start = Date.now()
@@ -56,6 +68,7 @@ export function TerminalDashboard() {
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
   useEffect(() => {
+    if (isLiveWorkflow) return
     let isCancelled = false
 
     const runScenario = async () => {
@@ -210,7 +223,20 @@ export function TerminalDashboard() {
     return () => {
       isCancelled = true
     }
-  }, [secretaryModelName, embeddingModelName])
+  }, [secretaryModelName, embeddingModelName, isLiveWorkflow])
+
+  useEffect(() => {
+    if (!isLiveWorkflow && nodes.length > 0) return
+    if (containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight
+    }
+  }, [isLiveWorkflow, nodes.length, workflowSteps.length, workflowEvents.length])
+
+  const succeededCount = workflowSteps.filter((step) => step.status === "succeeded").length
+  const totalPhases = workflowRun?.snapshot_json?.phases?.length ?? workflowSteps.length
+  const memoryNodeLabel = workflowRun
+    ? `${workflowRun.status}${totalPhases > 0 ? ` (${succeededCount}/${totalPhases})` : ""}`
+    : "Active (2.4GB)"
 
   return (
     <div className="ws-bezel h-[calc(100vh-80px)] min-h-[500px] flex flex-col overflow-hidden relative" style={{ background: 'var(--atl-shell-bg)' }}>
@@ -246,7 +272,7 @@ export function TerminalDashboard() {
         </div>
         <div>
           <div className="text-[10px] uppercase text-[var(--atl-ink-soft)] tracking-wider mb-1 font-mono">Memory Node</div>
-          <div className="text-[var(--atl-success)] text-xs font-medium">Active (2.4GB)</div>
+          <div className="text-[var(--atl-success)] text-xs font-medium">{memoryNodeLabel}</div>
         </div>
       </div>
 
@@ -263,9 +289,121 @@ export function TerminalDashboard() {
         }}></div>
 
         <div className="relative z-10 max-w-3xl mx-auto">
-          {nodes}
+          {isLiveWorkflow && workflowRun ? (
+            <WorkflowLiveNodes run={workflowRun} steps={workflowSteps} events={workflowEvents} />
+          ) : (
+            nodes
+          )}
         </div>
       </div>
+    </div>
+  )
+}
+
+function WorkflowLiveNodes({
+  run,
+  steps,
+  events,
+}: {
+  run: WorkflowRun
+  steps: WorkflowStepRun[]
+  events: WorkflowEvent[]
+}) {
+  const sortedSteps = [...steps].sort((a, b) => a.phase_index - b.phase_index)
+  const recentEvents = [...events].slice(-6)
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-2 text-[var(--atl-ink-soft)] mb-6 text-xs font-mono">
+        <div className="w-1.5 h-1.5 rounded-full bg-[var(--atl-success)] shadow-[0_0_8px_var(--atl-success)] animate-pulse" />
+        [WORKFLOW] {run.title || run.goal}
+      </div>
+
+      <div className="mb-6 flex gap-3">
+        <div className="shrink-0 mt-0.5 text-[var(--atl-accent)]">&gt;</div>
+        <div className="text-[var(--atl-ink)] text-[13px] leading-relaxed">{run.goal}</div>
+      </div>
+
+      <SectionLabel>Execution Log</SectionLabel>
+
+      {sortedSteps.length === 0 ? (
+        <div className="text-[var(--atl-ink-soft)] font-mono text-xs pl-6 border-l border-[var(--atl-rule)] ml-1.5">
+          Waiting for streamed workflow events...
+        </div>
+      ) : (
+        sortedSteps.map((step) => <LiveStep key={step.id} step={step} />)
+      )}
+
+      {sortedSteps.some((step) => step.worker_trace_summary || step.output_artifact_refs.length > 0) ? (
+        <>
+          <SectionLabel>Output Artifacts</SectionLabel>
+          {sortedSteps
+            .filter((step) => step.worker_trace_summary || step.output_artifact_refs.length > 0)
+            .map((step) => (
+              <div key={`${step.id}-result`} className="pl-6 ml-1.5 mb-4">
+                <div className="bg-[var(--atl-canvas)] border border-[var(--atl-rule)] rounded-lg shadow-[var(--atl-shell-shadow)] overflow-hidden">
+                  <div className="bg-[var(--atl-canvas-soft)] px-4 py-2 border-b border-[var(--atl-rule)] flex items-center gap-2">
+                    <span className="text-xs font-medium text-[var(--atl-ink)]">{step.title || step.phase_id}</span>
+                    <span className="text-[10px] font-mono text-[var(--atl-ink-soft)]">{step.status}</span>
+                  </div>
+                  <div className="p-4 text-[var(--atl-ink)] text-[13px] leading-relaxed">
+                    {step.worker_trace_summary ? <p>{step.worker_trace_summary}</p> : null}
+                    {step.output_artifact_refs.length > 0 ? (
+                      <div className="mt-3 space-y-1 font-mono text-[10px] text-[var(--atl-ink-soft)]">
+                        {step.output_artifact_refs.map((ref) => <div key={ref}>{ref}</div>)}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ))}
+        </>
+      ) : null}
+
+      {recentEvents.length > 0 ? (
+        <div className="pt-2 font-mono text-[10px] text-[var(--atl-ink-soft)] space-y-1">
+          {recentEvents.map((event) => (
+            <div key={event.id}>{event.event_type}</div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 text-[var(--atl-ink-soft)] text-xs font-mono mb-4 uppercase tracking-wider">
+      <span className="w-4 border-t border-[var(--atl-rule)]" />
+      {children}
+      <span className="flex-1 border-t border-[var(--atl-rule)]" />
+    </div>
+  )
+}
+
+function LiveStep({ step }: { step: WorkflowStepRun }) {
+  const isRunning = step.status === "running"
+  const isDone = step.status === "succeeded"
+  const isFailed = step.status === "failed"
+  const barClass = isFailed
+    ? "bg-rose-500"
+    : isDone
+      ? "bg-[var(--atl-success)]"
+      : "bg-[var(--atl-accent)]"
+  const width = isDone || isFailed ? "100%" : isRunning ? "65%" : "8%"
+
+  return (
+    <div className="pl-6 ml-1.5 mb-4 border-l border-[var(--atl-rule)] relative">
+      <div className="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-[var(--atl-canvas)] border-2 border-[var(--atl-rule)]" />
+      <div className="flex justify-between items-end gap-3 mb-1.5">
+        <div className="text-[var(--atl-ink)] text-xs font-mono truncate">{step.title || step.phase_id}</div>
+        <div className="text-[var(--atl-ink-soft)] text-[10px] font-mono shrink-0">{step.status}</div>
+      </div>
+      {step.goal ? <div className="text-[var(--atl-ink-soft)] text-[11px] leading-5 mb-2 line-clamp-2">{step.goal}</div> : null}
+      <div className="h-[3px] w-full bg-[var(--atl-rule)] rounded-full overflow-hidden">
+        <div className={`h-full ${barClass} transition-all duration-500`} style={{ width }} />
+      </div>
+      {step.error ? <div className="mt-2 font-mono text-[10px] text-rose-500">{step.error}</div> : null}
     </div>
   )
 }
