@@ -14,7 +14,6 @@ import {
 } from "@/components/ui/shadcn/card"
 import { Input } from "@/components/ui/shadcn/input"
 import {
-  CHANNEL_META,
   type ChannelConfig,
   type ChannelType,
 } from "@/lib/api/notification-channels"
@@ -221,7 +220,7 @@ function AddChannelComposer({
                     {active ? <Badge variant="secondary">{t("notificationChannels.addCard.current")}</Badge> : null}
                   </div>
                   <div className="mt-1 text-xs leading-5 text-[color:var(--ink-3)]">
-                    {CHANNEL_META[type].description}
+                    {t(`notificationChannels.channelTypes.${type}.description`)}
                   </div>
                 </div>
               </button>

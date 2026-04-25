@@ -46,6 +46,8 @@
       "autoSyncDesc": "Sync models daily",
       "save": "Save Changes",
       "disabled": "Disabled",
+      "disable": "Disable instance",
+      "enable": "Enable instance",
       "synced": "Synced {time}",
       "syncing": "Syncing...",
       "syncModels": "Sync Models",

@@ -46,6 +46,8 @@
       "autoSyncDesc": "每天同步模型",
       "save": "保存更改",
       "disabled": "已禁用",
+      "disable": "禁用实例",
+      "enable": "启用实例",
       "synced": "已同步 {time}",
       "syncing": "同步中...",
       "syncModels": "同步模型",

@@ -3,7 +3,8 @@
 import type { CSSProperties, ComponentType } from "react"
 import { useEffect, useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
-import {
+import {
+
   ArrowUpRight,
   Database,
   FileSearch,
@@ -13,7 +14,8 @@ import {
   ScanSearch,
   ShieldAlert,
   Sparkles,
-  Terminal,
+  Terminal,
+
   Search
 } from "lucide-react"
 
@@ -25,7 +27,9 @@ import {
   runScanReviewAction,
   runScanReviewActions,
   scanDirectoryReview,
-  scanFileReview,
+  scanFileReview,
+
+
   type LocalScanRun,
 } from "@/lib/api/local-scan"
 import { cn } from "@/lib/utils"
@@ -358,7 +362,7 @@ export function ScanReviewsClient() {
                       className="bg-[var(--primary)] text-white font-mono text-xs uppercase tracking-widest px-6"
                     >
                       {isScanning ? <Loader2 className="mr-2 size-3 animate-spin" /> : <ScanSearch className="mr-2 size-3" />}
-                      Execute
+                      {tConsole("actions.execute")}
                     </Button>
                     <Button
                       variant="outline"
@@ -367,7 +371,7 @@ export function ScanReviewsClient() {
                       className="border-[var(--border)] font-mono text-xs uppercase tracking-widest"
                     >
                       <FolderSearch className="mr-2 size-3" />
-                      Scan All
+                      {t("scanInput.scanAll")}
                     </Button>
                   </div>
                 </div>
@@ -472,7 +476,7 @@ export function ScanReviewsClient() {
                         className="h-9 rounded-none border-[var(--border)] font-mono text-[10px] uppercase tracking-tighter px-4"
                       >
                         {batchRunning ? <Loader2 className="mr-2 size-3 animate-spin" /> : null}
-                        FIX_ALL_UNIT
+                        {t("actions.fixAll")}
                       </Button>
                       <Button 
                         variant="outline" 
@@ -481,7 +485,7 @@ export function ScanReviewsClient() {
                         className="h-9 rounded-none border-[var(--border)] font-mono text-[10px] uppercase tracking-tighter px-4"
                       >
                         {isScanning ? <Loader2 className="mr-2 size-3 animate-spin" /> : <RefreshCcw className="mr-2 size-3" />}
-                        RE_INDEX
+                        {t("actions.rescan")}
                       </Button>
                     </div>
                   </div>
@@ -535,7 +539,7 @@ export function ScanReviewsClient() {
                                 className="rounded-none border-[var(--border)] font-mono text-[9px] h-7 px-3 uppercase hover:bg-[var(--primary)] hover:text-white"
                               >
                                 {actioningId === finding.id ? <Loader2 className="size-3 animate-spin" /> : <ArrowUpRight className="size-3 mr-1" />}
-                                Patch
+                                {tAnalysis("patchAction")}
                               </Button>
                             )}
                           </div>

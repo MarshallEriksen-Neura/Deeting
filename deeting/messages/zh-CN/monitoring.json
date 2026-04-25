@@ -352,133 +352,188 @@
     },
     "notificationChannels": {
       "header": {
-        "eyebrow": "Eyebrow",
-        "title": "Title",
-        "description": "Description",
+        "eyebrow": "通知渠道",
+        "title": "通知渠道",
+        "description": "配置并管理通知渠道，让系统按优先级推送关键信息。",
         "actions": {
-          "create": "Create",
-          "refresh": "Refresh"
+          "create": "添加渠道",
+          "refresh": "刷新"
         },
         "metrics": {
-          "total": "Total",
-          "active": "Active",
-          "runtimeReady": "Runtime Ready",
-          "available": "Available"
+          "total": "总计",
+          "active": "已启用",
+          "runtimeReady": "运行时就绪",
+          "available": "可添加"
         }
       },
       "empty": {
         "chips": {
-          "structuredConfig": "Structured Config",
-          "wechatPairing": "Wechat Pairing",
-          "runtimeVisible": "Runtime Visible"
+          "structuredConfig": "结构化配置",
+          "wechatPairing": "微信配对",
+          "runtimeVisible": "运行时可见"
         },
-        "title": "Title",
-        "description": "Description",
-        "addFirst": "Add First"
+        "title": "暂无通知渠道",
+        "description": "尚未配置任何通知渠道。添加后，系统可以自动推送关键信息。",
+        "addFirst": "添加第一个渠道"
       },
       "addCard": {
-        "fullTitle": "Full Title",
-        "title": "Title",
-        "startConfig": "Start Config",
+        "fullTitle": "渠道已满",
+        "title": "添加渠道",
+        "startConfig": "开始配置",
         "feedback": {
-          "createSuccess": "Create Success",
-          "createFailed": "Create Failed"
+          "createSuccess": "渠道创建成功",
+          "createFailed": "渠道创建失败"
         },
-        "cancel": "Cancel",
-        "current": "Current",
-        "displayName": "Display Name",
-        "displayNamePlaceholder": "Display Name Placeholder",
-        "resetType": "Reset Type",
-        "creating": "Creating",
-        "create": "Create"
+        "cancel": "取消",
+        "current": "当前",
+        "displayName": "显示名称",
+        "displayNamePlaceholder": "例如：{channel}",
+        "resetType": "重选类型",
+        "creating": "创建中...",
+        "create": "创建"
       },
       "wechat": {
         "dialog": {
-          "disconnectedHint": "Disconnected Hint",
-          "startConnect": "Start Connect",
-          "qrAlt": "Qr Alt",
-          "scanHint": "Scan Hint",
-          "expiresAt": "Expires At",
-          "cancelPairing": "Cancel Pairing",
-          "waitingConfirm": "Waiting Confirm",
-          "waitingDescription": "Waiting Description",
-          "connectedAccount": "Connected Account",
-          "connectedFallback": "Connected Fallback",
-          "reconnect": "Reconnect",
-          "disconnect": "Disconnect",
-          "retry": "Retry",
-          "title": "Title",
-          "description": "Description"
+          "disconnectedHint": "当前未连接微信。点击下方按钮开始扫码连接。",
+          "startConnect": "开始连接",
+          "qrAlt": "微信登录二维码",
+          "scanHint": "请使用微信扫一扫",
+          "expiresAt": "二维码将于 {time} 过期",
+          "cancelPairing": "取消配对",
+          "waitingConfirm": "等待确认",
+          "waitingDescription": "请在微信端确认登录",
+          "connectedAccount": "已连接账号",
+          "connectedFallback": "已连接",
+          "reconnect": "重新连接",
+          "disconnect": "断开连接",
+          "retry": "重试",
+          "title": "微信连接",
+          "description": "连接微信后，可通过桌面端接收消息并驱动本地 AI。"
         },
         "pairing": {
-          "pendingPairings": "Pending Pairings",
-          "allowlistSize": "Allowlist Size",
-          "inputPlaceholder": "Input Placeholder",
-          "approve": "Approve",
-          "reject": "Reject",
-          "contextContactsTitle": "Context Contacts Title",
-          "contactWithContext": "Contact With Context",
-          "copyAria": "Copy Aria",
-          "copy": "Copy",
-          "approvedContactsTitle": "Approved Contacts Title",
-          "contactApproved": "Contact Approved"
+          "pendingPairings": "待处理配对 {count}",
+          "allowlistSize": "已授权 {count}",
+          "inputPlaceholder": "输入配对码",
+          "approve": "批准",
+          "reject": "拒绝",
+          "contextContactsTitle": "上下文联系人",
+          "contactWithContext": "{contactId}",
+          "copyAria": "复制 {contactId}",
+          "copy": "复制",
+          "approvedContactsTitle": "已授权联系人",
+          "contactApproved": "{contactId}"
         }
       },
       "channelCard": {
         "feedback": {
-          "wechatConnectionError": "Wechat Connection Error",
-          "qrExpired": "Qr Expired",
-          "connectFailed": "Connect Failed",
-          "saved": "Saved",
-          "testSuccess": "Test Success",
-          "testFailed": "Test Failed",
-          "disconnectFailed": "Disconnect Failed",
-          "approved": "已通过：{contactId}",
-          "approveFailed": "Approve Failed",
-          "rejectedPairingCode": "Rejected Pairing Code",
-          "rejectFailed": "Reject Failed",
-          "copied": "已复制：{contactId}",
-          "copyUnsupported": "Copy Unsupported",
-          "copyFailed": "Copy Failed"
+          "wechatConnectionError": "微信连接异常",
+          "qrExpired": "二维码已过期",
+          "connectFailed": "连接失败",
+          "saved": "保存成功",
+          "testSuccess": "测试发送成功",
+          "testFailed": "测试发送失败",
+          "disconnectFailed": "断开连接失败",
+          "approved": "已批准 {contactId}",
+          "approveFailed": "批准失败",
+          "rejectedPairingCode": "已拒绝配对码",
+          "rejectFailed": "拒绝失败",
+          "copied": "已复制 {contactId}",
+          "copyUnsupported": "当前环境不支持复制",
+          "copyFailed": "复制失败"
         },
         "runtime": {
           "imState": "IM 状态：{state}",
-          "notConnected": "Not Connected"
+          "notConnected": "未连接"
         },
         "lastUsed": {
-          "never": "Never"
+          "never": "从未使用"
         },
-        "systemActive": "System Active",
+        "systemActive": "系统激活",
         "meta": {
-          "protocol": "Protocol",
-          "configIntegrity": "Config Integrity",
-          "passed": "Passed",
-          "actionRequired": "Action Required",
-          "lastActive": "Last Active"
+          "protocol": "协议",
+          "configIntegrity": "配置完整性",
+          "passed": "通过",
+          "actionRequired": "需处理",
+          "lastActive": "最近活跃"
         },
         "actions": {
-          "closeEditor": "Close Editor",
-          "configure": "Configure",
-          "wechatLink": "Wechat Link",
-          "disconnect": "Disconnect",
-          "testing": "Testing",
-          "syncChanges": "Sync Changes"
+          "closeEditor": "收起编辑器",
+          "configure": "配置",
+          "wechatLink": "连接微信",
+          "disconnect": "断开连接",
+          "testing": "测试发送",
+          "syncChanges": "同步更改"
         },
-        "instanceAlias": "Instance Alias",
+        "instanceAlias": "实例别名",
         "wechat": {
-          "handshakeState": "Handshake State",
-          "established": "Established",
-          "handshaking": "Handshaking",
-          "idle": "Idle",
-          "pairingMetadata": "Pairing Metadata",
-          "allowedNodes": "允许节点：{count}",
-          "deliveryNodes": "Delivery Nodes"
+          "handshakeState": "握手状态",
+          "established": "已建立",
+          "handshaking": "握手中",
+          "idle": "空闲",
+          "pairingMetadata": "配对元数据",
+          "allowedNodes": "已授权节点 {count}",
+          "deliveryNodes": "投递节点"
         },
         "deleteDialog": {
-          "title": "Title",
-          "description": "Description",
-          "cancel": "Cancel",
-          "confirm": "Confirm"
+          "title": "删除渠道",
+          "description": "确定要删除此通知渠道吗？此操作不可撤销。",
+          "cancel": "取消",
+          "confirm": "删除"
+        }
+      },
+      "channelTypes": {
+        "feishu": { "label": "飞书", "description": "通过飞书机器人发送通知，并可作为桌面 IM 接入配置入口" },
+        "wechat": { "label": "微信", "description": "通过桌面端扫码连接普通微信账号，本地接收消息并驱动本地 AI 对话" },
+        "dingtalk": { "label": "钉钉", "description": "通过钉钉群机器人 Webhook 推送消息" },
+        "telegram": { "label": "Telegram", "description": "通过 Telegram Bot 推送消息到指定 Chat" },
+        "email": { "label": "邮件", "description": "通过 SMTP 服务发送邮件通知" },
+        "webhook": { "label": "Webhook", "description": "向自定义 HTTP 端点推送 JSON 载荷" }
+      },
+      "form": {
+        "fields": {
+          "feishu": {
+            "webhookUrl": { "label": "Webhook URL", "placeholder": "https://open.feishu.cn/open-apis/bot/v2/hook/xxx" },
+            "chatIds": { "label": "群 Chat IDs", "placeholder": "oc_xxxxx\\noc_yyyyy", "description": "每行一个 chat_id，用于多群路由到当前用户" },
+            "botOpenId": { "label": "机器人 Open ID", "placeholder": "ou_xxx（可选，用于精确匹配@）" },
+            "botAppId": { "label": "飞书 App ID", "placeholder": "cli_xxx（可选，渠道级覆盖）" },
+            "botAppSecret": { "label": "飞书 App Secret", "placeholder": "可选，渠道级覆盖" },
+            "imEnabled": { "label": "启用桌面 IM", "placeholder": "", "description": "启用后，桌面端会根据下面的直连 / Relay 配置启动飞书机器人接入。" },
+            "transportPreference": { "label": "桌面传输偏好", "placeholder": "选择传输模式", "description": "自动模式优先直连；强制直连或强制 Relay 时不会静默切换到另一条链路。", "options": { "auto": "自动", "direct": "直连", "relay": "Relay" } },
+            "relayBaseUrl": { "label": "Relay 服务地址", "placeholder": "https://your-relay.example.com", "description": "仅在自动回退或强制 Relay 时使用。" },
+            "relaySharedSecret": { "label": "Relay 共享密钥", "placeholder": "可选，Relay 模式使用", "description": "与 deeting-relay 的 RELAY_SHARED_SECRET 保持一致。" }
+          },
+          "wechat": {
+            "imEnabled": { "label": "启用桌面 IM", "placeholder": "", "description": "启用后，桌面端会接收来自已连接微信账号的消息。" },
+            "accessPolicy": { "label": "访问策略", "placeholder": "选择访问策略", "description": "默认使用配对码模式；切换为白名单后，只允许已授权联系人进入本地 AI。", "options": { "pairing": "配对码", "allowlist": "白名单" } },
+            "notifyContactIds": { "label": "主动通知目标联系人", "placeholder": "每行一个 contact_id", "description": "仅对已与该微信 bot 聊过一次、并已建立会话上下文的联系人生效。" }
+          },
+          "telegram": {
+            "imEnabled": { "label": "启用桌面 IM", "placeholder": "", "description": "启用后，桌面端会在当前机器上启动 Telegram bot 运行时。" },
+            "mediaEnabled": { "label": "启用媒体回复", "placeholder": "", "description": "默认关闭。仅当你希望 Telegram 图片/文件回复走原生发送，而不是降级成文本提示时再开启。" },
+            "botToken": { "label": "Bot Token", "placeholder": "123456:ABC-DEF..." },
+            "chatId": { "label": "Chat ID", "placeholder": "-1001234567890" }
+          },
+          "dingtalk": {
+            "webhookUrl": { "label": "Webhook URL", "placeholder": "https://oapi.dingtalk.com/robot/send?access_token=xxx" }
+          },
+          "email": {
+            "smtpHost": { "label": "SMTP 服务器", "placeholder": "smtp.gmail.com" },
+            "smtpPort": { "label": "SMTP 端口", "placeholder": "587" },
+            "fromEmail": { "label": "发件人邮箱", "placeholder": "you@example.com" },
+            "fromName": { "label": "发件人名称", "placeholder": "Deeting OS" },
+            "toEmail": { "label": "收件人邮箱", "placeholder": "target@example.com" },
+            "username": { "label": "SMTP 用户名", "placeholder": "（可选）" },
+            "password": { "label": "SMTP 密码", "placeholder": "（可选）" }
+          },
+          "webhook": {
+            "webhookUrl": { "label": "Webhook URL", "placeholder": "https://your-endpoint.com/hook" }
+          }
+        },
+        "groups": {
+          "feishu": {
+            "delivery": { "title": "基础通知", "description": "用于主动推送通知；如果你只关心桌面机器人直连，可以先留空 Webhook。" },
+            "desktopIm": { "title": "桌面 IM", "description": "决定桌面端是否直接接入飞书机器人，以及直连 / Relay 的选择方式。" }
+          }
         }
       }
     },

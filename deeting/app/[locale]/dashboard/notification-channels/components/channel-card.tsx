@@ -32,7 +32,6 @@ import {
   fetchNotificationChannel,
   testNotificationChannel,
   updateNotificationChannel,
-  CHANNEL_META,
   type NotificationChannel,
 } from "@/lib/api/notification-channels"
 import {
@@ -153,7 +152,7 @@ export function ChannelCard({
           state: runtimeResolution.resolution.effective,
         })
       : t("notificationChannels.channelCard.runtime.notConnected")
-  const channelTypeLabel = CHANNEL_META[channel.channel]?.label ?? channel.channel
+  const channelTypeLabel = t(`notificationChannels.channelTypes.${channel.channel}.label`) ?? channel.channel
   const channelTitle = channel.display_name?.trim() || channelTypeLabel
   const lastUsedLabel = channel.last_used_at
     ? new Date(channel.last_used_at).toLocaleDateString(locale)

@@ -463,6 +463,54 @@
         "failed": "加载扫描结果失败",
         "noDocuments": "暂无文档记录",
         "noFindings": "暂无风险发现"
+      },
+      "console": {
+        "sectionLabel": "01 / 扫描初始化",
+        "card": {
+          "title": "审查终端",
+          "subtitle": "本地目录与文件审计子系统"
+        },
+        "actions": {
+          "execute": "执行"
+        },
+        "parameters": {
+          "targetPathLabel": "目标路径",
+          "auditScopeLabel": "审计范围",
+          "protocolLabel": "协议",
+          "paramLabel": "参数 0{index}",
+          "defaultValue": "默认",
+          "auditScopeValue": "FS_LOCAL",
+          "protocolValue": "TAURI_BRIDGE_v2"
+        }
+      },
+      "diagnostics": {
+        "systemStatus": "系统状态",
+        "summaryTitle": "诊断摘要",
+        "timestamp": "时间戳：",
+        "findings": "发现项：",
+        "runtime": "运行时：",
+        "runtimeDesktop": "桌面端",
+        "runtimeUnavailable": "不可用"
+      },
+      "telemetry": {
+        "sectionLabel": "02 / 遥测输出"
+      },
+      "analysis": {
+        "sectionLabel": "03 / 分析通道",
+        "card": {
+          "title": "审查通道",
+          "subtitle": "详细审计日志与干预点"
+        },
+        "filters": {
+          "searchLabel": "搜索查询",
+          "severityLabel": "严重级别筛选",
+          "allSeverities": "全部级别"
+        },
+        "empty": {
+          "noIssues": "当前通道未检测到问题。"
+        },
+        "riskProfile": "风险画像：",
+        "patchAction": "修补"
       }
     },
     "assetsPage": {

@@ -468,6 +468,7 @@ export function ApprovalRulesClient() {
           {tabs.map((tab) => (
             <GlassButton
               key={tab.key}
+              variant="ghost"
               onClick={() => setActiveTab(tab.key)}
               className={cn(
                 "relative px-3 py-2 text-sm font-semibold tracking-[-0.01em] transition-colors",
@@ -663,6 +664,7 @@ export function ApprovalRulesClient() {
                     <GlassCardTitle className="text-base">{t("sections.learning")}</GlassCardTitle>
                   </div>
                   <GlassButton
+                    variant="ghost"
                     onClick={() => setActiveTab("learning")}
                     className="inline-flex items-center gap-0.5 text-xs text-[var(--accent-strong)] hover:underline"
                   >

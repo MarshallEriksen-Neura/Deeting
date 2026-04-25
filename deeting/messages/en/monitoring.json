@@ -352,11 +352,11 @@
     },
     "notificationChannels": {
       "header": {
-        "eyebrow": "Eyebrow",
-        "title": "Title",
-        "description": "Description",
+        "eyebrow": "Notification Channels",
+        "title": "Notification Channels",
+        "description": "Configure and manage notification channels to push critical information by priority.",
         "actions": {
-          "create": "Create",
+          "create": "Add Channel",
           "refresh": "Refresh"
         },
         "metrics": {
@@ -369,84 +369,84 @@
       "empty": {
         "chips": {
           "structuredConfig": "Structured Config",
-          "wechatPairing": "Wechat Pairing",
+          "wechatPairing": "WeChat Pairing",
           "runtimeVisible": "Runtime Visible"
         },
-        "title": "Title",
-        "description": "Description",
-        "addFirst": "Add First"
+        "title": "No Notification Channels",
+        "description": "No notification channels configured yet. Add one to receive automatic alerts.",
+        "addFirst": "Add First Channel"
       },
       "addCard": {
-        "fullTitle": "Full Title",
-        "title": "Title",
-        "startConfig": "Start Config",
+        "fullTitle": "All Channels Added",
+        "title": "Add Channel",
+        "startConfig": "Start Configuration",
         "feedback": {
-          "createSuccess": "Create Success",
-          "createFailed": "Create Failed"
+          "createSuccess": "Channel created successfully",
+          "createFailed": "Failed to create channel"
         },
         "cancel": "Cancel",
         "current": "Current",
         "displayName": "Display Name",
-        "displayNamePlaceholder": "Display Name Placeholder",
+        "displayNamePlaceholder": "e.g. {channel}",
         "resetType": "Reset Type",
-        "creating": "Creating",
+        "creating": "Creating...",
         "create": "Create"
       },
       "wechat": {
         "dialog": {
-          "disconnectedHint": "Disconnected Hint",
-          "startConnect": "Start Connect",
-          "qrAlt": "Qr Alt",
-          "scanHint": "Scan Hint",
-          "expiresAt": "Expires At",
+          "disconnectedHint": "WeChat is not connected. Click below to start QR scan.",
+          "startConnect": "Connect WeChat",
+          "qrAlt": "WeChat login QR code",
+          "scanHint": "Scan with WeChat",
+          "expiresAt": "QR code expires at {time}",
           "cancelPairing": "Cancel Pairing",
-          "waitingConfirm": "Waiting Confirm",
-          "waitingDescription": "Waiting Description",
+          "waitingConfirm": "Waiting for confirmation",
+          "waitingDescription": "Please confirm in WeChat",
           "connectedAccount": "Connected Account",
-          "connectedFallback": "Connected Fallback",
+          "connectedFallback": "Connected",
           "reconnect": "Reconnect",
           "disconnect": "Disconnect",
           "retry": "Retry",
-          "title": "Title",
-          "description": "Description"
+          "title": "WeChat Connection",
+          "description": "Connect WeChat to receive messages and drive local AI via desktop."
         },
         "pairing": {
-          "pendingPairings": "Pending Pairings",
-          "allowlistSize": "Allowlist Size",
-          "inputPlaceholder": "Input Placeholder",
+          "pendingPairings": "Pending {count}",
+          "allowlistSize": "Approved {count}",
+          "inputPlaceholder": "Enter pairing code",
           "approve": "Approve",
           "reject": "Reject",
-          "contextContactsTitle": "Context Contacts Title",
-          "contactWithContext": "Contact With Context",
-          "copyAria": "Copy Aria",
+          "contextContactsTitle": "Context Contacts",
+          "contactWithContext": "{contactId}",
+          "copyAria": "Copy {contactId}",
           "copy": "Copy",
-          "approvedContactsTitle": "Approved Contacts Title",
-          "contactApproved": "Contact Approved"
+          "approvedContactsTitle": "Approved Contacts",
+          "contactApproved": "{contactId}"
         }
       },
       "channelCard": {
         "feedback": {
-          "wechatConnectionError": "Wechat Connection Error",
-          "qrExpired": "Qr Expired",
-          "connectFailed": "Connect Failed",
-          "saved": "Saved",
-          "testSuccess": "Test Success",
-          "testFailed": "Test Failed",
-          "disconnectFailed": "Disconnect Failed",
-          "approved": "Approved: {contactId}",
-          "approveFailed": "Approve Failed",
-          "rejectedPairingCode": "Rejected Pairing Code",
-          "rejectFailed": "Reject Failed",
-          "copied": "Copied: {contactId}",
-          "copyUnsupported": "Copy Unsupported",
-          "copyFailed": "Copy Failed"
+          "wechatConnectionError": "WeChat connection error",
+          "qrExpired": "QR code expired",
+          "connectFailed": "Connection failed",
+          "saved": "Saved successfully",
+          "testSuccess": "Test sent successfully",
+          "testFailed": "Test failed",
+          "disconnectFailed": "Disconnect failed",
+          "approved": "Approved {contactId}",
+          "approveFailed": "Approval failed",
+          "rejectedPairingCode": "Pairing code rejected",
+          "rejectFailed": "Rejection failed",
+          "copied": "Copied {contactId}",
+          "copyUnsupported": "Copy not supported in this environment",
+          "copyFailed": "Copy failed"
         },
         "runtime": {
           "imState": "IM state: {state}",
-          "notConnected": "Not Connected"
+          "notConnected": "Not connected"
         },
         "lastUsed": {
-          "never": "Never"
+          "never": "Never used"
         },
         "systemActive": "System Active",
         "meta": {
@@ -459,9 +459,9 @@
         "actions": {
           "closeEditor": "Close Editor",
           "configure": "Configure",
-          "wechatLink": "Wechat Link",
+          "wechatLink": "Link WeChat",
           "disconnect": "Disconnect",
-          "testing": "Testing",
+          "testing": "Test Send",
           "syncChanges": "Sync Changes"
         },
         "instanceAlias": "Instance Alias",
@@ -471,14 +471,69 @@
           "handshaking": "Handshaking",
           "idle": "Idle",
           "pairingMetadata": "Pairing Metadata",
-          "allowedNodes": "Allowed nodes: {count}",
+          "allowedNodes": "Allowed nodes {count}",
           "deliveryNodes": "Delivery Nodes"
         },
         "deleteDialog": {
-          "title": "Title",
-          "description": "Description",
+          "title": "Delete Channel",
+          "description": "Are you sure you want to delete this notification channel? This action cannot be undone.",
           "cancel": "Cancel",
-          "confirm": "Confirm"
+          "confirm": "Delete"
+        }
+      },
+      "channelTypes": {
+        "feishu": { "label": "Feishu", "description": "Send notifications through Feishu bot and configure desktop IM access" },
+        "wechat": { "label": "WeChat", "description": "Connect a regular WeChat account locally and route messages into desktop AI runtime" },
+        "dingtalk": { "label": "DingTalk", "description": "Push notifications via DingTalk bot Webhook" },
+        "telegram": { "label": "Telegram", "description": "Push notifications to a Telegram chat via Bot" },
+        "email": { "label": "Email", "description": "Send notifications using SMTP" },
+        "webhook": { "label": "Webhook", "description": "Push JSON payloads to custom HTTP endpoints" }
+      },
+      "form": {
+        "fields": {
+          "feishu": {
+            "webhookUrl": { "label": "Webhook URL", "placeholder": "https://open.feishu.cn/open-apis/bot/v2/hook/xxx" },
+            "chatIds": { "label": "Group Chat IDs", "placeholder": "oc_xxxxx\\noc_yyyyy", "description": "One chat_id per line for multi-group routing." },
+            "botOpenId": { "label": "Bot Open ID", "placeholder": "ou_xxx (optional, for precise @ mentions)" },
+            "botAppId": { "label": "Feishu App ID", "placeholder": "cli_xxx (optional channel override)" },
+            "botAppSecret": { "label": "Feishu App Secret", "placeholder": "Optional channel override" },
+            "imEnabled": { "label": "Enable Desktop IM", "placeholder": "", "description": "When enabled, desktop starts Feishu bot access with direct/relay settings below." },
+            "transportPreference": { "label": "Desktop Transport Preference", "placeholder": "Select transport mode", "description": "Auto prefers direct; force direct or relay will not silently switch routes.", "options": { "auto": "Auto", "direct": "Direct", "relay": "Relay" } },
+            "relayBaseUrl": { "label": "Relay Base URL", "placeholder": "https://your-relay.example.com", "description": "Used only in auto fallback mode or forced relay mode." },
+            "relaySharedSecret": { "label": "Relay Shared Secret", "placeholder": "Optional, used by relay mode", "description": "Keep this consistent with deeting-relay RELAY_SHARED_SECRET." }
+          },
+          "wechat": {
+            "imEnabled": { "label": "Enable Desktop IM", "placeholder": "", "description": "When enabled, desktop receives messages from the connected WeChat account." },
+            "accessPolicy": { "label": "Access Policy", "placeholder": "Select access policy", "description": "Pairing is default; allowlist mode only permits approved contacts.", "options": { "pairing": "Pairing Code", "allowlist": "Allowlist" } },
+            "notifyContactIds": { "label": "Proactive Notify Contacts", "placeholder": "One contact_id per line", "description": "Only works for contacts that have already messaged this WeChat bot and established conversation context." }
+          },
+          "telegram": {
+            "imEnabled": { "label": "Enable Desktop IM", "placeholder": "", "description": "When enabled, desktop starts the Telegram bot runtime on this machine." },
+            "mediaEnabled": { "label": "Enable Media Replies", "placeholder": "", "description": "Keep this off by default. Turn it on only when Telegram image/file replies should be sent natively instead of downgraded to text." },
+            "botToken": { "label": "Bot Token", "placeholder": "123456:ABC-DEF..." },
+            "chatId": { "label": "Chat ID", "placeholder": "-1001234567890" }
+          },
+          "dingtalk": {
+            "webhookUrl": { "label": "Webhook URL", "placeholder": "https://oapi.dingtalk.com/robot/send?access_token=xxx" }
+          },
+          "email": {
+            "smtpHost": { "label": "SMTP Host", "placeholder": "smtp.gmail.com" },
+            "smtpPort": { "label": "SMTP Port", "placeholder": "587" },
+            "fromEmail": { "label": "From Email", "placeholder": "you@example.com" },
+            "fromName": { "label": "From Name", "placeholder": "Deeting OS" },
+            "toEmail": { "label": "To Email", "placeholder": "target@example.com" },
+            "username": { "label": "SMTP Username", "placeholder": "(optional)" },
+            "password": { "label": "SMTP Password", "placeholder": "(optional)" }
+          },
+          "webhook": {
+            "webhookUrl": { "label": "Webhook URL", "placeholder": "https://your-endpoint.com/hook" }
+          }
+        },
+        "groups": {
+          "feishu": {
+            "delivery": { "title": "Base Notification", "description": "For proactive notification delivery; if you only need desktop bot direct access, Webhook can stay empty." },
+            "desktopIm": { "title": "Desktop IM", "description": "Controls whether desktop directly connects the Feishu bot and how direct/relay is chosen." }
+          }
         }
       }
     },

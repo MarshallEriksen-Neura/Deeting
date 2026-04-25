@@ -57,7 +57,7 @@ export function ModelManagementProvidersPage() {
                 <Skeleton className="h-16 rounded-[var(--r-14)] bg-[var(--panel-bg-inset)] opacity-40" />
               </div>
             ) : instances.length ? (
-              instances.map((instance) => {
+              [...instances].sort((a, b) => Number(b.is_enabled) - Number(a.is_enabled)).map((instance) => {
                 const selected = instance.id === selectedInstanceId;
                 const host = instance.base_url.replace(/^https?:\/\//, '').split('/')[0] ?? '';
                 return (
