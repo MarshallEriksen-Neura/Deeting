@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{Map, Value};
 use tauri::AppHandle;
 
 use crate::state::AppState;
@@ -43,6 +43,124 @@ pub fn extract_reply_text(response: &Value) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
+}
+
+fn clone_fields(source: &Value, keys: &[&str]) -> Value {
+    let mut output = Map::new();
+    for key in keys {
+        if let Some(value) = source.get(*key) {
+            output.insert((*key).to_string(), value.clone());
+        }
+    }
+    Value::Object(output)
+}
+
+fn compact_im_block(block: &Value) -> Option<Value> {
+    let block_type = block.get("type").and_then(Value::as_str)?;
+    let mut compact = Map::new();
+    compact.insert("type".to_string(), Value::String(block_type.to_string()));
+
+    match block_type {
+        "tool_result" => {
+            for key in ["callId", "toolName"] {
+                if let Some(value) = block.get(key) {
+                    compact.insert(key.to_string(), value.clone());
+                }
+            }
+            if let Some(result) = block.get("result") {
+                compact.insert(
+                    "result".to_string(),
+                    clone_fields(
+                        result,
+                        &[
+                            "status",
+                            "approval_token",
+                            "tool_name",
+                            "description",
+                            "risk_level",
+                            "risk_reasons",
+                            "arguments",
+                        ],
+                    ),
+                );
+            }
+        }
+        "ui" => {
+            if let Some(value) = block.get("viewType") {
+                compact.insert("viewType".to_string(), value.clone());
+            }
+            if let Some(payload) = block.get("payload") {
+                compact.insert(
+                    "payload".to_string(),
+                    clone_fields(
+                        payload,
+                        &[
+                            "text",
+                            "content",
+                            "summary",
+                            "url",
+                            "image_url",
+                            "asset_url",
+                            "download_url",
+                            "name",
+                        ],
+                    ),
+                );
+            }
+            if let Some(metadata) = block.get("metadata") {
+                compact.insert(
+                    "metadata".to_string(),
+                    clone_fields(metadata, &["text", "content", "summary"]),
+                );
+            }
+        }
+        "file_preview" => {
+            if let Some(data) = block.get("data") {
+                compact.insert(
+                    "data".to_string(),
+                    clone_fields(data, &["url", "download_url", "name"]),
+                );
+            }
+        }
+        _ => return None,
+    }
+
+    Some(Value::Object(compact))
+}
+
+pub fn compact_im_reply_response(response: &Value) -> Value {
+    let Some(message) = extract_chat_response(response) else {
+        return Value::Null;
+    };
+
+    let mut compact_message = Map::new();
+    if let Some(content) = message.get("content") {
+        compact_message.insert("content".to_string(), content.clone());
+    }
+
+    if let Some(blocks) = message
+        .get("meta_info")
+        .and_then(|value| value.get("blocks"))
+        .and_then(Value::as_array)
+    {
+        let compact_blocks = blocks
+            .iter()
+            .filter_map(compact_im_block)
+            .collect::<Vec<_>>();
+        if !compact_blocks.is_empty() {
+            let mut meta_info = Map::new();
+            meta_info.insert("blocks".to_string(), Value::Array(compact_blocks));
+            compact_message.insert("meta_info".to_string(), Value::Object(meta_info));
+        }
+    }
+
+    serde_json::json!({
+        "choices": [
+            {
+                "message": compact_message,
+            }
+        ]
+    })
 }
 
 fn extract_tool_approval_payload_from_block(block: &Value) -> Option<ToolApprovalPayload> {
@@ -351,4 +469,86 @@ pub async fn reject_tool(
         approved: false,
         follow_up_texts: vec![format!("已取消 `{}` 的执行。", tool_name)],
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn compact_im_reply_response_keeps_only_im_reply_fields() {
+        let response = json!({
+            "choices": [
+                {
+                    "message": {
+                        "content": "hello",
+                        "meta_info": {
+                            "execution_graph": { "large": ["ignored"] },
+                            "blocks": [
+                                {
+                                    "type": "debug_trace",
+                                    "payload": { "large": "ignored" }
+                                },
+                                {
+                                    "type": "ui",
+                                    "viewType": "image.result",
+                                    "payload": {
+                                        "url": "https://example.test/image.png",
+                                        "huge_html": "<html>ignored</html>"
+                                    },
+                                    "metadata": {
+                                        "summary": "image summary",
+                                        "large": "ignored"
+                                    }
+                                },
+                                {
+                                    "type": "tool_result",
+                                    "callId": "call-1",
+                                    "toolName": "dangerous_tool",
+                                    "result": {
+                                        "status": "REQUIRES_APPROVAL",
+                                        "approval_token": "approval-1",
+                                        "tool_name": "dangerous_tool",
+                                        "description": "needs approval",
+                                        "risk_level": "HIGH",
+                                        "risk_reasons": ["writes files"],
+                                        "arguments": { "path": "file.txt" },
+                                        "large_trace": "ignored"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        });
+
+        let compact = compact_im_reply_response(&response);
+
+        assert_eq!(extract_reply_text(&compact).as_deref(), Some("hello"));
+
+        let approval = extract_approval_payload(&compact).expect("approval payload");
+        assert_eq!(approval.approval_token, "approval-1");
+        assert_eq!(approval.call_id.as_deref(), Some("call-1"));
+        assert_eq!(approval.tool_name, "dangerous_tool");
+        assert_eq!(approval.risk_reasons, vec!["writes files"]);
+
+        let blocks = extract_chat_response(&compact)
+            .and_then(|message| message.get("meta_info"))
+            .and_then(|meta| meta.get("blocks"))
+            .and_then(Value::as_array)
+            .expect("compact blocks");
+        assert_eq!(blocks.len(), 2);
+        assert!(compact
+            .pointer("/choices/0/message/meta_info/execution_graph")
+            .is_none());
+        assert!(compact
+            .pointer("/choices/0/message/meta_info/blocks/0/payload/huge_html")
+            .is_none());
+        assert!(compact
+            .pointer("/choices/0/message/meta_info/blocks/1/result/large_trace")
+            .is_none());
+    }
 }

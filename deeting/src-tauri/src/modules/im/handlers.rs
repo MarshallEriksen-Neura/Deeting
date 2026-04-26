@@ -244,6 +244,8 @@ pub(crate) async fn generate_local_chat_reply_outcome(
         return Ok(None);
     };
 
+    let response = conversation::compact_im_reply_response(&response);
+
     Ok(extract_local_chat_reply_outcome(&response))
 }
 

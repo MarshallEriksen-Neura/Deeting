@@ -4,22 +4,22 @@ use async_trait::async_trait;
 use log::{error, info, warn};
 use reqwest::Client;
 use reqwest::StatusCode;
+use serde_json::json;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, RwLock};
+use tokio::task::JoinHandle;
 use tokio::time::sleep;
 
-/// Telegram 客户端配置
-#[derive(Debug, Clone)]
+/// Telegram client config.
+#[derive(Clone)]
 pub struct TelegramConfig {
     pub bot_token: String,
-    /// 轮询超时（秒）
     pub poll_timeout: i32,
-    /// 重试延迟（秒）
     pub retry_delay: u64,
-    /// 是否允许机器人的群组消息
+    /// Whether group messages are allowed.
     pub allow_group_message: bool,
 }
 
@@ -34,7 +34,7 @@ impl Default for TelegramConfig {
     }
 }
 
-/// Telegram 客户端
+/// Telegram client.
 #[derive(Clone)]
 pub struct TelegramClient {
     config: TelegramConfig,
@@ -60,12 +60,12 @@ impl TelegramClient {
         }
     }
 
-    /// 从配置 map 创建客户端
+    /// Build a client from a config map.
     pub fn from_config(
         platform_config: &HashMap<String, serde_json::Value>,
     ) -> Result<Self, ImError> {
         let bot_token = config_string(platform_config, "bot_token")
-            .ok_or_else(|| ImError::ConfigError("缺少 bot_token".to_string()))?
+            .ok_or_else(|| ImError::ConfigError("missing bot_token".to_string()))?
             .to_string();
 
         let allow_group_message =
@@ -78,7 +78,7 @@ impl TelegramClient {
         }))
     }
 
-    /// 构建 API URL
+    /// Build an API URL.
     fn api_url(&self, method: &str) -> String {
         format!(
             "https://api.telegram.org/bot{}/{}",
@@ -89,15 +89,111 @@ impl TelegramClient {
     fn platform_error(code: i32, description: Option<String>) -> ImError {
         ImError::PlatformError {
             code,
-            message: telegram_api_error_message(code, description.as_deref().unwrap_or("未知错误")),
+            message: telegram_api_error_message(
+                code,
+                description.as_deref().unwrap_or("unknown error"),
+            ),
         }
+    }
+
+    fn summarize_message_raw(message: &TelegramMessage) -> serde_json::Value {
+        json!({
+            "message_id": message.message_id,
+            "chat": {
+                "id": message.chat.id,
+                "type": message.chat.chat_type,
+                "title": (!message.chat.title.is_empty()).then(|| message.chat.title.clone()),
+                "username": (!message.chat.username.is_empty()).then(|| message.chat.username.clone()),
+                "first_name": (!message.chat.first_name.is_empty()).then(|| message.chat.first_name.clone()),
+                "last_name": (!message.chat.last_name.is_empty()).then(|| message.chat.last_name.clone()),
+            },
+            "from": message.from.as_ref().map(|user| json!({
+                "id": user.id,
+                "is_bot": user.is_bot,
+                "first_name": user.first_name,
+                "last_name": (!user.last_name.is_empty()).then(|| user.last_name.clone()),
+                "username": (!user.username.is_empty()).then(|| user.username.clone()),
+            })),
+            "sender_chat": message.sender_chat.as_ref().map(|chat| json!({
+                "id": chat.id,
+                "type": chat.chat_type,
+                "title": (!chat.title.is_empty()).then(|| chat.title.clone()),
+                "username": (!chat.username.is_empty()).then(|| chat.username.clone()),
+            })),
+            "date": message.date,
+            "text": message.text,
+            "caption": message.caption,
+            "entity_count": message.entities.as_ref().map(|items| items.len()).unwrap_or(0),
+            "has_photo": message.photo.as_ref().map(|items| !items.is_empty()).unwrap_or(false),
+            "document": message.document.as_ref().map(|document| json!({
+                "file_id": document.file_id,
+                "file_name": document.file_name,
+                "mime_type": document.mime_type,
+                "file_size": document.file_size,
+            })),
+            "reply_to_message": message.reply_to_message.as_ref().map(|reply| json!({
+                "message_id": reply.message_id,
+                "from": reply.from.as_ref().map(|user| json!({
+                    "id": user.id,
+                    "is_bot": user.is_bot,
+                })),
+                "chat": {
+                    "id": reply.chat.id,
+                    "type": reply.chat.chat_type,
+                },
+                "text": reply.text,
+                "caption": reply.caption,
+            })),
+        })
+    }
+
+    fn summarize_callback_query_raw(query: &TelegramCallbackQuery) -> serde_json::Value {
+        json!({
+            "id": query.id,
+            "from": {
+                "id": query.from.id,
+                "is_bot": query.from.is_bot,
+                "first_name": query.from.first_name,
+                "last_name": (!query.from.last_name.is_empty()).then(|| query.from.last_name.clone()),
+                "username": (!query.from.username.is_empty()).then(|| query.from.username.clone()),
+            },
+            "chat_instance": (!query.chat_instance.is_empty()).then(|| query.chat_instance.clone()),
+            "data": (!query.data.is_empty()).then(|| query.data.clone()),
+            "game_short_name": (!query.game_short_name.is_empty()).then(|| query.game_short_name.clone()),
+            "message": query.message.as_ref().map(Self::summarize_message_raw),
+        })
+    }
+
+    pub(crate) fn start_background_loop(
+        &self,
+        event_tx: mpsc::Sender<ImEvent>,
+    ) -> Result<JoinHandle<()>, ImError> {
+        if self.running.swap(true, Ordering::SeqCst) {
+            return Err(ImError::Other(
+                "telegram client is already running".to_string(),
+            ));
+        }
+
+        if self.config.bot_token.is_empty() {
+            self.running.store(false, Ordering::SeqCst);
+            return Err(ImError::ConfigError(
+                "bot_token is not configured".to_string(),
+            ));
+        }
+
+        info!("starting Telegram polling client");
+
+        let client = self.clone();
+        Ok(tokio::spawn(async move {
+            client.run_poll_loop(event_tx).await;
+        }))
     }
 
     pub async fn probe_polling_available(&self) -> Result<(), ImError> {
         self.get_updates_with_timeout(0).await.map(|_| ())
     }
 
-    /// 获取更新
+    /// Fetch updates.
     async fn get_updates(&self) -> Result<Vec<TelegramUpdate>, ImError> {
         self.get_updates_with_timeout(self.config.poll_timeout)
             .await
@@ -157,7 +253,7 @@ impl TelegramClient {
         Ok(result.result.unwrap_or_default())
     }
 
-    /// 处理消息更新
+    /// Handle a message update.
     fn handle_message(&self, message: &TelegramMessage) -> Option<ImEvent> {
         let parsed_content = if let Some(text) = message.text.as_ref() {
             MessageContent::Text { text: text.clone() }
@@ -201,7 +297,7 @@ impl TelegramClient {
             _ => message.caption.as_deref().unwrap_or_default(),
         };
 
-        // 确定聊天类型
+        // Resolve chat type.
         let chat_type = match message.chat.chat_type.as_str() {
             "private" => ChatType::Private,
             "group" | "supergroup" => ChatType::Group,
@@ -209,12 +305,11 @@ impl TelegramClient {
             _ => return None,
         };
 
-        // 群组消息检查
         if matches!(chat_type, ChatType::Group) && !self.config.allow_group_message {
             return None;
         }
 
-        // 获取发送者信息
+        // Resolve sender details.
         let sender = if let Some(user) = &message.from {
             Sender {
                 sender_type: if user.is_bot {
@@ -246,7 +341,7 @@ impl TelegramClient {
             }
         };
 
-        // 解析提及
+        // Parse mentions.
         let mentions = message
             .entities
             .as_ref()
@@ -255,7 +350,7 @@ impl TelegramClient {
                     .iter()
                     .filter(|e| e.entity_type == "mention" || e.entity_type == "text_mention")
                     .filter_map(|e| {
-                        // 提取提及的用户名
+                        // Extract the mentioned username.
                         let start = e.offset as usize;
                         let end = (e.offset + e.length) as usize;
                         if end <= text.len() {
@@ -290,11 +385,11 @@ impl TelegramClient {
             sender,
             content: parsed_content,
             mentions,
-            raw: serde_json::to_value(message).unwrap_or(serde_json::Value::Null),
+            raw: Self::summarize_message_raw(message),
         })
     }
 
-    /// 处理回调查询
+    /// Handle a callback query.
     fn handle_callback_query(&self, query: &TelegramCallbackQuery) -> Option<ImEvent> {
         let chat_id = query.message.as_ref().map(|m| m.chat.id.to_string())?;
         let message_id = query.message.as_ref().map(|m| m.message_id.to_string())?;
@@ -323,16 +418,15 @@ impl TelegramClient {
                 value: action_value,
                 form_value: None,
             },
-            raw: serde_json::to_value(query).unwrap_or(serde_json::Value::Null),
+            raw: Self::summarize_callback_query_raw(query),
         })
     }
 
-    /// 运行轮询循环
+    /// Run the polling loop.
     async fn run_poll_loop(&self, event_tx: mpsc::Sender<ImEvent>) {
         let mut retry_delay = self.config.retry_delay;
 
         while self.running.load(Ordering::SeqCst) {
-            // 更新状态
             {
                 let mut status = self.status.write().await;
                 *status = ConnectionStatus::Connecting;
@@ -344,7 +438,7 @@ impl TelegramClient {
                 })
                 .await;
 
-            info!("开始 Telegram 长轮询");
+            info!("starting Telegram long polling");
 
             {
                 let mut status = self.status.write().await;
@@ -358,49 +452,47 @@ impl TelegramClient {
                 .await;
 
             while self.running.load(Ordering::SeqCst) {
-                // 获取更新
+                // Fetch updates.
                 match self.get_updates().await {
                     Ok(updates) => {
                         retry_delay = self.config.retry_delay;
 
                         for update in updates {
-                            // 更新 offset
+                            // Update the offset.
                             self.offset.store(update.update_id, Ordering::SeqCst);
 
-                            // 处理消息
+                            // Handle inbound messages.
                             if let Some(message) = &update.message {
                                 if let Some(event) = self.handle_message(message) {
                                     if event_tx.send(event).await.is_err() {
-                                        warn!("发送事件失败");
+                                        warn!("failed to send event");
                                     }
                                 }
                             }
 
-                            // 处理编辑的消息
                             if let Some(message) = &update.edited_message {
                                 if let Some(event) = self.handle_message(message) {
                                     if event_tx.send(event).await.is_err() {
-                                        warn!("发送事件失败");
+                                        warn!("failed to send event");
                                     }
                                 }
                             }
 
-                            // 处理回调查询
+                            // Handle callback queries.
                             if let Some(query) = &update.callback_query {
                                 if let Some(event) = self.handle_callback_query(query) {
                                     if event_tx.send(event).await.is_err() {
-                                        warn!("发送事件失败");
+                                        warn!("failed to send event");
                                     }
                                 }
                             }
                         }
                     }
                     Err(ImError::Timeout) => {
-                        // 超时是正常的，继续轮询
                         continue;
                     }
                     Err(e) => {
-                        error!("获取更新失败: {}", e);
+                        error!("failed to fetch updates: {}", e);
 
                         {
                             let mut status = self.status.write().await;
@@ -421,12 +513,11 @@ impl TelegramClient {
             }
         }
 
-        // 更新状态
         let mut status = self.status.write().await;
         *status = ConnectionStatus::Disconnected;
     }
 
-    /// 发送消息 API
+    /// Send a text/media message through the Telegram API.
     async fn send_message_api(
         &self,
         chat_id: i64,
@@ -510,10 +601,10 @@ impl TelegramClient {
 
         result
             .result
-            .ok_or_else(|| ImError::SendError("响应数据为空".to_string()))
+            .ok_or_else(|| ImError::SendError("response payload is empty".to_string()))
     }
 
-    /// 回答回调查询 API
+    /// Answer a callback query through the Telegram API.
     async fn answer_callback_query_api(
         &self,
         callback_query_id: &str,
@@ -594,7 +685,7 @@ fn telegram_api_error_message(code: i32, description: &str) -> String {
         );
     }
     if trimmed.is_empty() {
-        return "未知错误".to_string();
+        return "unknown error".to_string();
     }
     trimmed.to_string()
 }
@@ -618,7 +709,7 @@ fn telegram_http_error(
         .filter(|value| !value.is_empty())
         .map(|value| {
             if value.len() > 200 {
-                format!("{}…", value.chars().take(199).collect::<String>())
+                format!("{}...", value.chars().take(199).collect::<String>())
             } else {
                 value.to_string()
             }
@@ -647,17 +738,20 @@ impl ImClient for TelegramClient {
 
     async fn start(&self, event_tx: mpsc::Sender<ImEvent>) -> Result<(), ImError> {
         if self.running.swap(true, Ordering::SeqCst) {
-            return Err(ImError::Other("客户端已在运行".to_string()));
+            return Err(ImError::Other(
+                "telegram client is already running".to_string(),
+            ));
         }
 
-        // 验证配置
+        // Validate config.
         if self.config.bot_token.is_empty() {
-            return Err(ImError::ConfigError("bot_token 未配置".to_string()));
+            return Err(ImError::ConfigError(
+                "bot_token is not configured".to_string(),
+            ));
         }
 
-        info!("启动 Telegram 轮询客户端");
+        info!("starting Telegram polling client");
 
-        // 在后台运行轮询循环
         let client = self.clone();
         tokio::spawn(async move {
             client.run_poll_loop(event_tx).await;
@@ -671,7 +765,7 @@ impl ImClient for TelegramClient {
             return Ok(());
         }
 
-        info!("停止 Telegram 轮询客户端");
+        info!("stopping Telegram polling client");
 
         self.stop_signal.notify_waiters();
 
@@ -688,13 +782,13 @@ impl ImClient for TelegramClient {
         let chat_id: i64 = request
             .chat_id
             .parse()
-            .map_err(|_| ImError::SendError("无效的 chat_id".to_string()))?;
+            .map_err(|_| ImError::SendError("invalid chat_id".to_string()))?;
 
         let reply_to = request
             .reply_to
             .map(|s| s.parse())
             .transpose()
-            .map_err(|_| ImError::SendError("无效的 reply_to".to_string()))?;
+            .map_err(|_| ImError::SendError("invalid reply_to".to_string()))?;
 
         let sent = match request.content {
             MessageContent::Text { text } => {
@@ -747,7 +841,7 @@ impl ImClient for TelegramClient {
         message_id: &str,
         response: CardActionResponse,
     ) -> Result<(), ImError> {
-        // message_id 在 Telegram 中是 callback_query_id
+        // message_id is the callback_query_id on Telegram.
         let toast = response.toast.as_ref();
         let text = toast.map(|t| t.content.as_str());
         let show_alert = toast
@@ -906,6 +1000,102 @@ mod tests {
             } => {
                 assert_eq!(name, "report.pdf");
                 assert_eq!(url, "telegram://document/document-file-id");
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn handle_message_raw_summary_does_not_embed_recursive_reply_chain() {
+        let client = make_client(false);
+        let event = client
+            .handle_message(&TelegramMessage {
+                reply_to_message: Some(Box::new(TelegramMessage {
+                    message_id: 41,
+                    text: Some("previous".to_string()),
+                    reply_to_message: Some(Box::new(TelegramMessage {
+                        message_id: 40,
+                        text: Some("older".to_string()),
+                        reply_to_message: None,
+                        ..sample_message("private", None)
+                    })),
+                    ..sample_message("private", None)
+                })),
+                ..sample_message("private", Some("hello telegram"))
+            })
+            .expect("private text should become an event");
+
+        match event {
+            ImEvent::Message { raw, .. } => {
+                let reply = raw
+                    .get("reply_to_message")
+                    .and_then(|value| value.as_object())
+                    .expect("reply summary should exist");
+                assert_eq!(
+                    reply.get("message_id").and_then(|value| value.as_i64()),
+                    Some(41)
+                );
+                assert!(
+                    reply.get("reply_to_message").is_none(),
+                    "raw summary should stay shallow"
+                );
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn handle_callback_query_raw_summary_keeps_nested_message_shallow() {
+        let client = make_client(false);
+        let event = client
+            .handle_callback_query(&TelegramCallbackQuery {
+                id: "callback-1".to_string(),
+                from: TelegramUser {
+                    id: 7,
+                    is_bot: false,
+                    first_name: "Alice".to_string(),
+                    last_name: "Example".to_string(),
+                    username: String::new(),
+                    language_code: String::new(),
+                },
+                message: Some(TelegramMessage {
+                    reply_to_message: Some(Box::new(TelegramMessage {
+                        message_id: 41,
+                        text: Some("previous".to_string()),
+                        reply_to_message: Some(Box::new(TelegramMessage {
+                            message_id: 40,
+                            text: Some("older".to_string()),
+                            reply_to_message: None,
+                            ..sample_message("private", None)
+                        })),
+                        ..sample_message("private", None)
+                    })),
+                    ..sample_message("private", Some("hello telegram"))
+                }),
+                chat_instance: "instance-1".to_string(),
+                data: "approve_tool".to_string(),
+                game_short_name: String::new(),
+            })
+            .expect("callback query should become an event");
+
+        match event {
+            ImEvent::CardAction { raw, .. } => {
+                let message = raw
+                    .get("message")
+                    .and_then(|value| value.as_object())
+                    .expect("callback message summary should exist");
+                let reply = message
+                    .get("reply_to_message")
+                    .and_then(|value| value.as_object())
+                    .expect("reply summary should exist");
+                assert_eq!(
+                    reply.get("message_id").and_then(|value| value.as_i64()),
+                    Some(41)
+                );
+                assert!(
+                    reply.get("reply_to_message").is_none(),
+                    "callback raw summary should stay shallow"
+                );
             }
             other => panic!("unexpected event: {other:?}"),
         }

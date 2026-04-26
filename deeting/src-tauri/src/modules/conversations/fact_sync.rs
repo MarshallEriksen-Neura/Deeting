@@ -725,6 +725,7 @@ mod tests {
             .await
             .expect("sync assistant registry");
 
+        let store = std::sync::Arc::new(store);
         let pool = store.pool.clone();
         let provider_state = create_test_provider_state(test_name, &base_url).await;
         let memory_state = create_test_memory_state(test_name).await;
@@ -745,11 +746,17 @@ mod tests {
         let monitor = MonitorState::with_pool(pool.clone(), provider_state.store.clone(), None)
             .await
             .expect("create monitor state");
+        let app = tauri::Builder::default()
+            .build(tauri::generate_context!())
+            .expect("create test tauri app");
 
         let app_state = AppState::new(
             McpRuntimeState::new(
-                std::sync::Arc::new(store),
-                crate::modules::mcp::process::ProcessManager::new(),
+                store.clone(),
+                crate::modules::mcp::process::ProcessManager::new(
+                    store.clone(),
+                    app.handle().clone(),
+                ),
                 "http://127.0.0.1".to_string(),
             ),
             BrowserAgentState::new(),

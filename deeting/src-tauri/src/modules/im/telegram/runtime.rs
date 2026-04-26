@@ -11,6 +11,14 @@ use crate::state::AppState;
 
 use super::{TelegramClient, TelegramConfig};
 
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 pub async fn run_telegram_direct_profile_worker(
     app_state: AppState,
     app_handle: tauri::AppHandle,
@@ -22,10 +30,11 @@ pub async fn run_telegram_direct_profile_worker(
         ..Default::default()
     });
     let (event_tx, mut event_rx) = mpsc::channel(256);
-    client
-        .start(event_tx)
-        .await
-        .map_err(|err| err.to_string())?;
+    let _poll_guard = AbortOnDrop(
+        client
+            .start_background_loop(event_tx)
+            .map_err(|err| err.to_string())?,
+    );
 
     let mut text_runtime = TextImConversationRuntime::default();
 
@@ -53,14 +62,16 @@ pub async fn run_telegram_direct_profile_worker(
                 let incoming_text = match content {
                     MessageContent::Text { text } => text,
                     MessageContent::Image { url } => {
-                        format!("[telegram-rich:image] 用户发送了一张图片引用：{}", url)
+                        format!(
+                            "[telegram-rich:image] user sent an image reference: {}",
+                            url
+                        )
                     }
-                    MessageContent::File { name, url } => format!(
-                        "[telegram-rich:file] 用户发送了一个文件：{} ({})",
-                        name, url
-                    ),
+                    MessageContent::File { name, url } => {
+                        format!("[telegram-rich:file] user sent a file: {} ({})", name, url)
+                    }
                     MessageContent::Mixed { parts } => format!(
-                        "[telegram-rich:mixed] 用户发送了混合内容：{}",
+                        "[telegram-rich:mixed] user sent mixed content: {}",
                         parts
                             .iter()
                             .filter_map(|part| match part {
@@ -157,6 +168,8 @@ pub async fn run_telegram_direct_profile_worker(
             }
         }
     }
+
+    let _ = client.stop().await;
 
     Ok(())
 }

@@ -69,8 +69,8 @@ fn block_text_from_payload(payload: &Value) -> Option<String> {
 
 fn capability_from_ui_block(block: &Value) -> Option<ImReplyCapability> {
     let view_type = block.get("viewType").and_then(Value::as_str)?.trim();
-    let payload = block.get("payload").cloned().unwrap_or(Value::Null);
-    let metadata = block.get("metadata").cloned().unwrap_or(Value::Null);
+    let payload = block.get("payload").unwrap_or(&Value::Null);
+    let metadata = block.get("metadata").unwrap_or(&Value::Null);
 
     if view_type.eq_ignore_ascii_case("html.v1") || view_type.eq_ignore_ascii_case("table.simple") {
         let summary = block_text_from_payload(&payload)
