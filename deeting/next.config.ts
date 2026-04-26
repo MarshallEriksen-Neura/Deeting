@@ -11,6 +11,7 @@ const isDesktopExport = process.env.DEETING_DESKTOP_EXPORT === "true"
 
 const nextConfig: NextConfig = {
   output: isDesktopExport ? "export" : undefined,
+  trailingSlash: isDesktopExport ? true : undefined,
   images: {
     unoptimized: true,
   },

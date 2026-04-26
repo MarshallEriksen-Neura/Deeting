@@ -74,6 +74,65 @@ describe("desktop export postprocess", () => {
     )
   })
 
+  it("overwrites root html and rsc payload from default-locale directory exports", () => {
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-export-trailing-"))
+
+    fs.mkdirSync(path.join(outDir, "zh-CN"), { recursive: true })
+    fs.writeFileSync(path.join(outDir, "index.html"), "redirect-root", "utf8")
+    fs.writeFileSync(path.join(outDir, "index.txt"), "NEXT_REDIRECT;replace;/;307;", "utf8")
+    fs.writeFileSync(path.join(outDir, "zh-CN", "index.html"), "locale-root", "utf8")
+    fs.writeFileSync(path.join(outDir, "zh-CN", "index.txt"), "locale-rsc", "utf8")
+
+    const copiedPaths = mirrorDefaultLocaleExport(outDir, "zh-CN")
+
+    expect(copiedPaths).toEqual(["index.html", "index.txt"])
+    expect(fs.readFileSync(path.join(outDir, "index.html"), "utf8")).toBe("locale-root")
+    expect(fs.readFileSync(path.join(outDir, "index.txt"), "utf8")).toBe("locale-rsc")
+  })
+
+  it("overwrites root route metadata from default-locale directory exports", () => {
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-export-metadata-"))
+
+    fs.mkdirSync(path.join(outDir, "zh-CN", "__next.$d$locale", "dashboard"), {
+      recursive: true,
+    })
+    fs.mkdirSync(path.join(outDir, "__next.$d$locale", "dashboard"), { recursive: true })
+    fs.writeFileSync(path.join(outDir, "__next._tree.txt"), "root-tree", "utf8")
+    fs.writeFileSync(path.join(outDir, "__next._full.txt"), "root-full", "utf8")
+    fs.writeFileSync(path.join(outDir, "__next.$d$locale.txt"), "root-locale", "utf8")
+    fs.writeFileSync(
+      path.join(outDir, "__next.$d$locale", "dashboard", "__PAGE__.txt"),
+      "root-page",
+      "utf8"
+    )
+    fs.writeFileSync(path.join(outDir, "zh-CN", "__next._tree.txt"), "locale-tree", "utf8")
+    fs.writeFileSync(path.join(outDir, "zh-CN", "__next._full.txt"), "locale-full", "utf8")
+    fs.writeFileSync(path.join(outDir, "zh-CN", "__next.$d$locale.txt"), "locale", "utf8")
+    fs.writeFileSync(
+      path.join(outDir, "zh-CN", "__next.$d$locale", "dashboard", "__PAGE__.txt"),
+      "locale-page",
+      "utf8"
+    )
+
+    const copiedPaths = mirrorDefaultLocaleExport(outDir, "zh-CN")
+
+    expect(copiedPaths.sort()).toEqual([
+      "__next.$d$locale.txt",
+      "__next.$d$locale/dashboard/__PAGE__.txt",
+      "__next._full.txt",
+      "__next._tree.txt",
+    ])
+    expect(fs.readFileSync(path.join(outDir, "__next._tree.txt"), "utf8")).toBe("locale-tree")
+    expect(fs.readFileSync(path.join(outDir, "__next._full.txt"), "utf8")).toBe("locale-full")
+    expect(fs.readFileSync(path.join(outDir, "__next.$d$locale.txt"), "utf8")).toBe("locale")
+    expect(
+      fs.readFileSync(
+        path.join(outDir, "__next.$d$locale", "dashboard", "__PAGE__.txt"),
+        "utf8"
+      )
+    ).toBe("locale-page")
+  })
+
   it("maps a root locale html export into index.html when needed", () => {
     const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-export-html-"))
 

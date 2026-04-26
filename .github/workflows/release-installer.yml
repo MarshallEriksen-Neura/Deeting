@@ -136,7 +136,6 @@ jobs:
           NEXT_PUBLIC_IS_TAURI: "true"
         with:
           projectPath: installer
-          includeRelease: false
           args: ""
 
       - name: Resolve bootstrapper installer artifact

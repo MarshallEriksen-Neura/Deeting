@@ -123,8 +123,8 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },];
 
-const FOOTER_ACTIONS: Required<Pick<NavItem, "id" | "href" | "labelKey" | "icon">>[] = [
-  { id: "docs", href: "/", labelKey: "docs", icon: BookOpen },
+const FOOTER_ACTIONS: NavItem[] = [
+  { id: "docs", href: "/", labelKey: "docs", icon: BookOpen, disabled: true },
   { id: "settings", href: "/settings", labelKey: "nav.settings", icon: Settings },
 ];
 
@@ -283,6 +283,7 @@ function WorkstationSidebarLinkItem({
 
 function SidebarFooterCluster({ isCollapsed }: { isCollapsed: boolean }) {
   const tCommon = useTranslations("common");
+  const unavailableLabel = tCommon("nav.planned");
 
   return (
     <div
@@ -293,24 +294,43 @@ function SidebarFooterCluster({ isCollapsed }: { isCollapsed: boolean }) {
     >
       {FOOTER_ACTIONS.map((item) => {
         const Icon = item.icon;
+        const href = item.href;
         const label = tCommon(item.labelKey as never);
-        const link = (
-          <Link
-            href={item.href}
-            className={cn(
-              "flex h-9 w-full items-center rounded-[12px] text-[15px] font-medium text-[var(--ink-2)] outline-none transition-colors duration-[var(--dur-fast)] ease-[var(--ease-standard)] hover:bg-[color-mix(in_srgb,var(--ink)_4%,transparent)] hover:text-[var(--ink)] focus-visible:shadow-[var(--focus-ring)]",
-              isCollapsed ? "justify-center px-0" : "gap-4 px-2"
-            )}
-          >
+        const isDisabled = item.disabled || !href;
+        const className = cn(
+          "flex h-9 w-full items-center rounded-[12px] text-[15px] font-medium text-[var(--ink-2)] outline-none transition-colors duration-[var(--dur-fast)] ease-[var(--ease-standard)]",
+          !isDisabled &&
+            "hover:bg-[color-mix(in_srgb,var(--ink)_4%,transparent)] hover:text-[var(--ink)] focus-visible:shadow-[var(--focus-ring)]",
+          isDisabled && "cursor-default text-[var(--ink-3)] opacity-72",
+          isCollapsed ? "justify-center px-0" : "gap-4 px-2"
+        );
+        const content = (
+          <>
             <Icon className="size-5 shrink-0 text-[var(--ink-3)]" />
             {!isCollapsed ? <span className="truncate">{label}</span> : null}
+            {!isCollapsed && isDisabled ? (
+              <span className="ml-auto shrink-0 rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[10px] font-medium text-[var(--ink-3)]">
+                {unavailableLabel}
+              </span>
+            ) : null}
+          </>
+        );
+        const link = isDisabled || !href ? (
+          <div className={className} aria-disabled="true">
+            {content}
+          </div>
+        ) : (
+          <Link href={href} className={className}>
+            {content}
           </Link>
         );
 
         return (
           <React.Fragment key={item.id}>
             {isCollapsed ? (
-              <CollapsedSidebarTooltip label={label}>{link}</CollapsedSidebarTooltip>
+              <CollapsedSidebarTooltip label={label} unavailableLabel={isDisabled ? unavailableLabel : undefined}>
+                {link}
+              </CollapsedSidebarTooltip>
             ) : (
               link
             )}

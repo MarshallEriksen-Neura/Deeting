@@ -345,8 +345,8 @@
     },
     "browserAgent": {
       "title": "Browser Agent Debug Panel",
-      "description": "Dev-only panel to validate the desktop browser_agent tool chain.",
-      "badge": "Dev Only",
+      "description": "Validate the desktop browser_agent tool chain and bridge connection.",
+      "badge": "Desktop",
       "loading": "Loading browser agent status...",
       "status": "Status",
       "sessions": "Sessions",

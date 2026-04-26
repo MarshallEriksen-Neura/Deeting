@@ -24,7 +24,10 @@ function copyFile(sourcePath, targetPath, copiedPaths, outDir, options = {}) {
 
   fs.mkdirSync(path.dirname(targetPath), { recursive: true })
   fs.copyFileSync(sourcePath, targetPath)
-  copiedPaths.push(path.relative(outDir, targetPath).split(path.sep).join("/"))
+  const copiedPath = path.relative(outDir, targetPath).split(path.sep).join("/")
+  if (!copiedPaths.includes(copiedPath)) {
+    copiedPaths.push(copiedPath)
+  }
 }
 
 function mirrorMissingDirectoryEntries(sourceDir, targetDir, copiedPaths, outDir) {
@@ -45,9 +48,57 @@ function mirrorMissingDirectoryEntries(sourceDir, targetDir, copiedPaths, outDir
   }
 }
 
+function mirrorDirectoryEntries(sourceDir, targetDir, copiedPaths, outDir, options = {}) {
+  if (!fs.existsSync(sourceDir)) {
+    return
+  }
+
+  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+    const sourcePath = path.join(sourceDir, entry.name)
+    const targetPath = path.join(targetDir, entry.name)
+
+    if (entry.isDirectory()) {
+      mirrorDirectoryEntries(sourcePath, targetPath, copiedPaths, outDir, options)
+      continue
+    }
+
+    copyFile(sourcePath, targetPath, copiedPaths, outDir, options)
+  }
+}
+
+function mirrorDefaultLocaleRootRouteMetadata(outDir, defaultLocale, copiedPaths) {
+  const localeDir = path.join(outDir, defaultLocale)
+
+  if (!fs.existsSync(localeDir) || !fs.statSync(localeDir).isDirectory()) {
+    return
+  }
+
+  for (const entry of fs.readdirSync(localeDir, { withFileTypes: true })) {
+    if (!entry.name.startsWith("__next.")) {
+      continue
+    }
+
+    const sourcePath = path.join(localeDir, entry.name)
+    const targetPath = path.join(outDir, entry.name)
+
+    if (entry.isDirectory()) {
+      mirrorDirectoryEntries(sourcePath, targetPath, copiedPaths, outDir, {
+        overwrite: true,
+      })
+      continue
+    }
+
+    copyFile(sourcePath, targetPath, copiedPaths, outDir, {
+      overwrite: true,
+    })
+  }
+}
+
 function mirrorDefaultLocaleExport(outDir, defaultLocale) {
   const copiedPaths = []
   const localeDir = path.join(outDir, defaultLocale)
+  const localeDirIndexHtml = path.join(localeDir, "index.html")
+  const localeDirIndexText = path.join(localeDir, "index.txt")
   const localeHtml = path.join(outDir, `${defaultLocale}.html`)
   const localeText = path.join(outDir, `${defaultLocale}.txt`)
 
@@ -55,6 +106,14 @@ function mirrorDefaultLocaleExport(outDir, defaultLocale) {
     mirrorMissingDirectoryEntries(localeDir, outDir, copiedPaths, outDir)
   }
 
+  mirrorDefaultLocaleRootRouteMetadata(outDir, defaultLocale, copiedPaths)
+
+  copyFile(localeDirIndexHtml, path.join(outDir, "index.html"), copiedPaths, outDir, {
+    overwrite: true,
+  })
+  copyFile(localeDirIndexText, path.join(outDir, "index.txt"), copiedPaths, outDir, {
+    overwrite: true,
+  })
   copyFile(localeHtml, path.join(outDir, "index.html"), copiedPaths, outDir, {
     overwrite: true,
   })
@@ -86,5 +145,6 @@ function postprocessDesktopExport(projectRoot) {
 module.exports = {
   readDesktopDefaultLocale,
   mirrorDefaultLocaleExport,
+  mirrorDefaultLocaleRootRouteMetadata,
   postprocessDesktopExport,
 }
