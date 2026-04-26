@@ -1,6 +1,6 @@
 [package]
 name = "deeting-installer"
-version = "0.1.1-3"
+version = "0.1.1-4"
 description = "Deeting Modern Installer"
 authors = ["Deeting Team"]
 edition = "2021"

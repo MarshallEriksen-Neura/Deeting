@@ -3,16 +3,18 @@
 import { SettingsClient } from "./components/settings-client";
 import { normalizeSettingsSection } from "./section";
 
+export const dynamic = "force-static";
+
 type SettingsPageProps = {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ section?: string | string[] }>;
+  searchParams?: Promise<{ section?: string | string[] }>;
 };
 
 export default async function SettingsPage({ params, searchParams }: SettingsPageProps) {
   const { locale } = await params;
-  const resolvedSearchParams = await searchParams;
   setRequestLocale(locale);
 
+  const resolvedSearchParams = searchParams ? await searchParams : {};
   const sectionParam = resolvedSearchParams.section;
   const section = Array.isArray(sectionParam) ? sectionParam[0] : sectionParam;
   const initialSection = normalizeSettingsSection(section);

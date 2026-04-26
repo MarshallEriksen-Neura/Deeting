@@ -48,13 +48,15 @@ describe("desktop export postprocess", () => {
     expect(fs.existsSync(path.join(outDir, "market", "index.html"))).toBe(false)
   })
 
-  it("does not overwrite explicit root output and also supports zh-CN.html exports", () => {
+  it("overwrites root html and rsc payload from default-locale root exports", () => {
     const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-export-root-"))
 
     fs.mkdirSync(path.join(outDir, "zh-CN", "settings"), { recursive: true })
     fs.mkdirSync(path.join(outDir, "settings"), { recursive: true })
-    fs.writeFileSync(path.join(outDir, "index.html"), "existing-root", "utf8")
+    fs.writeFileSync(path.join(outDir, "index.html"), "redirect-root", "utf8")
+    fs.writeFileSync(path.join(outDir, "index.txt"), "NEXT_REDIRECT;replace;/;307;", "utf8")
     fs.writeFileSync(path.join(outDir, "zh-CN.html"), "locale-root", "utf8")
+    fs.writeFileSync(path.join(outDir, "zh-CN.txt"), "locale-rsc", "utf8")
     fs.writeFileSync(
       path.join(outDir, "zh-CN", "settings", "index.html"),
       "locale-settings",
@@ -64,8 +66,9 @@ describe("desktop export postprocess", () => {
 
     const copiedPaths = mirrorDefaultLocaleExport(outDir, "zh-CN")
 
-    expect(copiedPaths).toEqual([])
-    expect(fs.readFileSync(path.join(outDir, "index.html"), "utf8")).toBe("existing-root")
+    expect(copiedPaths).toEqual(["index.html", "index.txt"])
+    expect(fs.readFileSync(path.join(outDir, "index.html"), "utf8")).toBe("locale-root")
+    expect(fs.readFileSync(path.join(outDir, "index.txt"), "utf8")).toBe("locale-rsc")
     expect(fs.readFileSync(path.join(outDir, "settings", "index.html"), "utf8")).toBe(
       "existing-settings"
     )
@@ -80,6 +83,17 @@ describe("desktop export postprocess", () => {
 
     expect(copiedPaths).toEqual(["index.html"])
     expect(fs.readFileSync(path.join(outDir, "index.html"), "utf8")).toBe("locale-root")
+  })
+
+  it("maps a root locale rsc export into index.txt when needed", () => {
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-export-rsc-"))
+
+    fs.writeFileSync(path.join(outDir, "zh-CN.txt"), "locale-rsc", "utf8")
+
+    const copiedPaths = mirrorDefaultLocaleExport(outDir, "zh-CN")
+
+    expect(copiedPaths).toEqual(["index.txt"])
+    expect(fs.readFileSync(path.join(outDir, "index.txt"), "utf8")).toBe("locale-rsc")
   })
 
   it("postprocesses the built desktop export using the configured default locale", () => {

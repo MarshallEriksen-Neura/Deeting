@@ -15,14 +15,16 @@ function readDesktopDefaultLocale(projectRoot) {
   return match[1]
 }
 
-function copyMissingFile(sourcePath, targetPath, copiedPaths, outDir) {
-  if (!fs.existsSync(sourcePath) || fs.existsSync(targetPath)) {
+function copyFile(sourcePath, targetPath, copiedPaths, outDir, options = {}) {
+  const { overwrite = false } = options
+
+  if (!fs.existsSync(sourcePath) || (!overwrite && fs.existsSync(targetPath))) {
     return
   }
 
   fs.mkdirSync(path.dirname(targetPath), { recursive: true })
   fs.copyFileSync(sourcePath, targetPath)
-  copiedPaths.push(path.relative(outDir, targetPath))
+  copiedPaths.push(path.relative(outDir, targetPath).split(path.sep).join("/"))
 }
 
 function mirrorMissingDirectoryEntries(sourceDir, targetDir, copiedPaths, outDir) {
@@ -39,7 +41,7 @@ function mirrorMissingDirectoryEntries(sourceDir, targetDir, copiedPaths, outDir
       continue
     }
 
-    copyMissingFile(sourcePath, targetPath, copiedPaths, outDir)
+    copyFile(sourcePath, targetPath, copiedPaths, outDir)
   }
 }
 
@@ -47,12 +49,18 @@ function mirrorDefaultLocaleExport(outDir, defaultLocale) {
   const copiedPaths = []
   const localeDir = path.join(outDir, defaultLocale)
   const localeHtml = path.join(outDir, `${defaultLocale}.html`)
+  const localeText = path.join(outDir, `${defaultLocale}.txt`)
 
   if (fs.existsSync(localeDir) && fs.statSync(localeDir).isDirectory()) {
     mirrorMissingDirectoryEntries(localeDir, outDir, copiedPaths, outDir)
   }
 
-  copyMissingFile(localeHtml, path.join(outDir, "index.html"), copiedPaths, outDir)
+  copyFile(localeHtml, path.join(outDir, "index.html"), copiedPaths, outDir, {
+    overwrite: true,
+  })
+  copyFile(localeText, path.join(outDir, "index.txt"), copiedPaths, outDir, {
+    overwrite: true,
+  })
 
   return copiedPaths
 }
