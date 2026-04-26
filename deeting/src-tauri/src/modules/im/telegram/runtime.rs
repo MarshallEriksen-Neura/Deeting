@@ -86,6 +86,26 @@ pub async fn run_telegram_direct_profile_worker(
                     MessageContent::Card { .. } => continue,
                 };
 
+                let send_client = client.clone();
+                let send_chat_id = chat_id.clone();
+                let send_message_id = message_id.clone();
+                let mut send_message = move |content| {
+                    let client = send_client.clone();
+                    let chat_id = send_chat_id.clone();
+                    let message_id = send_message_id.clone();
+                    Box::pin(async move {
+                        client
+                            .send_message(SendMessageRequest {
+                                chat_id,
+                                content,
+                                reply_to: Some(message_id),
+                            })
+                            .await
+                            .map(|_| ())
+                            .map_err(|err| err.to_string())
+                    }) as crate::modules::im::text_runtime::SendMessageFuture
+                };
+
                 text_runtime
                     .handle_incoming_text(
                         &app_state,
@@ -94,17 +114,7 @@ pub async fn run_telegram_direct_profile_worker(
                         chat_id.as_str(),
                         incoming_text.as_str(),
                         "Telegram",
-                        |content| async {
-                            client
-                                .send_message(SendMessageRequest {
-                                    chat_id: chat_id.clone(),
-                                    content,
-                                    reply_to: Some(message_id.clone()),
-                                })
-                                .await
-                                .map(|_| ())
-                                .map_err(|err| err.to_string())
-                        },
+                        &mut send_message,
                     )
                     .await?;
             }

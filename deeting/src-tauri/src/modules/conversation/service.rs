@@ -316,13 +316,13 @@ pub async fn execute_text_chat_raw(
         locale: None,
     };
 
-    let response = execute_local_orchestrated_chat(
+    let response = Box::pin(execute_local_orchestrated_chat(
         app_handle,
         app_state,
         input,
         uuid::Uuid::new_v4().to_string(),
         None,
-    )
+    ))
     .await?;
 
     Ok(Some(response))

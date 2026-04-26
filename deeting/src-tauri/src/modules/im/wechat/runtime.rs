@@ -215,6 +215,36 @@ pub async fn run_wechat_direct_profile_worker(
                 );
             }
 
+            let mut send_message = |content| {
+                let app_state = app_state.clone();
+                let base_url = account.base_url.clone();
+                let token = account.token.clone();
+                let context_token = reply_context_token.clone();
+                let contact_id = contact_id.to_string();
+                Box::pin(async move {
+                    let result = send_content(
+                        &app_state,
+                        base_url.as_str(),
+                        token.as_str(),
+                        contact_id.as_str(),
+                        content,
+                        context_token.as_str(),
+                    )
+                    .await;
+                    let _ = app_state
+                        .wechat
+                        .send_typing(
+                            base_url.as_str(),
+                            token.as_str(),
+                            contact_id.as_str(),
+                            context_token.as_str(),
+                            2,
+                        )
+                        .await;
+                    result
+                }) as crate::modules::im::text_runtime::SendMessageFuture
+            };
+
             if let Err(err) = text_runtime
                 .handle_incoming_text(
                     &app_state,
@@ -223,35 +253,7 @@ pub async fn run_wechat_direct_profile_worker(
                     contact_id,
                     incoming_user_text.as_str(),
                     "微信",
-                    |content| {
-                        let app_state = app_state.clone();
-                        let base_url = account.base_url.clone();
-                        let token = account.token.clone();
-                        let context_token = reply_context_token.clone();
-                        let contact_id = contact_id.to_string();
-                        async move {
-                            let result = send_content(
-                                &app_state,
-                                base_url.as_str(),
-                                token.as_str(),
-                                contact_id.as_str(),
-                                content,
-                                context_token.as_str(),
-                            )
-                            .await;
-                            let _ = app_state
-                                .wechat
-                                .send_typing(
-                                    base_url.as_str(),
-                                    token.as_str(),
-                                    contact_id.as_str(),
-                                    context_token.as_str(),
-                                    2,
-                                )
-                                .await;
-                            result
-                        }
-                    },
+                    &mut send_message,
                 )
                 .await
             {

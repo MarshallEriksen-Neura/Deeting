@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::future::Future;
+use std::pin::Pin;
 
 use crate::modules::conversation::service as conversation;
 use crate::modules::im::handlers::{
-    build_direct_card_action_outcome, generate_local_chat_reply_outcome,
+    build_direct_card_action_outcome, generate_local_chat_reply_outcome, LocalChatReplyOutcome,
 };
 use crate::modules::im::{
     adapt_reply_for_platform, ImConnectionProfile, ImPlatform, ImPlatformAdapter,
@@ -23,8 +24,11 @@ pub(crate) struct TextImConversationRuntime {
     pending_text_approvals: HashMap<String, PendingTextApproval>,
 }
 
+pub(crate) type SendMessageFuture = Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
+pub(crate) type SendMessageFn<'a> = dyn FnMut(MessageContent) -> SendMessageFuture + Send + 'a;
+
 impl TextImConversationRuntime {
-    pub async fn handle_incoming_text<F, Fut>(
+    pub async fn handle_incoming_text(
         &mut self,
         app_state: &AppState,
         app_handle: &tauri::AppHandle,
@@ -32,12 +36,8 @@ impl TextImConversationRuntime {
         peer_id: &str,
         text: &str,
         channel_label: &str,
-        mut send_message: F,
-    ) -> Result<(), String>
-    where
-        F: FnMut(MessageContent) -> Fut,
-        Fut: Future<Output = Result<(), String>>,
-    {
+        send_message: &mut SendMessageFn<'_>,
+    ) -> Result<(), String> {
         if let Some(pending) = self.pending_text_approvals.get(peer_id).cloned() {
             if let Some(approved) = parse_text_approval_command(text) {
                 self.pending_text_approvals.remove(peer_id);
@@ -89,9 +89,15 @@ impl TextImConversationRuntime {
         })
         .await?;
 
-        let Some(reply_outcome) =
-            generate_local_chat_reply_outcome(app_state, app_handle, text, session_id.as_str())
-                .await?
+        let Some(reply_outcome) = generate_local_chat_reply_outcome_detached(
+            app_state,
+            app_handle,
+            profile.id.as_str(),
+            peer_id,
+            text,
+            session_id.as_str(),
+        )
+        .await?
         else {
             return Ok(());
         };
@@ -205,6 +211,59 @@ impl TextImConversationRuntime {
 
         Ok(())
     }
+}
+
+async fn generate_local_chat_reply_outcome_detached(
+    app_state: &AppState,
+    app_handle: &tauri::AppHandle,
+    profile_id: &str,
+    peer_id: &str,
+    text: &str,
+    session_id: &str,
+) -> Result<Option<LocalChatReplyOutcome>, String> {
+    let app_state = app_state.clone();
+    let app_handle = app_handle.clone();
+    let text = text.to_string();
+    let session_id = session_id.to_string();
+    let profile_id = profile_id.to_string();
+    let peer_id = peer_id.to_string();
+
+    log::info!(
+        "im_text_orchestrator_spawn_start profile={} peer={} session={}",
+        profile_id,
+        peer_id,
+        session_id
+    );
+
+    let result = tokio::spawn(async move {
+        generate_local_chat_reply_outcome(
+            &app_state,
+            &app_handle,
+            text.as_str(),
+            session_id.as_str(),
+        )
+        .await
+    })
+    .await
+    .map_err(|err| {
+        let reason = if err.is_panic() {
+            "panic"
+        } else if err.is_cancelled() {
+            "cancelled"
+        } else {
+            "join_error"
+        };
+        format!("im local chat orchestration task failed ({reason}): {err}")
+    })?;
+
+    log::info!(
+        "im_text_orchestrator_spawn_finish profile={} peer={} has_result={}",
+        profile_id,
+        peer_id,
+        matches!(result, Ok(Some(_)))
+    );
+
+    result
 }
 
 fn platform_adapter_for_profile(profile: &ImConnectionProfile) -> ImPlatformAdapter {
