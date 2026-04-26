@@ -87,7 +87,7 @@ export function SyncSourceCard({ source, onSync }: SyncSourceCardProps) {
   const isModelScope = source.type === "modelscope"
   const isDraft = source.status === "draft" || source.serverType === "stdio"
   const isRemote = isModelScope || source.type === "github" || source.type === "url"
-  const theme = sourceTheme[source.type] || sourceTheme.local
+  const theme = sourceTheme[source.type as keyof typeof sourceTheme] || sourceTheme.local
 
   return (
     <GlassCard

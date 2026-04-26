@@ -8,6 +8,8 @@ import { Button } from "@/ui/shadcn/button"
 import { Badge } from "@/ui/shadcn/badge"
 import { Card } from "@/ui/shadcn/card"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/shadcn/tooltip"
+import { ModelPickerField } from "@/components/models/model-picker-field"
+import type { ModelGroup } from "@/lib/api/models"
 
 export interface PlanPhaseData {
   phase_id: string
@@ -22,15 +24,36 @@ interface PlanPhaseCardProps {
   phase: PlanPhaseData
   index: number
   totalPhases: number
+  modelGroups: ModelGroup[]
+  isLoadingModels?: boolean
   onChange: (updated: PlanPhaseData) => void
   onDelete: () => void
   disabled?: boolean
+}
+
+const DIRECT_LLM_PREFIX = "direct_llm:"
+const DEFAULT_WORKER_REF = "direct_llm:default"
+
+function workerRefToModelValue(workerRef: string) {
+  const trimmed = workerRef.trim()
+  if (!trimmed || trimmed === DEFAULT_WORKER_REF) return ""
+  if (trimmed.startsWith(DIRECT_LLM_PREFIX)) {
+    return trimmed.slice(DIRECT_LLM_PREFIX.length)
+  }
+  return trimmed
+}
+
+function modelValueToWorkerRef(value: string) {
+  const trimmed = value.trim()
+  return trimmed ? `${DIRECT_LLM_PREFIX}${trimmed}` : DEFAULT_WORKER_REF
 }
 
 export function PlanPhaseCard({
   phase,
   index,
   totalPhases,
+  modelGroups,
+  isLoadingModels = false,
   onChange,
   onDelete,
   disabled,
@@ -75,14 +98,21 @@ export function PlanPhaseCard({
 
           {/* Worker + Depends */}
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-            <div className="flex items-center gap-1">
-              <span className="text-muted-foreground/60">{t("plan.worker")}:</span>
-              <Input
-                value={phase.worker_ref}
-                onChange={(e) => update({ worker_ref: e.target.value })}
-                placeholder={t("plan.noWorker")}
-                className="h-7 w-52 rounded-full border-transparent bg-background/35 px-3 text-xs focus:border-[color:var(--ios-shell-border)] focus:bg-background/60"
-                disabled={disabled}
+            <div className="w-full max-w-[320px]">
+              <ModelPickerField
+                id={`workflow-phase-${phase.phase_id}-worker-model`}
+                label={t("plan.worker")}
+                placeholder={t("plan.workerModelPlaceholder")}
+                value={workerRefToModelValue(phase.worker_ref)}
+                onChange={(value) => update({ worker_ref: modelValueToWorkerRef(value) })}
+                disabled={disabled || isLoadingModels}
+                isLoading={isLoadingModels}
+                loadingText={t("plan.workerModelLoading")}
+                searchPlaceholder={t("plan.workerModelSearchPlaceholder")}
+                emptyText={t("plan.workerModelEmpty")}
+                noResultsText={t("plan.workerModelNoResults")}
+                modelGroups={modelGroups}
+                resolveValue={(_group, model) => model.provider_model_id ?? model.id}
               />
             </div>
             {phase.depends_on.length > 0 && (

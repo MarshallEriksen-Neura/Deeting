@@ -906,7 +906,7 @@ export const ToolCallBlock = memo<{
   const t = useI18n("chat");
   const [isOpen, setIsOpen] = useState(false);
   const [approvalAction, setApprovalAction] = useState<
-    "allow_once" | "reject_once" | null
+    "allow_once" | "allow_always" | "reject_once" | null
   >(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const recentApprovedExecution = useBridgeApprovalStore(

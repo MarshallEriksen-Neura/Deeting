@@ -64,14 +64,12 @@ export function VoiceTaskAgentEditor({
           <div className="space-y-4">
             <label className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">{t("editor.ui.visibilityFlags")}</label>
             <div className="space-y-6">
-              {[
-                { label: t("editor.fields.discoverable"), checked: draft.discoverable, key: "discoverable" },
-                { label: t("editor.fields.isEnabled"), checked: draft.is_enabled, key: "is_enabled" },
-              ].map((flag: {
-                label: string
-                checked: boolean
-                key: "discoverable" | "is_enabled"
-              }) => (
+              {(
+                [
+                  { label: t("editor.fields.discoverable"), checked: draft.discoverable, key: "discoverable" },
+                  { label: t("editor.fields.isEnabled"), checked: draft.is_enabled, key: "is_enabled" },
+                ] as { label: string; checked: boolean; key: "discoverable" | "is_enabled" }[]
+              ).map((flag) => (
                 <div key={flag.key} className="flex items-center justify-between gap-4">
                   <span className="text-[11px] font-bold tracking-widest text-[var(--ink-2)] uppercase">{flag.label}</span>
                   <Switch
@@ -103,16 +101,13 @@ export function VoiceTaskAgentEditor({
         <div className="font-mono text-[10px] font-bold tracking-[0.4em] text-[var(--ink)] uppercase">{t("editor.voiceConfig.title")}</div>
         
         <div className="grid grid-cols-3 gap-12">
-          {[
-            { label: t("editor.voiceConfig.fields.voice"), value: draft.voice_config.voice, key: "voice", placeholder: t("editor.voiceConfig.placeholders.voice") },
-            { label: t("editor.voiceConfig.fields.responseFormat"), value: draft.voice_config.response_format, key: "response_format", placeholder: t("editor.voiceConfig.placeholders.responseFormat") },
-            { label: t("editor.voiceConfig.fields.speed"), value: draft.voice_config.speed, key: "speed", placeholder: t("editor.voiceConfig.placeholders.speed") },
-          ].map((field: {
-            label: string
-            value: string
-            key: "voice" | "response_format" | "speed"
-            placeholder: string
-          }) => (
+          {(
+            [
+              { label: t("editor.voiceConfig.fields.voice"), value: draft.voice_config.voice, key: "voice", placeholder: t("editor.voiceConfig.placeholders.voice") },
+              { label: t("editor.voiceConfig.fields.responseFormat"), value: draft.voice_config.response_format, key: "response_format", placeholder: t("editor.voiceConfig.placeholders.responseFormat") },
+              { label: t("editor.voiceConfig.fields.speed"), value: draft.voice_config.speed, key: "speed", placeholder: t("editor.voiceConfig.placeholders.speed") },
+            ] as { label: string; value: string; key: "voice" | "response_format" | "speed"; placeholder: string }[]
+          ).map((field) => (
             <div key={field.key} className="space-y-2">
               <label className="font-mono text-[8px] font-bold tracking-[0.2em] text-[var(--ink-4)] uppercase">{field.label}</label>
               <input

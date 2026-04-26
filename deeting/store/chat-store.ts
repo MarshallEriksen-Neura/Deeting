@@ -110,7 +110,7 @@ function filterCompareStateByMessageIds(
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === object && value !== null && !Array.isArray(value)
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function areStoreValuesEqual(left: unknown, right: unknown): boolean {
@@ -409,22 +409,32 @@ export const useChatStore = create<ChatStore>()(
       setSessionId: (sessionId) => set({ sessionId }),
 
       setMessages: (messages) =>
-        set((state) => ({
-          messages: messages.map((message) =>
-            message.role === "assistant"
-              ? {
-                  ...message,
-                  content: "",
-                }
-              : message
-          ),
-          focusedMessageId:
+        set((state) => {
+          const nextMessages = normalizeChatMessages(messages)
+          const nextFocusedMessageId =
             state.focusedMessageId &&
-            messages.some((message) => message.id === state.focusedMessageId)
+            nextMessages.some((message) => message.id === state.focusedMessageId)
               ? state.focusedMessageId
-              : null,
-          compareByMessageId: filterCompareStateByMessageIds(state.compareByMessageId, messages),
-        })),
+              : null
+          const nextCompareByMessageId = filterCompareStateByMessageIds(
+            state.compareByMessageId,
+            nextMessages
+          )
+
+          if (
+            areStoreValuesEqual(state.messages, nextMessages) &&
+            state.focusedMessageId === nextFocusedMessageId &&
+            areStoreValuesEqual(state.compareByMessageId, nextCompareByMessageId)
+          ) {
+            return state
+          }
+
+          return {
+            messages: nextMessages,
+            focusedMessageId: nextFocusedMessageId,
+            compareByMessageId: nextCompareByMessageId,
+          }
+        }),
 
       focusMessage: (messageId) =>
         set({

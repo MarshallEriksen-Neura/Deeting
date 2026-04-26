@@ -98,6 +98,7 @@ export function TaskAgentsClient() {
     handleSelectNewAgentType,
     handleTaskAgentModelChange,
     toggleBinding,
+    applyRecommendedBindings,
     handleSave,
     handleDelete,
     handleReindex,
@@ -381,6 +382,7 @@ export function TaskAgentsClient() {
                       setShowSelectedToolsOnly={setShowSelectedToolsOnly}
                       setShowSelectedSkillsOnly={setShowSelectedSkillsOnly}
                       toggleBinding={toggleBinding}
+                      applyRecommendedBindings={applyRecommendedBindings}
                     />
                   )}
 
@@ -499,8 +501,12 @@ export function TaskAgentsClient() {
   )
 }
 
-function agentVersion(agent: { version?: string | number } | null | undefined) {
+function agentVersion(agent: { updated_at?: string; created_at?: string } | null | undefined) {
   if (!agent) return "001";
-  return String(agent.version || "1").padStart(3, '0');
+  const ts = agent.updated_at || agent.created_at;
+  if (!ts) return "001";
+  // Derive a short version number from the timestamp (seconds since epoch mod 1000)
+  const epoch = Math.floor(new Date(ts).getTime() / 1000) % 1000;
+  return String(epoch).padStart(3, '0');
 }
 

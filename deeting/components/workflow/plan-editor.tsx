@@ -7,6 +7,7 @@ import { Button } from "@/ui/shadcn/button"
 import { ScrollArea } from "@/ui/shadcn/scroll-area"
 import { Separator } from "@/ui/shadcn/separator"
 import { TooltipProvider } from "@/ui/shadcn/tooltip"
+import { useChatModels } from "@/hooks/use-chat-models"
 import { PlanPhaseCard } from "./plan-phase-card"
 import type { PlanPhaseData } from "./plan-phase-card"
 import type { CompilerError } from "@/lib/workflow/types"
@@ -37,6 +38,7 @@ export function PlanEditor({
   const t = useI18n("workflow")
   const [compiling, setCompiling] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
+  const { modelGroups, isLoadingModels } = useChatModels({ modelCapability: "chat" })
 
   const handlePhaseChange = useCallback(
     (index: number, updated: PlanPhaseData) => {
@@ -138,6 +140,8 @@ export function PlanEditor({
                   phase={phase}
                   index={index}
                   totalPhases={phases.length}
+                  modelGroups={modelGroups}
+                  isLoadingModels={isLoadingModels}
                   onChange={(updated) => handlePhaseChange(index, updated)}
                   onDelete={() => handlePhaseDelete(index)}
                   disabled={isDisabled}

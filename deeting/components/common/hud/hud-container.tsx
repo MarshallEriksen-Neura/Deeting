@@ -107,7 +107,7 @@ export default function HUD() {
     ? {
         id: activeModel.id,
         owned_by: activeModel.owned_by,
-        provider_model_id: activeModel.provider_model_id,
+        provider_model_id: activeModel.provider_model_id ?? undefined,
         health_status: activeModel.health_status,
         is_platform: activeModel.is_platform,
         pricing: activeModel.pricing,

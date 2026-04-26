@@ -701,7 +701,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
           <DialogHeader>
             <DialogTitle className="ws-view-title">{t("deleteProvider.title")}</DialogTitle>
             <DialogDescription className="ws-body text-xs opacity-60 leading-relaxed">
-              {t("deleteProvider.description", { name: instance?.name })}
+              {t("deleteProvider.description", { name: instance?.name ?? "" })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-3 mt-4">

@@ -9,6 +9,7 @@ use crate::modules::mcp::store::McpStore;
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
 use tauri::AppHandle;
+use uuid::Uuid;
 
 use crate::modules::workflow::types::{
     ResolvedWorker, WorkerExecutionInput, WorkerExecutionResult,
@@ -120,11 +121,17 @@ fn build_worker_profile_preview_request(
 async fn execute_via_direct_llm(
     app_state: &AppState,
     input: &WorkerExecutionInput,
-    _profile_slug: &str,
+    profile_slug: &str,
 ) -> Result<WorkerExecutionResult, String> {
-    let model_connection = resolve_local_model_connection(app_state, "default", None)
-        .await
-        .map_err(|err| format!("Failed to resolve model: {err}"))?;
+    let (requested_model, requested_provider_model_id) =
+        direct_llm_model_resolution_request(profile_slug);
+    let model_connection = resolve_local_model_connection(
+        app_state,
+        &requested_model,
+        requested_provider_model_id.as_deref(),
+    )
+    .await
+    .map_err(|err| format!("Failed to resolve model: {err}"))?;
     let messages = vec![
         LocalChatInputMessage {
             role: "system".to_string(),
@@ -181,6 +188,19 @@ async fn execute_via_direct_llm(
     })
 }
 
+fn direct_llm_model_resolution_request(profile_slug: &str) -> (String, Option<String>) {
+    let trimmed = profile_slug.trim();
+    if trimmed.is_empty() || trimmed == "default" {
+        return ("default".to_string(), None);
+    }
+
+    if Uuid::parse_str(trimmed).is_ok() {
+        return ("".to_string(), Some(trimmed.to_string()));
+    }
+
+    (trimmed.to_string(), None)
+}
+
 fn normalize_execution_status(status: &str) -> &str {
     match status {
         "completed" | "succeeded" | "success" => "succeeded",
@@ -191,7 +211,10 @@ fn normalize_execution_status(status: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_worker_profile_preview_request, normalize_execution_status};
+    use super::{
+        build_worker_profile_preview_request, direct_llm_model_resolution_request,
+        normalize_execution_status,
+    };
     use crate::modules::workflow::types::{
         ContextConstraints, ContextInputs, ContextJson, ContextPacket, WorkerExecutionInput,
     };
@@ -205,6 +228,37 @@ mod tests {
             .strip_prefix("direct_llm:")
             .expect("direct llm prefix");
         assert_eq!(slug, "default");
+    }
+
+    #[test]
+    fn direct_llm_default_uses_default_model_resolution() {
+        assert_eq!(
+            direct_llm_model_resolution_request("default"),
+            ("default".to_string(), None)
+        );
+        assert_eq!(
+            direct_llm_model_resolution_request(""),
+            ("default".to_string(), None)
+        );
+    }
+
+    #[test]
+    fn direct_llm_uuid_slug_resolves_as_provider_model_id() {
+        assert_eq!(
+            direct_llm_model_resolution_request("22222222-2222-4222-8222-222222222222"),
+            (
+                "".to_string(),
+                Some("22222222-2222-4222-8222-222222222222".to_string())
+            )
+        );
+    }
+
+    #[test]
+    fn direct_llm_named_slug_resolves_as_model_key() {
+        assert_eq!(
+            direct_llm_model_resolution_request("gpt-4o-mini"),
+            ("gpt-4o-mini".to_string(), None)
+        );
     }
 
     #[test]

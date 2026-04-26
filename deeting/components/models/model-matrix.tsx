@@ -11,11 +11,15 @@ import { CAPABILITY_META, formatPrice } from "./types";
 
 interface ModelDataStripProps {
   model: ProviderModel;
+  index?: number;
   onTest: (model: ProviderModel) => void;
   onToggleActive: (model: ProviderModel, active: boolean) => void;
+  onUpdateAlias?: (model: ProviderModel, alias: string) => void;
+  onPurchase?: (model: ProviderModel) => Promise<void> | void;
   onRowClick?: (model: ProviderModel) => void;
   isExpanded?: boolean;
   readOnly?: boolean;
+  isPurchasing?: boolean;
 }
 
 function getModelStatusTone(model: ProviderModel, t: (key: string) => string) {
@@ -108,7 +112,7 @@ export function ModelDataStrip({
             model.is_active ? "text-[var(--ink)]" : "text-[var(--ink-3)]"
           )}>{model.id}</span>
           {isLocked && <Lock className="size-3 text-[var(--warn)]" />}
-          {model.weight > 0 && <Zap className="size-3 text-[var(--ok)] fill-[var(--ok)] opacity-60" />}
+          {(model.weight ?? 0) > 0 && <Zap className="size-3 text-[var(--ok)] fill-[var(--ok)] opacity-60" />}
         </div>
         <div className="mt-0.5 flex min-w-0 items-center gap-2">
           <span className="truncate text-[11px] text-[var(--ink-3)]">{model.display_name || "-"}</span>
@@ -171,10 +175,13 @@ interface ModelMatrixProps {
   models: ProviderModel[];
   onTest: (model: ProviderModel) => void;
   onToggleActive: (model: ProviderModel, active: boolean) => void;
+  onUpdateAlias?: (model: ProviderModel, alias: string) => void;
+  onPurchase?: (model: ProviderModel) => Promise<void> | void;
   readOnly?: boolean;
   selectedModelId?: string | null;
   className?: string;
   onRowClick?: (model: ProviderModel) => void;
+  purchasingModelUuid?: string | null;
 }
 
 export function ModelMatrix({ 

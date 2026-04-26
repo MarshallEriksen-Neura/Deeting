@@ -349,7 +349,7 @@ export function ScanReviewsClient() {
     }
   }
 
-  const stats = [
+  const stats: { label: string; value: number; tone: BlueprintTone; icon: ComponentType<{ className?: string }> }[] = [
     { label: t("stats.documents"), value: data?.summary.document_count ?? 0, tone: "info", icon: FileSearch },
     { label: t("stats.skillBundles"), value: data?.summary.skill_bundle_count ?? 0, tone: "ok", icon: Sparkles },
     { label: t("stats.missingIndexes"), value: data?.summary.index_missing_count ?? 0, tone: "warn", icon: Database },

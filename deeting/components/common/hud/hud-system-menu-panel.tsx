@@ -100,7 +100,7 @@ function MenuLink({ href, icon, label }: { href: AppLinkHref; icon: ReactNode; l
 
   if (isTauriRuntime) {
     return (
-      <a href={href} className={className}>
+      <a href={typeof href === 'string' ? href : String(href)} className={className}>
         {content}
       </a>
     )

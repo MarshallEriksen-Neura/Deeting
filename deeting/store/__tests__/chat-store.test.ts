@@ -710,6 +710,54 @@ describe("useChatStore session state", () => {
     expect(useChatStore.getState().compareByMessageId["assistant-compare-2"]).toBeUndefined()
   })
 
+  it("setMessages should skip duplicate normalized message payloads", () => {
+    const listener = jest.fn()
+    const unsubscribe = useChatStore.subscribe(listener)
+    const blocks: MessageBlock[] = [{ id: "text-duplicate-1", type: "text", content: "hello" }]
+
+    useChatStore.getState().setMessages([
+      {
+        id: "user-duplicate-1",
+        role: "user",
+        content: "run workflow",
+        createdAt: 1,
+      },
+      {
+        id: "assistant-duplicate-1",
+        role: "assistant",
+        content: "legacy shadow content",
+        createdAt: 2,
+        metaInfo: { workflow_live: true },
+        blocks,
+      },
+    ])
+
+    const currentMessages = useChatStore.getState().messages
+    expect(currentMessages[1]?.content).toBe("")
+    expect(listener).toHaveBeenCalledTimes(1)
+
+    useChatStore.getState().setMessages([
+      {
+        id: "user-duplicate-1",
+        role: "user",
+        content: "run workflow",
+        createdAt: 1,
+      },
+      {
+        id: "assistant-duplicate-1",
+        role: "assistant",
+        content: "fresh shadow content",
+        createdAt: 2,
+        metaInfo: { workflow_live: true },
+        blocks: [{ id: "text-duplicate-1", type: "text", content: "hello" }],
+      },
+    ])
+
+    expect(useChatStore.getState().messages).toBe(currentMessages)
+    expect(listener).toHaveBeenCalledTimes(1)
+    unsubscribe()
+  })
+
   it("setStatus should skip duplicate status payloads", () => {
     const listener = jest.fn()
     const unsubscribe = useChatStore.subscribe(listener)
