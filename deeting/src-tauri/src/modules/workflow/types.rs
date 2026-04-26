@@ -297,6 +297,27 @@ pub struct WorkflowPhaseContext {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowArtifactContent {
+    pub run_id: String,
+    pub artifact_ref: String,
+    pub file_name: String,
+    pub kind: String,
+    pub mime_type: String,
+    pub content: Option<String>,
+    pub json: Option<Value>,
+    pub size_bytes: u64,
+    pub can_preview: bool,
+    pub can_open: bool,
+    pub can_export: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportWorkflowArtifactResponse {
+    pub exported: bool,
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateWorkflowRunRequest {
     pub title: String,
     pub goal: String,

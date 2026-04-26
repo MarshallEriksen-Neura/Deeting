@@ -74,6 +74,7 @@ pub(crate) async fn refresh_session_auto_extracted_facts(
     refresh_session_auto_extracted_facts_with_source(app_state, session_id, "new_chat").await
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn refresh_session_auto_extracted_facts_after_chat_turn(
     app_state: AppState,
     session_id: &str,

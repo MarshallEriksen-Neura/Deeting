@@ -9,6 +9,7 @@ import { useLocale } from "next-intl";
 
 import { useI18n } from "@/hooks/use-i18n";
 import { cn } from "@/lib/utils";
+import { useWorkflowStore } from "@/store/workflow-store";
 
 import { resolveIslandStatusLabelKey } from "./island-labels";
 import { IslandSeedLogo } from "./island-seed-logo";
@@ -35,6 +36,34 @@ function TypingDots() {
   );
 }
 
+function useWorkflowProgress() {
+  const run = useWorkflowStore((s) => s.run);
+  const steps = useWorkflowStore((s) => s.steps);
+
+  if (!run || (run.status !== "running" && run.status !== "waiting_approval")) {
+    return null;
+  }
+
+  const sorted = [...steps].sort((a, b) => a.phase_index - b.phase_index);
+  const completedCount = sorted.filter((s) => s.status === "succeeded").length;
+  const totalPhases = run.snapshot_json?.phases?.length ?? sorted.length;
+  const runningStep = sorted.find((s) => s.status === "running");
+
+  return {
+    runId: run.id,
+    completedCount,
+    totalPhases,
+    currentStepTitle: runningStep?.title ?? null,
+  };
+}
+
+function scrollToWorkflowLiveCard(runId: string) {
+  const messageEl = document.querySelector(`[data-message-id="workflow-receipt-${runId}"]`);
+  if (messageEl) {
+    messageEl.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+}
+
 export function IslandCollapsedView({
   dragRegion = false,
   compact = false,
@@ -55,6 +84,7 @@ export function IslandCollapsedView({
     expand,
   } = useIslandContext();
   const t = useI18n("chat");
+  const workflowProgress = useWorkflowProgress();
 
   const isActive =
     statusLabel === "Working..." || statusLabel === "Pending approval";
@@ -141,17 +171,33 @@ export function IslandCollapsedView({
       </div>
 
       {showBusyTrack ? (
-        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-full bg-white/36 px-2.5 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.52)] dark:bg-white/5">
+        <div
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-full bg-white/36 px-2.5 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.52)] dark:bg-white/5 cursor-pointer"
+          onClick={(e) => {
+            if (workflowProgress) {
+              e.stopPropagation();
+              scrollToWorkflowLiveCard(workflowProgress.runId);
+            }
+          }}
+        >
           <TypingDots />
-          <IslandStatusTimeline
-            compact
-            statusLabel={statusLabel}
-            statusStage={statusStage}
-            statusCode={statusCode}
-            statusMeta={statusMeta}
-            stageHistory={stageHistory}
-            isBusy={isBusy}
-          />
+          {workflowProgress ? (
+            <span className="text-[11px] font-medium text-foreground/60 truncate">
+              {workflowProgress.currentStepTitle
+                ? `${workflowProgress.completedCount}/${workflowProgress.totalPhases} · ${workflowProgress.currentStepTitle}`
+                : `步骤 ${workflowProgress.completedCount}/${workflowProgress.totalPhases}`}
+            </span>
+          ) : (
+            <IslandStatusTimeline
+              compact
+              statusLabel={statusLabel}
+              statusStage={statusStage}
+              statusCode={statusCode}
+              statusMeta={statusMeta}
+              stageHistory={stageHistory}
+              isBusy={isBusy}
+            />
+          )}
         </div>
       ) : (
         <div className="flex min-w-0 flex-1 items-center gap-2 rounded-full bg-white/36 px-2.5 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.52)] dark:bg-white/5">

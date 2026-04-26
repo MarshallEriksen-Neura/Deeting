@@ -153,6 +153,27 @@ export interface WorkflowPhaseContext {
   context_json: Record<string, unknown> | null
 }
 
+export type WorkflowArtifactContentKind = "markdown" | "json" | "text" | "file"
+
+export interface WorkflowArtifactContent {
+  run_id: string
+  artifact_ref: string
+  file_name: string
+  kind: WorkflowArtifactContentKind
+  mime_type: string
+  content: string | null
+  json: unknown | null
+  size_bytes: number
+  can_preview: boolean
+  can_open: boolean
+  can_export: boolean
+}
+
+export interface ExportWorkflowArtifactResponse {
+  exported: boolean
+  path: string | null
+}
+
 // --- Snapshot Models ---
 
 export interface ExecutionSnapshot {

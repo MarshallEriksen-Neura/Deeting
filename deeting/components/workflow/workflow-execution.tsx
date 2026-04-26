@@ -1,6 +1,6 @@
 "use client"
 
-import { ArrowLeft } from "lucide-react"
+import { AlertTriangle, ArrowLeft, CheckCircle2, Loader2 } from "lucide-react"
 import { useI18n } from "@/hooks/use-i18n"
 import { Button } from "@/ui/shadcn/button"
 import { Progress } from "@/ui/shadcn/progress"
@@ -13,10 +13,13 @@ interface WorkflowExecutionProps {
   run: WorkflowRun
   steps: WorkflowStepRun[]
   activePhaseId: string | null
+  resultFocusPhaseId: string | null
+  failureFocusPhaseId: string | null
   expandedPhaseIds: Set<string>
   onToggleExpand: (phaseId: string) => void
   onRerunPhase: (phaseId: string) => void
   onViewContext: (phaseId: string) => void
+  onResumeWorkflow?: () => void
   onBack: () => void
   onCancel?: () => void
 }
@@ -34,10 +37,13 @@ export function WorkflowExecution({
   run,
   steps,
   activePhaseId,
+  resultFocusPhaseId,
+  failureFocusPhaseId,
   expandedPhaseIds,
   onToggleExpand,
   onRerunPhase,
   onViewContext,
+  onResumeWorkflow,
   onBack,
   onCancel,
 }: WorkflowExecutionProps) {
@@ -47,6 +53,13 @@ export function WorkflowExecution({
   const succeededCount = steps.filter((s) => s.status === "succeeded").length
   const progressPercent = totalPhases > 0 ? Math.round((succeededCount / totalPhases) * 100) : 0
   const isRunning = run.status === "running"
+  const needsConfirmation = run.status === "awaiting_plan_edit"
+  const sortedSteps = [...steps].sort((a, b) => a.phase_index - b.phase_index)
+  const focusStep =
+    run.status === "failed" || run.status === "cancelled"
+      ? sortedSteps.find((step) => step.phase_id === failureFocusPhaseId)
+      : sortedSteps.find((step) => step.phase_id === resultFocusPhaseId)
+        ?? sortedSteps.find((step) => step.phase_id === activePhaseId)
 
   const badge = runStatusBadge[run.status] ?? { label: "status.draft", variant: "secondary" as const }
 
@@ -65,11 +78,18 @@ export function WorkflowExecution({
             </Badge>
           </div>
         </div>
-        {isRunning && onCancel && (
-          <Button variant="ios" size="sm" className="text-xs" onClick={onCancel}>
-            {t("execution.cancel")}
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {needsConfirmation && onResumeWorkflow ? (
+            <Button variant="ios" size="sm" className="text-xs" onClick={onResumeWorkflow}>
+              {t("execution.continue")}
+            </Button>
+          ) : null}
+          {isRunning && onCancel && (
+            <Button variant="ios" size="sm" className="text-xs" onClick={onCancel}>
+              {t("execution.cancel")}
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Progress */}
@@ -78,8 +98,17 @@ export function WorkflowExecution({
           <span>{t("execution.phaseOf", { current: succeededCount, total: totalPhases })}</span>
           <span>{progressPercent}%</span>
         </div>
-        <Progress value={progressPercent} className="h-[2px] rounded-none bg-black/5 dark:bg-white/5" indicatorClassName="bg-emerald-500" />
+        <Progress value={progressPercent} className="h-[2px] rounded-none bg-black/5 dark:bg-white/5" />
       </div>
+
+      {focusStep && (
+        <WorkflowFocusPanel
+          run={run}
+          step={focusStep}
+          onRerun={focusStep.status === "failed" ? () => onRerunPhase(focusStep.phase_id) : undefined}
+          onViewContext={focusStep.status === "succeeded" ? () => onViewContext(focusStep.phase_id) : undefined}
+        />
+      )}
 
       {/* Timeline */}
       <ScrollArea className="min-h-0 flex-1">
@@ -89,14 +118,16 @@ export function WorkflowExecution({
               {t("execution.pending")}
             </div>
           ) : (
-            steps
-              .sort((a, b) => a.phase_index - b.phase_index)
-              .map((step) => (
+            sortedSteps.map((step) => (
                 <TimelinePhase
                   key={step.id}
                   step={step}
                   isActive={step.phase_id === activePhaseId}
-                  isExpanded={expandedPhaseIds.has(step.phase_id)}
+                  isExpanded={
+                    expandedPhaseIds.has(step.phase_id) ||
+                    step.phase_id === resultFocusPhaseId ||
+                    step.phase_id === failureFocusPhaseId
+                  }
                   onToggleExpand={() => onToggleExpand(step.phase_id)}
                   onRerun={step.status === "failed" ? () => onRerunPhase(step.phase_id) : undefined}
                   onViewContext={step.status === "succeeded" ? () => onViewContext(step.phase_id) : undefined}
@@ -107,4 +138,93 @@ export function WorkflowExecution({
       </ScrollArea>
     </div>
   )
+}
+
+function WorkflowFocusPanel({
+  run,
+  step,
+  onRerun,
+  onViewContext,
+}: {
+  run: WorkflowRun
+  step: WorkflowStepRun
+  onRerun?: () => void
+  onViewContext?: () => void
+}) {
+  const t = useI18n("workflow")
+  const isFailed = step.status === "failed" || run.status === "failed" || run.status === "cancelled"
+  const isCompleted = step.status === "succeeded" && (run.status === "completed" || run.status === "awaiting_plan_edit")
+  const Icon = isFailed ? AlertTriangle : isCompleted ? CheckCircle2 : Loader2
+  const summary = isFailed
+    ? step.error || run.error || step.worker_trace_summary || step.goal
+    : step.worker_trace_summary || step.goal
+
+  return (
+    <div className="border-b border-[color:var(--ios-shell-border)] px-5 py-4">
+      <div className={`rounded-[16px] border px-4 py-3 ${
+        isFailed
+          ? "border-rose-500/25 bg-rose-500/5"
+          : isCompleted
+            ? "border-emerald-500/25 bg-emerald-500/5"
+            : "border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)]"
+      }`}>
+        <div className="flex items-start gap-3">
+          <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${
+            isFailed ? "text-rose-500" : isCompleted ? "text-emerald-500" : "animate-spin text-muted-foreground"
+          }`} />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/70">
+                  {isFailed ? t("execution.failed") : isCompleted ? t("execution.completed") : t("execution.running")}
+                </div>
+                <div className="mt-0.5 truncate text-[13px] font-semibold tracking-tight">
+                  {step.title || step.phase_id}
+                </div>
+              </div>
+              <div className="shrink-0 font-mono text-[10px] text-muted-foreground/60">{step.phase_id}</div>
+            </div>
+
+            {summary ? (
+              <p className="mt-2 whitespace-pre-wrap text-[12px] leading-5 text-muted-foreground/80 line-clamp-6">
+                {summary}
+              </p>
+            ) : (
+              <p className="mt-2 text-[12px] leading-5 text-muted-foreground/60">{t("result.noResults")}</p>
+            )}
+
+            {step.output_artifact_refs.length > 0 && (
+              <div className="mt-3 space-y-1">
+                <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/60">
+                  {t("result.artifacts")}
+                </div>
+                {step.output_artifact_refs.map((artifact) => (
+                  <div key={artifact} className="truncate font-mono text-[10px] text-muted-foreground/80">
+                    {formatArtifactLabel(artifact)}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              {onViewContext && (
+                <Button variant="ios" size="xs" className="h-7 rounded-[8px] px-2 text-[10px]" onClick={onViewContext}>
+                  {t("result.viewFullContext")}
+                </Button>
+              )}
+              {onRerun && (
+                <Button variant="ios" size="xs" className="h-7 rounded-[8px] px-2 text-[10px]" onClick={onRerun}>
+                  {t("execution.rerunPhase")}
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function formatArtifactLabel(ref: string): string {
+  return ref.split(/[\\/]/).pop() || "Artifact"
 }

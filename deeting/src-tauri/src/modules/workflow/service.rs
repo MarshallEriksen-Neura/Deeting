@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 use crate::modules::mcp::store::McpStore;
 use crate::modules::workflow::compiler;
@@ -9,12 +9,15 @@ use crate::modules::workflow::types::{
     ApprovalAction, ApprovalGroup, ApprovalGroupPolicy, ApprovalGroupUpdate, ApprovalItem,
     ApprovalItemStatus, ApproveWorkflowRequest, CompileResult, CreateWorkflowEventRequest,
     CreateWorkflowRunRequest, EditRemainingPhasesRequest, ExecutionSnapshot,
-    GenerateProposalRequest, QuickWorkflowRequest, QuickWorkflowResult, RegenerateProposalRequest,
-    RerunPhaseRequest, UpdateProposalRequest, WorkflowPhaseContext, WorkflowRun, WorkflowRunDetail,
+    ExportWorkflowArtifactResponse, GenerateProposalRequest, QuickWorkflowRequest,
+    QuickWorkflowResult, RegenerateProposalRequest, RerunPhaseRequest, UpdateProposalRequest,
+    WorkflowArtifactContent, WorkflowPhaseContext, WorkflowRun, WorkflowRunDetail,
     WorkflowRunStatus, WorkflowStepStatus,
 };
 use crate::state::AppState;
 use tauri::Manager;
+use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_opener::OpenerExt;
 
 pub(crate) async fn persist_generated_proposal(
     store: &McpStore,
@@ -563,10 +566,7 @@ pub(crate) async fn start_workflow_run_with_stream(
     claim_run_for_start(store_ref, run_id).await?;
 
     let _final_status = crate::modules::workflow::scheduler::run_workflow_with_stream(
-        app_handle,
-        app_state,
-        run_id,
-        stream_tx,
+        app_handle, app_state, run_id, stream_tx,
     )
     .await?;
 
@@ -613,6 +613,195 @@ pub(crate) async fn get_workflow_phase_context(
         context_md,
         context_json,
     })
+}
+
+pub(crate) async fn get_workflow_artifact_content(
+    app_handle: &tauri::AppHandle,
+    app_state: &AppState,
+    run_id: &str,
+    artifact_ref: &str,
+) -> Result<WorkflowArtifactContent, String> {
+    let detail = get_workflow_run_status(app_state, run_id).await?;
+    let artifact_path = resolve_workflow_artifact_path(app_handle, &detail.run, artifact_ref)?;
+    let metadata = std::fs::metadata(&artifact_path)
+        .map_err(|err| format!("Failed to read workflow artifact metadata: {err}"))?;
+    let file_name = artifact_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("artifact")
+        .to_string();
+    let kind = classify_artifact_kind(&artifact_path);
+    let mime_type = artifact_mime_type(&kind).to_string();
+    let can_preview = matches!(kind.as_str(), "markdown" | "json" | "text");
+    let text = if can_preview {
+        Some(
+            std::fs::read_to_string(&artifact_path)
+                .map_err(|err| format!("Failed to read workflow artifact: {err}"))?,
+        )
+    } else {
+        None
+    };
+    let json = if kind == "json" {
+        match text.as_deref() {
+            Some(content) => Some(
+                serde_json::from_str(content)
+                    .map_err(|err| format!("Failed to parse workflow artifact JSON: {err}"))?,
+            ),
+            None => None,
+        }
+    } else {
+        None
+    };
+
+    Ok(WorkflowArtifactContent {
+        run_id: detail.run.id,
+        artifact_ref: artifact_ref.trim().to_string(),
+        file_name,
+        kind,
+        mime_type,
+        content: text,
+        json,
+        size_bytes: metadata.len(),
+        can_preview,
+        can_open: true,
+        can_export: true,
+    })
+}
+
+pub(crate) async fn open_workflow_artifact(
+    app_handle: &tauri::AppHandle,
+    app_state: &AppState,
+    run_id: &str,
+    artifact_ref: &str,
+) -> Result<(), String> {
+    let detail = get_workflow_run_status(app_state, run_id).await?;
+    let artifact_path = resolve_workflow_artifact_path(app_handle, &detail.run, artifact_ref)?;
+    app_handle
+        .opener()
+        .open_path(artifact_path.to_string_lossy().to_string(), None::<&str>)
+        .map_err(|err| format!("Failed to open workflow artifact: {err}"))
+}
+
+pub(crate) async fn export_workflow_artifact(
+    app_handle: &tauri::AppHandle,
+    app_state: &AppState,
+    run_id: &str,
+    artifact_ref: &str,
+) -> Result<ExportWorkflowArtifactResponse, String> {
+    let detail = get_workflow_run_status(app_state, run_id).await?;
+    let artifact_path = resolve_workflow_artifact_path(app_handle, &detail.run, artifact_ref)?;
+    let source_name = artifact_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .map(str::to_string)
+        .ok_or_else(|| "Failed to resolve workflow artifact filename".to_string())?;
+
+    let mut dialog = app_handle.dialog().file().set_file_name(source_name);
+    if let Some(downloads_dir) = dirs::download_dir() {
+        dialog = dialog.set_directory(downloads_dir);
+    }
+    if let Some(extension) = artifact_path.extension().and_then(|value| value.to_str()) {
+        let upper = extension.to_ascii_uppercase();
+        dialog = dialog.add_filter(upper, &[extension]);
+    }
+
+    let destination = dialog.blocking_save_file();
+    let Some(destination) = destination else {
+        return Ok(ExportWorkflowArtifactResponse {
+            exported: false,
+            path: None,
+        });
+    };
+
+    let destination_path = destination
+        .into_path()
+        .map_err(|err| format!("Invalid workflow artifact export path: {err}"))?;
+    if let Some(parent_dir) = destination_path.parent() {
+        std::fs::create_dir_all(parent_dir)
+            .map_err(|err| format!("Failed to create export directory: {err}"))?;
+    }
+    std::fs::copy(&artifact_path, &destination_path)
+        .map_err(|err| format!("Failed to export workflow artifact: {err}"))?;
+
+    Ok(ExportWorkflowArtifactResponse {
+        exported: true,
+        path: Some(destination_path.to_string_lossy().to_string()),
+    })
+}
+
+fn resolve_workflow_artifact_path(
+    app_handle: &tauri::AppHandle,
+    run: &WorkflowRun,
+    artifact_ref: &str,
+) -> Result<PathBuf, String> {
+    let normalized_ref = artifact_ref.trim();
+    if normalized_ref.is_empty() {
+        return Err("artifact_ref is required".to_string());
+    }
+
+    let relative_ref = Path::new(normalized_ref);
+    if relative_ref.is_absolute()
+        || relative_ref.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return Err("invalid artifact_ref: must be a relative workflow artifact path".to_string());
+    }
+
+    let run_dir_path = run
+        .run_dir
+        .as_deref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            run_dir::resolve_run_dir(app_handle.path().app_data_dir().ok(), &run.id)
+        });
+    let phases_dir = run_dir_path.join("phases");
+    let artifact_path = phases_dir.join(relative_ref);
+    if !artifact_path.exists() {
+        return Err("workflow artifact not found".to_string());
+    }
+
+    let canonical_phases_dir = phases_dir
+        .canonicalize()
+        .map_err(|err| format!("Failed to resolve workflow phases directory: {err}"))?;
+    let canonical_artifact = artifact_path
+        .canonicalize()
+        .map_err(|err| format!("Failed to resolve workflow artifact path: {err}"))?;
+    if !canonical_artifact.starts_with(&canonical_phases_dir) {
+        return Err("invalid artifact_ref: artifact is outside this workflow run".to_string());
+    }
+    if !canonical_artifact.is_file() {
+        return Err("workflow artifact is not a file".to_string());
+    }
+
+    Ok(canonical_artifact)
+}
+
+fn classify_artifact_kind(path: &Path) -> String {
+    match path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "md" | "markdown" => "markdown".to_string(),
+        "json" => "json".to_string(),
+        "txt" | "csv" | "log" => "text".to_string(),
+        _ => "file".to_string(),
+    }
+}
+
+fn artifact_mime_type(kind: &str) -> &'static str {
+    match kind {
+        "markdown" => "text/markdown",
+        "json" => "application/json",
+        "text" => "text/plain",
+        _ => "application/octet-stream",
+    }
 }
 
 pub(crate) async fn approve_workflow(
@@ -926,11 +1115,12 @@ async fn claim_run_for_resume(store_ref: &McpStore, run_id: &str) -> Result<(), 
     }
     match run.status {
         WorkflowRunStatus::Running => Ok(()),
-        WorkflowRunStatus::Ready => {
+        WorkflowRunStatus::Ready | WorkflowRunStatus::AwaitingPlanEdit => {
+            let current_status = run.status.clone();
             let claimed = store::transition_workflow_run_status_if_current(
                 store_ref,
                 run_id,
-                WorkflowRunStatus::Ready,
+                current_status,
                 WorkflowRunStatus::Running,
             )
             .await
@@ -942,7 +1132,7 @@ async fn claim_run_for_resume(store_ref: &McpStore, run_id: &str) -> Result<(), 
             }
         }
         other => Err(format!(
-            "Run must be in 'ready' or 'running' status to resume, currently: {}",
+            "Run must be in 'ready', 'running', or 'awaiting_plan_edit' status to resume, currently: {}",
             other
         )),
     }
@@ -2403,6 +2593,36 @@ Goal: Produce a useful output
             .await
             .expect_err("resume without snapshot should fail");
         assert!(error.contains("snapshot"));
+    }
+
+    #[tokio::test]
+    async fn claim_run_for_resume_allows_paused_run_with_snapshot() {
+        let store = create_test_store("resume-paused-with-snapshot").await;
+        let app_data_dir = temp_app_data_dir("resume-paused-with-snapshot");
+        let run = persist_generated_proposal(
+            &store,
+            Some(app_data_dir.clone()),
+            "Workflow Runtime V2".to_string(),
+            "Continue a paused workflow".to_string(),
+            SAMPLE_PROPOSAL.to_string(),
+            false,
+        )
+        .await
+        .expect("persist proposal");
+        let _compiled = compile_current_proposal(&store, Some(app_data_dir.clone()), &run.id)
+            .await
+            .expect("compile proposal");
+        store::update_workflow_run_status(&store, &run.id, WorkflowRunStatus::AwaitingPlanEdit)
+            .await
+            .expect("set awaiting edit");
+
+        claim_run_for_resume(&store, &run.id)
+            .await
+            .expect("paused run with snapshot should resume");
+        let resumed = load_run(&store, &run.id).await.expect("reload run");
+        assert_eq!(resumed.status, WorkflowRunStatus::Running);
+
+        std::fs::remove_dir_all(app_data_dir).ok();
     }
 
     #[tokio::test]

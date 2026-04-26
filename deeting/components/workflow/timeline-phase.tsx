@@ -44,6 +44,7 @@ export function TimelinePhase({
   const isRunning = step.status === "running"
   const isCompleted = step.status === "succeeded"
   const isFailed = step.status === "failed"
+  const hasResult = Boolean(step.worker_trace_summary || step.output_artifact_refs.length > 0)
 
   const duration = computeDuration(step)
 
@@ -113,7 +114,7 @@ export function TimelinePhase({
         )}
 
         {/* Expandable results for completed phases */}
-        {isCompleted && step.worker_trace_summary && (
+        {isCompleted && hasResult && (
           <Collapsible open={isExpanded} onOpenChange={onToggleExpand}>
             <CollapsibleTrigger asChild>
               <Button variant="ghost" size="xs" className="mt-1.5 h-6 px-1 font-mono text-[10px] text-muted-foreground/60 hover:bg-transparent hover:text-foreground">
@@ -122,9 +123,18 @@ export function TimelinePhase({
             </CollapsibleTrigger>
             <CollapsibleContent>
               <div className="mt-2 border-l-2 border-emerald-500/20 bg-emerald-500/5 py-2 pl-3 pr-2">
-                <p className="font-mono text-[10px] leading-relaxed text-muted-foreground/80 whitespace-pre-wrap line-clamp-10">
-                  {step.worker_trace_summary}
-                </p>
+                {step.worker_trace_summary && (
+                  <p className="font-mono text-[10px] leading-relaxed text-muted-foreground/80 whitespace-pre-wrap line-clamp-10">
+                    {step.worker_trace_summary}
+                  </p>
+                )}
+                {step.output_artifact_refs.length > 0 && (
+                  <div className="mt-2 space-y-1 font-mono text-[10px] text-muted-foreground/70">
+                    {step.output_artifact_refs.map((artifact) => (
+                      <div key={artifact} className="truncate">{formatArtifactLabel(artifact)}</div>
+                    ))}
+                  </div>
+                )}
                 {onViewContext && (
                   <Button
                     variant="ghost"
@@ -142,6 +152,10 @@ export function TimelinePhase({
       </div>
     </div>
   )
+}
+
+function formatArtifactLabel(ref: string): string {
+  return ref.split(/[\\/]/).pop() || "Artifact"
 }
 
 function computeDuration(step: WorkflowStepRun): string | null {

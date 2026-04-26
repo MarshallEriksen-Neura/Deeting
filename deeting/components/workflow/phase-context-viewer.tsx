@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { Copy, Check } from "lucide-react"
+import { MarkdownViewer } from "@/components/chat/markdown-viewer"
 import { useI18n } from "@/hooks/use-i18n"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/ui/shadcn/sheet"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/shadcn/tabs"
@@ -74,9 +75,14 @@ export function PhaseContextViewer({
               </Button>
               <ScrollArea className="h-full">
                 <div className="p-4 pt-2">
-                  <pre className="whitespace-pre-wrap text-sm text-muted-foreground font-sans leading-relaxed">
-                    {contextMd ?? t("result.noResults")}
-                  </pre>
+                  {contextMd ? (
+                    <MarkdownViewer
+                      content={contextMd}
+                      className="chat-markdown chat-markdown-assistant text-sm leading-relaxed"
+                    />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">{t("result.noResults")}</p>
+                  )}
                 </div>
               </ScrollArea>
             </div>

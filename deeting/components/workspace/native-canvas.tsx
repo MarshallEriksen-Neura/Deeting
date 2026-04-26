@@ -5,7 +5,22 @@ import { useI18n } from "@/hooks/use-i18n"
 import PageInspectionResultPanel from "@/components/inspection/page-inspection-result-panel"
 import type { NativeCanvasView } from "@/store/workspace-store"
 import { WorkflowRuntime } from "@/components/workflow/workflow-runtime"
+import { TerminalDashboard } from "@/components/dashboard/terminal-dashboard"
+import { useWorkflowStore } from "@/store/workflow-store"
 import ViewBlock from "@/components/views/view-block"
+
+function WorkflowMonitorPanel() {
+  const run = useWorkflowStore((s) => s.run);
+  const steps = useWorkflowStore((s) => s.steps);
+  const events = useWorkflowStore((s) => s.events);
+  return (
+    <TerminalDashboard
+      workflowRun={run}
+      workflowSteps={steps}
+      workflowEvents={events}
+    />
+  );
+}
 
 export function NativeCanvasRenderer({
   view,
@@ -24,6 +39,11 @@ export function NativeCanvasRenderer({
         initialContextPhaseId={view.content.contextPhaseId as string | undefined}
       />
     )
+  }
+
+  // Workflow monitoring dashboard (Atelier mode)
+  if (view.content?.viewType === "workflow.monitor") {
+    return <WorkflowMonitorPanel />
   }
 
   if (view.content?.viewType === "page-inspection" && view.content?.result) {

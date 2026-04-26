@@ -6,8 +6,9 @@ use super::service;
 use super::store;
 use super::types::{
     ApproveWorkflowRequest, CompileResult, CreateWorkflowRunRequest, EditRemainingPhasesRequest,
-    GenerateProposalRequest, QuickWorkflowRequest, QuickWorkflowResult, RegenerateProposalRequest,
-    RerunPhaseRequest, UpdateProposalRequest, WorkflowPhaseContext, WorkflowRun, WorkflowRunDetail,
+    ExportWorkflowArtifactResponse, GenerateProposalRequest, QuickWorkflowRequest,
+    QuickWorkflowResult, RegenerateProposalRequest, RerunPhaseRequest, UpdateProposalRequest,
+    WorkflowArtifactContent, WorkflowPhaseContext, WorkflowRun, WorkflowRunDetail,
 };
 
 #[tauri::command]
@@ -149,6 +150,36 @@ pub async fn get_workflow_phase_context(
     phase_id: String,
 ) -> Result<WorkflowPhaseContext, String> {
     service::get_workflow_phase_context(&app, state.inner(), &run_id, &phase_id).await
+}
+
+#[tauri::command]
+pub async fn get_workflow_artifact_content(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    run_id: String,
+    artifact_ref: String,
+) -> Result<WorkflowArtifactContent, String> {
+    service::get_workflow_artifact_content(&app, state.inner(), &run_id, &artifact_ref).await
+}
+
+#[tauri::command]
+pub async fn open_workflow_artifact(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    run_id: String,
+    artifact_ref: String,
+) -> Result<(), String> {
+    service::open_workflow_artifact(&app, state.inner(), &run_id, &artifact_ref).await
+}
+
+#[tauri::command]
+pub async fn export_workflow_artifact(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    run_id: String,
+    artifact_ref: String,
+) -> Result<ExportWorkflowArtifactResponse, String> {
+    service::export_workflow_artifact(&app, state.inner(), &run_id, &artifact_ref).await
 }
 
 #[tauri::command]

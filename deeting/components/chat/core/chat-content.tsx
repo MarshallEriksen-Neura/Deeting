@@ -6,14 +6,20 @@ import { useChatRuntimeStore } from "@/store/chat-runtime-store"
 import { useChatMessagingService } from "@/hooks/chat/use-chat-messaging-service"
 import { useHydratePendingToolApproval } from "@/hooks/chat/use-hydrate-pending-tool-approval"
 import { useBrowserModeToolActivity } from "@/hooks/chat/use-browser-mode-tool-activity"
-import { useWorkspaceStore } from "@/store/workspace-store"
 import { useWorkflowStore } from "@/store/workflow-store"
-import { TerminalDashboard } from "@/components/dashboard/terminal-dashboard"
+import {
+  buildWorkflowReceiptBlocks,
+  buildWorkflowLiveBlocks,
+  buildWorkflowPlanBlocks,
+  isWorkflowTerminal,
+} from "@/lib/workflow/presentation"
+import type { Message } from "@/store/chat-store"
 
 /**
  * ChatContent - 聊天内容组件（重构版）
  *
- * 直接从 useChatStore 读取状态，不再需要 Context
+ * 直接从 useChatStore 读取状态，不再需要 Context。
+ * Workflow 执行进度通过 Chat 内实时消息卡片展示，不再替换 Chat 区域。
  */
 
 interface ChatContentProps {
@@ -32,6 +38,7 @@ export function ChatContent({ agent }: ChatContentProps) {
   const statusCode = useChatRuntimeStore((state) => state.statusCode)
   const statusMeta = useChatRuntimeStore((state) => state.statusMeta)
   const sendFeedback = useChatStore((state) => state.sendFeedback)
+  const setMessages = useChatStore((state) => state.setMessages)
   const {
     regenerateMessage,
     compareWithModel,
@@ -40,47 +47,113 @@ export function ChatContent({ agent }: ChatContentProps) {
   useHydratePendingToolApproval(sessionId, messages)
   useBrowserModeToolActivity(messages)
 
-  const activeViewId = useWorkspaceStore((state) => state.activeViewId)
-  const views = useWorkspaceStore((state) => state.views)
-  
-  const isWorkflowActiveInWorkspace = React.useMemo(() => {
-    const activeView = views.find(v => v.id === activeViewId)
-    return activeView?.type === "native-canvas" && activeView.content?.viewType === "workflow"
-  }, [activeViewId, views])
-
-  const workflowViewStatus = useWorkflowStore((state) => state.view)
   const workflowRun = useWorkflowStore((state) => state.run)
   const workflowSteps = useWorkflowStore((state) => state.steps)
-  const workflowEvents = useWorkflowStore((state) => state.events)
-  const isWorkflowExecuting = isWorkflowActiveInWorkspace && workflowViewStatus === "execution"
+  const workflowView = useWorkflowStore((state) => state.view)
+
+  // Inject or update workflow progress/receipt message in the chat stream
+  React.useEffect(() => {
+    if (!workflowRun) return
+
+    const messageId = `workflow-receipt-${workflowRun.id}`
+
+    if (isWorkflowTerminal(workflowRun.status)) {
+      // Terminal state → show the result receipt
+      const existing = messages.find((m) => m.id === messageId)
+      const existingReceipt = existing?.metaInfo?.workflow_receipt
+      if (
+        existingReceipt &&
+        typeof existingReceipt === "object" &&
+        "status" in existingReceipt &&
+        "updated_at" in existingReceipt &&
+        existingReceipt.status === workflowRun.status &&
+        existingReceipt.updated_at === workflowRun.updated_at
+      ) {
+        return
+      }
+
+      const nextReceipt: Message = {
+        id: messageId,
+        role: "assistant",
+        content: "",
+        createdAt: existing?.createdAt ?? Date.now(),
+        metaInfo: {
+          ...(existing?.metaInfo ?? {}),
+          workflow_receipt: {
+            run_id: workflowRun.id,
+            status: workflowRun.status,
+            updated_at: workflowRun.updated_at,
+          },
+        },
+        blocks: buildWorkflowReceiptBlocks(workflowRun, workflowSteps),
+      }
+
+      setMessages(
+        existing
+          ? messages.map((m) => (m.id === messageId ? nextReceipt : m))
+          : [...messages, nextReceipt]
+      )
+    } else if (workflowRun.status === "running" || workflowRun.status === "waiting_approval") {
+      // Active state → show the live progress card
+      const existing = messages.find((m) => m.id === messageId)
+
+      const liveMessage: Message = {
+        id: messageId,
+        role: "assistant",
+        content: "",
+        createdAt: existing?.createdAt ?? Date.now(),
+        metaInfo: {
+          ...(existing?.metaInfo ?? {}),
+          workflow_live: true,
+        },
+        blocks: buildWorkflowLiveBlocks(workflowRun, workflowSteps),
+      }
+
+      setMessages(
+        existing
+          ? messages.map((m) => (m.id === messageId ? liveMessage : m))
+          : [...messages, liveMessage]
+      )
+    } else if (
+      (workflowRun.status === "draft" || workflowRun.status === "ready") &&
+      workflowView === "editor" &&
+      workflowRun.snapshot_json?.phases?.length
+    ) {
+      // Plan ready → show the plan confirmation card in chat
+      const planMessageId = `workflow-plan-${workflowRun.id}`
+      const existing = messages.find((m) => m.id === planMessageId)
+      if (existing) return // Already injected
+
+      const planMessage: Message = {
+        id: planMessageId,
+        role: "assistant",
+        content: "",
+        createdAt: Date.now(),
+        metaInfo: { workflow_plan: true },
+        blocks: buildWorkflowPlanBlocks(workflowRun),
+      }
+
+      setMessages([...messages, planMessage])
+    }
+  }, [messages, setMessages, workflowRun, workflowSteps])
 
   return (
     <div className="flex flex-1 min-h-0 h-full w-full">
-      {isWorkflowExecuting ? (
-        <div className="flex-1 w-full h-full animate-in fade-in slide-in-from-bottom-2 duration-500">
-          <TerminalDashboard
-            workflowRun={workflowRun}
-            workflowSteps={workflowSteps}
-            workflowEvents={workflowEvents}
-          />
-        </div>
-      ) : (
-        <ChatMessageList
-          messages={messages}
-          agent={agent}
-          isTyping={isTyping}
-          statusMessageId={statusMessageId}
-          streamEnabled={streamEnabled}
-          statusStage={statusStage}
-          statusCode={statusCode}
-          statusMeta={statusMeta}
-          onRegenerate={regenerateMessage}
-          onLike={(id) => void sendFeedback(id, 1)}
-          onDislike={(id) => void sendFeedback(id, -1)}
-          onCompareWithModel={compareWithModel}
-          onFinalizeCompare={finalizeCompareWinner}
-        />
-      )}
+      <ChatMessageList
+        messages={messages}
+        agent={agent}
+        isTyping={isTyping}
+        statusMessageId={statusMessageId}
+        streamEnabled={streamEnabled}
+        statusStage={statusStage}
+        statusCode={statusCode}
+        statusMeta={statusMeta}
+        onRegenerate={regenerateMessage}
+        onLike={(id) => void sendFeedback(id, 1)}
+        onDislike={(id) => void sendFeedback(id, -1)}
+        onCompareWithModel={compareWithModel}
+        onFinalizeCompare={finalizeCompareWinner}
+      />
     </div>
   )
 }

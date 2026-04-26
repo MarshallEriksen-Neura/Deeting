@@ -37,6 +37,8 @@ export interface WorkflowState {
 
   // Execution state
   activePhaseId: string | null
+  resultFocusPhaseId: string | null
+  failureFocusPhaseId: string | null
   expandedPhaseIds: Set<string>
 
   // Approval state
@@ -91,6 +93,8 @@ const emptyState = {
   editedProposal: null,
   proposalDirty: false,
   activePhaseId: null,
+  resultFocusPhaseId: null,
+  failureFocusPhaseId: null,
   expandedPhaseIds: new Set<string>(),
   approvalPending: false,
   contextViewerPhaseId: null,
@@ -119,6 +123,11 @@ export const useWorkflowStore = create<WorkflowState>()(
       setRunDetail: (detail) => {
         const view = deriveView(detail.run.status)
         const activePhaseId = findActivePhaseId(detail.steps)
+        const resultFocusPhaseId = findResultFocusPhaseId(detail.run.status, detail.steps)
+        const failureFocusPhaseId = findFailureFocusPhaseId(detail.run.status, detail.steps)
+        const focusPhaseId = resultFocusPhaseId ?? failureFocusPhaseId ?? activePhaseId
+        const expandedPhaseIds = new Set(get().expandedPhaseIds)
+        if (focusPhaseId) expandedPhaseIds.add(focusPhaseId)
         set({
           runId: detail.run.id,
           run: detail.run,
@@ -126,6 +135,9 @@ export const useWorkflowStore = create<WorkflowState>()(
           events: detail.events,
           view,
           activePhaseId,
+          resultFocusPhaseId,
+          failureFocusPhaseId,
+          expandedPhaseIds,
           error: detail.run.error,
           approvalPending: detail.run.status === "waiting_approval",
         })
@@ -148,11 +160,17 @@ export const useWorkflowStore = create<WorkflowState>()(
             ? { ...s, status: mapProgressStatus(progress.status) }
             : s,
         )
+        const expandedPhaseIds = new Set(get().expandedPhaseIds)
+        if (progress.status === "failed" || progress.status === "succeeded") {
+          expandedPhaseIds.add(progress.phase_id)
+        }
         set({
           steps: updated,
-          activePhaseId: progress.status === "started" || progress.status === "running"
+          activePhaseId: progress.status === "started" || progress.status === "running" || progress.status === "failed"
             ? progress.phase_id
             : get().activePhaseId,
+          failureFocusPhaseId: progress.status === "failed" ? progress.phase_id : get().failureFocusPhaseId,
+          expandedPhaseIds,
         })
       },
 
@@ -252,7 +270,21 @@ function findActivePhaseId(steps: WorkflowStepRun[]): string | null {
   if (running) return running.phase_id
   const waiting = steps.find((s) => s.status === "waiting_approval")
   if (waiting) return waiting.phase_id
+  const failed = [...steps].reverse().find((s) => s.status === "failed")
+  if (failed) return failed.phase_id
   return null
+}
+
+function findResultFocusPhaseId(status: WorkflowRunStatus, steps: WorkflowStepRun[]): string | null {
+  if (status !== "completed" && status !== "awaiting_plan_edit") return null
+  const succeeded = [...steps].reverse().find((s) => s.status === "succeeded")
+  return succeeded?.phase_id ?? null
+}
+
+function findFailureFocusPhaseId(status: WorkflowRunStatus, steps: WorkflowStepRun[]): string | null {
+  if (status !== "failed" && status !== "cancelled") return null
+  const failed = [...steps].reverse().find((s) => s.status === "failed" || s.error)
+  return failed?.phase_id ?? null
 }
 
 function mapProgressStatus(status: string): WorkflowStepRun["status"] {

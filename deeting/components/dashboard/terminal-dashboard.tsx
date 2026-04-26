@@ -4,6 +4,8 @@ import { useUserSecretary, useUserEmbeddingConfig } from "@/lib/swr/use-embeddin
 import { usePlatformModels } from "@/lib/swr/use-platform-models"
 import { useChatModels } from "@/hooks/use-chat-models"
 import { isTauriRuntime } from "@/lib/runtime/tauri"
+import { buildWorkflowResultPayload, isWorkflowTerminal } from "@/lib/workflow/presentation"
+import ViewBlock from "@/components/views/view-block"
 import type { WorkflowEvent, WorkflowRun, WorkflowStepRun } from "@/lib/workflow/types"
 
 interface TerminalDashboardProps {
@@ -311,6 +313,14 @@ function WorkflowLiveNodes({
 }) {
   const sortedSteps = [...steps].sort((a, b) => a.phase_index - b.phase_index)
   const recentEvents = [...events].slice(-6)
+  const failedStep = [...sortedSteps].reverse().find((step) => step.status === "failed" || step.error)
+  const resultStep = [...sortedSteps].reverse().find((step) => step.status === "succeeded")
+  const focusStep =
+    run.status === "failed" || run.status === "cancelled"
+      ? failedStep
+      : run.status === "completed" || run.status === "awaiting_plan_edit"
+        ? resultStep
+        : sortedSteps.find((step) => step.status === "running") ?? resultStep
 
   return (
     <div className="space-y-6">
@@ -324,7 +334,29 @@ function WorkflowLiveNodes({
         <div className="text-[var(--atl-ink)] text-[13px] leading-relaxed">{run.goal}</div>
       </div>
 
+      {isWorkflowTerminal(run.status) ? (
+        <>
+          <SectionLabel>Result Landing</SectionLabel>
+          <div className="mb-8">
+            <ViewBlock
+              viewType="workflow.result"
+              title="Workflow Result"
+              payload={buildWorkflowResultPayload(run, sortedSteps)}
+              metadata={{ workflow_run_id: run.id }}
+            />
+          </div>
+        </>
+      ) : null}
+
       <SectionLabel>Execution Log</SectionLabel>
+
+      {focusStep && !isWorkflowTerminal(run.status) && (
+        <LiveResultFocus
+          step={focusStep}
+          isFailure={focusStep.status === "failed"}
+          isTerminal={false}
+        />
+      )}
 
       {sortedSteps.length === 0 ? (
         <div className="text-[var(--atl-ink-soft)] font-mono text-xs pl-6 border-l border-[var(--atl-rule)] ml-1.5">
@@ -350,7 +382,7 @@ function WorkflowLiveNodes({
                     {step.worker_trace_summary ? <p>{step.worker_trace_summary}</p> : null}
                     {step.output_artifact_refs.length > 0 ? (
                       <div className="mt-3 space-y-1 font-mono text-[10px] text-[var(--atl-ink-soft)]">
-                        {step.output_artifact_refs.map((ref) => <div key={ref}>{ref}</div>)}
+                        {step.output_artifact_refs.map((ref) => <div key={ref}>{formatWorkflowArtifactLabel(ref)}</div>)}
                       </div>
                     ) : null}
                   </div>
@@ -360,13 +392,94 @@ function WorkflowLiveNodes({
         </>
       ) : null}
 
-      {recentEvents.length > 0 ? (
-        <div className="pt-2 font-mono text-[10px] text-[var(--atl-ink-soft)] space-y-1">
-          {recentEvents.map((event) => (
-            <div key={event.id}>{event.event_type}</div>
-          ))}
+      {recentEvents.length > 0 ? <WorkflowActivityFeed events={recentEvents} /> : null}
+    </div>
+  )
+}
+
+function WorkflowActivityFeed({ events }: { events: WorkflowEvent[] }) {
+  return (
+    <div className="pt-2">
+      <SectionLabel>Live Activity</SectionLabel>
+      <div className="space-y-2 font-mono text-[10px] text-[var(--atl-ink-soft)]">
+        {events.map((event) => {
+          const detail = describeWorkflowEvent(event)
+          return (
+            <div key={event.id} className="flex items-start gap-2">
+              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--atl-accent)]" />
+              <div className="min-w-0">
+                <div className="text-[var(--atl-ink)]">{detail.title}</div>
+                {detail.description ? <div className="truncate">{detail.description}</div> : null}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function describeWorkflowEvent(event: WorkflowEvent): { title: string; description: string | null } {
+  const payload = event.payload ?? {}
+  const phaseId = typeof payload.phase_id === "string" ? payload.phase_id : null
+  const artifactRef = typeof payload.artifact_ref === "string" ? payload.artifact_ref : null
+  const workerRef = typeof payload.worker_ref === "string" ? payload.worker_ref : null
+
+  switch (event.event_type) {
+    case "step.started":
+      return { title: "Phase started", description: phaseId }
+    case "step.worker.bound":
+      return { title: "Worker selected", description: workerRef }
+    case "step.artifact.produced":
+      return { title: "Artifact produced", description: artifactRef ? formatWorkflowArtifactLabel(artifactRef) : null }
+    case "step.succeeded":
+      return { title: "Phase completed", description: phaseId }
+    case "step.failed":
+      return { title: "Phase failed", description: phaseId }
+    case "run.started":
+      return { title: "Workflow started", description: null }
+    case "run.completed":
+      return { title: "Workflow completed", description: null }
+    case "run.failed":
+      return { title: "Workflow failed", description: null }
+    default:
+      return { title: event.event_type, description: phaseId ?? artifactRef ?? workerRef }
+  }
+}
+
+function LiveResultFocus({
+  step,
+  isFailure,
+  isTerminal,
+}: {
+  step: WorkflowStepRun
+  isFailure: boolean
+  isTerminal: boolean
+}) {
+  const title = isFailure ? "Failure" : isTerminal ? "Final Result" : "Current Phase"
+  const summary = isFailure
+    ? step.error || step.worker_trace_summary || step.goal
+    : step.worker_trace_summary || step.goal
+
+  return (
+    <div className="pl-6 ml-1.5 mb-6">
+      <div className={`bg-[var(--atl-canvas)] border rounded-lg shadow-[var(--atl-shell-shadow)] overflow-hidden ${
+        isFailure ? "border-rose-500/40" : "border-[var(--atl-rule)]"
+      }`}>
+        <div className="bg-[var(--atl-canvas-soft)] px-4 py-2 border-b border-[var(--atl-rule)] flex items-center justify-between gap-3">
+          <span className="text-[10px] uppercase tracking-wider font-mono text-[var(--atl-ink-soft)]">{title}</span>
+          <span className="text-[10px] font-mono text-[var(--atl-ink-soft)]">{step.status}</span>
         </div>
-      ) : null}
+        <div className="p-4 text-[var(--atl-ink)] text-[13px] leading-relaxed">
+          <div className="mb-2 text-xs font-medium">{step.title || step.phase_id}</div>
+          {summary ? <p className="whitespace-pre-wrap">{summary}</p> : null}
+          {step.output_artifact_refs.length > 0 ? (
+            <div className="mt-3 space-y-1 font-mono text-[10px] text-[var(--atl-ink-soft)]">
+              {step.output_artifact_refs.map((ref) => <div key={ref}>{formatWorkflowArtifactLabel(ref)}</div>)}
+            </div>
+          ) : null}
+        </div>
+      </div>
     </div>
   )
 }
@@ -379,6 +492,10 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
       <span className="flex-1 border-t border-[var(--atl-rule)]" />
     </div>
   )
+}
+
+function formatWorkflowArtifactLabel(ref: string): string {
+  return ref.split(/[\\/]/).pop() || "Artifact"
 }
 
 function LiveStep({ step }: { step: WorkflowStepRun }) {

@@ -14,6 +14,8 @@ import type {
   RegenerateProposalRequest,
   RerunPhaseRequest,
   UpdateProposalRequest,
+  ExportWorkflowArtifactResponse,
+  WorkflowArtifactContent,
   WorkflowPhaseContext,
   WorkflowRun,
   WorkflowRunDetail,
@@ -24,7 +26,17 @@ export type WorkflowStreamEvent =
   | { type: "workflow.compile_started"; run_id?: string; trace_id?: string; request_id?: string | null }
   | { type: "workflow.compile_result"; compile_result: CompileResult }
   | { type: "workflow.progress"; progress: WorkflowProgress }
-  | { type: string; detail: WorkflowRunDetail }
+  | {
+      type:
+        | "workflow.ready"
+        | "workflow.final_detail"
+        | "workflow.run_started"
+        | "workflow.run_finished"
+        | "workflow.step_started"
+        | "workflow.step_succeeded"
+        | "workflow.step_failed"
+      detail: WorkflowRunDetail
+    }
   | { type: "error" | "workflow.error"; message?: string; error_code?: string }
 
 export interface WorkflowCompileAndStartStreamRequest {
@@ -62,6 +74,36 @@ export async function getWorkflowPhaseContext(
   return invoke<WorkflowPhaseContext>("get_workflow_phase_context", {
     runId,
     phaseId,
+  })
+}
+
+export async function getWorkflowArtifactContent(
+  runId: string,
+  artifactRef: string,
+): Promise<WorkflowArtifactContent> {
+  return invoke<WorkflowArtifactContent>("get_workflow_artifact_content", {
+    runId,
+    artifactRef,
+  })
+}
+
+export async function openWorkflowArtifact(
+  runId: string,
+  artifactRef: string,
+): Promise<void> {
+  return invoke<void>("open_workflow_artifact", {
+    runId,
+    artifactRef,
+  })
+}
+
+export async function exportWorkflowArtifact(
+  runId: string,
+  artifactRef: string,
+): Promise<ExportWorkflowArtifactResponse> {
+  return invoke<ExportWorkflowArtifactResponse>("export_workflow_artifact", {
+    runId,
+    artifactRef,
   })
 }
 

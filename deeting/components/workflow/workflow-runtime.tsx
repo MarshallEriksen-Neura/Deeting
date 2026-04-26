@@ -9,6 +9,7 @@ import {
   getWorkflowRunStatus,
   getWorkflowPhaseContext,
   approveWorkflow,
+  resumeWorkflow,
   rerunPhase,
   streamWorkflowCompileAndStart,
 } from "@/lib/workflow/commands"
@@ -166,6 +167,24 @@ export function WorkflowRuntime({
     }
   }, [store.runId])
 
+  const handleResumeWorkflow = useCallback(async () => {
+    if (!store.runId) return
+    store.setLoading(true)
+    store.setError(null)
+    try {
+      const run = await resumeWorkflow(store.runId)
+      store.setRun(run)
+      const detail = await getWorkflowRunStatus(store.runId)
+      store.setRunDetail(detail)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      store.setError(msg)
+      toast.error(msg)
+    } finally {
+      store.setLoading(false)
+    }
+  }, [store])
+
   // --- Approval ---
   const handleApprove = useCallback(async () => {
     if (!store.runId) return
@@ -231,10 +250,13 @@ export function WorkflowRuntime({
               run={store.run}
               steps={store.steps}
               activePhaseId={store.activePhaseId}
+              resultFocusPhaseId={store.resultFocusPhaseId}
+              failureFocusPhaseId={store.failureFocusPhaseId}
               expandedPhaseIds={store.expandedPhaseIds}
               onToggleExpand={(id) => store.togglePhaseExpanded(id)}
               onRerunPhase={handleRerunPhase}
               onViewContext={handleOpenContextViewer}
+              onResumeWorkflow={handleResumeWorkflow}
               onBack={handleBack}
             />
           </div>
