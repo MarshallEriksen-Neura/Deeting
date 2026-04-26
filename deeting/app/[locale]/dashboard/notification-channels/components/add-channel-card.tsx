@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/shadcn/card"
 import { Input } from "@/components/ui/shadcn/input"
 import {
+  CHANNEL_META,
   type ChannelConfig,
   type ChannelType,
 } from "@/lib/api/notification-channels"

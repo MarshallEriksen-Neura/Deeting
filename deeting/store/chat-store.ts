@@ -109,6 +109,44 @@ function filterCompareStateByMessageIds(
   )
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === object && value !== null && !Array.isArray(value)
+}
+
+function areStoreValuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true
+
+  if (Array.isArray(left) && Array.isArray(right)) {
+    if (left.length !== right.length) return false
+    return left.every((entry, index) => areStoreValuesEqual(entry, right[index]))
+  }
+
+  if (isPlainObject(left) && isPlainObject(right)) {
+    const leftKeys = Object.keys(left)
+    const rightKeys = Object.keys(right)
+    if (leftKeys.length !== rightKeys.length) return false
+
+    return leftKeys.every(
+      (key) =>
+        Object.prototype.hasOwnProperty.call(right, key) &&
+        areStoreValuesEqual(left[key], right[key])
+    )
+  }
+
+  return false
+}
+
+function normalizeChatMessages(messages: Message[]): Message[] {
+  return messages.map((message) =>
+    message.role === "assistant"
+      ? {
+          ...message,
+          content: "",
+        }
+      : message
+  )
+}
+
 function withAssistantShadowContent(message: Message, blocks: MessageBlock[]): Message {
   if (message.role !== "assistant") {
     return { ...message, blocks }
