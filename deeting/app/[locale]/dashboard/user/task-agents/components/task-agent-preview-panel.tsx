@@ -174,12 +174,16 @@ export function TaskAgentPreviewPanel({
 
                {/* Technical Logs */}
                <section className="space-y-10 pt-10">
-                  {[
-                    { title: t("preview.toolCalls"), data: previewResult.tool_calls, icon: Wrench },
-                    { title: t("preview.toolTrace"), data: previewResult.tool_trace, icon: Zap },
-                    { title: t("preview.raw"), data: previewResult.raw, icon: ImageIcon }
-                  ].map(log => (
-                    log.data && (Array.isArray(log.data) ? log.data.length > 0 : Object.keys(log.data as object).length > 0) && (
+                  {(
+                    [
+                      { title: t("preview.toolCalls"), data: previewResult.tool_calls, icon: Wrench },
+                      { title: t("preview.toolTrace"), data: previewResult.tool_trace, icon: Zap },
+                      { title: t("preview.raw"), data: previewResult.raw, icon: ImageIcon }
+                    ] as { title: string; data: unknown; icon: React.ElementType }[]
+                  ).map(log => {
+                    const hasData = log.data && (Array.isArray(log.data) ? (log.data as unknown[]).length > 0 : Object.keys(log.data as object).length > 0)
+                    if (!hasData) return null
+                    return (
                       <div key={log.title} className="space-y-4">
                         <header className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
@@ -194,7 +198,7 @@ export function TaskAgentPreviewPanel({
                         </div>
                       </div>
                     )
-                  ))}
+                  })}
                </section>
             </div>
           ) : null}

@@ -20,10 +20,10 @@ use tokio::sync::{mpsc, RwLock};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use uuid::Uuid;
 
+use crate::modules::conversations::fact_sync::sync_compare_finalize_memories;
 use crate::modules::desktop_runtime::local_orchestrator::{
     execute_local_orchestrated_chat, extract_user_text_from_messages, LocalOrchestratorInput,
 };
-use crate::modules::conversations::fact_sync::sync_compare_finalize_memories;
 use crate::modules::mcp::commands::tool_approval_impl::{
     approve_mcp_tool_payload, reject_mcp_tool_payload,
 };
@@ -329,7 +329,10 @@ async fn workflow_compile_and_start_handler(
                 )
                 .await
                 {
-                    let _ = tx.send(build_workflow_detail_payload("workflow.final_detail", detail));
+                    let _ = tx.send(build_workflow_detail_payload(
+                        "workflow.final_detail",
+                        detail,
+                    ));
                 }
             }
             Err(err) => {
@@ -766,9 +769,12 @@ async fn finalize_compare_handler(
         .await
     {
         Ok(response) => {
-            if let Err(err) =
-                sync_compare_finalize_memories(state.app_state.clone(), &finalize_payload, &response)
-                    .await
+            if let Err(err) = sync_compare_finalize_memories(
+                state.app_state.clone(),
+                &finalize_payload,
+                &response,
+            )
+            .await
             {
                 log::warn!(
                     "compare finalize fact sync failed session={} err={}",

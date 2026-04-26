@@ -452,6 +452,7 @@
         "notSynced": "当前 connector 还没有同步过。",
         "lastSynced": "最近同步：{timestamp}",
         "count": "已加载 {count} 条",
+        "andMore": "还有 {count} 条",
         "viewRecords": "查看记录",
         "viewDetails": "查看详情",
         "drawerListTitle": "同步记录",

@@ -163,8 +163,19 @@ impl BoxLiteProvisioner {
         );
         let mut command = tokio::process::Command::new("wsl.exe");
         configure_background_tokio_command(&mut command);
+        let mut args = Vec::new();
+        if let Some(distro) = distro.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
+            args.push("-d".to_string());
+            args.push(distro.to_string());
+        }
+        args.extend([
+            "--".to_string(),
+            "bash".to_string(),
+            "-lc".to_string(),
+            launch_script,
+        ]);
         let child = command
-            .args(["--", "bash", "-lc", launch_script.as_str()])
+            .args(&args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

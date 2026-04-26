@@ -129,7 +129,7 @@ export function TaskAgentsClient() {
           </h1>
           <div className="flex items-center gap-4">
              <span className="font-mono text-[10px] tracking-[0.3em] text-[var(--ink-4)] uppercase">
-                {t("workspace.coreRegistry", { count: stats.totalCount })}
+                {t("workspace.coreRegistry", { count: stats.total })}
              </span>
              <div className="h-px flex-1 bg-[var(--hairline-strong)] opacity-30" />
           </div>
@@ -248,7 +248,7 @@ export function TaskAgentsClient() {
                   <div className="space-y-1">
                     <div className="flex items-center gap-3">
                       <span className="font-mono text-[10px] font-bold tracking-[0.2em] text-[var(--accent-strong)] opacity-80 uppercase">
-                        {selectedAgent?.kind || t("workspace.defaultKind")}
+                        {selectedAgent?.invocation_kind || t("workspace.defaultKind")}
                       </span>
                       <div className="h-px w-8 bg-[var(--accent-strong)] opacity-30" />
                       <span className="font-mono text-[10px] font-bold tracking-[0.2em] text-[var(--ink-4)] uppercase">

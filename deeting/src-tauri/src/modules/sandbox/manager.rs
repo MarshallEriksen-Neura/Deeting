@@ -466,9 +466,7 @@ impl SandboxRuntimeManager {
         prepare_config: Option<&SandboxPrepareConfig>,
     ) -> Result<SandboxReadinessReport, SandboxError> {
         let mut report = self.status_report().await;
-        if matches!(policy, SandboxLaunchPolicy::StrictSandbox)
-            && report.runtime_mode != SandboxRuntimeMode::Sandbox
-        {
+        if should_prepare_for_launch_policy(policy, report.runtime_mode, report.status) {
             report = self.prepare_with_prepare_config(prepare_config).await?;
         }
         Ok(report)
@@ -1602,6 +1600,16 @@ fn runtime_mode_from_provider_name(provider_name: &str) -> SandboxRuntimeMode {
     }
 }
 
+fn should_prepare_for_launch_policy(
+    policy: SandboxLaunchPolicy,
+    runtime_mode: SandboxRuntimeMode,
+    readiness_status: SandboxReadinessStatus,
+) -> bool {
+    matches!(policy, SandboxLaunchPolicy::StrictSandbox)
+        && (runtime_mode != SandboxRuntimeMode::Sandbox
+            || readiness_status != SandboxReadinessStatus::Ready)
+}
+
 fn current_platform() -> &'static str {
     if cfg!(target_os = "windows") {
         "windows"
@@ -2639,6 +2647,25 @@ mod tests {
         ));
         assert!(!should_restart_execution_probe_runtime_after_error(
             &SandboxError::Network("bridge dropped".to_string())
+        ));
+    }
+
+    #[test]
+    fn strict_launch_prepares_when_boxlite_provider_is_not_ready() {
+        assert!(should_prepare_for_launch_policy(
+            SandboxLaunchPolicy::StrictSandbox,
+            SandboxRuntimeMode::Sandbox,
+            SandboxReadinessStatus::RepairNeeded
+        ));
+        assert!(!should_prepare_for_launch_policy(
+            SandboxLaunchPolicy::StrictSandbox,
+            SandboxRuntimeMode::Sandbox,
+            SandboxReadinessStatus::Ready
+        ));
+        assert!(!should_prepare_for_launch_policy(
+            SandboxLaunchPolicy::AllowHostFallback,
+            SandboxRuntimeMode::HostFallback,
+            SandboxReadinessStatus::RepairNeeded
         ));
     }
 

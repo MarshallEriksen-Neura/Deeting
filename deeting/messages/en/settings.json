@@ -476,6 +476,7 @@
         "notSynced": "This connector has not synced yet.",
         "lastSynced": "Last synced: {timestamp}",
         "count": "{count} loaded",
+        "andMore": "+{count} more",
         "viewRecords": "View records",
         "viewDetails": "View details",
         "drawerListTitle": "Synced records",

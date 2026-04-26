@@ -64,15 +64,13 @@ export function ImageTaskAgentEditor({
           <div className="space-y-4">
             <label className="font-mono text-[9px] font-bold tracking-[0.3em] text-[var(--ink-4)] uppercase">{t("editor.ui.globalFlags")}</label>
             <div className="space-y-6">
-              {[
-                { label: t("editor.fields.preferredForImageGeneration"), checked: draft.preferred_for_image_generation, key: "preferred_for_image_generation" },
-                { label: t("editor.fields.discoverable"), checked: draft.discoverable, key: "discoverable" },
-                { label: t("editor.fields.isEnabled"), checked: draft.is_enabled, key: "is_enabled" },
-              ].map((flag: {
-                label: string
-                checked: boolean
-                key: "preferred_for_image_generation" | "discoverable" | "is_enabled"
-              }) => (
+              {(
+                [
+                  { label: t("editor.fields.preferredForImageGeneration"), checked: draft.preferred_for_image_generation, key: "preferred_for_image_generation" },
+                  { label: t("editor.fields.discoverable"), checked: draft.discoverable, key: "discoverable" },
+                  { label: t("editor.fields.isEnabled"), checked: draft.is_enabled, key: "is_enabled" },
+                ] as { label: string; checked: boolean; key: "preferred_for_image_generation" | "discoverable" | "is_enabled" }[]
+              ).map((flag) => (
                 <div key={flag.key} className="flex items-center justify-between gap-4">
                   <span className="text-[11px] font-bold tracking-widest text-[var(--ink-2)] uppercase">{flag.label}</span>
                   <Switch
@@ -115,21 +113,18 @@ export function ImageTaskAgentEditor({
         </div>
 
         <div className="grid grid-cols-4 gap-x-12 gap-y-10">
-          {[
-            { label: t("editor.imageConfig.fields.aspectRatio"), value: draft.image_config.aspect_ratio, key: "aspect_ratio", placeholder: t("editor.imageConfig.placeholders.aspectRatio") },
-            { label: t("editor.imageConfig.fields.numOutputs"), value: draft.image_config.num_outputs, key: "num_outputs", placeholder: t("editor.imageConfig.placeholders.numOutputs") },
-            { label: t("editor.imageConfig.fields.steps"), value: draft.image_config.steps, key: "steps", placeholder: t("editor.imageConfig.placeholders.steps") },
-            { label: t("editor.imageConfig.fields.cfgScale"), value: draft.image_config.cfg_scale, key: "cfg_scale", placeholder: t("editor.imageConfig.placeholders.cfgScale") },
-            { label: t("editor.imageConfig.fields.width"), value: draft.image_config.width, key: "width", placeholder: t("editor.imageConfig.placeholders.width") },
-            { label: t("editor.imageConfig.fields.height"), value: draft.image_config.height, key: "height", placeholder: t("editor.imageConfig.placeholders.height") },
-            { label: t("editor.imageConfig.fields.seed"), value: draft.image_config.seed, key: "seed", placeholder: t("editor.imageConfig.placeholders.seed") },
-            { label: t("editor.imageConfig.fields.quality"), value: draft.image_config.quality, key: "quality", placeholder: t("editor.imageConfig.placeholders.quality") },
-          ].map((field: {
-            label: string
-            value: string
-            key: "aspect_ratio" | "num_outputs" | "steps" | "cfg_scale" | "width" | "height" | "seed" | "quality"
-            placeholder: string
-          }) => (
+          {(
+            [
+              { label: t("editor.imageConfig.fields.aspectRatio"), value: draft.image_config.aspect_ratio, key: "aspect_ratio", placeholder: t("editor.imageConfig.placeholders.aspectRatio") },
+              { label: t("editor.imageConfig.fields.numOutputs"), value: draft.image_config.num_outputs, key: "num_outputs", placeholder: t("editor.imageConfig.placeholders.numOutputs") },
+              { label: t("editor.imageConfig.fields.steps"), value: draft.image_config.steps, key: "steps", placeholder: t("editor.imageConfig.placeholders.steps") },
+              { label: t("editor.imageConfig.fields.cfgScale"), value: draft.image_config.cfg_scale, key: "cfg_scale", placeholder: t("editor.imageConfig.placeholders.cfgScale") },
+              { label: t("editor.imageConfig.fields.width"), value: draft.image_config.width, key: "width", placeholder: t("editor.imageConfig.placeholders.width") },
+              { label: t("editor.imageConfig.fields.height"), value: draft.image_config.height, key: "height", placeholder: t("editor.imageConfig.placeholders.height") },
+              { label: t("editor.imageConfig.fields.seed"), value: draft.image_config.seed, key: "seed", placeholder: t("editor.imageConfig.placeholders.seed") },
+              { label: t("editor.imageConfig.fields.quality"), value: draft.image_config.quality, key: "quality", placeholder: t("editor.imageConfig.placeholders.quality") },
+            ] as { label: string; value: string; key: "aspect_ratio" | "num_outputs" | "steps" | "cfg_scale" | "width" | "height" | "seed" | "quality"; placeholder: string }[]
+          ).map((field) => (
             <div key={field.key} className="space-y-2">
               <label className="font-mono text-[8px] font-bold tracking-[0.2em] text-[var(--ink-4)] uppercase">{field.label}</label>
               <input

@@ -68,7 +68,13 @@ async fn run_workflow_inner(
         .await
         .map_err(|err| err.to_string())?;
     emit_event(store_ref, run_id, None, "run.started", None).await;
-    send_run_detail(store_ref, stream_tx.as_ref(), "workflow.run_started", run_id).await;
+    send_run_detail(
+        store_ref,
+        stream_tx.as_ref(),
+        "workflow.run_started",
+        run_id,
+    )
+    .await;
 
     let existing_steps = store::list_workflow_step_runs_by_run(store_ref, run_id)
         .await
@@ -135,7 +141,13 @@ async fn run_workflow_inner(
         None,
     )
     .await;
-    send_run_detail(store_ref, stream_tx.as_ref(), "workflow.run_finished", run_id).await;
+    send_run_detail(
+        store_ref,
+        stream_tx.as_ref(),
+        "workflow.run_finished",
+        run_id,
+    )
+    .await;
 
     Ok(final_status)
 }
@@ -574,11 +586,7 @@ async fn send_run_detail(
         let events = store::list_workflow_events_by_run(store_ref, run_id)
             .await
             .map_err(|err| err.to_string())?;
-        Ok::<_, String>(crate::modules::workflow::types::WorkflowRunDetail {
-            run,
-            steps,
-            events,
-        })
+        Ok::<_, String>(crate::modules::workflow::types::WorkflowRunDetail { run, steps, events })
     }
     .await;
 

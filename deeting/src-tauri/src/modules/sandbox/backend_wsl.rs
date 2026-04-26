@@ -385,7 +385,10 @@ pub fn get_default_wsl_distro() -> Option<String> {
         return None;
     }
     let text = decode_wsl_text(&output.stdout);
-    text.lines().next().map(|s| s.trim().to_string())
+    text.lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(ToString::to_string)
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -402,6 +405,7 @@ const WSL_WARMUP_RETRY_INTERVAL: Duration = Duration::from_secs(2);
 /// open a WSL terminal manually.
 #[cfg(target_os = "windows")]
 pub async fn warm_up_wsl(distro: Option<&str>) -> Result<(), SandboxError> {
+    let distro = distro.map(str::trim).filter(|d| !d.is_empty());
     for attempt in 1..=WSL_WARMUP_RETRIES {
         let mut command = tokio::process::Command::new("wsl.exe");
         configure_background_tokio_command(&mut command);

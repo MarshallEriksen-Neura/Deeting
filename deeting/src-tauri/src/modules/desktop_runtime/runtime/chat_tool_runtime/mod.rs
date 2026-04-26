@@ -1,4 +1,4 @@
-use super::sovereign::{DecisionLocus, Self_};
+use super::sovereign::{Advisory, DecisionLocus, Self_};
 use super::{
     activate_skill_from_args, append_streamable_local_tool_result_blocks,
     build_delegated_result_feedback_messages, build_local_runtime_tools_with_allowlist,
@@ -1306,6 +1306,53 @@ async fn execute_delegate_task_tool(
     Ok(record.delegated_result())
 }
 
+async fn consult_task_policy_advisory(
+    app_state: &AppState,
+    task_query: Option<&str>,
+    locus: DecisionLocus,
+) -> Option<Advisory> {
+    let query = task_query
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    Some(Self_::consult(app_state.mcp.store.as_ref(), locus, query, 4).await)
+}
+
+async fn execute_code_mode_request(
+    app_state: &AppState,
+    request: ExecuteLocalCodemodeRequest,
+    realtime_emitter: &LocalRealtimeToolTraceEmitter,
+) -> Result<crate::modules::code_mode::types::ExecuteLocalCodemodeResponse, String> {
+    Box::pin(
+        crate::modules::code_mode::commands::execute_local_code_mode_inner(
+            app_state,
+            request,
+            build_runtime_bridge_stream_target(realtime_emitter),
+        ),
+    )
+    .await
+    .map_err(|err| err.to_string())
+}
+
+/*
+        .get(code)
+        .and_then(|v| v.as_str())
+        .unwrap_or(");
+    let language = arguments
+        .get(language)
+        .and_then(|v| v.as_str())
+        .unwrap_or(python);
+    let execution_timeout = arguments
+        .get(execution_timeout)
+        .and_then(|v| v.as_u64())
+        .map(|v| v.max(1));
+    let dry_run = arguments
+        .get(dry_run)
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+}
+
+*/
+
 async fn process_chat_tool_calls(
     app: &AppHandle,
     app_state: &AppState,
@@ -1439,18 +1486,12 @@ async fn process_chat_tool_calls(
         if tool_name == "execute_code_plan" {
             realtime_emitter.emit_execution_section_once();
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
-            let execution_gate_advisory = match state.task_query.as_deref() {
-                Some(query) => Some(
-                    Self_::consult(
-                        app_state.mcp.store.as_ref(),
-                        DecisionLocus::Execution,
-                        query,
-                        4,
-                    )
-                    .await,
-                ),
-                None => None,
-            };
+            let execution_gate_advisory = Box::pin(consult_task_policy_advisory(
+                app_state,
+                state.task_query.as_deref(),
+                DecisionLocus::Execution,
+            ))
+            .await;
             let code = call
                 .arguments
                 .get("code")
@@ -1512,28 +1553,29 @@ async fn process_chat_tool_calls(
                 continue;
             }
 
-            let execution_res = crate::modules::code_mode::commands::execute_local_code_mode_inner(
+            let execution_request = ExecuteLocalCodemodeRequest {
+                code: code.to_string(),
+                task: call
+                    .arguments
+                    .get("task")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+                scope: call.arguments.get("scope").cloned(),
+                constraints: call.arguments.get("constraints").cloned(),
+                session_id: Some(session_id.to_string()),
+                language: Some(language.to_string()),
+                execution_timeout,
+                dry_run: Some(dry_run),
+                context: None,
+                max_calls: None,
+                allowed_tools: Some(execution_contract.allowed_tools.clone()),
+                capability_snapshot: Some(execution_contract.capability_snapshot.clone()),
+            };
+            let execution_res = Box::pin(execute_code_mode_request(
                 app_state,
-                ExecuteLocalCodemodeRequest {
-                    code: code.to_string(),
-                    task: call
-                        .arguments
-                        .get("task")
-                        .and_then(|v| v.as_str())
-                        .map(str::to_string),
-                    scope: call.arguments.get("scope").cloned(),
-                    constraints: call.arguments.get("constraints").cloned(),
-                    session_id: Some(session_id.to_string()),
-                    language: Some(language.to_string()),
-                    execution_timeout,
-                    dry_run: Some(dry_run),
-                    context: None,
-                    max_calls: None,
-                    allowed_tools: Some(execution_contract.allowed_tools.clone()),
-                    capability_snapshot: Some(execution_contract.capability_snapshot.clone()),
-                },
-                build_runtime_bridge_stream_target(realtime_emitter),
-            )
+                execution_request,
+                realtime_emitter,
+            ))
             .await;
             match execution_res {
                 Ok(res) => {
@@ -2167,7 +2209,7 @@ async fn process_chat_tool_calls(
                 None,
                 Some(session_id),
             );
-            match execute_or_queue_mcp_tool_call_with_tool_ref(
+            match Box::pin(execute_or_queue_mcp_tool_call_with_tool_ref(
                 &approval_context,
                 Some(&app_state.mcp),
                 app_state.mcp.store.as_ref(),
@@ -2175,7 +2217,7 @@ async fn process_chat_tool_calls(
                 None,
                 Some(tool_name.clone()),
                 call.arguments.clone(),
-            )
+            ))
             .await
             {
                 Ok(tool_result) => {
