@@ -743,7 +743,8 @@ fn render_body(
     let mut body = if matches!(engine, "jinja2" | "handlebars") {
         recursive_render(&effective_template, engine, context, hb)?
     } else {
-        simple_merge_body(&effective_template, context)
+        let merged_body = simple_merge_body(&effective_template, context);
+        recursive_render(&merged_body, engine, context, hb)?
     };
     body = apply_request_builder(request_builder, body, context);
     inject_tools(&mut body, tools, engine, protocol_family);
@@ -2151,6 +2152,11 @@ fn recursive_render(
 ) -> Result<Value, String> {
     match value {
         Value::String(text) => {
+            if let Some(path) = exact_template_path(text) {
+                if let Some(resolved) = extract_path(context, path) {
+                    return Ok(resolved.clone());
+                }
+            }
             let rendered = render_string(text, engine, context, hb)?;
             let trimmed = rendered.trim();
             if (trimmed.starts_with('{') && trimmed.ends_with('}'))
@@ -2178,6 +2184,32 @@ fn recursive_render(
         }
         _ => Ok(value.clone()),
     }
+}
+
+fn exact_template_path(template: &str) -> Option<&str> {
+    let trimmed = template.trim();
+    let path = trimmed
+        .strip_prefix("{{")
+        .and_then(|value| value.strip_suffix("}}"))
+        .or_else(|| {
+            trimmed
+                .strip_prefix("${")
+                .and_then(|value| value.strip_suffix('}'))
+        })?
+        .trim();
+    if path.is_empty() || !is_plain_template_path(path) {
+        return None;
+    }
+    Some(path)
+}
+
+fn is_plain_template_path(path: &str) -> bool {
+    path.split('.').all(|segment| {
+        !segment.is_empty()
+            && segment
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+    })
 }
 
 fn render_string(
@@ -2971,6 +3003,48 @@ mod tests {
         assert_eq!(prepared.body["prompt"], json!("draw a red cat"));
         assert_eq!(prepared.body["n"], json!(1));
         assert!(prepared.body.get("messages").is_none());
+    }
+
+    #[test]
+    fn render_body_preserves_exact_template_object_values() {
+        let hb = super::build_handlebars();
+        let rendered = super::render_body(
+            &json!({
+                "model": null,
+                "input": "{{ input.prompt }}",
+                "tool_choice": "{{ input.extra_params.tool_choice }}",
+                "tools": "{{ input.extra_params.tools }}"
+            }),
+            &json!({}),
+            &json!({}),
+            "openai_compat",
+            "openai_responses",
+            &json!({
+                "input": {
+                    "model": "gpt-image-2",
+                    "prompt": "draw a cat",
+                    "extra_params": {
+                        "tool_choice": { "type": "image_generation" },
+                        "tools": [{ "type": "image_generation" }]
+                    }
+                },
+                "request": {
+                    "model": "gpt-image-2",
+                    "prompt": "draw a cat"
+                }
+            }),
+            None,
+            &hb,
+        )
+        .expect("render body");
+
+        assert_eq!(rendered["model"], json!("gpt-image-2"));
+        assert_eq!(rendered["input"], json!("draw a cat"));
+        assert_eq!(
+            rendered["tool_choice"],
+            json!({ "type": "image_generation" })
+        );
+        assert_eq!(rendered["tools"], json!([{ "type": "image_generation" }]));
     }
 
     #[test]

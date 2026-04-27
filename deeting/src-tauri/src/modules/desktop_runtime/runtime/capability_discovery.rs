@@ -7,14 +7,14 @@ use super::search_feedback::{
     SearchFeedbackContext,
 };
 use super::should_run_semantic_recall;
+use crate::modules::custom_task_agents::store::list_custom_task_agents;
+use crate::modules::custom_task_agents::types::CustomTaskAgentProfile;
 use crate::modules::mcp::commands::runtime::capability_catalog::{
     build_capability_registry, CapabilityRegistryEntry, RegistryAvailability, ToolContractSource,
 };
 use crate::modules::retrieval_kernel::ranking::{
     asset_score_key, bm25_asset_match_scores, normalize_score_map, reciprocal_rank_fusion,
 };
-use crate::modules::custom_task_agents::store::list_custom_task_agents;
-use crate::modules::custom_task_agents::types::CustomTaskAgentProfile;
 
 const MAX_LIMIT: usize = 20;
 const RETRIEVAL_FUSION_WEIGHT: f64 = 48.0;

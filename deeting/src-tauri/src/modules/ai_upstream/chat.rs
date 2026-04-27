@@ -736,7 +736,25 @@ pub(crate) fn extract_upstream_error_message(
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        return message.to_string();
+        let mut details = Vec::new();
+        for (label, pointer) in [
+            ("param", "/error/param"),
+            ("code", "/error/code"),
+            ("type", "/error/type"),
+        ] {
+            if let Some(value) = raw_json
+                .and_then(|item| item.pointer(pointer))
+                .and_then(|item| item.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                details.push(format!("{label}: {value}"));
+            }
+        }
+        if details.is_empty() {
+            return message.to_string();
+        }
+        return format!("{message} ({})", details.join(", "));
     }
     let text = raw_text.trim();
     if !text.is_empty() {
@@ -808,5 +826,25 @@ mod tests {
         assert_eq!(normalized["finish_reason"], json!("end_turn"));
         assert_eq!(normalized["usage"]["input_tokens"], json!(28));
         assert_eq!(normalized["usage"]["output_tokens"], json!(9));
+    }
+
+    #[test]
+    fn extract_upstream_error_message_includes_openai_error_param_and_code() {
+        let message = super::extract_upstream_error_message(
+            reqwest::StatusCode::BAD_REQUEST,
+            Some(&json!({
+                "error": {
+                    "message": "Invalid value: '{\"type\":\"image_generation\"}'. Supported values are: 'none', 'auto', and 'required'.",
+                    "type": "invalid_request_error",
+                    "param": "tool_choice",
+                    "code": "invalid_value"
+                }
+            })),
+            "",
+        );
+
+        assert!(message.contains("Invalid value"));
+        assert!(message.contains("param: tool_choice"));
+        assert!(message.contains("code: invalid_value"));
     }
 }
