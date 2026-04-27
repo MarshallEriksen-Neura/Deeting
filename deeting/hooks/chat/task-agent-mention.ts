@@ -42,6 +42,35 @@ export function resolveLeadingTaskAgentMention(
   mention: ParsedTaskAgentMention
   agent: MentionableTaskAgent | null
 } | null {
+  const trimmed = input.trim()
+  if (!trimmed.startsWith("@")) return null
+
+  const body = trimmed.slice(1).trimStart()
+  if (!body) return null
+
+  const sortedAgents = [...agents].sort(
+    (left, right) => right.name.trim().length - left.name.trim().length,
+  )
+  const resolvedAgent = sortedAgents.find((item) => {
+    const normalizedName = item.name.trim().toLowerCase()
+    if (!normalizedName) return false
+    const normalizedBody = body.toLowerCase()
+    if (!normalizedBody.startsWith(normalizedName)) return false
+    const nextChar = body.charAt(item.name.trim().length)
+    return !nextChar || /\s/.test(nextChar)
+  })
+
+  if (resolvedAgent) {
+    const agentName = resolvedAgent.name.trim()
+    return {
+      mention: {
+        agentName,
+        prompt: body.slice(agentName.length).trim(),
+      },
+      agent: resolvedAgent,
+    }
+  }
+
   const mention = parseLeadingTaskAgentMention(input)
   if (!mention) return null
 

@@ -187,6 +187,18 @@ function resolveExecutionRootForFollowup(message: Message | undefined | null) {
   return extractRootExecutionIdFromMessage(message) ?? undefined
 }
 
+async function resolveExplicitTaskAgentIdForInput(input: string) {
+  const trimmedInput = input.trim()
+  if (!trimmedInput) return undefined
+
+  const localAgents = await listCustomTaskAgents()
+  const resolvedMention = resolveLeadingTaskAgentMention(
+    trimmedInput,
+    localAgents.map((agent) => ({ id: agent.id, name: agent.name })),
+  )
+  return resolvedMention?.agent?.id?.trim() || undefined
+}
+
 function resolveRequestedMaxTokens(value: number | null | undefined) {
   return typeof value === "number" && value > 0 ? value : undefined
 }
@@ -1247,11 +1259,22 @@ export function useChatMessagingService() {
         messagesBeforeTarget,
         undefined,
       )
+      const latestUserMessage = [...messagesBeforeTarget]
+        .reverse()
+        .find((message) => message.role === "user")
+      const displayInput =
+        typeof latestUserMessage?.metaInfo?.display_content === "string"
+          ? latestUserMessage.metaInfo.display_content.trim()
+          : ""
+      const explicitTaskAgentId = displayInput
+        ? await resolveExplicitTaskAgentIdForInput(displayInput)
+        : undefined
       const payload = {
         model: selectedModel.id,
         model_selection_mode: modelSelectionMode,
         provider_model_id:
           selectedModel.provider_model_id ?? undefined,
+        explicit_task_agent_id: explicitTaskAgentId,
         messages: requestMessages,
         temperature: config.temperatureEnabled ? config.temperature : undefined,
         max_tokens: undefined,

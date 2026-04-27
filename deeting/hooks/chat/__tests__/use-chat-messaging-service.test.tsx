@@ -11,6 +11,7 @@ import {
 import {
   fetchConversationHistory,
 } from "@/lib/api/conversations"
+import { listCustomTaskAgents } from "@/lib/api/custom-task-agents"
 import { useChatMessagingService } from "@/hooks/chat/use-chat-messaging-service"
 import { useChatStore } from "@/store/chat-store"
 import { useChatRuntimeStore } from "@/store/chat-runtime-store"
@@ -61,6 +62,8 @@ const mockFinalizeDesktopLocalCompare =
   finalizeDesktopLocalCompare as jest.MockedFunction<typeof finalizeDesktopLocalCompare>
 const mockFetchConversationHistory =
   fetchConversationHistory as jest.MockedFunction<typeof fetchConversationHistory>
+const mockListCustomTaskAgents =
+  listCustomTaskAgents as jest.MockedFunction<typeof listCustomTaskAgents>
 const windowWithTauri = window as Window & {
   __TAURI__?: unknown
   __TAURI_INTERNALS__?: unknown
@@ -75,6 +78,8 @@ describe("useChatMessagingService pending takeover orchestration", () => {
     mockCancelDesktopLocalChatCompletion.mockReset()
     mockFinalizeDesktopLocalCompare.mockReset()
     mockFetchConversationHistory.mockReset()
+    mockListCustomTaskAgents.mockReset()
+    mockListCustomTaskAgents.mockResolvedValue([])
     useChatRuntimeStore.getState().resetSession()
     useChatStore.setState({
       models: [{ id: "model-1", provider_model_id: "model-1" }],
@@ -230,6 +235,53 @@ describe("useChatMessagingService pending takeover orchestration", () => {
       },
     })
     expect(useChatStore.getState().pageContext).toBeNull()
+
+    delete windowWithTauri.__TAURI_INTERNALS__
+  })
+
+  it("converts a leading task-agent mention into explicit_task_agent_id for local requests", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI_INTERNALS__ = {}
+    mockStreamDesktopLocalChatCompletion.mockResolvedValueOnce("")
+    mockListCustomTaskAgents.mockResolvedValueOnce([
+      { id: "agent-image-1", name: "Image Agent" } as any,
+    ])
+
+    useChatStore.setState({
+      models: [
+        {
+          id: "qwen-local",
+          provider_model_id: "provider-local-1",
+          request_route: "local_invoke",
+          runtime_source: "desktop_local",
+        } as any,
+      ],
+      config: {
+        model: "qwen-local",
+        temperatureEnabled: true,
+        temperature: 0.7,
+        topP: 1,
+        maxTokens: null,
+        reasoningEnabled: false,
+        reasoningEffort: "medium",
+      },
+      input: "@Image Agent 画一只长翅膀的猫",
+    })
+    useChatRuntimeStore.setState({ sessionId: "session-local-mention-1", isLoading: false })
+
+    const { result } = renderHook(() => useChatMessagingService())
+
+    await act(async () => {
+      await result.current.sendMessage()
+    })
+
+    const payload = mockStreamDesktopLocalChatCompletion.mock.calls[0]?.[0]
+    expect(payload?.explicit_task_agent_id).toBe("agent-image-1")
+    expect(JSON.stringify(payload?.messages ?? [])).toContain("画一只长翅膀的猫")
+    expect(JSON.stringify(payload?.messages ?? [])).not.toContain("@Image Agent")
+    expect(useChatStore.getState().messages[0]?.metaInfo).toMatchObject({
+      display_content: "@Image Agent 画一只长翅膀的猫",
+    })
 
     delete windowWithTauri.__TAURI_INTERNALS__
   })
@@ -788,6 +840,65 @@ describe("useChatMessagingService pending takeover orchestration", () => {
         root_execution_id: "exec-root-regen",
       },
     })
+    delete windowWithTauri.__TAURI_INTERNALS__
+  })
+
+  it("preserves explicit_task_agent_id when regenerating a reply from a task-agent mention", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI_INTERNALS__ = {}
+    mockListCustomTaskAgents.mockResolvedValueOnce([
+      { id: "agent-da-vinci", name: "达芬奇" } as any,
+    ])
+    mockStreamDesktopLocalChatCompletion.mockResolvedValueOnce("")
+
+    useChatStore.setState({
+      models: [
+        {
+          id: "model-local",
+          provider_model_id: "model-local",
+          request_route: "local_invoke",
+          runtime_source: "desktop_local",
+        } as any,
+      ],
+      config: {
+        model: "model-local",
+        temperatureEnabled: true,
+        temperature: 0.7,
+        topP: 1,
+        maxTokens: null,
+        reasoningEnabled: false,
+        reasoningEffort: "medium",
+      },
+      messages: [
+        {
+          id: "user-mention-1",
+          role: "user",
+          content: "帮我画一只带翅膀的猫咪",
+          createdAt: 1,
+          metaInfo: {
+            display_content: "@达芬奇 帮我画一只带翅膀的猫咪",
+          },
+        },
+        {
+          id: "assistant-mention-1",
+          role: "assistant",
+          content: "baseline",
+          createdAt: 2,
+        },
+      ],
+    })
+    useChatRuntimeStore.setState({ sessionId: "session-mention-regen-1" })
+
+    const { result } = renderHook(() => useChatMessagingService())
+
+    await act(async () => {
+      await result.current.regenerateMessage("assistant-mention-1")
+    })
+
+    const payload = mockStreamDesktopLocalChatCompletion.mock.calls[0]?.[0]
+    expect(payload?.regenerate).toBe(true)
+    expect(payload?.explicit_task_agent_id).toBe("agent-da-vinci")
+
     delete windowWithTauri.__TAURI_INTERNALS__
   })
 

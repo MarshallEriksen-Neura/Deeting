@@ -134,6 +134,7 @@ fn decision_has_safety_lock(decision: &LocalRouteDecision) -> bool {
         matches!(
             reason.as_str(),
             "explicit_route"
+                | "explicit_task_agent"
                 | "destructive_intent"
                 | "approval_sensitive"
                 | "mutating_capability"
@@ -394,6 +395,37 @@ mod tests {
         );
 
         assert_eq!(application.decision.route, LocalRouteKind::Direct);
+        assert!(!application.override_applied);
+    }
+
+    #[test]
+    fn apply_route_prior_does_not_override_explicit_task_agent_worker_route() {
+        let mut decision = test_decision(LocalRouteKind::Worker);
+        decision.reasons = vec!["explicit_task_agent".to_string(), "image_generation".to_string()];
+        let fingerprint = build_task_fingerprint("@达芬奇 画一只猫");
+        let application = apply_route_prior(
+            decision,
+            TaskPolicyHint {
+                query: "画一只猫".to_string(),
+                decision_point: "route".to_string(),
+                fingerprint_key: fingerprint.key(),
+                task_fingerprint: fingerprint,
+                recommended_action: Some("direct".to_string()),
+                priors: vec![super::TaskPolicyHintItem {
+                    action_key: "direct".to_string(),
+                    raw_weight: 1.2,
+                    effective_weight: 1.2,
+                    confidence: 0.9,
+                    evidence_count: 5,
+                    maturity: "confirmed".to_string(),
+                    updated_at_unix_ms: 0,
+                }],
+                guidance: None,
+            },
+            None,
+        );
+
+        assert_eq!(application.decision.route, LocalRouteKind::Worker);
         assert!(!application.override_applied);
     }
 

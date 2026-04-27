@@ -412,7 +412,7 @@ fn build_search_result_payload(
                     "programmatic_path": "execute_code_plan",
                     "direct_callable_capability_count": direct_callable_capability_count,
                 },
-                "usage_hint": "Prefer direct host capabilities from capability_groups.skill_tools, capability_groups.user_mcp_tools, and capability_groups.core_tools. For recipe_groups.skills, call activate_skill with the stable skill_id before relying on package-specific procedures, then use read_skill_resource for package-local references when needed. Use shell_execute only for actual host command execution. Use execute_code_plan only for multi-step program logic, loops, branching, or result aggregation.",
+                "usage_hint": "Prefer direct host capabilities from capability_groups.skill_tools, capability_groups.user_mcp_tools, and capability_groups.core_tools. When the task is a bounded subtask better handled by a specialist local agent, prefer delegate_task instead of manually chaining generic tools. For recipe_groups.skills, call activate_skill with the stable skill_id before relying on package-specific procedures, then use read_skill_resource for package-local references when needed. Use shell_execute only for actual host command execution. Use execute_code_plan only for multi-step program logic, loops, branching, or result aggregation.",
                 "availability": {
                     "enabled_assistant_count": enabled_assistant_count,
                     "read_path_mode": read_path_mode,
@@ -1031,6 +1031,16 @@ fn capability_profile_feature_score(
                 reasons.push("feature:memory_lookup".to_string());
             }
         }
+        "delegation" => {
+            if signals.delegation_like {
+                score += 34.0;
+                reasons.push("feature:delegation".to_string());
+            }
+            if signals.shell_like || signals.web_like || signals.memory_like {
+                score -= 6.0;
+                reasons.push("penalty:delegate_not_specialized".to_string());
+            }
+        }
         _ => {}
     }
 
@@ -1063,6 +1073,7 @@ struct CapabilitySignals {
     web_like: bool,
     memory_like: bool,
     monitor_like: bool,
+    delegation_like: bool,
 }
 
 fn capability_signals(
@@ -1128,6 +1139,24 @@ fn capability_signals(
             &["memory", "knowledge", "remember", "memo", "knowledge base"],
         ),
         monitor_like: contains_any(&text, &["monitor", "cron", "watch", "alert"]),
+        delegation_like: contains_any(
+            &text,
+            &[
+                "delegate",
+                "delegation",
+                "delegated",
+                "subtask",
+                "specialist",
+                "custom task agent",
+                "agent_delegation",
+                "delegated_result",
+                "worker",
+                "委派",
+                "子任务",
+                "智能体",
+                "代理",
+            ],
+        ),
     }
 }
 
@@ -2066,6 +2095,23 @@ impl QueryProfile {
             "finance"
         } else if contains_any(&normalized, &["记忆", "记住", "memory", "remember", "memo"]) {
             "memory"
+        } else if contains_any(
+            &normalized,
+            &[
+                "delegate",
+                "delegation",
+                "subtask",
+                "specialist agent",
+                "worker",
+                "custom task agent",
+                "委派",
+                "子任务",
+                "智能体",
+                "代理",
+                "交给",
+            ],
+        ) {
+            "delegation"
         } else {
             "general"
         };
@@ -2073,6 +2119,8 @@ impl QueryProfile {
             "local_inspection"
         } else if wants_recipes {
             "install_or_enable"
+        } else if domain == "delegation" {
+            "delegation"
         } else if domain == "web" {
             "web_fetch"
         } else if contains_any(&normalized, &["今天", "今日", "实时", "now", "latest"]) {
@@ -2160,6 +2208,21 @@ fn matches_domain(domain: &str, text: &str) -> bool {
             text,
             &["记忆", "记住", "memory", "remember", "memo", "knowledge"],
         ),
+        "delegation" => contains_any(
+            text,
+            &[
+                "delegate",
+                "delegation",
+                "subtask",
+                "specialist",
+                "custom task agent",
+                "worker",
+                "委派",
+                "子任务",
+                "智能体",
+                "代理",
+            ],
+        ),
         _ => false,
     }
 }
@@ -2191,6 +2254,25 @@ fn matches_intent(intent: &str, text: &str, asset_type: &str, _source_type: &str
             matches!(asset_type, "skill" | "skill_tool" | "tool")
         }
         "web_fetch" => contains_any(text, &["网页", "web", "html", "抓取", "url", "标题"]),
+        "delegation" => {
+            contains_any(
+                text,
+                &[
+                    "delegate",
+                    "delegation",
+                    "subtask",
+                    "specialist",
+                    "custom task agent",
+                    "agent_delegation",
+                    "worker",
+                    "delegated_result",
+                    "委派",
+                    "子任务",
+                    "智能体",
+                    "代理",
+                ],
+            ) || (asset_type == "tool" && text.contains("delegate_task"))
+        }
         "realtime_lookup" => {
             contains_any(text, &["实时", "today", "今日", "天气", "stock", "行情"])
         }
@@ -2567,6 +2649,109 @@ mod tests {
         assert_eq!(profile.intent, "local_inspection");
         assert!(!profile.wants_recipes);
         assert!(!profile.requires_network);
+    }
+
+    #[test]
+    fn query_profile_detects_delegation_queries() {
+        let profile = QueryProfile::from_query("帮我委派一个子任务给智能体处理");
+
+        assert_eq!(profile.domain, "delegation");
+        assert_eq!(profile.intent, "delegation");
+        assert!(!profile.requires_network);
+    }
+
+    #[test]
+    fn rank_registry_entry_prefers_delegate_task_for_delegation_queries() {
+        let profile = QueryProfile::from_query("帮我委派一个子任务给专门智能体处理");
+
+        let delegate_entry = CapabilityRegistryEntry {
+            asset: json!({
+                "id": "core.delegate_task",
+                "name": "delegate_task",
+                "description": "Delegate one bounded subtask to an enabled local custom task agent and return a canonical delegated_result object.",
+                "asset_type": "tool",
+                "source_type": "desktop_runtime_core",
+                "metadata": {
+                    "permission_scope": ["local_runtime", "agent_delegation"],
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "task": {"type": "string", "description": "Subtask to delegate"},
+                            "agent_id": {"type": "string", "description": "Optional explicit task agent id"}
+                        }
+                    }
+                }
+            }),
+            availability: RegistryAvailability {
+                class: ToolAvailabilityClass::CallableDirect,
+                install_required: false,
+                activation_required: false,
+                recommended_action: "execute",
+                status_reason: "core_runtime_tool",
+            },
+            tool_contract_source: None,
+        };
+
+        let web_entry = CapabilityRegistryEntry {
+            asset: json!({
+                "id": "tool.firecrawl_search",
+                "name": "firecrawl_search",
+                "description": "Search the web and optionally extract content from search results.",
+                "asset_type": "tool",
+                "source_type": "mcp",
+                "metadata": {
+                    "permission_scope": ["network_read"],
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string"}
+                        }
+                    }
+                }
+            }),
+            availability: RegistryAvailability {
+                class: ToolAvailabilityClass::CallableDirect,
+                install_required: false,
+                activation_required: false,
+                recommended_action: "execute",
+                status_reason: "ready_via_registry_runtime",
+            },
+            tool_contract_source: None,
+        };
+
+        let bm25 = bm25_asset_match_scores(
+            &profile.normalized,
+            &[delegate_entry.asset.clone(), web_entry.asset.clone()],
+        );
+        let structured = std::collections::HashMap::new();
+        let retrieval_scores = RetrievalScoreMaps {
+            bm25: bm25.clone(),
+            structured: structured.clone(),
+            semantic: std::collections::HashMap::new(),
+            fused: reciprocal_rank_fusion(&[&bm25, &structured]),
+        };
+
+        let delegate_rank = rank_registry_entry_with_feedback(
+            delegate_entry,
+            &profile,
+            &SearchFeedbackContext::default(),
+            &retrieval_scores,
+        )
+        .expect("delegate rank")
+        .score;
+        let web_rank = rank_registry_entry_with_feedback(
+            web_entry,
+            &profile,
+            &SearchFeedbackContext::default(),
+            &retrieval_scores,
+        )
+        .expect("web rank")
+        .score;
+
+        assert!(
+            delegate_rank > web_rank,
+            "delegate={delegate_rank}, web={web_rank}"
+        );
     }
 
     #[test]

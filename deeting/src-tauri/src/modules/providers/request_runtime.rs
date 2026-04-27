@@ -2551,6 +2551,7 @@ mod tests {
     };
     use crate::modules::providers::protocols::bridge::{
         build_canonical_chat_request_from_local_messages,
+        build_canonical_chat_request_from_local_messages_with_reasoning,
         build_chat_request_data_from_canonical_request,
     };
     use crate::modules::providers::types::{ProviderInstance, ProviderModel, ProviderPreset};

@@ -39,4 +39,22 @@ describe("parseLeadingTaskAgentMention", () => {
       },
     })
   })
+
+  it("resolves a mention when the task-agent name contains spaces", () => {
+    expect(
+      resolveLeadingTaskAgentMention("@Image Agent 画一只长翅膀的猫", [
+        { id: "agent-1", name: "Image Agent" },
+        { id: "agent-2", name: "Image" },
+      ]),
+    ).toEqual({
+      mention: {
+        agentName: "Image Agent",
+        prompt: "画一只长翅膀的猫",
+      },
+      agent: {
+        id: "agent-1",
+        name: "Image Agent",
+      },
+    })
+  })
 })
