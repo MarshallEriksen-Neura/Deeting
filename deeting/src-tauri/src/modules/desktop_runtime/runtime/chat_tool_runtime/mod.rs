@@ -325,20 +325,20 @@ fn is_explanatory_answer_request(query: &str) -> bool {
         "explain",
         "meaning",
         "define",
-        "娑撹桨绮堟稊?,
-        "閺勵垯绮堟稊?,
-        "娴犫偓娑斿牊妲?,
-        "閺堝绮堟稊鍫濆彠缁?,
-        "閸忓磭閮?,
-        "閸栧搫鍩?,
-        "鐟欙綁鍣?,
-        "鐠囧瓨妲?,
-        "鐠佽尪顔?,
-        "娴犲绮?,
+        "为什么",
+        "是什么",
+        "什么是",
+        "有什么关系",
+        "关系",
+        "区别",
+        "解释",
+        "说明",
+        "讲讲",
+        "介绍",
     ];
     let action_markers = [
-        "鐎瑰顥?, "閸掓稑缂?, "娣囶喗鏁?, "閸掔娀娅?, "鏉╂劘顢?, "閹笛嗩攽", "閹垫挸绱?, "閹舵挸褰?, "閹兼粎鍌?, "閺屻儲澹?, "妤犲矁鐦?,
-        "娣囨繂鐡?, "install", "create", "modify", "delete", "run", "execute", "open", "scrape",
+        "安装", "创建", "修改", "删除", "运行", "执行", "打开", "抓取", "搜索", "查找", "验证",
+        "保存", "install", "create", "modify", "delete", "run", "execute", "open", "scrape",
         "search", "find", "verify", "save",
     ];
 
@@ -361,9 +361,9 @@ fn response_mentions_pending_check(response: &serde_json::Value) -> bool {
         "verification remains pending",
         "could not verify",
         "unable to verify",
-        "闂団偓鐟曚浇绻樻稉鈧銉╃崣鐠?,
-        "鐏忔碍婀宀冪槈",
-        "閺冪姵纭舵宀冪槈",
+        "需要进一步验证",
+        "尚未验证",
+        "无法验证",
     ]
     .iter()
     .any(|marker| content.contains(marker))
