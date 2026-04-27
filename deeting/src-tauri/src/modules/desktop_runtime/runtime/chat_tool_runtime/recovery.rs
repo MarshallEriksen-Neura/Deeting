@@ -552,6 +552,8 @@ async fn advance_local_chat_execution_from_graph_state(
         session_id: state.session_id.clone(),
         temperature: state.temperature,
         max_tokens: state.max_tokens,
+        reasoning_enabled: state.reasoning_enabled,
+        reasoning_effort: state.reasoning_effort.clone(),
         active_capability: state.active_capability.clone(),
         active_skill_context: state.active_skill_context.clone(),
         discovery_gate_forced: state.discovery_gate_forced,

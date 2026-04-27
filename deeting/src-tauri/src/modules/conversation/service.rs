@@ -309,6 +309,8 @@ pub async fn execute_text_chat_raw(
         user_content: Some(trimmed.to_string()),
         temperature: Some(0.2),
         max_tokens: None,
+        reasoning_enabled: None,
+        reasoning_effort: None,
         request_id: None,
         stream: false,
         status_stream: false,
