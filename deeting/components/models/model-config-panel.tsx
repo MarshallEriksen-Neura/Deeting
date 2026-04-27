@@ -492,7 +492,7 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
                    className={cn(
                      "ws-control h-9 px-4 rounded-full border text-[11px] font-bold uppercase tracking-wider flex items-center gap-2 transition-all",
                      active 
-                       ? "bg-[var(--accent-strong)] border-[var(--accent-strong)] text-white shadow-lg shadow-[var(--accent-soft)]" 
+                       ? "bg-[var(--accent-strong)] border-[var(--accent-strong)] !text-[var(--accent-contrast)] shadow-lg shadow-[var(--accent-soft)]" 
                        : "border-[var(--hairline)] bg-[var(--panel-bg-inset)] text-[var(--ink-3)] hover:bg-[var(--panel-bg)] hover:border-[var(--hairline-strong)]"
                    )}
                 >
@@ -632,7 +632,7 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
             onClick={(event) => { event.stopPropagation(); void handleSave(); }} 
             disabled={!hasChanges || saving}
             className={cn(
-              "ws-control h-10 px-8 rounded-xl bg-[var(--accent-strong)] text-white font-bold text-[12px] shadow-lg shadow-[var(--accent-soft)] hover:brightness-110 active:scale-95 disabled:opacity-50 transition-all",
+              "ws-control h-10 px-8 rounded-xl bg-[var(--accent-strong)] !text-[var(--accent-contrast)] font-bold text-[12px] shadow-lg shadow-[var(--accent-soft)] hover:brightness-110 active:scale-95 disabled:opacity-50 transition-all",
               saving && "animate-pulse"
             )}
           >

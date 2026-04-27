@@ -603,13 +603,13 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
                   <div className="flex-none p-6 border-t border-[var(--hairline)] bg-[var(--panel-bg-inset)]/40 flex justify-end gap-3 backdrop-blur-md">
                      <button 
                         onClick={() => setSelectedModelId(null)}
-                        className="ws-control h-10 px-6 rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg)] text-[var(--ink-2)] font-bold text-[12px] hover:bg-[var(--panel-bg-inset)] transition-all"
+                        className="ws-control h-10 px-6 rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg)] !text-[var(--ink-2)] font-bold text-[12px] hover:bg-[var(--panel-bg-inset)] transition-all"
                      >
                         {t("actions.dismiss").toUpperCase()}
                      </button>
                      <button 
                         onClick={() => handleTestModel(selectedModel)}
-                        className="ws-control h-10 px-8 rounded-xl bg-[var(--accent-strong)] text-white font-bold text-[12px] shadow-lg shadow-[var(--accent-soft)] hover:brightness-110 active:scale-95 transition-all"
+                        className="ws-control h-10 px-8 rounded-xl bg-[var(--accent-strong)] !text-[var(--accent-contrast)] font-bold text-[12px] shadow-lg shadow-[var(--accent-soft)] hover:brightness-110 active:scale-95 transition-all"
                      >
                         {t("actions.initiateTest").toUpperCase()}
                      </button>
