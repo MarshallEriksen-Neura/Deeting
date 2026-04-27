@@ -310,7 +310,7 @@
       "temperatureEnabled": "Enabled",
       "temperatureDisabled": "Disabled",
       "temperature": "Temperature",
-      "topP": "Top P",
+      "topP": "Top P",`r`n      "reasoningToggle": "Reasoning",`r`n      "reasoningEnabled": "Enabled",`r`n      "reasoningDisabled": "Disabled",`r`n      "reasoningEffort": "Effort",`r`n      "reasoningEffortOptions": {`r`n        "low": "Low",`r`n        "medium": "Medium",`r`n        "high": "High"`r`n      },
       "system": {
         "userName": "Admin User",
         "integrity": "System Integrity: {value}"
@@ -613,7 +613,7 @@
     },
     "coder": {
       "envLabel": "PYTHON_ENV",
-      "envMeta": "{version} â€¢ {latency} latency",
+      "envMeta": "{version} â€?{latency} latency",
       "placeholder": "# Write your logic here or ask for a snippet...",
       "libraries": "Libraries",
       "shortcuts": "Shortcuts",
@@ -691,3 +691,4 @@
     }
   }
 }
+

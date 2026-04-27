@@ -12,6 +12,18 @@ export type ModelCapability =
 
 export type ProviderStatus = "online" | "offline" | "degraded" | "syncing" | "unknown";
 export type PriceTier = "free" | "cheap" | "moderate" | "expensive" | "premium";
+export type ModelReasoningDefaultMode = "auto" | "on" | "off";
+export type ModelReasoningEffort = "low" | "medium" | "high";
+
+export interface ModelRequestHeaderEntry {
+  name: string;
+  value: string;
+}
+
+export interface ModelReasoningDefaults {
+  enabled: ModelReasoningDefaultMode;
+  effort: ModelReasoningEffort;
+}
 
 export interface ProviderModel {
   uuid: string;

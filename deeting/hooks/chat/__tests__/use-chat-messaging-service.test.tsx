@@ -80,9 +80,12 @@ describe("useChatMessagingService pending takeover orchestration", () => {
       models: [{ id: "model-1", provider_model_id: "model-1" }],
       config: {
         model: "model-1",
+        temperatureEnabled: true,
         temperature: 0.7,
         topP: 1,
         maxTokens: null,
+        reasoningEnabled: false,
+        reasoningEffort: "medium",
       },
     })
     useChatRuntimeStore.setState({
@@ -143,9 +146,12 @@ describe("useChatMessagingService pending takeover orchestration", () => {
       ],
       config: {
         model: "qwen-local",
+        temperatureEnabled: true,
         temperature: 0.7,
         topP: 1,
         maxTokens: null,
+        reasoningEnabled: false,
+        reasoningEffort: "medium",
       },
       input: "hello desktop",
     })
@@ -182,9 +188,12 @@ describe("useChatMessagingService pending takeover orchestration", () => {
       ],
       config: {
         model: "qwen-local",
+        temperatureEnabled: true,
         temperature: 0.7,
         topP: 1,
         maxTokens: null,
+        reasoningEnabled: false,
+        reasoningEffort: "medium",
       },
       input: "What is this page explaining?",
       pageContext: {
@@ -193,8 +202,8 @@ describe("useChatMessagingService pending takeover orchestration", () => {
         url: "https://linalg.apachecn.org/chapter01/",
         host: "linalg.apachecn.org",
         headingsSummary: ["第一讲：方程组的几何解释"],
-        mainTextSnippet: "上图是我们都很熟悉的直角坐标系中两直线相交的情况。",
-        visibleTextSnippet: "我们把第一个向量称作 col1。",
+        mainTextSnippet: "Linear equations with intersecting lines.",
+        visibleTextSnippet: "We call the first vector col1.",
         capturedAt: 1,
       },
     })
@@ -266,9 +275,12 @@ describe("useChatMessagingService pending takeover orchestration", () => {
       ],
       config: {
         model: "qwen-local",
+        temperatureEnabled: true,
         temperature: 0.7,
         topP: 1,
         maxTokens: null,
+        reasoningEnabled: false,
+        reasoningEffort: "medium",
       },
       input: "check local folder",
     })
@@ -327,9 +339,12 @@ describe("useChatMessagingService pending takeover orchestration", () => {
       ],
       config: {
         model: "model-local",
+        temperatureEnabled: true,
         temperature: 0.7,
         topP: 1,
         maxTokens: null,
+        reasoningEnabled: false,
+        reasoningEffort: "medium",
       },
       input: "initial prompt",
     })
@@ -401,9 +416,12 @@ describe("useChatMessagingService pending takeover orchestration", () => {
       ],
       config: {
         model: "model-local",
+        temperatureEnabled: true,
         temperature: 0.7,
         topP: 1,
         maxTokens: null,
+        reasoningEnabled: false,
+        reasoningEffort: "medium",
       },
       input: "initial prompt",
     })
@@ -463,9 +481,12 @@ describe("useChatMessagingService pending takeover orchestration", () => {
       ],
       config: {
         model: "model-local",
+        temperatureEnabled: true,
         temperature: 0.7,
         topP: 1,
         maxTokens: null,
+        reasoningEnabled: false,
+        reasoningEffort: "medium",
       },
       input: "deferred prompt",
       selectedKnowledgeFileIds: ["doc-3"],
@@ -517,9 +538,12 @@ describe("useChatMessagingService pending takeover orchestration", () => {
       ],
       config: {
         model: "model-local",
+        temperatureEnabled: true,
         temperature: 0.7,
         topP: 1,
         maxTokens: null,
+        reasoningEnabled: false,
+        reasoningEffort: "medium",
       },
       input: "initial prompt",
     })
@@ -719,9 +743,12 @@ describe("useChatMessagingService pending takeover orchestration", () => {
       ],
       config: {
         model: "model-local",
+        temperatureEnabled: true,
         temperature: 0.7,
         topP: 1,
         maxTokens: null,
+        reasoningEnabled: false,
+        reasoningEffort: "medium",
       },
       messages: [
         {
@@ -791,9 +818,12 @@ describe("useChatMessagingService pending takeover orchestration", () => {
       ],
       config: {
         model: "model-local",
+        temperatureEnabled: true,
         temperature: 0.7,
         topP: 1,
         maxTokens: null,
+        reasoningEnabled: false,
+        reasoningEffort: "medium",
       },
       sessionId: "session-1",
       input: "initial prompt",
@@ -902,3 +932,5 @@ describe("useChatMessagingService pending takeover orchestration", () => {
     delete windowWithTauri.__TAURI_INTERNALS__
   })
 })
+
+

@@ -13,6 +13,10 @@ pub(crate) struct PersistedChatToolRuntimeContext {
     pub(super) session_id: String,
     pub(super) temperature: Option<f32>,
     pub(super) max_tokens: Option<u32>,
+    #[serde(default)]
+    pub(super) reasoning_enabled: Option<bool>,
+    #[serde(default)]
+    pub(super) reasoning_effort: Option<String>,
     pub(super) active_capability: Option<LocalCapabilityActivationState>,
     #[serde(default)]
     pub(super) active_skill_context: Option<ActiveSkillContextState>,
@@ -92,6 +96,8 @@ pub(super) fn runtime_state_from_persisted_context(
         session_id: context.session_id,
         temperature: context.temperature,
         max_tokens: context.max_tokens,
+        reasoning_enabled: context.reasoning_enabled,
+        reasoning_effort: context.reasoning_effort,
         active_capability: context.active_capability,
         active_skill_context: context.active_skill_context,
         discovery_gate_forced: context.discovery_gate_forced,

@@ -1,13 +1,14 @@
-
+{
   "task-agents": {
     "title": "本地任务智能体",
-    "subtitle": "创建、管理并运行存储在此设备上的自定义任务智能体。",
+    "subtitle": "创建、管理并运行存储在当前设备上的自定义任务智能体。",
     "unsupported": {
       "title": "仅桌面端可用",
-      "description": "本地任务智能体依赖 Tauri 本地命令，仅在桌面应用中可用。"
+      "description": "本地任务智能体依赖 Tauri 本地命令，只能在桌面应用内使用。"
     },
     "actions": {
       "new": "新建智能体",
+      "importClaude": "导入 Claude 智能体",
       "save": "保存",
       "saving": "保存中...",
       "create": "创建智能体",
@@ -16,8 +17,7 @@
       "reindexing": "重新索引中...",
       "runPreview": "运行预览",
       "runningPreview": "预览运行中...",
-      "importClaude": "导入 Claude 智能体",
-      "backToStarter": "返回创建智能体"
+      "backToStarter": "返回创建"
     },
     "stats": {
       "total": "智能体总数",
@@ -26,7 +26,7 @@
       "updated": "最近更新"
     },
     "library": {
-      "title": "智能体列表",
+      "title": "智能体库",
       "description": "搜索并切换你的本地任务智能体。",
       "searchPlaceholder": "按名称、描述、提示词或标签搜索...",
       "import": "导入",
@@ -34,14 +34,14 @@
       "draftDescription": "你正在编辑一个尚未保存的新任务智能体。",
       "emptyTitle": "还没有任务智能体",
       "emptyDescription": "创建你的第一个任务智能体，开始构建可复用的本地工作流。",
-      "noResults": "未找到匹配的任务智能体。",
+      "noResults": "没有匹配的任务智能体。",
       "unnamed": "未命名智能体",
-      "modifiedShort": "修改: {value}",
+      "modifiedShort": "修改于：{value}",
       "updatedAt": "更新于 {value}",
       "kindLabels": {
         "chat": "对话核心",
-        "image": "视觉",
-        "voice": "语音"
+        "image": "视觉生成",
+        "voice": "语音输出"
       },
       "sections": {
         "chat": "聊天任务智能体",
@@ -50,13 +50,13 @@
       }
     },
     "starter": {
-      "title": "先选择要创建的智能体类型",
-      "description": "从类型开始，再进入对应的专用创建工作台。聊天任务智能体和图片智能体会走完全不同的配置路径。",
+      "title": "选择要创建的智能体类型",
+      "description": "先选类型，再进入为该角色定制的创建工作台。",
       "protocol": "初始化协议 / 选择单元类型",
       "typePrefix": "类型_",
       "chat": {
         "title": "聊天任务智能体",
-        "description": "适合在 chat 中协作办事、承接任务，并按需绑定本地 skills 与 MCP tools。",
+        "description": "适合在聊天中协作办事、承接任务并编排能力。",
         "cta": "创建聊天任务智能体",
         "tags": {
           "chat": "对话",
@@ -64,36 +64,36 @@
           "tools": "工具调用"
         },
         "features": {
-          "chat": "定义这个智能体在 chat 中的身份、职责和任务提示词。",
+          "chat": "定义这个智能体在聊天中的行为方式，以及它应该负责的工作。",
           "skills": "只在确实需要时绑定本地技能与 MCP 工具，避免无关能力混入。"
         }
       },
       "image": {
         "title": "图片智能体",
-        "description": "适合在 chat 中通过 @ 触发出图，专注风格、参数和图片预览，不暴露通用绑定配置。",
+        "description": "适合通过聊天里的 `@` 调用，专注于风格调优和图片预览。",
         "cta": "创建图片智能体",
         "tags": {
-          "style": "风格设定",
+          "style": "风格",
           "params": "出图参数",
-          "preview": "图片预览"
+          "preview": "预览"
         },
         "features": {
-          "invoke": "把提示词角色、风格和出图默认值收敛成可复用的图片角色。",
-          "preview": "保持图片优先的创作体验，不展示 skills 和 MCP tools 这类无关配置。"
+          "invoke": "把提示词、风格和输出默认值收敛成可复用的图片角色。",
+          "preview": "保持图片优先的创作体验，不暴露通用工具绑定配置。"
         }
       },
       "voice": {
         "title": "语音智能体",
-        "description": "适合在 chat 中把文本直接转成语音输出，专注声音风格和音频预览。",
+        "description": "适合在聊天中把文本转成语音，专注于声音参数和音频预览。",
         "cta": "创建语音智能体",
         "tags": {
-          "voice": "声音设定",
+          "voice": "声音",
           "output": "音频输出",
-          "preview": "语音预览"
+          "preview": "预览"
         },
         "features": {
-          "invoke": "把默认 voice、格式和语音参数收敛成可复用的语音角色。",
-          "preview": "直接把音频输出回到 chat block，而不是走独立语音流程。"
+          "invoke": "定义可复用的语音默认值，并让聊天按需触发语音生成。",
+          "preview": "把音频作为聊天块返回，而不是走一条独立的语音流程。"
         }
       }
     },
@@ -144,14 +144,14 @@
     },
     "editor": {
       "newTitle": "新建任务智能体",
-      "newDescription": "先定义任务、绑定工具和技能，保存后再运行预览。",
+      "newDescription": "先定义任务、绑定合适的工具和技能，再保存并运行预览。",
       "chatWorkspace": {
         "title": "创建聊天任务智能体",
         "description": "配置协作型聊天智能体的身份、提示词和能力绑定。"
       },
       "imageWorkspace": {
         "title": "创建图片智能体",
-        "description": "配置图片智能体的风格、输出默认值和可视化预览。"
+        "description": "配置图片智能体的风格控制、输出默认值和可视化预览。"
       },
       "voiceWorkspace": {
         "title": "创建语音智能体",
@@ -159,14 +159,14 @@
       },
       "draft": "草稿",
       "updatedAt": "最近更新 {value}",
-      "requiredHint": "* 为必填项",
+      "requiredHint": "* 表示必填字段",
       "basic": {
         "title": "智能体身份",
-        "description": "命名这个智能体，并定义它的主要职责。"
+        "description": "为这个智能体命名，并定义它应该如何工作。"
       },
       "model": {
         "title": "模型路由",
-        "description": "常用字段保持易编辑，同时保留高级 JSON 配置能力。"
+        "description": "保持常用字段易于编辑，同时保留高级 JSON 配置能力。"
       },
       "fields": {
         "name": "名称",
@@ -186,7 +186,7 @@
       },
       "placeholders": {
         "name": "例如：发布说明撰写器",
-        "description": "描述这个智能体擅长的任务和适用场景。",
+        "description": "说明这个智能体擅长什么任务，以及适合在什么场景下使用。",
         "taskPrompt": "你是一个被委派的本地任务智能体，请专注于...",
         "model": "default",
         "providerModelId": "provider/model-id",
@@ -194,21 +194,21 @@
         "tags": "研究, 文档, 发布"
       },
       "modelConfig": {
-        "helper": "保存时，上方基础模型字段会覆盖 JSON 中同名的配置项。",
-        "invalidJson": "模型配置 JSON 必须是合法的对象。"
+        "helper": "保存时，上方基础模型字段会覆盖 JSON 块中同名的配置项。",
+        "invalidJson": "模型配置 JSON 必须是合法对象。"
       },
       "modelPicker": {
         "loading": "正在加载模型...",
         "searchPlaceholder": "按模型 ID、提供商或路由搜索...",
         "empty": "当前暂无可用模型。",
         "noResults": "没有匹配的模型。",
-        "helper": "模型很多时可先搜索筛选；如需高级路由，右侧 Provider Model ID 仍可单独编辑。",
-        "currentUnlistedHint": "当前已保存的模型不在可选列表中，可能已下线或暂不可用。",
-        "useDefault": "恢复 default"
+        "helper": "模型较多时可先搜索筛选；如需高级路由，仍可单独编辑 Provider Model ID。",
+        "currentUnlistedHint": "当前已保存的模型不在可选列表中，可能已下线或暂时不可用。",
+        "useDefault": "恢复默认"
       },
       "imageConfig": {
         "title": "图片默认参数",
-        "description": "为这个任务智能体设置每次出图都会复用的默认参数。",
+        "description": "设置这个任务智能体每次出图时都会复用的默认参数。",
         "helper": "这些结构化字段会写入 model_config.image_generation，并在保存时覆盖高级 JSON 中同名的配置项。",
         "invalidExtraParamsJson": "图片额外参数 JSON 必须是合法对象。",
         "fields": {
@@ -230,7 +230,7 @@
           "extraParamsJson": "额外参数 JSON"
         },
         "placeholders": {
-          "negativePrompt": "默认希望避免出现的内容。",
+          "negativePrompt": "默认希望避免生成的内容。",
           "maxInputImages": "1",
           "imageUrl": "https://example.com/reference.png",
           "aspectRatio": "1:1",
@@ -247,12 +247,12 @@
           "extraParamsJson": "{\n  \"prompt_optimizer\": true\n}"
         },
         "helpers": {
-          "allowTextOnly": "开启后，即使用户本次没有上传参考图，这个图片智能体也可以仅凭文本请求出图。"
+          "allowTextOnly": "开启后，即使用户没有上传参考图，这个图片智能体也可以仅凭文本请求出图。"
         }
       },
       "voiceConfig": {
         "title": "语音默认参数",
-        "description": "为这个任务智能体设置每次语音输出都会复用的默认参数。",
+        "description": "设置这个任务智能体每次语音输出时都会复用的默认参数。",
         "helper": "这些结构化字段会写入 model_config.text_to_speech，并在保存时覆盖高级 JSON 中同名的配置项。",
         "invalidExtraParamsJson": "语音额外参数 JSON 必须是合法对象。",
         "fields": {
@@ -269,14 +269,14 @@
         }
       },
       "toggles": {
-        "discoverable": "允许该智能体进入本地索引，并被本地发现流程命中。",
-        "enabled": "停用后，该智能体不会参与预览或执行。",
-        "preferredForImageGeneration": "仅对图片类型智能体生效。开启后，worker 分支会优先把图片请求分发给该智能体。"
+        "discoverable": "允许这个智能体被本地索引并参与发现。",
+        "enabled": "停用后，这个智能体不会参与预览和执行。",
+        "preferredForImageGeneration": "在图片智能体上开启后，worker 分支会优先把图片请求分发给它。"
       },
       "values": {
         "typeLocked": "类型已锁定",
         "preferredForImageGenerationOn": "优先",
-        "preferredForImageGenerationOff": "普通"
+        "preferredForImageGenerationOff": "标准"
       },
       "ui": {
         "neuralEngine": "模型引擎",
@@ -292,22 +292,22 @@
       "title": "绑定目录",
       "description": "任务智能体只能调用明确绑定的工具和本地已安装技能。",
       "toolsTitle": "可用工具",
-      "toolsDescription": "选择该智能体可调用的本地 MCP 工具。",
+      "toolsDescription": "选择这个智能体可调用的本地 MCP 工具。",
       "skillsTitle": "已安装技能",
-      "skillsDescription": "这里只能绑定已在本地安装的技能。",
+      "skillsDescription": "这里只能绑定已经安装在本地的技能。",
       "assetTitle": "参考资产",
-      "assetDescription": "选择一个已保存的本地 HTML 资产，在该 agent 执行时作为参考上下文提供。",
+      "assetDescription": "选择一个已保存的本地 HTML 资产，在这个智能体执行时作为参考上下文。",
       "clearAsset": "清空",
       "assetBound": "已引用",
       "searchToolsPlaceholder": "按名称、服务名或状态搜索工具...",
-      "searchSkillsPlaceholder": "按技能 ID、版本或运行时搜索...",
+      "searchSkillsPlaceholder": "按技能 ID、版本或运行时搜索技能...",
       "selectedOnly": "只看已选",
       "noAssets": "当前没有可用的本地 HTML 资产。",
       "noTools": "当前没有可用的本地工具。",
       "noSkills": "当前没有已安装技能。",
       "noFilteredTools": "没有匹配当前筛选条件的工具。",
       "noFilteredSkills": "没有匹配当前筛选条件的技能。",
-      "skillMeta": "版本 {version} · 运行时 {runtime}",
+      "skillMeta": "版本 {version} / 运行时 {runtime}",
       "unknownVersion": "未知",
       "unknownRuntime": "未知",
       "unknownServer": "未知服务",
@@ -329,7 +329,7 @@
       "placeholders": {
         "message": "描述你想让这个智能体处理的任务..."
       },
-      "unsavedDescription": "请先保存草稿。预览必须依赖已持久化的本地智能体 ID。",
+      "unsavedDescription": "请先保存草稿。预览依赖一个已持久化的本地任务智能体 ID。",
       "errorTitle": "预览失败",
       "emptyTitle": "还没有预览结果",
       "emptyDescription": "运行一次预览后，这里会显示回答、推理、工具调用和原始载荷。",
@@ -342,9 +342,39 @@
       "toolTrace": "工具轨迹",
       "raw": "原始载荷"
     },
+    "importDialog": {
+      "title": "导入 Claude 智能体",
+      "description": "上传一个或多个 markdown Claude 智能体文件，先预览解析结果，再将它们导入为本地任务智能体。",
+      "fileLabel": "Markdown 文件",
+      "fileHint": "从电脑中选择一个或多个 .md 或 .mdx Claude 智能体文件。",
+      "scanRootsLabel": "额外扫描根目录",
+      "scanRootsHint": "可选的额外根目录，每行一个路径。留空则扫描 ~/.claude/agents 和 ~/.codex/agents。",
+      "scanRootsHelper": "用于在导入到桌面注册表之前，预览本地 Claude 或 Codex 智能体目录。",
+      "filesSelected": "已选择 {count} 个文件",
+      "previewTitle": "导入预览",
+      "previewRoot": "导入来源：{value}",
+      "previewEmpty": "先运行预览，查看哪些 Claude 智能体可以导入。",
+      "scanTitle": "扫描本地智能体目录",
+      "scanRootSummary": "已扫描 {count} 个根目录",
+      "scanEmpty": "运行扫描以查看本地 Claude 和 Codex 智能体目录。",
+      "toolSummary": "将自动绑定工具：{value}",
+      "skillSummary": "将自动绑定技能：{value}",
+      "noBindings": "未检测到安全默认绑定，这个智能体将以纯提示词方式导入。",
+      "previewAction": "预览导入",
+      "previewing": "预览中...",
+      "scanAction": "扫描本地智能体",
+      "scanning": "扫描中...",
+      "importAction": "导入智能体",
+      "importExternalAction": "导入扫描到的智能体",
+      "importing": "导入中...",
+      "badges": {
+        "new": "新建",
+        "update": "更新"
+      }
+    },
     "debug": {
       "title": "调试快照",
-      "description": "查看当前将被保存的本地载荷，以及正在生效的运行时输入。",
+      "description": "查看将被保存的本地载荷，以及当前生效的运行时输入。",
       "stateDump": "系统状态快照",
       "rawProfileProtocol": "原始配置协议",
       "cards": {
@@ -357,22 +387,22 @@
         "none": "无",
         "yes": "是",
         "no": "否",
-        "surfaced": "已展现",
+        "surfaced": "已展示",
         "redacted": "已隐藏"
       },
       "rawProfile": "当前载荷"
     },
     "deleteDialog": {
       "title": "删除任务智能体？",
-      "description": "确定要从此设备删除“{name}”吗？这会移除本地配置，并从发现索引中清除。",
+      "description": "确定要从当前设备删除“{name}”吗？这会移除本地配置，并从发现索引中清除。",
       "cancel": "取消",
       "confirm": "删除智能体"
     },
     "discardDialog": {
       "title": "丢弃未保存的更改？",
-      "description": "你所做的更改可能未保存。",
+      "description": "你有未保存的更改，继续后这些改动将会丢失。",
       "cancel": "取消",
-      "confirm": "离开"
+      "confirm": "丢弃"
     },
     "toast": {
       "created": "任务智能体已创建",
@@ -386,37 +416,7 @@
       "importPreviewFailed": "Claude 智能体导入预览失败",
       "importFailed": "Claude 智能体导入失败",
       "imported": "Claude 智能体导入完成（新建 {created} 个，更新 {updated} 个）",
-      "externalImported": "扫描智能体导入完成（新建 {created} 个，更新 {updated} 个）"
-    },
-    "importDialog": {
-      "title": "导入 Claude 智能体",
-      "description": "上传一个或多个 markdown Claude 智能体文件，先预览解析结果，再将它们导入为本地任务智能体。",
-      "fileLabel": "Markdown 文件",
-      "fileHint": "从电脑中选择一个或多个 .md 或 .mdx Claude 智能体文件。",
-      "scanRootsLabel": "额外扫描根目录",
-      "scanRootsHint": "可选的额外根目录，每行一个路径。留空则扫描 ~/.claude/agents 和 ~/.codex/agents。",
-      "scanRootsHelper": "用于在导入到桌面注册表之前，预览本地 Claude 或 Codex 智能体文件夹。",
-      "filesSelected": "已选择 {count} 个文件",
-      "previewTitle": "导入预览",
-      "previewRoot": "导入来源：{value}",
-      "previewEmpty": "先运行预览，查看哪些 Claude 智能体可以导入。",
-      "scanTitle": "扫描本地智能体文件夹",
-      "scanRootSummary": "已扫描 {count} 个根目录",
-      "scanEmpty": "运行扫描以查看本地 Claude 和 Codex 智能体文件夹。",
-      "previewAction": "预览导入",
-      "previewing": "预览中...",
-      "scanAction": "扫描本地智能体",
-      "scanning": "扫描中...",
-      "importAction": "导入智能体",
-      "importExternalAction": "导入扫描到的智能体",
-      "importing": "导入中...",
-      "badges": {
-        "new": "新建",
-        "update": "更新"
-      },
-      "toolSummary": "将自动绑定工具：{value}",
-      "skillSummary": "将自动绑定技能：{value}",
-      "noBindings": "未检测到安全默认绑定，此智能体将以纯提示词方式导入。"
+      "externalImported": "扫描到的智能体导入完成（新建 {created} 个，更新 {updated} 个）"
     }
   }
 }

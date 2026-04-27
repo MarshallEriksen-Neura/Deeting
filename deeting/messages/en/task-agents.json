@@ -1,3 +1,4 @@
+{
 
   "task-agents": {
     "title": "Local Task Agents",
@@ -121,7 +122,7 @@
       "coreRegistry": "Core Registry / {count} Units",
       "defaultKind": "CHAT_AGENT",
       "diagnostic": "Diagnostic",
-      "copyright": "漏 {year} DEETING LABS",
+      "copyright": "© {year} DEETING LABS",
       "inspector": {
         "title": "Diagnostic.log",
         "efficiencyTitle": "Neural Efficiency",
@@ -307,7 +308,7 @@
       "noSkills": "No installed skills available.",
       "noFilteredTools": "No tools match the current filter.",
       "noFilteredSkills": "No skills match the current filter.",
-      "skillMeta": "Version {version} 路 Runtime {runtime}",
+      "skillMeta": "Version {version} / Runtime {runtime}",
       "unknownVersion": "unknown",
       "unknownRuntime": "unknown",
       "unknownServer": "Unknown Server",
@@ -420,4 +421,5 @@
     }
   }
 }
+
 

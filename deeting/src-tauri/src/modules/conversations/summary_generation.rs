@@ -70,6 +70,7 @@ pub(crate) async fn request_local_auxiliary_text(
         None,
         Some(LOCAL_CONVERSATION_AUXILIARY_TEMPERATURE),
         max_tokens,
+        crate::modules::ai_upstream::ReasoningRequestConfig::default(),
         None,
         session_id,
     )

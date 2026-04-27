@@ -9,16 +9,110 @@ import { Label } from "@/components/ui/shadcn/label";
 import { Input } from "@/components/ui/shadcn/input";
 import { Separator } from "@/components/ui/shadcn/separator";
 import { cn } from "@/lib/utils";
-import type { ProviderModel, ModelCapability } from "./types";
+import type { ModelCapability, ModelReasoningDefaultMode, ModelReasoningDefaults, ModelRequestHeaderEntry, ProviderModel } from "./types";
 import { CAPABILITY_META } from "./types";
 import type { ProviderModelUpdate } from "@/lib/api/providers";
-import { Check } from "lucide-react";
+import { Check, Plus, Trash2 } from "lucide-react";
 
 const CHAT_COMPLETIONS_PATH = "chat/completions";
 const RESPONSES_PATH = "responses";
 type RequestMode = "chat_completions" | "responses" | "custom";
 type ChatContentCompatibilityMode = "auto" | "structured" | "string_only";
 const CHAT_CONTENT_COMPATIBILITY_KEY = "chat_content_compatibility";
+const MODEL_REQUEST_HEADERS_KEY = "request_headers";
+const MODEL_REASONING_DEFAULTS_KEY = "reasoning_defaults";
+const BLOCKED_HEADER_NAMES = new Set([
+  "authorization",
+  "content-type",
+  "x-trace-id",
+  "x-api-key",
+  "api-key",
+  "x-goog-api-key",
+]);
+const DEFAULT_REASONING_DEFAULTS: ModelReasoningDefaults = { enabled: "auto", effort: "medium" };
+
+function parseModelRequestHeaders(configOverride?: Record<string, unknown> | null): ModelRequestHeaderEntry[] {
+  const raw = configOverride?.[MODEL_REQUEST_HEADERS_KEY]
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return []
+  return Object.entries(raw as Record<string, unknown>).map(([name, value]) => ({
+    name,
+    value: typeof value === "string" ? value : String(value ?? ""),
+  }))
+}
+
+function parseModelReasoningDefaults(configOverride?: Record<string, unknown> | null): ModelReasoningDefaults {
+  const raw = configOverride?.[MODEL_REASONING_DEFAULTS_KEY]
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return DEFAULT_REASONING_DEFAULTS
+  const object = raw as Record<string, unknown>
+  const enabled = typeof object.enabled === "string" ? object.enabled.trim().toLowerCase() : "auto"
+  const effort = typeof object.effort === "string" ? object.effort.trim().toLowerCase() : "medium"
+  return {
+    enabled: enabled === "on" || enabled === "off" ? (enabled as ModelReasoningDefaultMode) : "auto",
+    effort: effort === "low" || effort === "high" ? (effort as ModelReasoningDefaults["effort"]) : "medium",
+  }
+}
+
+function normalizeModelRequestHeaders(entries: ModelRequestHeaderEntry[]) {
+  const headers: Record<string, string> = {}
+  const blocked: string[] = []
+  const duplicates = new Set<string>()
+  const seen = new Map<string, string>()
+
+  for (const entry of entries) {
+    const name = entry.name.trim()
+    const value = entry.value.trim()
+    if (!name || !value) continue
+    const normalized = name.toLowerCase()
+    if (BLOCKED_HEADER_NAMES.has(normalized)) {
+      blocked.push(name)
+      continue
+    }
+    if (seen.has(normalized)) {
+      duplicates.add(name)
+    }
+    seen.set(normalized, name)
+    headers[name] = value
+  }
+
+  return { headers, blocked, duplicates: Array.from(duplicates) }
+}
+
+function mergeModelConfigOverride(
+  model: ProviderModel,
+  chatContentCompatibility: ChatContentCompatibilityMode,
+  showChatContentCompatibility: boolean,
+  capabilities: ModelCapability[],
+  requestHeaders: ModelRequestHeaderEntry[],
+  reasoningDefaults: ModelReasoningDefaults
+) {
+  const nextConfigOverride = { ...(model.config_override || {}) } as Record<string, unknown>
+
+  if (showChatContentCompatibility && capabilities.includes("chat")) {
+    if (chatContentCompatibility === "string_only" || chatContentCompatibility === "structured") {
+      nextConfigOverride[CHAT_CONTENT_COMPATIBILITY_KEY] = chatContentCompatibility
+    } else {
+      delete nextConfigOverride[CHAT_CONTENT_COMPATIBILITY_KEY]
+    }
+  }
+
+  const normalizedHeaders = normalizeModelRequestHeaders(requestHeaders).headers
+  if (Object.keys(normalizedHeaders).length > 0) {
+    nextConfigOverride[MODEL_REQUEST_HEADERS_KEY] = normalizedHeaders
+  } else {
+    delete nextConfigOverride[MODEL_REQUEST_HEADERS_KEY]
+  }
+
+  if (reasoningDefaults.enabled === "auto") {
+    delete nextConfigOverride[MODEL_REASONING_DEFAULTS_KEY]
+  } else {
+    nextConfigOverride[MODEL_REASONING_DEFAULTS_KEY] = {
+      enabled: reasoningDefaults.enabled,
+      effort: reasoningDefaults.effort,
+    }
+  }
+
+  return nextConfigOverride
+}
 
 function parseChatContentCompatibilityMode(configOverride?: Record<string, unknown> | null): ChatContentCompatibilityMode {
   const raw = configOverride?.[CHAT_CONTENT_COMPATIBILITY_KEY];
@@ -102,6 +196,8 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
   const [upstreamPath, setUpstreamPath] = React.useState(model.upstream_path || "");
   const [requestMode, setRequestMode] = React.useState<RequestMode>(detectRequestMode(model.upstream_path));
   const [chatContentCompatibility, setChatContentCompatibility] = React.useState<ChatContentCompatibilityMode>(parseChatContentCompatibilityMode(model.config_override));
+  const [requestHeaders, setRequestHeaders] = React.useState<ModelRequestHeaderEntry[]>(parseModelRequestHeaders(model.config_override));
+  const [reasoningDefaults, setReasoningDefaults] = React.useState<ModelReasoningDefaults>(parseModelReasoningDefaults(model.config_override));
   const [weight, setWeight] = React.useState(model.weight?.toString() || "");
   const [priority, setPriority] = React.useState(model.priority?.toString() || "");
   const [inputPrice, setInputPrice] = React.useState(model.pricing.input?.toString() || "");
@@ -127,6 +223,8 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
     unifiedModelId: unifiedModelId.trim(),
     upstreamPath: upstreamPath.trim(),
     chatContentCompatibility,
+    requestHeaders: requestHeaders.map((entry) => ({ name: entry.name.trim(), value: entry.value.trim() })),
+    reasoningDefaults,
     weight: weight.trim(),
     priority: priority.trim(),
     inputPrice: inputPrice.trim(),
@@ -137,7 +235,7 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
     maxInputImages: maxInputImages.trim(),
     contextWindow: contextWindow.trim(),
     capabilities: [...capabilities].sort(),
-  }), [capabilities, chatContentCompatibility, contextWindow, displayName, inputPrice, maxInputImages, maxOutputTokens, outputPrice, priority, rpm, tpm, unifiedModelId, upstreamPath, weight]);
+  }), [capabilities, chatContentCompatibility, contextWindow, displayName, inputPrice, maxInputImages, maxOutputTokens, outputPrice, priority, reasoningDefaults, requestHeaders, rpm, tpm, unifiedModelId, upstreamPath, weight]);
 
   const hasChanges = React.useMemo(() => {
     if (!initialSnapshot.current) return false;
@@ -145,6 +243,20 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
   }, [snapshot]);
 
   const requestBase = React.useMemo(() => inferRequestBase(model.request_url, model.upstream_path), [model.request_url, model.upstream_path]);
+  const normalizedHeaderState = React.useMemo(
+    () => normalizeModelRequestHeaders(requestHeaders),
+    [requestHeaders]
+  );
+
+  const blockedHeaderNamesText = React.useMemo(
+    () => normalizedHeaderState.blocked.join(", "),
+    [normalizedHeaderState.blocked]
+  );
+
+  const duplicateHeaderNamesText = React.useMemo(
+    () => normalizedHeaderState.duplicates.join(", "),
+    [normalizedHeaderState.duplicates]
+  );
   const requestUrlPreview = React.useMemo(() => {
     if (!requestBase) return model.request_url || "";
     const path = normalizeUpstreamPath(upstreamPath);
@@ -199,15 +311,14 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
     const alias = unifiedModelId.trim();
     if (alias && alias !== model.id) routing.unified_model_alias = alias;
     if (Object.keys(routing).length) payload.routing_config = routing;
-    if (showChatContentCompatibility && capabilities.includes("chat")) {
-      if (chatContentCompatibility === "string_only" || chatContentCompatibility === "structured") {
-        payload.config_override = { ...(model.config_override || {}), [CHAT_CONTENT_COMPATIBILITY_KEY]: chatContentCompatibility };
-      } else if (model.config_override?.[CHAT_CONTENT_COMPATIBILITY_KEY] != null) {
-        const nextConfigOverride = { ...(model.config_override || {}) };
-        delete nextConfigOverride[CHAT_CONTENT_COMPATIBILITY_KEY];
-        payload.config_override = nextConfigOverride;
-      }
-    }
+    payload.config_override = mergeModelConfigOverride(
+      model,
+      chatContentCompatibility,
+      showChatContentCompatibility,
+      capabilities,
+      requestHeaders,
+      reasoningDefaults
+    );
     return payload;
   }, [capabilities, chatContentCompatibility, contextWindow, displayName, inputPrice, maxInputImages, maxOutputTokens, model.config_override, model.id, normalizeNumber, outputPrice, priority, rpm, showChatContentCompatibility, tpm, unifiedModelId, upstreamPath, weight]);
 
@@ -231,7 +342,10 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
     setDisplayName((snap.displayName as string) || "");
     setUnifiedModelId((snap.unifiedModelId as string) || model.id);
     setUpstreamPath((snap.upstreamPath as string) ?? model.upstream_path ?? "");
+    setRequestMode(detectRequestMode((snap.upstreamPath as string) ?? model.upstream_path ?? ""));
     setChatContentCompatibility(((snap.chatContentCompatibility as ChatContentCompatibilityMode) || "auto"));
+    setRequestHeaders(((snap.requestHeaders as ModelRequestHeaderEntry[]) || []).map((entry) => ({ ...entry })));
+    setReasoningDefaults(((snap.reasoningDefaults as ModelReasoningDefaults) || DEFAULT_REASONING_DEFAULTS));
     setWeight((snap.weight as string) || "");
     setPriority((snap.priority as string) || "");
     setInputPrice((snap.inputPrice as string) || "");
@@ -251,6 +365,8 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
       unifiedModelId: model.unified_model_id || model.id,
       upstreamPath: model.upstream_path || "",
       chatContentCompatibility: parseChatContentCompatibilityMode(model.config_override),
+      requestHeaders: parseModelRequestHeaders(model.config_override),
+      reasoningDefaults: parseModelReasoningDefaults(model.config_override),
       weight: model.weight?.toString() || "",
       priority: model.priority?.toString() || "",
       inputPrice: model.pricing.input?.toString() || "",
@@ -266,6 +382,9 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
     setUnifiedModelId(initial.unifiedModelId);
     setUpstreamPath(initial.upstreamPath);
     setRequestMode(detectRequestMode(initial.upstreamPath));
+    setChatContentCompatibility(initial.chatContentCompatibility);
+    setRequestHeaders(initial.requestHeaders);
+    setReasoningDefaults(initial.reasoningDefaults);
     setWeight(initial.weight);
     setPriority(initial.priority);
     setInputPrice(initial.inputPrice);
@@ -278,7 +397,7 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
     setCapabilities(initial.capabilities as ModelCapability[]);
     setError(null);
     setSaving(false);
-    initialSnapshot.current = { ...initial, capabilities: [...(initial.capabilities as ModelCapability[])].sort() };
+    initialSnapshot.current = { ...initial, requestHeaders: initial.requestHeaders.map((entry) => ({ ...entry })), capabilities: [...(initial.capabilities as ModelCapability[])].sort() };
   }, [model]);
 
   return (
@@ -387,6 +506,85 @@ export function ModelConfigPanel({ model, showChatContentCompatibility = false, 
 
         <Separator className="bg-[var(--hairline)]" />
 
+        <Section title={t("requestHeaders.title")} description={t("requestHeaders.desc")}>
+          <div className="space-y-3 mt-4">
+            {requestHeaders.map((entry, index) => (
+              <div key={`${index}-${entry.name}`} className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                <TextInput
+                  label={index === 0 ? t("requestHeaders.name") : ""}
+                  value={entry.name}
+                  onChange={(value) => setRequestHeaders((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, name: value } : item))}
+                  placeholder="X-Feature"
+                />
+                <TextInput
+                  label={index === 0 ? t("requestHeaders.value") : ""}
+                  value={entry.value}
+                  onChange={(value) => setRequestHeaders((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, value } : item))}
+                  placeholder="beta"
+                />
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={() => setRequestHeaders((prev) => prev.filter((_, itemIndex) => itemIndex !== index))}
+                    className="ws-control h-10 w-10 rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg-inset)]/50 text-[var(--ink-3)] hover:bg-[var(--panel-bg)] inline-flex items-center justify-center"
+                    aria-label={t("requestHeaders.add")}
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setRequestHeaders((prev) => [...prev, { name: "", value: "" }])}
+                className="ws-control h-10 rounded-xl border px-4 text-[12px] font-bold transition-all flex items-center gap-2 border-[var(--hairline)] bg-[var(--panel-bg-inset)]/50 text-[var(--ink-3)] hover:bg-[var(--panel-bg)]"
+              >
+                <Plus className="size-4" />
+                {t("requestHeaders.add")}
+              </button>
+              {blockedHeaderNamesText ? <p className="ws-caption text-[11px] text-[var(--warn)]">{t("requestHeaders.blocked", { names: blockedHeaderNamesText })}</p> : null}
+              {duplicateHeaderNamesText ? <p className="ws-caption text-[11px] text-[var(--warn)]">{t("requestHeaders.duplicates", { names: duplicateHeaderNamesText })}</p> : null}
+            </div>
+          </div>
+        </Section>
+
+        <Separator className="bg-[var(--hairline)]" />
+
+        <Section title={t("reasoning.title")} description={t("reasoning.desc")}>
+          <div className="grid gap-6 md:grid-cols-2 mt-4">
+            <div className="space-y-3">
+              <Label className="ws-meta text-[10px] tracking-wider mb-2 block">{t("reasoning.defaultMode")}</Label>
+              <div className="flex flex-wrap gap-2">
+                {(["auto", "on", "off"] as const).map((mode) => {
+                  const active = reasoningDefaults.enabled === mode
+                  return (
+                    <button key={mode} type="button" onClick={() => setReasoningDefaults((prev) => ({ ...prev, enabled: mode }))} className={cn("ws-control h-10 rounded-xl border px-4 text-[12px] font-bold transition-all flex items-center gap-2", active ? "border-[var(--accent-strong)] bg-[var(--accent-soft)] text-[var(--accent-ink)] shadow-sm" : "border-[var(--hairline)] bg-[var(--panel-bg-inset)]/50 text-[var(--ink-3)] hover:bg-[var(--panel-bg)]")}>
+                      {t(`reasoning.modes.${mode}`)}
+                      {active && <Check className="size-3.5" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="space-y-3">
+              <Label className="ws-meta text-[10px] tracking-wider mb-2 block">{t("reasoning.effort")}</Label>
+              <div className="flex flex-wrap gap-2">
+                {(["low", "medium", "high"] as const).map((effort) => {
+                  const active = reasoningDefaults.effort === effort
+                  return (
+                    <button key={effort} type="button" onClick={() => setReasoningDefaults((prev) => ({ ...prev, effort }))} className={cn("ws-control h-10 rounded-xl border px-4 text-[12px] font-bold transition-all flex items-center gap-2", active ? "border-[var(--accent-strong)] bg-[var(--accent-soft)] text-[var(--accent-ink)] shadow-sm" : "border-[var(--hairline)] bg-[var(--panel-bg-inset)]/50 text-[var(--ink-3)] hover:bg-[var(--panel-bg)]")}>
+                      {t(`reasoning.efforts.${effort}`)}
+                      {active && <Check className="size-3.5" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </Section>
+
+        <Separator className="bg-[var(--hairline)]" />
         <Section title={t("pricing.title")} description={t("pricing.desc")}>
           <div className="grid gap-6 md:grid-cols-2 mt-4">
             <NumberInput label={t("pricing.input")} value={inputPrice} onChange={setInputPrice} placeholder="0.0015" suffix="$ / 1k tokens" />
@@ -456,3 +654,8 @@ function Section({ title, description, className, children }: { title: string; d
     </div>
   );
 }
+
+
+
+
+

@@ -270,6 +270,8 @@ pub fn build_canonical_request_from_value(
         stream,
         temperature,
         max_output_tokens,
+        reasoning_enabled: None,
+        reasoning_effort: None,
         metadata: json!({}),
         client_context: CanonicalClientContext::default(),
     }
@@ -281,6 +283,26 @@ pub fn build_canonical_chat_request_from_local_messages(
     stream: bool,
     temperature: Option<f64>,
     max_output_tokens: Option<i64>,
+) -> CanonicalRequest {
+    build_canonical_chat_request_from_local_messages_with_reasoning(
+        model,
+        messages,
+        stream,
+        temperature,
+        max_output_tokens,
+        None,
+        None,
+    )
+}
+
+pub fn build_canonical_chat_request_from_local_messages_with_reasoning(
+    model: &str,
+    messages: &[LocalChatInputMessage],
+    stream: bool,
+    temperature: Option<f64>,
+    max_output_tokens: Option<i64>,
+    reasoning_enabled: Option<bool>,
+    reasoning_effort: Option<String>,
 ) -> CanonicalRequest {
     CanonicalRequest {
         canonical_version: "2026-03-07".to_string(),
@@ -295,6 +317,8 @@ pub fn build_canonical_chat_request_from_local_messages(
         stream,
         temperature,
         max_output_tokens,
+        reasoning_enabled,
+        reasoning_effort,
         metadata: json!({}),
         client_context: CanonicalClientContext::default(),
     }

@@ -157,6 +157,7 @@ async fn execute_via_direct_llm(
         None,
         input.temperature.or(Some(0.3)),
         input.max_tokens.or(Some(4096)),
+        crate::modules::ai_upstream::ReasoningRequestConfig::default(),
         None,
         None,
     )

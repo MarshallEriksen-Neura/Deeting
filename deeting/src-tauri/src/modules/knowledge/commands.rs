@@ -118,6 +118,7 @@ pub async fn extract_local_knowledge_image_text(
         None,
         Some(0.1),
         Some(2000),
+        crate::modules::ai_upstream::ReasoningRequestConfig::default(),
         None,
         None,
     )

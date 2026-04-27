@@ -881,8 +881,7 @@ export function useChatMessagingService() {
     if (!trimmedInput && draft.attachments.length === 0) return false
 
     // ==========================================
-    // 关键并发保护：如果当前正在请求，先取消旧请求
-    // ==========================================
+    // 闂佺绻戞繛濠囧极椤撱垻宓侀悹鍝勬惈缁插搫菐閸ャ劎绠栧┑顔哄灲閺佸秴顫濋澶嬫悙闂佸搫顑嗙划宀€绱炵€ｎ喖绀堢€广儱妫崝鈧梺闈╄礋閸斿繘顢氶鈧晥闁稿矉濡囩粈澶愭煕韫囨挾澧曠憸鏉挎搐閳藉宕奸悢闈╃礈闁荤姴娲弨閬嶆儑?    // ==========================================
     if (useChatRuntimeStore.getState().isLoading) {
       console.log("[ChatRuntime] Interrupting active request for new message");
       await cancelActiveRequest();
@@ -975,8 +974,7 @@ export function useChatMessagingService() {
     setInterruptedMessageId(null)
     clearAllCompareStates()
 
-    // 更新 UI 状态
-    setMessages([...currentMessages, outgoingUserMessage, assistantMessage])
+    // 闂佸搫娲ら悺銊╁蓟?UI 闂佺粯顭堥崺鏍焵?    setMessages([...currentMessages, outgoingUserMessage, assistantMessage])
     dispatchedToConversation = true
     if (
       clearComposerMode === "always" ||
@@ -1008,6 +1006,8 @@ export function useChatMessagingService() {
         messages: requestMessages,
         temperature: config.temperatureEnabled ? config.temperature : undefined,
         max_tokens: undefined,
+        reasoning_enabled: config.reasoningEnabled,
+        reasoning_effort: config.reasoningEnabled ? config.reasoningEffort : undefined,
         request_id: createRequestId(),
         session_id: resolvedSessionId ?? undefined,
         metadata: buildKnowledgeSelectionMetadata(draft.selectedKnowledgeFileIds),
@@ -1058,8 +1058,7 @@ export function useChatMessagingService() {
       appendMessageBlocks(assistantMessageId, [createErrorBlock(assistantMessageId, message)])
       setErrorMessage(message)
     } finally {
-      // 竞争条件保护：只有当前请求仍然是最新请求时才清理全局状态，
-      // 避免旧请求 finally 覆盖新请求的状态
+      // 缂備焦姊婚崑妯艰姳閵堝绾ч柍銉ュ级椤愯棄菐閸ャ劎绠栧┑顔哄灲閺佸秴顫濋鈧☉褔鏌￠崼婵愭Ц缂傚秴顑夊畷婊冾吋閸偄娈插┑顔炬嚀閸婇鍒掑☉銏″€块柤绋跨仛绗戦梺鍝勭墐閸嬫捇鏌￠崒娑橆€滄い鏇ㄥ墮鏁堥柛灞剧⊕椤ρ囨煙闂堟稓校缂佹柨顭烽幃鍫曞幢濡も偓瀵潡鎮橀悙鈺佷壕闂佺粯顭堥崺鏍焵椤戣法绛忕紒?      // 闂侇剙鐏濋崢銈夊籍瑜戦顒€效?finally 閻熸洖妫涘ú濠囧棘閹峰矈鍤炴慨鐟板€绘慨鎼佸箑?
       if (activeAssistantMessageIdRef.current === assistantMessageId) {
         setIsLoading(false)
         syncAssistantActivityStatus({
@@ -1194,12 +1193,12 @@ export function useChatMessagingService() {
   ])
 
   const regenerateMessage = useCallback(async (targetMessageId: string) => {
-    // 并发保护：如果有正在进行的请求，先取消
+    // Cancel the current request before starting a regeneration pass.
     if (useChatRuntimeStore.getState().isLoading) {
       await cancelActiveRequest()
     }
 
-    // 找到目标 assistant 消息
+    // Find the assistant message being regenerated.
     const currentMessages = useChatStore.getState().messages
     const targetIndex = currentMessages.findIndex(
       (m) => m.id === targetMessageId && m.role === "assistant"
@@ -1218,7 +1217,7 @@ export function useChatMessagingService() {
       isTauriRuntime,
     })
 
-    // 移除旧的 assistant 消息，插入新的空 assistant 占位
+    // Replace the old assistant message with a fresh placeholder.
     const messagesBeforeTarget = currentMessages.slice(0, targetIndex)
     const assistantMessageId = createMessageId()
     const newAssistantMessage: Message = {
@@ -1236,7 +1235,7 @@ export function useChatMessagingService() {
     setActiveMessageId(assistantMessageId)
     clearStatus()
 
-    // 构建请求消息（不含被删除的 assistant 消息）
+    // Rebuild the request from the conversation state before the deleted assistant reply.
     const resolvedSessionId = resolveCurrentSessionId(sessionStorageKey)
     try {
       if (!resolvedSessionId) {
@@ -1255,6 +1254,8 @@ export function useChatMessagingService() {
         messages: requestMessages,
         temperature: config.temperatureEnabled ? config.temperature : undefined,
         max_tokens: undefined,
+        reasoning_enabled: config.reasoningEnabled,
+        reasoning_effort: config.reasoningEnabled ? config.reasoningEffort : undefined,
         request_id: createRequestId(),
         session_id: resolvedSessionId ?? undefined,
         regenerate: true,
@@ -1304,7 +1305,7 @@ export function useChatMessagingService() {
       appendMessageBlocks(assistantMessageId, [createErrorBlock(assistantMessageId, message)])
       setErrorMessage(message)
     } finally {
-      // 竞争条件保护：只有当前请求仍然是最新请求时才清理全局状态
+      // 濞寸姴鎳庡﹢顏囥亹閹惧啿顤呮繛鎴濈墛娴煎懏绂掑鍡樞︽繛鑼额嚙婵晝鎷犻柨瀣勾闁哄啳鍩栫粩濠氭偠閸℃寮块悘鐐╁亾闁绘鍩栭埀?
       if (activeAssistantMessageIdRef.current === assistantMessageId) {
         setIsLoading(false)
         syncAssistantActivityStatus({

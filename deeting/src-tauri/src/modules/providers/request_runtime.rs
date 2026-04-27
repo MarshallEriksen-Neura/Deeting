@@ -12,6 +12,8 @@ use crate::modules::providers::types::{ProviderInstance, ProviderModel, Provider
 const CHAT_CONTENT_COMPATIBILITY_KEY: &str = "chat_content_compatibility";
 const CHAT_CONTENT_COMPATIBILITY_STRING_ONLY: &str = "string_only";
 const CHAT_CONTENT_COMPATIBILITY_STRUCTURED: &str = "structured";
+const MODEL_REQUEST_HEADERS_KEY: &str = "request_headers";
+const MODEL_REASONING_DEFAULTS_KEY: &str = "reasoning_defaults";
 
 #[derive(Debug, Clone)]
 pub struct PreparedProviderRequest {
@@ -248,7 +250,10 @@ pub fn prepare_provider_request_from_canonical_request(
         .cloned()
         .or_else(|| effective_config.get("headers").cloned())
         .unwrap_or_else(|| json!({}));
-    let merged_headers = deep_merge_json(&resolved_headers, &capability_headers);
+    let merged_headers = deep_merge_json(
+        &deep_merge_json(&resolved_headers, &capability_headers),
+        &sanitized_model_request_headers(model),
+    );
 
     let capability_params = effective_config
         .get("default_params")
@@ -317,6 +322,12 @@ pub fn prepare_provider_request_from_canonical_request(
         tools,
         &hb,
     )?;
+    let rendered_body = apply_protocol_reasoning_mapping(
+        rendered_body,
+        protocol_profile.protocol_family.as_str(),
+        &canonical_request,
+        &model.config_override,
+    );
 
     let mut headers = BTreeMap::new();
     headers.insert("Content-Type".to_string(), "application/json".to_string());
@@ -441,6 +452,105 @@ fn build_effective_config(
         deep_merge_json(&capability_config, &model.config_override)
     } else {
         capability_config
+    }
+}
+
+fn sanitized_model_request_headers(model: &ProviderModel) -> Value {
+    let mut headers = Map::new();
+    let Some(object) = model
+        .config_override
+        .get(MODEL_REQUEST_HEADERS_KEY)
+        .and_then(|value| value.as_object())
+    else {
+        return Value::Object(headers);
+    };
+
+    for (name, value) in object {
+        let trimmed_name = name.trim();
+        if trimmed_name.is_empty() || is_blocked_model_request_header(trimmed_name) {
+            continue;
+        }
+        let rendered_value = render_scalar(value).trim().to_string();
+        if rendered_value.is_empty() {
+            continue;
+        }
+        headers.insert(trimmed_name.to_string(), Value::String(rendered_value));
+    }
+
+    Value::Object(headers)
+}
+
+fn is_blocked_model_request_header(name: &str) -> bool {
+    let normalized = name.trim().to_ascii_lowercase();
+    matches!(
+        normalized.as_str(),
+        "authorization"
+            | "content-type"
+            | "x-trace-id"
+            | "x-api-key"
+            | "api-key"
+            | "x-goog-api-key"
+    )
+}
+
+fn apply_protocol_reasoning_mapping(
+    mut body: Value,
+    protocol_family: &str,
+    canonical_request: &CanonicalRequest,
+    model_config_override: &Value,
+) -> Value {
+    let enabled = canonical_request
+        .reasoning_enabled
+        .or_else(|| model_reasoning_default_enabled(model_config_override));
+    if enabled != Some(true) {
+        return body;
+    }
+
+    if protocol_family != "openai_responses" {
+        return body;
+    }
+
+    let effort = canonical_request
+        .reasoning_effort
+        .as_deref()
+        .and_then(normalize_reasoning_effort)
+        .or_else(|| model_reasoning_default_effort(model_config_override))
+        .unwrap_or_else(|| "medium".to_string());
+
+    if let Some(object) = body.as_object_mut() {
+        object.insert(
+            "reasoning".to_string(),
+            json!({
+                "effort": effort,
+            }),
+        );
+    }
+    body
+}
+
+fn model_reasoning_default_enabled(model_config_override: &Value) -> Option<bool> {
+    let value = model_config_override
+        .get(MODEL_REASONING_DEFAULTS_KEY)
+        .and_then(|defaults| defaults.get("enabled"))?;
+    match value_as_string(value)?.trim().to_ascii_lowercase().as_str() {
+        "on" | "true" | "enabled" => Some(true),
+        "off" | "false" | "disabled" => Some(false),
+        _ => None,
+    }
+}
+
+fn model_reasoning_default_effort(model_config_override: &Value) -> Option<String> {
+    model_config_override
+        .get(MODEL_REASONING_DEFAULTS_KEY)
+        .and_then(|defaults| defaults.get("effort"))
+        .and_then(value_as_string)
+        .and_then(|value| normalize_reasoning_effort(value.as_str()))
+}
+
+fn normalize_reasoning_effort(value: &str) -> Option<String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "low" | "medium" | "high" => Some(value.trim().to_ascii_lowercase()),
+        _ => None,
     }
 }
 
@@ -3474,6 +3584,256 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn prepare_provider_request_adds_sanitized_model_request_headers() {
+        let preset = mock_preset();
+        let instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
+        let mut model = mock_model(&["chat"]);
+        model.config_override = json!({
+            "request_headers": {
+                "X-Feature": "beta",
+                "Authorization": "bad",
+                "x-api-key": "also-bad",
+                "X-Empty": "   "
+            }
+        });
+
+        let prepared = prepare_provider_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "chat",
+            json!({
+                "model": "gpt-4o-mini",
+                "messages": [{ "role": "user", "content": "hi" }],
+                "stream": false
+            }),
+            None,
+            Some("trace-headers-1"),
+        )
+        .expect("prepare request with model headers");
+
+        assert_eq!(prepared.headers.get("X-Feature"), Some(&"beta".to_string()));
+        assert_eq!(prepared.headers.get("Authorization"), Some(&"Bearer sk-test".to_string()));
+        assert_eq!(prepared.headers.get("X-Trace-Id"), Some(&"trace-headers-1".to_string()));
+        assert!(!prepared.headers.contains_key("x-api-key"));
+        assert!(!prepared.headers.contains_key("X-Empty"));
+    }
+
+    #[test]
+    fn prepare_provider_request_responses_family_applies_reasoning_from_request() {
+        let mut preset = mock_preset();
+        preset.provider = "openai".to_string();
+        preset.protocol_profiles = json!({
+            "chat": {
+                "runtime_version": "v2",
+                "schema_version": "2026-03-07",
+                "profile_id": "openai:chat:openai_responses",
+                "provider": "openai",
+                "protocol_family": "openai_responses",
+                "capability": "chat",
+                "transport": {
+                    "method": "POST",
+                    "path": "responses",
+                    "query_template": {},
+                    "header_template": {}
+                },
+                "request": {
+                    "template_engine": "openai_compat",
+                    "request_template": {
+                        "model": null,
+                        "input": null,
+                        "stream": null
+                    },
+                    "request_builder": {
+                        "name": "responses_input_from_messages_or_items",
+                        "config": {}
+                    }
+                },
+                "response": {
+                    "decoder": { "name": "openai_responses", "config": {} },
+                    "response_template": {}
+                },
+                "stream": {
+                    "stream_decoder": { "name": "openai_responses_events", "config": {} }
+                },
+                "auth": { "auth_policy": "inherit", "config": {} },
+                "features": {
+                    "supports_messages": false,
+                    "supports_input_items": true
+                },
+                "defaults": {
+                    "headers": {},
+                    "query": {},
+                    "body": {}
+                }
+            }
+        });
+        let instance = mock_instance(json!({ "protocol": "responses", "auto_append_v1": true }));
+        let mut model = mock_model(&["chat"]);
+        model.upstream_path = "responses".to_string();
+
+        let canonical = build_canonical_chat_request_from_local_messages_with_reasoning(
+            "gpt-5.4",
+            &[LocalChatInputMessage {
+                role: "user".to_string(),
+                content: "reason carefully".to_string(),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
+            }],
+            false,
+            None,
+            None,
+            Some(true),
+            Some("high".to_string()),
+        );
+        let request_data = build_chat_request_data_from_canonical_request(&canonical);
+        let prepared = prepare_provider_request_from_canonical_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "chat",
+            request_data,
+            canonical,
+            None,
+            None,
+        )
+        .expect("prepare responses request with reasoning");
+
+        assert_eq!(prepared.body["reasoning"]["effort"], json!("high"));
+    }
+
+    #[test]
+    fn prepare_provider_request_unsupported_protocol_omits_reasoning_body() {
+        let preset = mock_preset();
+        let instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
+        let model = mock_model(&["chat"]);
+
+        let canonical = build_canonical_chat_request_from_local_messages_with_reasoning(
+            "gpt-4o-mini",
+            &[LocalChatInputMessage {
+                role: "user".to_string(),
+                content: "reason carefully".to_string(),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
+            }],
+            false,
+            None,
+            None,
+            Some(true),
+            Some("high".to_string()),
+        );
+        let request_data = build_chat_request_data_from_canonical_request(&canonical);
+        let prepared = prepare_provider_request_from_canonical_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "chat",
+            request_data,
+            canonical,
+            None,
+            None,
+        )
+        .expect("prepare chat request without reasoning mapping");
+
+        assert!(prepared.body.get("reasoning").is_none());
+    }
+
+    #[test]
+    fn prepare_provider_request_responses_family_uses_model_reasoning_defaults() {
+        let mut preset = mock_preset();
+        preset.provider = "openai".to_string();
+        preset.protocol_profiles = json!({
+            "chat": {
+                "runtime_version": "v2",
+                "schema_version": "2026-03-07",
+                "profile_id": "openai:chat:openai_responses",
+                "provider": "openai",
+                "protocol_family": "openai_responses",
+                "capability": "chat",
+                "transport": {
+                    "method": "POST",
+                    "path": "responses",
+                    "query_template": {},
+                    "header_template": {}
+                },
+                "request": {
+                    "template_engine": "openai_compat",
+                    "request_template": {
+                        "model": null,
+                        "input": null,
+                        "stream": null
+                    },
+                    "request_builder": {
+                        "name": "responses_input_from_messages_or_items",
+                        "config": {}
+                    }
+                },
+                "response": {
+                    "decoder": { "name": "openai_responses", "config": {} },
+                    "response_template": {}
+                },
+                "stream": {
+                    "stream_decoder": { "name": "openai_responses_events", "config": {} }
+                },
+                "auth": { "auth_policy": "inherit", "config": {} },
+                "features": {
+                    "supports_messages": false,
+                    "supports_input_items": true
+                },
+                "defaults": {
+                    "headers": {},
+                    "query": {},
+                    "body": {}
+                }
+            }
+        });
+        let instance = mock_instance(json!({ "protocol": "responses", "auto_append_v1": true }));
+        let mut model = mock_model(&["chat"]);
+        model.upstream_path = "responses".to_string();
+        model.config_override = json!({
+            "reasoning_defaults": {
+                "enabled": "on",
+                "effort": "low"
+            }
+        });
+
+        let canonical = build_canonical_chat_request_from_local_messages_with_reasoning(
+            "gpt-5.4",
+            &[LocalChatInputMessage {
+                role: "user".to_string(),
+                content: "reason carefully".to_string(),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
+            }],
+            false,
+            None,
+            None,
+            None,
+            None,
+        );
+        let request_data = build_chat_request_data_from_canonical_request(&canonical);
+        let prepared = prepare_provider_request_from_canonical_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "chat",
+            request_data,
+            canonical,
+            None,
+            None,
+        )
+        .expect("prepare responses request with model defaults");
+
+        assert_eq!(prepared.body["reasoning"]["effort"], json!("low"));
+    }
     fn prepare_provider_request_openai_chat_stringifies_structured_content_when_model_requests_it()
     {
         let preset = mock_preset();
@@ -4068,3 +4428,5 @@ mod tests {
         assert_eq!(schema["properties"], json!({}));
     }
 }
+
+

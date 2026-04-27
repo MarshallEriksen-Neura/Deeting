@@ -10,6 +10,8 @@ pub struct LocalChatCompletionRequest {
     pub status_stream: Option<bool>,
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
+    pub reasoning_enabled: Option<bool>,
+    pub reasoning_effort: Option<String>,
     pub request_id: Option<String>,
     pub provider_model_id: Option<String>,
     pub explicit_task_agent_id: Option<String>,

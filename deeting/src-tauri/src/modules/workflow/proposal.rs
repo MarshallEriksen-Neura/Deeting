@@ -102,6 +102,7 @@ pub(crate) async fn generate_proposal(
         None,
         Some(0.3),
         Some(2048),
+        crate::modules::ai_upstream::ReasoningRequestConfig::default(),
         None,
         None,
     )

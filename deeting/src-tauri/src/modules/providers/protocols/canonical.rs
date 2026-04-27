@@ -90,6 +90,10 @@ pub struct CanonicalRequest {
     pub temperature: Option<f64>,
     #[serde(default)]
     pub max_output_tokens: Option<i64>,
+    #[serde(default)]
+    pub reasoning_enabled: Option<bool>,
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
     #[serde(default = "default_json_object")]
     pub metadata: Value,
     #[serde(default)]

@@ -806,6 +806,7 @@ async fn run_constrained_judgment_pass(
         None,
         Some(0.0),
         Some(220),
+        crate::modules::ai_upstream::ReasoningRequestConfig::default(),
         None,
         None,
     )

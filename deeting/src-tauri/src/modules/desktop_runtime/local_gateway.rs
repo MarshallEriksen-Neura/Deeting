@@ -829,6 +829,8 @@ fn map_request_to_orchestrator_input(
         user_content,
         temperature: payload.temperature,
         max_tokens: payload.max_tokens,
+        reasoning_enabled: payload.reasoning_enabled,
+        reasoning_effort: normalize_optional_string(payload.reasoning_effort.as_deref()),
         request_id: normalize_optional_string(payload.request_id.as_deref()),
         stream,
         status_stream,

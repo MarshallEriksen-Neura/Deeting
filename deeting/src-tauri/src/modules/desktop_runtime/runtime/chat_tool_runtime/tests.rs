@@ -137,16 +137,92 @@ fn delegate_task_preflight_blocks_when_selected_agent_has_no_executable_surface(
 }
 
 #[test]
+fn delegate_task_preflight_allows_empty_bound_surface_for_image_agent() {
+    let record = DelegatedExecutionRecord {
+        execution_id: "exec-image-1".to_string(),
+        kind: DelegatedExecutionKind::CustomTaskAgent,
+        status: DelegatedExecutionStatus::Succeeded,
+        target: DelegatedExecutionTarget {
+            id: "agent-image-1".to_string(),
+            name: "Image Agent".to_string(),
+            invocation_kind: Some("image_generation".to_string()),
+            worker_ref: None,
+            workflow_run_id: None,
+        },
+        selection: DelegatedExecutionSelection {
+            explicit: true,
+            score: Some(10000),
+            reason_codes: vec!["explicit_task_agent".to_string()],
+            reason_text: Some("explicit_task_agent".to_string()),
+            candidate_count: 1,
+            selected_from_top_k: 1,
+            callable_coverage_score: Some(0.2),
+            modality_fit_score: Some(1.0),
+            profile_prior_score: Some(0.0),
+        },
+        packet_receipt: None,
+        available_actions: Vec::new(),
+        children: vec![DelegatedExecutionChildRecord {
+            id: "exec-image-1:execution".to_string(),
+            phase_id: Some("execution".to_string()),
+            step_type: Some("custom_task_agent".to_string()),
+            title: "Run delegated custom task agent".to_string(),
+            status: "completed".to_string(),
+            worker_ref: Some("custom_task_agent:agent-image-1".to_string()),
+            summary: Some("Generated image successfully".to_string()),
+            error: None,
+            available_actions: Vec::new(),
+        }],
+        summary: Some("Generated image successfully".to_string()),
+        primary_output: Some(serde_json::json!({
+            "status": "completed",
+            "agent_id": "agent-image-1",
+            "agent_name": "Image Agent",
+            "invocation_kind": "image_generation",
+            "images": ["asset://image-1.png"],
+            "callable_mcp_tool_ids": [],
+            "guidance_skill_ids": [],
+            "callable_skill_action_refs": []
+        })),
+        error: None,
+        started_at_ms: 1,
+        completed_at_ms: Some(2),
+    };
+
+    let delegated_result = record.delegated_result();
+    assert_eq!(
+        delegated_result
+            .get("status")
+            .and_then(serde_json::Value::as_str),
+        Some("completed")
+    );
+    assert_eq!(
+        delegated_result
+            .get("primary_output")
+            .and_then(|value| value.get("invocation_kind"))
+            .and_then(serde_json::Value::as_str),
+        Some("image_generation")
+    );
+    assert_eq!(
+        delegated_result
+            .get("primary_output")
+            .and_then(|value| value.get("callable_mcp_tool_ids"))
+            .and_then(serde_json::Value::as_array)
+            .map(|items| items.len()),
+        Some(0)
+    );
+}
+#[test]
 fn explanatory_answer_requests_skip_policy_gate_forcing() {
     assert!(is_explanatory_answer_request(
-        "能否详细的给我解释一下 ai 自学习应用和飞轮有什么关系"
+        "鑳藉惁璇︾粏鐨勭粰鎴戣В閲婁竴涓?ai 鑷涔犲簲鐢ㄥ拰椋炶疆鏈変粈涔堝叧绯?
     ));
     assert!(is_explanatory_answer_request(
         "Explain the relationship between AI learning apps and flywheels"
     ));
 
     assert!(!is_explanatory_answer_request(
-        "搜索并验证 ai 自学习应用和飞轮有什么关系"
+        "鎼滅储骞堕獙璇?ai 鑷涔犲簲鐢ㄥ拰椋炶疆鏈変粈涔堝叧绯?
     ));
     assert!(!is_explanatory_answer_request(
         "Install a skill and explain whether it worked"

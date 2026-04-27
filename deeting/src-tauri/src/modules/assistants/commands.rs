@@ -426,6 +426,7 @@ pub async fn preview_local_assistant(
         None,
         payload.temperature,
         payload.max_tokens,
+        crate::modules::ai_upstream::ReasoningRequestConfig::default(),
         None,
         None,
     )

@@ -8,7 +8,7 @@ use crate::modules::ai_upstream::gateway_log_recorder::{
 };
 use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::modules::providers::protocols::{
-    build_canonical_chat_request_from_local_messages,
+    build_canonical_chat_request_from_local_messages_with_reasoning,
     build_chat_request_data_from_canonical_request, infer_protocol_family,
 };
 use crate::modules::providers::request_runtime::{
@@ -18,6 +18,12 @@ use crate::modules::providers::request_runtime::{
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
 use uuid::Uuid;
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ReasoningRequestConfig {
+    pub(crate) enabled: Option<bool>,
+    pub(crate) effort: Option<String>,
+}
 
 fn to_string<T: std::fmt::Display>(err: T) -> String {
     err.to_string()
@@ -308,6 +314,7 @@ pub(crate) async fn request_provider_chat_completion(
     tools: Option<serde_json::Value>,
     temperature: Option<f32>,
     max_tokens: Option<u32>,
+    reasoning: ReasoningRequestConfig,
     trace_id: Option<&str>,
     _session_id: Option<&str>,
 ) -> Result<serde_json::Value, String> {
@@ -354,12 +361,14 @@ pub(crate) async fn request_provider_chat_completion(
         .get_preset(&instance.preset_slug)
         .await
         .map_err(to_string)?;
-    let canonical_request = build_canonical_chat_request_from_local_messages(
+    let canonical_request = build_canonical_chat_request_from_local_messages_with_reasoning(
         effective_model.as_str(),
         &messages,
         false,
         temperature.map(|value| value as f64),
         max_tokens.map(|value| value as i64),
+        reasoning.enabled,
+        reasoning.effort,
     );
     let body = build_chat_request_data_from_canonical_request(&canonical_request);
     let prepared = prepare_provider_request_from_canonical_request(

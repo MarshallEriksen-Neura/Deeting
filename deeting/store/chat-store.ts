@@ -35,6 +35,8 @@ interface ChatConfig {
   temperature: number
   topP: number
   maxTokens: number | null
+  reasoningEnabled: boolean
+  reasoningEffort: 'low' | 'medium' | 'high'
 }
 
 const LEGACY_DEFAULT_CHAT_MAX_TOKENS = 2048
@@ -188,18 +190,18 @@ async function readConversationHistoryState(sessionId: string) {
 // ============== Store 接口 ==============
 
 interface ChatStore {
-  // === 会话状态 ===
+  // === 会话状�?===
   sessionId: string | null
-  initialized: boolean // 新增：标记是否已初始化
+  initialized: boolean // 新增：标记是否已初始�?
   isLoading: boolean
   globalLoading: boolean
 
-  // === 消息状态 ===
+  // === 消息状�?===
   messages: Message[]
   focusedMessageId: string | null
   compareByMessageId: Record<string, MessageCompareState>
 
-  // === 输入状态 ===
+  // === 输入状�?===
   input: string
   attachments: ChatImageAttachment[]
   selectedKnowledgeFileIds: string[]
@@ -207,12 +209,12 @@ interface ChatStore {
   pendingTakeover: PendingChatTakeover | null
   pendingTakeoverRequestedAction: PendingTakeoverRequestedAction | null
 
-  // === 配置状态 ===
+  // === 配置状�?===
   config: ChatConfig
   streamEnabled: boolean
   models: ModelInfo[]
 
-  // === 状态信息 ===
+  // === 状态信�?===
   statusMessageId: string | null
   statusStage: string | null
   statusCode: string | null
@@ -278,7 +280,7 @@ interface ChatStore {
   setErrorMessage: (error: string | null) => void
   sendFeedback: (messageId: string, score: number) => Promise<void>
 
-  // === 兼容性 Actions（逐步废弃）===
+  // === 兼容�?Actions（逐步废弃�?==
   loadHistory: (sessionId: string) => Promise<void>
   resetChat: () => void
   resetSession: () => void
@@ -289,18 +291,18 @@ interface ChatStore {
 export const useChatStore = create<ChatStore>()(
   persist(
     (set, get) => ({
-      // === 会话状态初始值 ===
+      // === 会话状态初始�?===
       sessionId: null,
       initialized: false,
       isLoading: false,
       globalLoading: false,
 
-      // === 消息状态初始值 ===
+      // === 消息状态初始�?===
       messages: [],
       focusedMessageId: null,
       compareByMessageId: {},
 
-      // === 输入状态初始值 ===
+      // === 输入状态初始�?===
       input: "",
       attachments: [],
       selectedKnowledgeFileIds: [],
@@ -308,25 +310,27 @@ export const useChatStore = create<ChatStore>()(
       pendingTakeover: null,
       pendingTakeoverRequestedAction: null,
 
-      // === 配置状态初始值 ===
+      // === 配置状态初始�?===
       config: {
         model: "gpt-4o",
         temperatureEnabled: true,
         temperature: 0.7,
         topP: 1.0,
         maxTokens: null,
+        reasoningEnabled: false,
+        reasoningEffort: 'medium',
       },
       streamEnabled: false,
       models: [],
 
-      // === 状态信息初始值 ===
+      // === 状态信息初始�?===
       statusMessageId: null,
       statusStage: null,
       statusCode: null,
       statusMeta: null,
       errorMessage: null,
 
-      // === 历史记录分页初始值 ===
+      // === 历史记录分页初始�?===
       historyCursor: null,
       historyHasMore: false,
 
@@ -335,11 +339,11 @@ export const useChatStore = create<ChatStore>()(
       //
       // 这是组件应该调用的唯一入口。它会：
       // 1. 检查是否需要初始化（避免重复调用）
-      // 2. 切换 agent 时清空旧状态
-      // 3. 获取 agent 数据（从 API 或使用传入的 localAgent）
-      // 4. 加载历史消息（如果有 sessionId）
+      // 2. 切换 agent 时清空旧状�?
+      // 3. 获取 agent 数据（从 API 或使用传入的 localAgent�?
+      // 4. 加载历史消息（如果有 sessionId�?
       //
-      // 所有操作在一个函数内完成，没有循环依赖。
+      // 所有操作在一个函数内完成，没有循环依赖�?
       // ============================================================
       initSession: async (sessionId: string | null) => {
         const state = get()
@@ -769,7 +773,7 @@ export const useChatStore = create<ChatStore>()(
             score,
           })
 
-          // 更新本地状态
+          // 更新本地状�?
           const metaInfo = { ...(message.metaInfo || {}), feedback_score: score }
           set((state) => ({
             messages: state.messages.map((m) =>
@@ -781,7 +785,7 @@ export const useChatStore = create<ChatStore>()(
         }
       },
 
-      // === 兼容性 Actions（逐步废弃，保留给旧代码使用）===
+      // === 兼容�?Actions（逐步废弃，保留给旧代码使用）===
 
       loadHistory: async (sessionId: string) => {
         const state = get()
@@ -860,7 +864,7 @@ export const useChatStore = create<ChatStore>()(
       name: "deeting-chat-store",
       storage: createJSONStorage(resolveChatPersistStorage),
       partialize: (state) => ({
-        // 只持久化配置，不持久化会话数据
+        // 只持久化配置，不持久化会话数�?
         config: state.config,
         streamEnabled: state.streamEnabled,
       }),
@@ -894,15 +898,15 @@ export const useChatStore = create<ChatStore>()(
   )
 )
 
-// ============== 选择器 Hooks（优化重渲染）==============
+// ============== 选择�?Hooks（优化重渲染�?=============
 
 /** 获取消息列表 */
 export const useChatMessages = () => useChatStore((state) => state.messages)
 
-/** 获取加载状态 */
+/** 获取加载状�?*/
 export const useChatLoading = () => useChatStore((state) => state.isLoading)
 
-/** 获取状态信息 */
+/** 获取状态信�?*/
 export const useChatStatus = () =>
   useChatStore((state) => ({
     statusStage: state.statusStage,
@@ -910,7 +914,7 @@ export const useChatStatus = () =>
     statusMeta: state.statusMeta,
   }))
 
-/** 获取输入相关状态 */
+/** 获取输入相关状�?*/
 export const useChatInput = () =>
   useChatStore((state) => ({
     input: state.input,
@@ -928,3 +932,5 @@ export const useChatInput = () =>
     setPageContext: state.setPageContext,
     clearPageContext: state.clearPageContext,
   }))
+
+

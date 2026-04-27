@@ -21,6 +21,7 @@ import { WorkflowSuggestionBar } from '@/components/chat/console/workflow-sugges
 import Image from 'next/image';
 import { Popover, PopoverContent, PopoverTrigger } from '@/ui/shadcn/popover';
 import { Slider } from '@/ui/shadcn/slider';
+import { Separator } from '@/ui/shadcn/separator';
 import { cn } from '@/lib/utils';
 import { formatFileSize } from '@/lib/utils/file';
 import {
@@ -74,19 +75,12 @@ function resolveWorkflowGoal(
 /**
  * ControlsContainer - 聊天控制面板组件
  *
- * 功能：
- * - 消息输入和发送
- * - 附件管理（图片上传、预览、删除）
- * - 参数配置（temperature, topP）
- * - 桌面知识文件挂载
+ * 功能�? * - 消息输入和发�? * - 附件管理（图片上传、预览、删除）
+ * - 参数配置（temperature, topP�? * - 桌面知识文件挂载
  * - 新建会话
- * - 模式切换（聊天/图像/代码）
- *
- * 性能优化：
- * - 使用 React.memo 避免不必要的重渲染
- * - 使用 useCallback 缓存事件处理函数
- * - 使用 useMemo 缓存计算值
- */
+ * - 模式切换（聊�?图像/代码�? *
+ * 性能优化�? * - 使用 React.memo 避免不必要的重渲�? * - 使用 useCallback 缓存事件处理函数
+ * - 使用 useMemo 缓存计算�? */
 function ControlsContainer() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -181,7 +175,7 @@ function ControlsContainer() {
     isTauriRuntime,
   });
 
-  // 缓存计算值
+  // �������ֵ
   const hasComposerContent = useMemo(
     () => Boolean(input.trim().length > 0 || attachments.length > 0),
     [input, attachments.length]
@@ -574,6 +568,14 @@ function ControlsContainer() {
     setConfig({ topP: Number(value[0].toFixed(2)) });
   }, [setConfig]);
 
+  const handleReasoningEnabledChange = useCallback((checked: boolean) => {
+    setConfig({ reasoningEnabled: checked });
+  }, [setConfig]);
+
+  const handleReasoningEffortChange = useCallback((effort: 'low' | 'medium' | 'high') => {
+    setConfig({ reasoningEffort: effort });
+  }, [setConfig]);
+
   const handleInputFocus = useCallback(() => {
   }, []);
 
@@ -843,6 +845,55 @@ function ControlsContainer() {
                     disabled={!config.temperatureEnabled}
                     onValueChange={handleTopPChange}
                   />
+                </div>
+                <Separator className="bg-slate-200/70 dark:bg-white/10" />
+                <div className="flex items-center justify-between rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]">
+                  <div className="space-y-0.5">
+                    <div className="text-[11px] font-bold text-slate-700 dark:text-white/80">
+                      {t("hud.reasoningToggle")}
+                    </div>
+                    <div className="text-[10px] text-slate-500 dark:text-white/40">
+                      {config.reasoningEnabled
+                        ? t("hud.reasoningEnabled")
+                        : t("hud.reasoningDisabled")}
+                    </div>
+                  </div>
+                  <Switch
+                    checked={config.reasoningEnabled}
+                    onCheckedChange={handleReasoningEnabledChange}
+                    aria-label={t("hud.reasoningToggle")}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center px-1">
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
+                      {t("hud.reasoningEffort")}
+                    </label>
+                    <span className="text-[11px] font-mono font-bold uppercase">{config.reasoningEffort}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['low', 'medium', 'high'] as const).map((effort) => {
+                      const active = config.reasoningEffort === effort
+                      return (
+                        <Button
+                          key={effort}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={!config.reasoningEnabled}
+                          onClick={() => handleReasoningEffortChange(effort)}
+                          className={cn(
+                            "h-8 text-[11px] font-semibold capitalize",
+                            active
+                              ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
+                              : "border-slate-200 dark:border-white/10"
+                          )}
+                        >
+                          {t(`hud.reasoningEffortOptions.${effort}`)}
+                        </Button>
+                      )
+                    })}
+                  </div>
                 </div>
               </div>
             </PopoverContent>
@@ -1244,3 +1295,10 @@ function ControlsContainer() {
 
 // 使用 React.memo 优化，避免不必要的重渲染
 export default memo(ControlsContainer);
+
+
+
+
+
+
+

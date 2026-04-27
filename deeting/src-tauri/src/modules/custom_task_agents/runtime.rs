@@ -341,6 +341,7 @@ pub(crate) async fn preview_custom_task_agent_with_parent_model(
             active_payload.tool_payload(),
             request.temperature,
             request.max_tokens,
+            crate::modules::ai_upstream::ReasoningRequestConfig::default(),
             None,
             None,
         )

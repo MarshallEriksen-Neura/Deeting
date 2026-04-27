@@ -129,7 +129,33 @@
       "requestUrl": "Request URL",
       "weight": "Routing weight",
       "priority": "Routing priority"
+    },
+    "requestHeaders": {
+      "title": "Request headers",
+      "desc": "Add extra headers for this model only. Transport and auth headers stay protected.",
+      "name": "Header name",
+      "value": "Header value",
+      "add": "Add header",
+      "blocked": "Blocked headers were ignored: {names}",
+      "duplicates": "Duplicate header names detected: {names}"
+    },
+    "reasoning": {
+      "title": "Default reasoning",
+      "desc": "Choose the model default when a request does not override reasoning.",
+      "defaultMode": "Default mode",
+      "effort": "Default effort",
+      "modes": {
+        "auto": "Auto",
+        "on": "On",
+        "off": "Off"
       },
+      "efforts": {
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High"
+      }
+    },
+      
       "pricing": {
         "title": "Pricing",
         "desc": "Prices per 1k tokens for input/output.",
@@ -258,4 +284,5 @@
       "toastFailed": "Failed to add models, please try again"
     }
   }
+
 }
