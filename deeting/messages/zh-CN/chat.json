@@ -367,6 +367,15 @@
       "temperatureEnabled": "已启用",
       "temperatureDisabled": "已关闭",
       "topP": "Top P",
+      "reasoningToggle": "推理",
+      "reasoningEnabled": "已启用",
+      "reasoningDisabled": "已关闭",
+      "reasoningEffort": "推理强度",
+      "reasoningEffortOptions": {
+        "low": "低",
+        "medium": "中",
+        "high": "高"
+      },
       "system": {
         "userName": "管理员",
         "integrity": "系统完整性：{value}"

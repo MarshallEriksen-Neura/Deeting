@@ -130,6 +130,31 @@
           "stringOnly": "仅字符串"
         }
       },
+      "requestHeaders": {
+        "title": "请求头",
+        "desc": "仅为当前模型附加额外请求头。传输层和鉴权相关请求头会保持受保护状态。",
+        "name": "请求头名称",
+        "value": "请求头值",
+        "add": "添加请求头",
+        "blocked": "以下受保护请求头已被忽略：{names}",
+        "duplicates": "检测到重复的请求头名称：{names}"
+      },
+      "reasoning": {
+        "title": "默认推理",
+        "desc": "当单次请求未显式覆盖推理设置时，使用这里的模型默认值。",
+        "defaultMode": "默认模式",
+        "effort": "默认强度",
+        "modes": {
+          "auto": "自动",
+          "on": "开启",
+          "off": "关闭"
+        },
+        "efforts": {
+          "low": "低",
+          "medium": "中",
+          "high": "高"
+        }
+      },
       "pricing": {
         "title": "定价",
         "desc": "输入 / 输出按 1k tokens 计价。",
