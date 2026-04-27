@@ -881,7 +881,7 @@ export function useChatMessagingService() {
     if (!trimmedInput && draft.attachments.length === 0) return false
 
     // ==========================================
-    // 闂佺绻戞繛濠囧极椤撱垻宓侀悹鍝勬惈缁插搫菐閸ャ劎绠栧┑顔哄灲閺佸秴顫濋澶嬫悙闂佸搫顑嗙划宀€绱炵€ｎ喖绀堢€广儱妫崝鈧梺闈╄礋閸斿繘顢氶鈧晥闁稿矉濡囩粈澶愭煕韫囨挾澧曠憸鏉挎搐閳藉宕奸悢闈╃礈闁荤姴娲弨閬嶆儑?    // ==========================================
+    // 如果当前请求仍在运行，先取消它再派发新的消息。
     if (useChatRuntimeStore.getState().isLoading) {
       console.log("[ChatRuntime] Interrupting active request for new message");
       await cancelActiveRequest();
@@ -974,7 +974,8 @@ export function useChatMessagingService() {
     setInterruptedMessageId(null)
     clearAllCompareStates()
 
-    // 闂佸搫娲ら悺銊╁蓟?UI 闂佺粯顭堥崺鏍焵?    setMessages([...currentMessages, outgoingUserMessage, assistantMessage])
+    // 先把用户消息和占位助手消息写入 UI，后续流式块会追加到该助手消息。
+    setMessages([...currentMessages, outgoingUserMessage, assistantMessage])
     dispatchedToConversation = true
     if (
       clearComposerMode === "always" ||
@@ -1058,7 +1059,7 @@ export function useChatMessagingService() {
       appendMessageBlocks(assistantMessageId, [createErrorBlock(assistantMessageId, message)])
       setErrorMessage(message)
     } finally {
-      // 缂備焦姊婚崑妯艰姳閵堝绾ч柍銉ュ级椤愯棄菐閸ャ劎绠栧┑顔哄灲閺佸秴顫濋鈧☉褔鏌￠崼婵愭Ц缂傚秴顑夊畷婊冾吋閸偄娈插┑顔炬嚀閸婇鍒掑☉銏″€块柤绋跨仛绗戦梺鍝勭墐閸嬫捇鏌￠崒娑橆€滄い鏇ㄥ墮鏁堥柛灞剧⊕椤ρ囨煙闂堟稓校缂佹柨顭烽幃鍫曞幢濡も偓瀵潡鎮橀悙鈺佷壕闂佺粯顭堥崺鏍焵椤戣法绛忕紒?      // 闂侇剙鐏濋崢銈夊籍瑜戦顒€效?finally 閻熸洖妫涘ú濠囧棘閹峰矈鍤炴慨鐟板€绘慨鎼佸箑?
+      // 只允许当前活跃的助手消息收尾，避免旧请求的 finally 清掉新请求状态。
       if (activeAssistantMessageIdRef.current === assistantMessageId) {
         setIsLoading(false)
         syncAssistantActivityStatus({

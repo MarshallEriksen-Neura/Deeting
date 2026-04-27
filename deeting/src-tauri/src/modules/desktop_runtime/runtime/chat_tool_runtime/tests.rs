@@ -215,14 +215,14 @@ fn delegate_task_preflight_allows_empty_bound_surface_for_image_agent() {
 #[test]
 fn explanatory_answer_requests_skip_policy_gate_forcing() {
     assert!(is_explanatory_answer_request(
-        "鑳藉惁璇︾粏鐨勭粰鎴戣В閲婁竴涓?ai 鑷涔犲簲鐢ㄥ拰椋炶疆鏈変粈涔堝叧绯?
+        "能否详细地给我解释一下 ai 自学习应用和飞轮有什么关系?"
     ));
     assert!(is_explanatory_answer_request(
         "Explain the relationship between AI learning apps and flywheels"
     ));
 
     assert!(!is_explanatory_answer_request(
-        "鎼滅储骞堕獙璇?ai 鑷涔犲簲鐢ㄥ拰椋炶疆鏈変粈涔堝叧绯?
+        "搜索并验证 ai 自学习应用和飞轮有什么关系?"
     ));
     assert!(!is_explanatory_answer_request(
         "Install a skill and explain whether it worked"

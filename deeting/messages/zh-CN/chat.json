@@ -417,8 +417,8 @@
       "queueTakeover": "加入待接管",
       "send": "发送",
       "recovery": {
-        "stageLabel": "闃舵",
-        "executionLabel": "鎵ц ID",
+        "stageLabel": "阶段",
+        "executionLabel": "执行 ID",
         "title": "已恢复中断执行",
         "description": {
           "waitingApproval": "当前执行暂停在工具审批节点。请先处理待审批项，然后再继续。",
