@@ -19,6 +19,12 @@ repos:
   # 前端代码检查
   - repo: local
     hooks:
+      - id: chinese-mojibake
+        name: Chinese mojibake check
+        entry: python scripts/check_chinese_mojibake.py
+        language: system
+        files: \.(adoc|bash|c|cmd|cpp|cs|css|go|h|hpp|html|java|js|json|jsx|kt|md|mdx|mjs|ps1|py|rs|scss|sh|sql|svelte|swift|toml|ts|tsx|txt|vue|ya?ml)$
+
       - id: frontend-lint
         name: Frontend ESLint
         entry: bash -c 'cd frontend && bun run lint'
