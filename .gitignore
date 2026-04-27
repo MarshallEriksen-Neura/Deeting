@@ -22,6 +22,8 @@ target-codex-warnings/
 .omx/
 .agents/
 .gemini/
+.atomcode/
+datalog/
 target-codex-shell/
 
 backend/__pycache__
