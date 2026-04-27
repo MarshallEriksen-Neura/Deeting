@@ -401,7 +401,10 @@ mod tests {
     #[test]
     fn apply_route_prior_does_not_override_explicit_task_agent_worker_route() {
         let mut decision = test_decision(LocalRouteKind::Worker);
-        decision.reasons = vec!["explicit_task_agent".to_string(), "image_generation".to_string()];
+        decision.reasons = vec![
+            "explicit_task_agent".to_string(),
+            "image_generation".to_string(),
+        ];
         let fingerprint = build_task_fingerprint("@达芬奇 画一只猫");
         let application = apply_route_prior(
             decision,

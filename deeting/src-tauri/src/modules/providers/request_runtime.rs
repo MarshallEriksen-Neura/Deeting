@@ -3616,8 +3616,14 @@ mod tests {
         .expect("prepare request with model headers");
 
         assert_eq!(prepared.headers.get("X-Feature"), Some(&"beta".to_string()));
-        assert_eq!(prepared.headers.get("Authorization"), Some(&"Bearer sk-test".to_string()));
-        assert_eq!(prepared.headers.get("X-Trace-Id"), Some(&"trace-headers-1".to_string()));
+        assert_eq!(
+            prepared.headers.get("Authorization"),
+            Some(&"Bearer sk-test".to_string())
+        );
+        assert_eq!(
+            prepared.headers.get("X-Trace-Id"),
+            Some(&"trace-headers-1".to_string())
+        );
         assert!(!prepared.headers.contains_key("x-api-key"));
         assert!(!prepared.headers.contains_key("X-Empty"));
     }
@@ -4429,5 +4435,3 @@ mod tests {
         assert_eq!(schema["properties"], json!({}));
     }
 }
-
-

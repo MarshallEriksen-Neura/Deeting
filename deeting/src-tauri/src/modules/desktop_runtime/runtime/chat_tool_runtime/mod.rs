@@ -1,4 +1,4 @@
-﻿use super::sovereign::{Advisory, DecisionLocus, Self_};
+use super::sovereign::{Advisory, DecisionLocus, Self_};
 use super::{
     activate_skill_from_args, append_streamable_local_tool_result_blocks,
     build_delegated_result_feedback_messages, build_local_runtime_tools_with_allowlist,
@@ -18,12 +18,12 @@ use super::{
     LocalCapabilityActivationState, LocalExecutionPolicy, WorkerTaskPacketInput,
     LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
 };
+use crate::modules::ai_upstream::ReasoningRequestConfig;
 use crate::modules::custom_task_agents::runtime::preview_custom_task_agent_with_parent_model;
 use crate::modules::custom_task_agents::service::create_custom_task_agent_service;
 use crate::modules::custom_task_agents::types::{
     CreateCustomTaskAgentRequest, CustomTaskAgentPreviewRequest,
 };
-use crate::modules::ai_upstream::ReasoningRequestConfig;
 use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUNDS_CONFIG_KEY};
 use crate::modules::desktop_runtime::runtime::execution_plane::{
     DelegatedExecutionAction, DelegatedExecutionChildRecord,
@@ -2335,4 +2335,3 @@ async fn process_chat_tool_calls(
         }
     }
 }
-

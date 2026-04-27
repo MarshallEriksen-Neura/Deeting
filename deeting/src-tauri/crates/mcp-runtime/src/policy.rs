@@ -132,12 +132,31 @@ pub fn build_default_local_execution_policy() -> LocalExecutionPolicy {
     }
 }
 
+pub fn resident_capability_control_tool_names() -> Vec<String> {
+    [
+        SEARCH_SDK_TOOL_NAME,
+        ACTIVATE_SKILL_TOOL_NAME,
+        READ_SKILL_RESOURCE_TOOL_NAME,
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
+}
+
+fn ensure_resident_capability_control_tools(allowed: &mut Vec<String>) {
+    for name in resident_capability_control_tool_names() {
+        if !allowed.iter().any(|item| item == &name) {
+            allowed.push(name);
+        }
+    }
+}
+
 pub fn build_local_execution_policy(decision: &LocalRouteDecision) -> LocalExecutionPolicy {
     match decision.route {
         LocalRouteKind::Direct => LocalExecutionPolicy {
             route: LocalRouteKind::Direct,
             plane: LocalExecutionPlane::ResponseOnly,
-            allowed_tool_names: vec![SEARCH_SDK_TOOL_NAME.to_string()],
+            allowed_tool_names: resident_capability_control_tool_names(),
             inject_execution_protocol: false,
             allow_worker_delegation: false,
             prefer_workflow_runtime: false,
@@ -186,9 +205,7 @@ pub fn enrich_execution_policy_with_runtime_discovery(
     runtime_discovery: Option<&RuntimeDiscoveryBundle>,
 ) -> LocalExecutionPolicy {
     let mut allowed = policy.allowed_tool_names.clone();
-    if !allowed.iter().any(|name| name == SEARCH_SDK_TOOL_NAME) {
-        allowed.push(SEARCH_SDK_TOOL_NAME.to_string());
-    }
+    ensure_resident_capability_control_tools(&mut allowed);
     if let Some(discovery) = runtime_discovery {
         policy.capability_snapshot = Some(discovery.execution_snapshot().clone());
     } else {
@@ -314,8 +331,10 @@ mod tests {
         assert_eq!(
             policy.allowed_tool_names,
             vec![
+                "activate_skill".to_string(),
                 "exa".to_string(),
                 "fetch_page".to_string(),
+                "read_skill_resource".to_string(),
                 "search_sdk".to_string(),
                 "tavily-extract".to_string(),
                 "tavily-search".to_string(),
@@ -360,6 +379,57 @@ mod tests {
                 "browser_get_page_snapshot".to_string(),
                 "browser_open_tab".to_string(),
                 "search_sdk".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn direct_execution_policy_keeps_skill_control_tools_resident() {
+        let decision = LocalRouteDecision {
+            route: LocalRouteKind::Direct,
+            reasons: vec!["single_action".to_string()],
+            profile: TaskProfile {
+                explicit_route: None,
+                has_batch_scope: false,
+                wants_programmatic_logic: false,
+                wants_analysis: false,
+                wants_single_action: true,
+                destructive_intent: false,
+                approval_sensitive: false,
+            },
+            evidence: RouteEvidence {
+                direct_callable_capability_count: 0,
+                has_programmatic_executor: false,
+                any_mutating_capability: false,
+                any_high_risk_capability: false,
+                direct_capability_names: Vec::new(),
+                callable_direct_capability_names: Vec::new(),
+            },
+        };
+
+        let policy = build_local_execution_policy(&decision);
+
+        assert_eq!(
+            policy.allowed_tool_names,
+            vec![
+                SEARCH_SDK_TOOL_NAME.to_string(),
+                ACTIVATE_SKILL_TOOL_NAME.to_string(),
+                READ_SKILL_RESOURCE_TOOL_NAME.to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn runtime_discovery_preserves_skill_control_tools_when_base_policy_is_empty() {
+        let policy =
+            enrich_execution_policy_with_runtime_discovery(build_default_local_execution_policy(), None);
+
+        assert_eq!(
+            policy.allowed_tool_names,
+            vec![
+                ACTIVATE_SKILL_TOOL_NAME.to_string(),
+                READ_SKILL_RESOURCE_TOOL_NAME.to_string(),
+                SEARCH_SDK_TOOL_NAME.to_string(),
             ]
         );
     }

@@ -13,6 +13,8 @@ use crate::modules::mcp::commands::runtime::capability_catalog::{
 use crate::modules::retrieval_kernel::ranking::{
     asset_score_key, bm25_asset_match_scores, normalize_score_map, reciprocal_rank_fusion,
 };
+use crate::modules::custom_task_agents::store::list_custom_task_agents;
+use crate::modules::custom_task_agents::types::CustomTaskAgentProfile;
 
 const MAX_LIMIT: usize = 20;
 const RETRIEVAL_FUSION_WEIGHT: f64 = 48.0;
@@ -214,6 +216,11 @@ pub(crate) async fn build_capability_search_result_bundle_with_feedback(
         })
         .count();
 
+    let summary_delegation_targets =
+        build_delegation_targets(mcp_store, &profile, SearchSdkDetailLevel::Summary).await;
+    let full_delegation_targets =
+        build_delegation_targets(mcp_store, &profile, SearchSdkDetailLevel::Full).await;
+
     let summary_payload = build_search_result_payload(
         query,
         &profile,
@@ -222,6 +229,7 @@ pub(crate) async fn build_capability_search_result_bundle_with_feedback(
         &capabilities,
         &recipes,
         &orchestration_primitives,
+        &summary_delegation_targets,
         direct_callable_capability_count,
         SearchSdkDetailLevel::Summary,
     );
@@ -233,6 +241,7 @@ pub(crate) async fn build_capability_search_result_bundle_with_feedback(
         &capabilities,
         &recipes,
         &orchestration_primitives,
+        &full_delegation_targets,
         direct_callable_capability_count,
         SearchSdkDetailLevel::Full,
     );
@@ -377,6 +386,7 @@ fn build_search_result_payload(
     capabilities: &[Value],
     recipes: &[Value],
     orchestration_primitives: &[Value],
+    delegation_targets: &[Value],
     direct_callable_capability_count: usize,
     detail_level: SearchSdkDetailLevel,
 ) -> Value {
@@ -398,6 +408,7 @@ fn build_search_result_payload(
         "recipes": serialized_recipes,
         "capability_groups": capability_groups,
         "recipe_groups": recipe_groups,
+        "delegation_targets": delegation_targets,
         "orchestration_primitives": serialized_orchestration_primitives,
     });
 
@@ -412,7 +423,7 @@ fn build_search_result_payload(
                     "programmatic_path": "execute_code_plan",
                     "direct_callable_capability_count": direct_callable_capability_count,
                 },
-                "usage_hint": "Prefer direct host capabilities from capability_groups.skill_tools, capability_groups.user_mcp_tools, and capability_groups.core_tools. When the task is a bounded subtask better handled by a specialist local agent, prefer delegate_task instead of manually chaining generic tools. For recipe_groups.skills, call activate_skill with the stable skill_id before relying on package-specific procedures, then use read_skill_resource for package-local references when needed. Use shell_execute only for actual host command execution. Use execute_code_plan only for multi-step program logic, loops, branching, or result aggregation.",
+                "usage_hint": "Prefer direct host capabilities from capability_groups.skill_tools, capability_groups.user_mcp_tools, and capability_groups.core_tools. When the task is a bounded subtask better handled by a specialist local agent, inspect delegation_targets first and prefer delegate_task(agent_id=...) for a high-match target instead of manually chaining generic tools. If no single delegation target is clearly suitable, delegate_task without agent_id may let the runtime auto-select. For recipe_groups.skills, call activate_skill with the stable skill_id before relying on package-specific procedures, then use read_skill_resource for package-local references when needed. Use shell_execute only for actual host command execution. Use execute_code_plan only for multi-step program logic, loops, branching, or result aggregation.",
                 "availability": {
                     "enabled_assistant_count": enabled_assistant_count,
                     "read_path_mode": read_path_mode,
@@ -423,6 +434,206 @@ fn build_search_result_payload(
     }
 
     payload
+}
+
+async fn build_delegation_targets(
+    mcp_store: &crate::modules::mcp::store::McpStore,
+    profile: &QueryProfile,
+    detail_level: SearchSdkDetailLevel,
+) -> Vec<Value> {
+    let Ok(profiles) = list_custom_task_agents(mcp_store).await else {
+        return Vec::new();
+    };
+
+    let mut ranked = profiles
+        .into_iter()
+        .filter(|profile| profile.discoverable && profile.is_enabled && !profile.is_deleted)
+        .map(|task_agent_profile| {
+            (
+                score_delegation_target(
+                    profile.normalized.as_str(),
+                    profile.normalized.as_str(),
+                    &task_agent_profile,
+                ),
+                task_agent_profile,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    ranked.sort_by(|left, right| {
+        right
+            .0
+            .partial_cmp(&left.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    ranked
+        .into_iter()
+        .map(|(_, profile)| serialize_delegation_target(&profile, detail_level))
+        .collect()
+}
+
+fn score_delegation_target(
+    query: &str,
+    _normalized_query: &str,
+    profile: &CustomTaskAgentProfile,
+) -> f64 {
+    let normalized_query = query.trim().to_lowercase();
+    let query_terms = split_delegation_match_terms(&normalized_query);
+    let mut score = 0.0;
+
+    let normalized_name = profile.name.trim().to_lowercase();
+    let normalized_id = profile.id.trim().to_lowercase();
+    if !normalized_name.is_empty() && normalized_query.contains(normalized_name.as_str()) {
+        score += 45.0;
+    }
+    if !normalized_id.is_empty() && normalized_query.contains(normalized_id.as_str()) {
+        score += 55.0;
+    }
+    for tag in &profile.tags {
+        let tag = tag.trim().to_lowercase();
+        if !tag.is_empty() && normalized_query.contains(tag.as_str()) {
+            score += 25.0;
+        }
+    }
+
+    let profile_terms = split_delegation_match_terms(&format!(
+        "{} {} {}",
+        profile.name,
+        profile.description.as_deref().unwrap_or_default(),
+        profile.tags.join(" ")
+    ));
+    let overlap = query_terms
+        .iter()
+        .filter(|term| profile_terms.contains(term.as_str()))
+        .count();
+    if overlap > 0 {
+        score += (overlap.min(4) as f64) * 6.0;
+    }
+
+    let callable_count = profile.callable_mcp_tool_ids.len() + profile.callable_skill_action_refs.len();
+    score += match callable_count {
+        0 => 2.0,
+        1 => 8.0,
+        2 => 12.0,
+        _ => 16.0,
+    };
+
+    let modality_fit = score_delegation_modality_fit(
+        profile.invocation_kind.as_str(),
+        normalized_query.as_str(),
+    );
+    score += (modality_fit as f64) * 20.0;
+
+    if profile.preferred_for_image_generation && modality_fit >= 1.0 {
+        score += 12.0;
+    }
+
+    score
+}
+
+fn split_delegation_match_terms(input: &str) -> HashSet<String> {
+    input
+        .split(|ch: char| !ch.is_alphanumeric())
+        .map(str::trim)
+        .filter(|value| value.len() >= 2)
+        .map(|value| value.to_lowercase())
+        .collect()
+}
+
+fn score_delegation_modality_fit(invocation_kind: &str, normalized_query: &str) -> f32 {
+    let wants_image = contains_any(
+        normalized_query,
+        &[
+            "image",
+            "images",
+            "picture",
+            "draw",
+            "drawing",
+            "illustration",
+            "render",
+            "生成图片",
+            "画图",
+            "出图",
+            "图像",
+            "插画",
+        ],
+    );
+    let wants_audio = contains_any(
+        normalized_query,
+        &[
+            "audio",
+            "speech",
+            "voice",
+            "tts",
+            "read aloud",
+            "语音",
+            "配音",
+        ],
+    );
+    match invocation_kind {
+        "image_generation" => {
+            if wants_image {
+                1.0
+            } else {
+                0.15
+            }
+        }
+        "text_to_speech" => {
+            if wants_audio {
+                1.0
+            } else {
+                0.15
+            }
+        }
+        _ => {
+            if wants_image || wants_audio {
+                0.3
+            } else {
+                1.0
+            }
+        }
+    }
+}
+
+fn serialize_delegation_target(
+    profile: &CustomTaskAgentProfile,
+    detail_level: SearchSdkDetailLevel,
+) -> Value {
+    let description = profile.description.clone().unwrap_or_default();
+    let callable_count = profile.callable_mcp_tool_ids.len() + profile.callable_skill_action_refs.len();
+
+    let mut value = json!({
+        "agent_id": profile.id,
+        "name": profile.name,
+        "description": description,
+        "invocation_kind": profile.invocation_kind.as_str(),
+        "tags": profile.tags,
+        "preferred_for_image_generation": profile.preferred_for_image_generation,
+        "recommended_tool": "delegate_task",
+        "discoverable": profile.discoverable,
+        "is_enabled": profile.is_enabled,
+        "bound_callable_count": callable_count,
+    });
+
+    if detail_level == SearchSdkDetailLevel::Full {
+        if let Some(object) = value.as_object_mut() {
+            object.insert(
+                "callable_mcp_tool_ids".to_string(),
+                json!(profile.callable_mcp_tool_ids),
+            );
+            object.insert(
+                "guidance_skill_ids".to_string(),
+                json!(profile.guidance_skill_ids),
+            );
+            object.insert(
+                "callable_skill_action_refs".to_string(),
+                json!(profile.callable_skill_action_refs),
+            );
+        }
+    }
+
+    value
 }
 
 fn filter_model_visible_capabilities(
@@ -2449,6 +2660,7 @@ mod tests {
                 "semantic_kind": "orchestration_primitive",
                 "invocation_mode": "direct"
             })],
+            &[],
             1,
             SearchSdkDetailLevel::Summary,
         );
@@ -2497,6 +2709,7 @@ mod tests {
             ],
             &[],
             &[],
+            &[],
             1,
             SearchSdkDetailLevel::Summary,
         );
@@ -2534,6 +2747,7 @@ mod tests {
                 "semantic_kind": "orchestration_primitive",
                 "invocation_mode": "direct"
             })],
+            &[],
             1,
             SearchSdkDetailLevel::Full,
         );
@@ -2626,6 +2840,146 @@ mod tests {
                 "activation_available": true
             }])
         );
+    }
+
+    #[test]
+    fn search_result_summary_includes_lightweight_delegation_targets() {
+        let profile = QueryProfile::from_query("委派一个子任务给智能体");
+        let summary = build_search_result_payload(
+            "委派一个子任务给智能体",
+            &profile,
+            0,
+            "registry_first",
+            &[],
+            &[],
+            &[],
+            &[json!({
+                "agent_id": "agent-da-vinci",
+                "name": "达芬奇",
+                "description": "负责绘图与图像生成",
+                "invocation_kind": "image_generation",
+                "tags": ["image", "art"],
+                "preferred_for_image_generation": true,
+                "recommended_tool": "delegate_task",
+                "discoverable": true,
+                "is_enabled": true,
+                "bound_callable_count": 1
+            })],
+            0,
+            SearchSdkDetailLevel::Summary,
+        );
+
+        assert_eq!(summary["delegation_targets"].as_array().map(Vec::len), Some(1));
+        assert_eq!(summary["delegation_targets"][0]["agent_id"], json!("agent-da-vinci"));
+        assert_eq!(summary["delegation_targets"][0]["recommended_tool"], json!("delegate_task"));
+        assert!(summary["delegation_targets"][0].get("callable_mcp_tool_ids").is_none());
+    }
+
+    #[test]
+    fn search_result_full_includes_detailed_delegation_targets() {
+        let profile = QueryProfile::from_query("delegate this subtask to a specialist agent");
+        let full = build_search_result_payload(
+            "delegate this subtask to a specialist agent",
+            &profile,
+            0,
+            "registry_first",
+            &[],
+            &[],
+            &[],
+            &[json!({
+                "agent_id": "agent-da-vinci",
+                "name": "达芬奇",
+                "description": "负责绘图与图像生成",
+                "invocation_kind": "image_generation",
+                "tags": ["image", "art"],
+                "preferred_for_image_generation": true,
+                "recommended_tool": "delegate_task",
+                "discoverable": true,
+                "is_enabled": true,
+                "bound_callable_count": 2,
+                "callable_mcp_tool_ids": ["tool.image.generate"],
+                "guidance_skill_ids": ["skill.prompt-polish"],
+                "callable_skill_action_refs": [{"skill_id": "official.skills.crawler", "action_id": "fetch_web_content"}]
+            })],
+            0,
+            SearchSdkDetailLevel::Full,
+        );
+
+        assert_eq!(full["delegation_targets"].as_array().map(Vec::len), Some(1));
+        assert_eq!(full["delegation_targets"][0]["callable_mcp_tool_ids"], json!(["tool.image.generate"]));
+        assert_eq!(full["delegation_targets"][0]["guidance_skill_ids"], json!(["skill.prompt-polish"]));
+        assert_eq!(full["delegation_targets"][0]["recommended_tool"], json!("delegate_task"));
+    }
+
+    #[test]
+    fn delegation_targets_are_ranked_by_query_match() {
+        let profile = QueryProfile::from_query("帮我把这个画图子任务交给达芬奇");
+        let ranked = vec![
+            (
+                score_delegation_target(
+                    profile.normalized.as_str(),
+                    profile.normalized.as_str(),
+                    &CustomTaskAgentProfile {
+                        id: "agent-da-vinci".to_string(),
+                        name: "达芬奇".to_string(),
+                        description: Some("负责绘图与图像生成".to_string()),
+                        task_prompt: "Draw images".to_string(),
+                        invocation_kind: crate::modules::custom_task_agents::types::CustomTaskAgentInvocationKind::ImageGeneration,
+                        preferred_for_image_generation: true,
+                        model_config: None,
+                        callable_mcp_tool_ids: vec!["tool.image.generate".to_string()],
+                        guidance_skill_ids: vec![],
+                        callable_skill_action_refs: vec![],
+                        bound_asset_id: None,
+                        tags: vec!["image".to_string(), "art".to_string()],
+                        discoverable: true,
+                        is_enabled: true,
+                        is_deleted: false,
+                        source_kind: None,
+                        source_path: None,
+                        source_repo: None,
+                        source_ref: None,
+                        source_hash: None,
+                        created_at: "2026-01-01T00:00:00Z".to_string(),
+                        updated_at: "2026-01-01T00:00:00Z".to_string(),
+                    },
+                ),
+                "达芬奇",
+            ),
+            (
+                score_delegation_target(
+                    profile.normalized.as_str(),
+                    profile.normalized.as_str(),
+                    &CustomTaskAgentProfile {
+                        id: "agent-research".to_string(),
+                        name: "Researcher".to_string(),
+                        description: Some("负责检索和研究".to_string()),
+                        task_prompt: "Research topics".to_string(),
+                        invocation_kind: crate::modules::custom_task_agents::types::CustomTaskAgentInvocationKind::Chat,
+                        preferred_for_image_generation: false,
+                        model_config: None,
+                        callable_mcp_tool_ids: vec!["tool.firecrawl_search".to_string()],
+                        guidance_skill_ids: vec![],
+                        callable_skill_action_refs: vec![],
+                        bound_asset_id: None,
+                        tags: vec!["research".to_string()],
+                        discoverable: true,
+                        is_enabled: true,
+                        is_deleted: false,
+                        source_kind: None,
+                        source_path: None,
+                        source_repo: None,
+                        source_ref: None,
+                        source_hash: None,
+                        created_at: "2026-01-01T00:00:00Z".to_string(),
+                        updated_at: "2026-01-01T00:00:00Z".to_string(),
+                    },
+                ),
+                "Researcher",
+            ),
+        ];
+
+        assert!(ranked[0].0 > ranked[1].0, "da_vinci={}, researcher={}", ranked[0].0, ranked[1].0);
     }
 
     #[test]
