@@ -75,12 +75,19 @@ function resolveWorkflowGoal(
 /**
  * ControlsContainer - 聊天控制面板组件
  *
- * 功能�? * - 消息输入和发�? * - 附件管理（图片上传、预览、删除）
- * - 参数配置（temperature, topP�? * - 桌面知识文件挂载
+ * 功能：
+ * - 消息输入和发送
+ * - 附件管理（图片上传、预览、删除）
+ * - 参数配置（temperature, topP）
+ * - 桌面知识文件挂载
  * - 新建会话
- * - 模式切换（聊�?图像/代码�? *
- * 性能优化�? * - 使用 React.memo 避免不必要的重渲�? * - 使用 useCallback 缓存事件处理函数
- * - 使用 useMemo 缓存计算�? */
+ * - 模式切换（聊天/图像/代码）
+ *
+ * 性能优化：
+ * - 使用 React.memo 避免不必要的重渲染
+ * - 使用 useCallback 缓存事件处理函数
+ * - 使用 useMemo 缓存计算值
+ */
 function ControlsContainer() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -175,7 +182,7 @@ function ControlsContainer() {
     isTauriRuntime,
   });
 
-  // �������ֵ
+  // 派生状态值
   const hasComposerContent = useMemo(
     () => Boolean(input.trim().length > 0 || attachments.length > 0),
     [input, attachments.length]
