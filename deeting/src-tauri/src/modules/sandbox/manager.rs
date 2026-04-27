@@ -329,6 +329,7 @@ impl SandboxRuntimeManager {
 
         #[cfg(not(target_os = "windows"))]
         {
+            let _ = (proxy_environment, reporter);
             let _ = image_registries;
             Ok(self.status_report().await)
         }
@@ -1150,6 +1151,11 @@ impl SandboxRuntimeManager {
         prepare_config: Option<&SandboxPrepareConfig>,
     ) -> Result<(), SandboxError> {
         self.reset_runtime_state(false).await;
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = prepare_config;
+        }
 
         #[cfg(target_os = "windows")]
         {

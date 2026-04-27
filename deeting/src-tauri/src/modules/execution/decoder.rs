@@ -1,3 +1,4 @@
+#[cfg(target_os = "windows")]
 use encoding_rs::GB18030;
 
 #[derive(Debug, Clone)]

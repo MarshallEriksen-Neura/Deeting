@@ -8,9 +8,9 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::modules::desktop_config::network::{
-    build_proxy_aware_reqwest_client_for_settings, DesktopNetworkProxySettings,
-};
+#[cfg(target_os = "windows")]
+use crate::modules::desktop_config::network::build_proxy_aware_reqwest_client_for_settings;
+use crate::modules::desktop_config::network::DesktopNetworkProxySettings;
 #[cfg(target_os = "windows")]
 use crate::modules::sandbox::backend_wsl::{
     decode_wsl_text, detect_wsl_arch, resolve_wsl_home_dir, shell_quote, windows_path_to_wsl,

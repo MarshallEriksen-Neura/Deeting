@@ -1,6 +1,7 @@
 //! Official BoxLite CLI provisioning layer for Windows + WSL.
 
 use std::path::PathBuf;
+#[cfg(target_os = "windows")]
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,6 +15,7 @@ use crate::modules::desktop_config::network::DesktopNetworkProxyEnvironment;
 use crate::modules::sandbox::backend_wsl::{get_default_wsl_distro, shell_quote, warm_up_wsl};
 use crate::modules::sandbox::error::SandboxError;
 use crate::modules::sandbox::installer::{load_installation_record, BoxLiteInstallationRecord};
+#[cfg(target_os = "windows")]
 use crate::utils::configure_background_tokio_command;
 
 #[derive(Debug, Clone, Serialize)]
@@ -117,87 +119,98 @@ impl BoxLiteProvisioner {
         image_registries: &[String],
         reporter: Option<&PrepareProgressReporter>,
     ) -> Result<String, SandboxError> {
-        let endpoint = self.config.endpoint();
-
-        report_prepare(reporter, "check_endpoint", 5);
-        if self.is_endpoint_reachable().await {
-            log::info!("BoxLite already reachable at {}", endpoint);
-            report_prepare(reporter, "done", 100);
-            return Ok(endpoint);
-        }
-
-        report_prepare(reporter, "load_record", 15);
-        let record = self.installation_record().ok_or_else(|| {
-            SandboxError::Unavailable(
-                "BoxLite is not installed yet. Install it from Settings before preparing the sandbox."
-                    .to_string(),
-            )
-        })?;
-
-        log::info!(
-            "starting official BoxLite server from {} on port {}",
-            record.wsl_binary_path,
-            self.config.port
-        );
-
-        if !self.config.data_dir.exists() {
-            std::fs::create_dir_all(&self.config.data_dir).map_err(|e| {
-                SandboxError::Internal(format!(
-                    "failed to create sandbox data dir {}: {}",
-                    self.config.data_dir.display(),
-                    e
-                ))
-            })?;
-        }
-
-        report_prepare(reporter, "wsl_warmup", 20);
-        let distro = get_default_wsl_distro();
-        warm_up_wsl(distro.as_deref()).await?;
-
-        report_prepare(reporter, "start_server", 25);
-        let launch_script = build_server_launch_command(
-            &record,
-            self.config.port,
-            proxy_environment,
-            image_registries,
-        );
-        let mut command = tokio::process::Command::new("wsl.exe");
-        configure_background_tokio_command(&mut command);
-        let mut args = Vec::new();
-        if let Some(distro) = distro.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
-            args.push("-d".to_string());
-            args.push(distro.to_string());
-        }
-        args.extend([
-            "--".to_string(),
-            "bash".to_string(),
-            "-lc".to_string(),
-            launch_script,
-        ]);
-        let child = command
-            .args(&args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|e| {
-                SandboxError::Unavailable(format!(
-                    "BoxLite server launch failure: failed to start from {}: {}",
-                    record.wsl_binary_path, e
-                ))
-            })?;
-
+        #[cfg(not(target_os = "windows"))]
         {
-            let mut guard = self.child.lock().await;
-            *guard = Some(child);
+            let _ = (proxy_environment, image_registries, reporter);
+            return Err(SandboxError::Unavailable(
+                "managed BoxLite startup is only supported on Windows + WSL".to_string(),
+            ));
         }
 
-        report_prepare(reporter, "health_check", 40);
-        self.wait_for_health(&endpoint, reporter).await?;
-        report_prepare(reporter, "done", 100);
-        log::info!("BoxLite is ready at {}", endpoint);
-        Ok(endpoint)
+        #[cfg(target_os = "windows")]
+        {
+            let endpoint = self.config.endpoint();
+
+            report_prepare(reporter, "check_endpoint", 5);
+            if self.is_endpoint_reachable().await {
+                log::info!("BoxLite already reachable at {}", endpoint);
+                report_prepare(reporter, "done", 100);
+                return Ok(endpoint);
+            }
+
+            report_prepare(reporter, "load_record", 15);
+            let record = self.installation_record().ok_or_else(|| {
+                SandboxError::Unavailable(
+                    "BoxLite is not installed yet. Install it from Settings before preparing the sandbox."
+                        .to_string(),
+                )
+            })?;
+
+            log::info!(
+                "starting official BoxLite server from {} on port {}",
+                record.wsl_binary_path,
+                self.config.port
+            );
+
+            if !self.config.data_dir.exists() {
+                std::fs::create_dir_all(&self.config.data_dir).map_err(|e| {
+                    SandboxError::Internal(format!(
+                        "failed to create sandbox data dir {}: {}",
+                        self.config.data_dir.display(),
+                        e
+                    ))
+                })?;
+            }
+
+            report_prepare(reporter, "wsl_warmup", 20);
+            let distro = get_default_wsl_distro();
+            warm_up_wsl(distro.as_deref()).await?;
+
+            report_prepare(reporter, "start_server", 25);
+            let launch_script = build_server_launch_command(
+                &record,
+                self.config.port,
+                proxy_environment,
+                image_registries,
+            );
+            let mut command = tokio::process::Command::new("wsl.exe");
+            configure_background_tokio_command(&mut command);
+            let mut args = Vec::new();
+            if let Some(distro) = distro.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
+                args.push("-d".to_string());
+                args.push(distro.to_string());
+            }
+            args.extend([
+                "--".to_string(),
+                "bash".to_string(),
+                "-lc".to_string(),
+                launch_script,
+            ]);
+            let child = command
+                .args(&args)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .kill_on_drop(true)
+                .spawn()
+                .map_err(|e| {
+                    SandboxError::Unavailable(format!(
+                        "BoxLite server launch failure: failed to start from {}: {}",
+                        record.wsl_binary_path, e
+                    ))
+                })?;
+
+            {
+                let mut guard = self.child.lock().await;
+                *guard = Some(child);
+            }
+
+            report_prepare(reporter, "health_check", 40);
+            self.wait_for_health(&endpoint, reporter).await?;
+            report_prepare(reporter, "done", 100);
+            log::info!("BoxLite is ready at {}", endpoint);
+            Ok(endpoint)
+        }
     }
 
     async fn wait_for_health(
