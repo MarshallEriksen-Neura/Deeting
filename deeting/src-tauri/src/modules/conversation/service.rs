@@ -384,7 +384,7 @@ pub fn extract_follow_up_texts(result: &Value) -> Vec<String> {
         .and_then(Value::as_str)
         .map(str::trim)
         .unwrap_or_default();
-    if status != "LOCAL_CHAT_RESUMED" && status != "LOCAL_CHAT_RESUME_FAILED" {
+    if status != "LOCAL_CHAT_RESUMED" && status != "LOCAL_CHAT_WAITING_APPROVAL" && status != "LOCAL_CHAT_RESUME_FAILED" {
         return Vec::new();
     }
 

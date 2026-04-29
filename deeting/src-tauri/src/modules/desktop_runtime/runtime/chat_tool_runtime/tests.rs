@@ -1177,6 +1177,156 @@ fn suspended_execution_keeps_remaining_pending_approvals_after_one_is_approved()
 }
 
 #[test]
+fn sync_remaining_pending_approvals_prefers_token_bound_graph_identity() {
+    let mut suspended = SuspendedChatToolExecution {
+        max_rounds: 4,
+        round: 1,
+        trace_id: "trace-token-bound-1".to_string(),
+        request_id: None,
+        execution_policy: build_default_local_execution_policy(),
+        model_connection: LocalModelConnection {
+            model_id: "deeting-os".to_string(),
+            provider_model_id: "deeting-os".to_string(),
+            logical_model_key: None,
+            protocol_family: "openai_chat".to_string(),
+        },
+        orchestrated_messages: Vec::new(),
+        task_query: None,
+        session_id: "session-token-bound-1".to_string(),
+        temperature: None,
+        max_tokens: None,
+        reasoning_enabled: None,
+        reasoning_effort: None,
+        active_capability: None,
+        active_skill_context: None,
+        runtime_metrics: RuntimeMetricsAccumulator::default(),
+        last_capability_snapshot: None,
+        last_response: None,
+        pending_approvals: vec![
+            PersistedPendingApproval {
+                approval_token: "approval-1".to_string(),
+                tool_id: Some("tool-1".to_string()),
+                tool_name: "shell_execute".to_string(),
+                arguments: serde_json::json!({ "command": "echo 1" }),
+                call_id: Some("call-da3d".to_string()),
+                execution_token: Some("exec-1".to_string()),
+                session_id: Some("session-token-bound-1".to_string()),
+                description: Some("run approved command".to_string()),
+                risk_level: Some("MEDIUM".to_string()),
+                risk_reasons: vec!["writes to stdout".to_string()],
+                tool_fingerprint: "fingerprint-1".to_string(),
+                policy_rule_key: Some("policy-1".to_string()),
+                approval_grant_key: None,
+                execution_graph_execution_id: Some("graph-token-bound-1".to_string()),
+                execution_graph_gate_node_id: Some("approval_gate:call-33".to_string()),
+                execution_graph_tool_node_id: Some("tool_call:call-33".to_string()),
+                approval_status: Some("waiting_approval".to_string()),
+                created_at_unix_ms: 1,
+                expires_at_unix_ms: 2,
+            },
+            PersistedPendingApproval {
+                approval_token: "approval-2".to_string(),
+                tool_id: Some("tool-2".to_string()),
+                tool_name: "shell_execute".to_string(),
+                arguments: serde_json::json!({ "command": "echo 2" }),
+                call_id: Some("call-next".to_string()),
+                execution_token: Some("exec-2".to_string()),
+                session_id: Some("session-token-bound-1".to_string()),
+                description: Some("run next command".to_string()),
+                risk_level: Some("MEDIUM".to_string()),
+                risk_reasons: vec!["writes to stdout".to_string()],
+                tool_fingerprint: "fingerprint-2".to_string(),
+                policy_rule_key: Some("policy-2".to_string()),
+                approval_grant_key: None,
+                execution_graph_execution_id: Some("graph-token-bound-1".to_string()),
+                execution_graph_gate_node_id: Some("approval_gate:call-next".to_string()),
+                execution_graph_tool_node_id: Some("tool_call:call-next".to_string()),
+                approval_status: Some("waiting_approval".to_string()),
+                created_at_unix_ms: 1,
+                expires_at_unix_ms: 2,
+            },
+        ],
+        execution_graph: serde_json::json!({
+            "execution_id": "graph-token-bound-1",
+            "nodes": [
+                {
+                    "node_id": "approval_gate:call-33",
+                    "node_type": "approval_gate",
+                    "status": "waiting_approval",
+                    "dependency_ids": [],
+                    "metadata": { "approval_token": "approval-1", "call_id": "call-33" },
+                    "input_payload": null,
+                    "output_payload": { "status": "REQUIRES_APPROVAL", "approval_token": "approval-1" }
+                },
+                {
+                    "node_id": "tool_call:call-33",
+                    "node_type": "tool_call",
+                    "status": "waiting_approval",
+                    "dependency_ids": [],
+                    "metadata": { "call_id": "call-33", "tool_name": "shell_execute" },
+                    "input_payload": null,
+                    "output_payload": { "status": "REQUIRES_APPROVAL", "approval_token": "approval-1" }
+                },
+                {
+                    "node_id": "approval_gate:call-next",
+                    "node_type": "approval_gate",
+                    "status": "waiting_approval",
+                    "dependency_ids": [],
+                    "metadata": { "approval_token": "approval-2", "call_id": "call-next" },
+                    "input_payload": null,
+                    "output_payload": { "status": "REQUIRES_APPROVAL", "approval_token": "approval-2" }
+                },
+                {
+                    "node_id": "tool_call:call-next",
+                    "node_type": "tool_call",
+                    "status": "waiting_approval",
+                    "dependency_ids": [],
+                    "metadata": { "call_id": "call-next", "tool_name": "shell_execute" },
+                    "input_payload": null,
+                    "output_payload": { "status": "REQUIRES_APPROVAL", "approval_token": "approval-2" }
+                },
+                {
+                    "node_id": "finalize:call-next",
+                    "node_type": "finalize",
+                    "status": "pending",
+                    "dependency_ids": [],
+                    "metadata": {},
+                    "input_payload": null,
+                    "output_payload": null
+                }
+            ],
+            "events": []
+        }),
+    };
+
+    mark_approval_gate_approving(&mut suspended, Some("approval-1"), Some("call-da3d"));
+    apply_approved_tool_result_to_execution_graph(
+        &mut suspended,
+        Some("approval-1"),
+        Some("call-da3d"),
+        &serde_json::json!({ "ok": true }),
+    );
+
+    let nodes = suspended
+        .execution_graph
+        .get("nodes")
+        .and_then(serde_json::Value::as_array)
+        .expect("nodes");
+
+    let approved_gate = nodes
+        .iter()
+        .find(|node| node.get("node_id").and_then(serde_json::Value::as_str) == Some("approval_gate:call-33"))
+        .expect("approved gate");
+    let next_gate = nodes
+        .iter()
+        .find(|node| node.get("node_id").and_then(serde_json::Value::as_str) == Some("approval_gate:call-next"))
+        .expect("next gate");
+
+    assert_eq!(approved_gate.get("status").and_then(serde_json::Value::as_str), Some("approved"));
+    assert_eq!(next_gate.get("status").and_then(serde_json::Value::as_str), Some("waiting_approval"));
+}
+
+#[test]
 fn serialize_inflight_runtime_context_round_trips_waiting_approval_state() {
     let value = serialize_inflight_runtime_context(
         InFlightExecutionStage::WaitingApproval,

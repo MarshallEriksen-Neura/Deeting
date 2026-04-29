@@ -573,4 +573,20 @@ mod tests {
 
         assert_eq!(texts, vec!["命令已经执行完毕。".to_string()]);
     }
+
+
+    #[test]
+    fn extract_follow_up_texts_from_local_chat_waiting_approval_payload() {
+        let texts = conversation::extract_follow_up_texts(&serde_json::json!({
+            "status": "LOCAL_CHAT_WAITING_APPROVAL",
+            "continuation_blocks": [
+                {
+                    "type": "text",
+                    "content": "需要下一次审批。"
+                }
+            ]
+        }));
+
+        assert_eq!(texts, vec!["需要下一次审批。".to_string()]);
+    }
 }

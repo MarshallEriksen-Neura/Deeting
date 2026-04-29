@@ -252,6 +252,19 @@ impl SuspendedChatToolExecution {
         true
     }
 
+    pub(crate) fn pending_approval_by_token(
+        &self,
+        approval_token: &str,
+    ) -> Option<&super::inflight::PersistedPendingApproval> {
+        let normalized_token = approval_token.trim();
+        if normalized_token.is_empty() {
+            return None;
+        }
+        self.pending_approvals
+            .iter()
+            .find(|pending| pending.approval_token.trim() == normalized_token)
+    }
+
     pub(crate) fn pending_approvals(&self) -> &[super::inflight::PersistedPendingApproval] {
         &self.pending_approvals
     }

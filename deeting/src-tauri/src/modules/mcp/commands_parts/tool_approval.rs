@@ -136,7 +136,11 @@ pub(crate) async fn approve_mcp_tool_payload(
         {
             if let Some(pending) = pending_before_approval.as_ref() {
                 let resolved_call_id = pending.call_id.as_deref().or(call_id);
-                let _ = mark_approval_gate_approving(&mut suspended, resolved_call_id);
+                let _ = mark_approval_gate_approving(
+                    &mut suspended,
+                    Some(token),
+                    resolved_call_id,
+                );
                 let _ = suspended.set_pending_approval_status(token, "approving");
                 // Graph has just been flipped to "approving" for this token; derive the
                 // persisted pending_approvals list from the graph so the token we are

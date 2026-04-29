@@ -603,20 +603,76 @@ fn update_finalize_node_status_from_graph(execution_graph: &mut serde_json::Valu
     update_finalize_node_status(execution_graph, next_status);
 }
 
-pub(crate) fn mark_approval_gate_approving(
-    suspended: &mut SuspendedChatToolExecution,
+fn resolve_approval_graph_node_ids(
+    suspended: &SuspendedChatToolExecution,
+    approval_token: Option<&str>,
     call_id: Option<&str>,
-) -> (String, String) {
+) -> (String, String, String) {
     let resolved_call_id = call_id
         .unwrap_or(suspended.pending_call_id())
         .trim()
         .to_string();
+
+    if let Some(pending) = approval_token.and_then(|token| suspended.pending_approval_by_token(token)) {
+        let gate_node_id = pending
+            .execution_graph_gate_node_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .or_else(|| {
+                pending
+                    .call_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .and_then(|pending_call_id| {
+                        suspended.approval_gate_node_id_for_call_id(pending_call_id)
+                    })
+            })
+            .unwrap_or_else(|| suspended.pending_gate_node_id().to_string());
+        let tool_node_id = pending
+            .execution_graph_tool_node_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .or_else(|| {
+                pending
+                    .call_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .and_then(|pending_call_id| suspended.tool_node_id_for_call_id(pending_call_id))
+            })
+            .unwrap_or_else(|| suspended.pending_tool_node_id().to_string());
+        let resolved_call_id = pending
+            .call_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or(resolved_call_id.as_str())
+            .to_string();
+        return (resolved_call_id, gate_node_id, tool_node_id);
+    }
+
     let gate_node_id = suspended
         .approval_gate_node_id_for_call_id(resolved_call_id.as_str())
         .unwrap_or_else(|| suspended.pending_gate_node_id().to_string());
     let tool_node_id = suspended
         .tool_node_id_for_call_id(resolved_call_id.as_str())
         .unwrap_or_else(|| suspended.pending_tool_node_id().to_string());
+
+    (resolved_call_id, gate_node_id, tool_node_id)
+}
+
+pub(crate) fn mark_approval_gate_approving(
+    suspended: &mut SuspendedChatToolExecution,
+    approval_token: Option<&str>,
+    call_id: Option<&str>,
+) -> (String, String) {
+    let (resolved_call_id, gate_node_id, tool_node_id) =
+        resolve_approval_graph_node_ids(suspended, approval_token, call_id);
 
     update_execution_graph_node(
         &mut suspended.execution_graph,
@@ -647,20 +703,13 @@ pub(crate) fn mark_approval_gate_approving(
 
 pub(super) fn apply_approved_tool_result_to_execution_graph(
     suspended: &mut SuspendedChatToolExecution,
+    approval_token: Option<&str>,
     call_id: Option<&str>,
     tool_result: &serde_json::Value,
 ) {
     let normalized_tool_result = unwrap_nested_tool_result_envelope(tool_result);
-    let resolved_call_id = call_id
-        .unwrap_or(suspended.pending_call_id())
-        .trim()
-        .to_string();
-    let gate_node_id = suspended
-        .approval_gate_node_id_for_call_id(resolved_call_id.as_str())
-        .unwrap_or_else(|| suspended.pending_gate_node_id().to_string());
-    let tool_node_id = suspended
-        .tool_node_id_for_call_id(resolved_call_id.as_str())
-        .unwrap_or_else(|| suspended.pending_tool_node_id().to_string());
+    let (resolved_call_id, gate_node_id, tool_node_id) =
+        resolve_approval_graph_node_ids(suspended, approval_token, call_id);
 
     // Determine if the tool result represents an error so the execution graph
     // accurately reflects the outcome instead of always marking "success".

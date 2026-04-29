@@ -3,10 +3,16 @@ use sqlx::Row;
 
 fn apply_approved_tool_result_to_suspended_round(
     suspended: &mut SuspendedChatToolExecution,
+    approval_token: &str,
     call_id: Option<&str>,
     tool_result: &serde_json::Value,
 ) {
-    apply_approved_tool_result_to_execution_graph(suspended, call_id, tool_result);
+    apply_approved_tool_result_to_execution_graph(
+        suspended,
+        Some(approval_token),
+        call_id,
+        tool_result,
+    );
 }
 
 pub(super) fn build_local_chat_resume_continuation_blocks(
@@ -817,7 +823,12 @@ pub(crate) async fn resume_suspended_chat_tool_execution_after_approval(
         return Ok(None);
     };
 
-    apply_approved_tool_result_to_suspended_round(&mut suspended, call_id, tool_result);
+    apply_approved_tool_result_to_suspended_round(
+        &mut suspended,
+        approval_token,
+        call_id,
+        tool_result,
+    );
     if let Some(pending) = suspended
         .pending_approvals
         .iter_mut()
