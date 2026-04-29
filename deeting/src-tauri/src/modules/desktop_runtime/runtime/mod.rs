@@ -47,7 +47,7 @@ pub(crate) use chat_tool_runtime::{
     persist_suspended_execution_graph_runtime, project_local_chat_approval_state_payload,
     recover_inflight_local_execution_state, recover_local_chat_execution_from_action,
     resume_suspended_chat_tool_execution_after_approval, run_local_chat_complete_with_tools,
-    serialize_inflight_runtime_context, InFlightExecutionStage, SuspendedChatToolExecution,
+    serialize_inflight_runtime_context, InFlightExecutionStage,
 };
 pub(crate) use consult::LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION;
 pub(crate) use control_plane::{

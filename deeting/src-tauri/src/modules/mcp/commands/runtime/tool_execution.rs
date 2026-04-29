@@ -30,28 +30,16 @@ fn normalized_approval_status(value: Option<&str>) -> &str {
         .unwrap_or("waiting_approval")
 }
 
-async fn update_pending_approval_status(
+async fn take_pending_approval_entry_or_fallback(
     pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
     approval_token: &str,
-    status: &str,
-) -> Result<crate::modules::mcp::PendingToolCall, String> {
-    let mut pending_tool_calls = pending_tool_calls.write().await;
-    let Some(pending) = pending_tool_calls.get_mut(approval_token) else {
-        return Err("pending tool call not found".to_string());
-    };
-    pending.approval_status = Some(status.to_string());
-    Ok(pending.clone())
-}
-
-async fn remove_pending_approval_entry(
-    pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
-    approval_token: &str,
-) -> Result<crate::modules::mcp::PendingToolCall, String> {
+    fallback: &crate::modules::mcp::PendingToolCall,
+) -> crate::modules::mcp::PendingToolCall {
     pending_tool_calls
         .write()
         .await
         .remove(approval_token)
-        .ok_or_else(|| "pending tool call already consumed".to_string())
+        .unwrap_or_else(|| fallback.clone())
 }
 
 fn is_stdio_invocation_error(error: &str) -> bool {
@@ -531,6 +519,7 @@ async fn maybe_queue_core_tool_approval(
                 .write()
                 .await
                 .insert(approval_token.clone(), pending);
+            let pending_snapshot = pending_tool_calls.read().await.get(&approval_token).cloned();
             return Ok(Some(serde_json::json!({
                 "status": "REQUIRES_APPROVAL",
                 "approval_token": approval_token,
@@ -542,6 +531,14 @@ async fn maybe_queue_core_tool_approval(
                 "risk_reasons": risk.reasons.clone(),
                 "risk_profile": risk.metadata_json(),
                 "expires_in_ms": expires_in_ms,
+                "execution_token": approval_context.execution_token,
+                "session_id": approval_context.session_id,
+                "tool_fingerprint": pending_snapshot.as_ref().map(|pending| pending.tool_fingerprint.clone()),
+                "policy_rule_key": pending_snapshot.as_ref().and_then(|pending| pending.policy_rule_key.clone()),
+                "approval_grant_key": pending_snapshot.as_ref().and_then(|pending| pending.approval_grant_key.clone()),
+                "approval_status": "waiting_approval",
+                "created_at_unix_ms": pending_snapshot.as_ref().map(|pending| pending.created_at_unix_ms),
+                "expires_at_unix_ms": pending_snapshot.as_ref().map(|pending| pending.expires_at_unix_ms),
             })));
         }
     }
@@ -1536,6 +1533,7 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
                     .write()
                     .await
                     .insert(approval_token.clone(), pending);
+                let pending_snapshot = pending_tool_calls.read().await.get(&approval_token).cloned();
                 return Ok(serde_json::json!({
                     "status": "REQUIRES_APPROVAL",
                     "approval_token": approval_token,
@@ -1547,6 +1545,14 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
                     "risk_reasons": risk_assessment.reasons,
                     "risk_profile": risk_assessment.metadata_json(),
                     "expires_in_ms": 5 * 60 * 1000,
+                    "execution_token": approval_context.execution_token,
+                    "session_id": approval_context.session_id,
+                    "tool_fingerprint": pending_snapshot.as_ref().map(|pending| pending.tool_fingerprint.clone()),
+                    "policy_rule_key": pending_snapshot.as_ref().and_then(|pending| pending.policy_rule_key.clone()),
+                    "approval_grant_key": pending_snapshot.as_ref().and_then(|pending| pending.approval_grant_key.clone()),
+                    "approval_status": "waiting_approval",
+                    "created_at_unix_ms": pending_snapshot.as_ref().map(|pending| pending.created_at_unix_ms),
+                    "expires_at_unix_ms": pending_snapshot.as_ref().map(|pending| pending.expires_at_unix_ms),
                 }));
             }
         }
@@ -1671,11 +1677,20 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
                 .write()
                 .await
                 .insert(approval_token.clone(), pending);
+            let pending_snapshot = pending_tool_calls.read().await.get(&approval_token).cloned();
             return Ok(serde_json::json!({
                 "status": "REQUIRES_APPROVAL", "approval_token": approval_token,
                 "tool_id": tool.id, "tool_name": tool.name,
                 "arguments": arguments, "description": tool.description, "risk_level": risk_assessment.risk_level,
                 "risk_reasons": risk_assessment.reasons, "risk_profile": risk_assessment.metadata_json(), "expires_in_ms": expires_in_ms,
+                "execution_token": approval_context.execution_token,
+                "session_id": approval_context.session_id,
+                "tool_fingerprint": pending_snapshot.as_ref().map(|pending| pending.tool_fingerprint.clone()),
+                "policy_rule_key": pending_snapshot.as_ref().and_then(|pending| pending.policy_rule_key.clone()),
+                "approval_grant_key": pending_snapshot.as_ref().and_then(|pending| pending.approval_grant_key.clone()),
+                "approval_status": "waiting_approval",
+                "created_at_unix_ms": pending_snapshot.as_ref().map(|pending| pending.created_at_unix_ms),
+                "expires_at_unix_ms": pending_snapshot.as_ref().map(|pending| pending.expires_at_unix_ms),
             }));
         }
     }
@@ -1712,21 +1727,18 @@ pub(crate) async fn approve_mcp_tool_inner(
     .await
 }
 
-pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
+pub(crate) async fn approve_pending_tool_with_context_and_mode(
     approval_context: &crate::modules::mcp::ToolApprovalContext,
     runtime_state: Option<&crate::modules::mcp::McpRuntimeState>,
     store: &crate::modules::mcp::store::McpStore,
     pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
     approval_token: &str,
+    pending: crate::modules::mcp::PendingToolCall,
     persist_mode: ApprovePersistMode,
 ) -> Result<Value, String> {
     let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
-    let pending = pending_tool_calls.read().await.get(approval_token).cloned();
-    let Some(pending) = pending else {
-        return Err("pending tool call not found".to_string());
-    };
     if pending.expires_at_unix_ms <= now as i128 {
-        pending_tool_calls.write().await.remove(approval_token);
+        let _ = pending_tool_calls.write().await.remove(approval_token);
         return Err("approval token expired; please retry the action".to_string());
     }
     match normalized_approval_status(pending.approval_status.as_deref()) {
@@ -1754,8 +1766,6 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
             return Err("approval context mismatch (execution_token)".to_string());
         }
     }
-    let pending =
-        update_pending_approval_status(pending_tool_calls, approval_token, "approving").await?;
 
     if let Some(binding) = resolve_skill_binding_by_ref(
         store,
@@ -1765,15 +1775,6 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
     .await?
     {
         if skill_binding_fingerprint(&binding) != pending.tool_fingerprint {
-            if let Ok(mut failed_pending) = update_pending_approval_status(
-                pending_tool_calls,
-                approval_token,
-                "approval_failed",
-            )
-            .await
-            {
-                failed_pending.approval_status = Some("approval_failed".to_string());
-            }
             return Err(
                 "skill binding changed after approval prompt; request was cancelled".to_string(),
             );
@@ -1787,19 +1788,15 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
         {
             Ok(result) => result,
             Err(err) => {
-                let _ = update_pending_approval_status(
-                    pending_tool_calls,
-                    approval_token,
-                    "approval_failed",
-                )
-                .await;
                 return Err(err);
             }
         };
-        let pending = remove_pending_approval_entry(pending_tool_calls, approval_token).await?;
+        let consumed_pending =
+            take_pending_approval_entry_or_fallback(pending_tool_calls, approval_token, &pending)
+                .await;
         record_successful_tool_execution(
             store,
-            pending.session_id.as_deref(),
+            consumed_pending.session_id.as_deref(),
             &binding.callable_name,
             &result,
         )
@@ -1808,7 +1805,7 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
             persist_mode,
             ApprovePersistMode::AllowOnce | ApprovePersistMode::AllowAlways
         ) {
-            if let Some(key) = pending.policy_rule_key.as_deref() {
+            if let Some(key) = consumed_pending.policy_rule_key.as_deref() {
                 store
                     .upsert_tool_approval_rule(
                         key,
@@ -1817,8 +1814,8 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
                             ApprovePersistMode::AllowAlways => PersistedApprovalAction::AllowAlways,
                         },
                         &binding.callable_name,
-                        &pending.tool_fingerprint,
-                        pending.risk_level.as_deref(),
+                        &consumed_pending.tool_fingerprint,
+                        consumed_pending.risk_level.as_deref(),
                     )
                     .await
                     .map_err(|err| err.to_string())?;
@@ -1826,7 +1823,7 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
         }
         if matches!(persist_mode, ApprovePersistMode::AllowAlways) {
             if let (Some(runtime), Some(key)) =
-                (runtime_state, pending.approval_grant_key.as_deref())
+                (runtime_state, consumed_pending.approval_grant_key.as_deref())
             {
                 if let Some(grant) =
                     crate::modules::mcp::SessionApprovalGrant::from_key(key, now as i128)
@@ -1860,21 +1857,15 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
     .await
     {
         Ok(result) => Ok(result),
-        Err(err) => {
-            let _ = update_pending_approval_status(
-                pending_tool_calls,
-                approval_token,
-                "approval_failed",
-            )
-            .await;
-            Err(err)
-        }
+        Err(err) => Err(err),
     }? {
-        let pending = remove_pending_approval_entry(pending_tool_calls, approval_token).await?;
+        let consumed_pending =
+            take_pending_approval_entry_or_fallback(pending_tool_calls, approval_token, &pending)
+                .await;
         record_successful_tool_execution(
             store,
-            pending.session_id.as_deref(),
-            &pending.tool_name,
+            consumed_pending.session_id.as_deref(),
+            &consumed_pending.tool_name,
             &result,
         )
         .await;
@@ -1882,7 +1873,7 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
             persist_mode,
             ApprovePersistMode::AllowOnce | ApprovePersistMode::AllowAlways
         ) {
-            if let Some(key) = pending.policy_rule_key.as_deref() {
+            if let Some(key) = consumed_pending.policy_rule_key.as_deref() {
                 store
                     .upsert_tool_approval_rule(
                         key,
@@ -1890,9 +1881,9 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
                             ApprovePersistMode::AllowOnce => PersistedApprovalAction::AllowOnce,
                             ApprovePersistMode::AllowAlways => PersistedApprovalAction::AllowAlways,
                         },
-                        &pending.tool_name,
-                        &pending.tool_fingerprint,
-                        pending.risk_level.as_deref(),
+                        &consumed_pending.tool_name,
+                        &consumed_pending.tool_fingerprint,
+                        consumed_pending.risk_level.as_deref(),
                     )
                     .await
                     .map_err(|err| err.to_string())?;
@@ -1911,12 +1902,6 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
     if let Some(runtime) = runtime_state {
         let current_fingerprint = runtime.tool_fingerprint(&tool);
         if current_fingerprint != pending.tool_fingerprint {
-            let _ = update_pending_approval_status(
-                pending_tool_calls,
-                approval_token,
-                "approval_failed",
-            )
-            .await;
             return Err(
                 "tool configuration changed after approval prompt; request was cancelled"
                     .to_string(),
@@ -1932,23 +1917,23 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
     {
         Ok(result) => result,
         Err(err) => {
-            let _ = update_pending_approval_status(
-                pending_tool_calls,
-                approval_token,
-                "approval_failed",
-            )
-            .await;
             return Err(err);
         }
     };
-    let pending = remove_pending_approval_entry(pending_tool_calls, approval_token).await?;
-    record_successful_tool_execution(store, pending.session_id.as_deref(), &tool.name, &result)
-        .await;
+    let consumed_pending =
+        take_pending_approval_entry_or_fallback(pending_tool_calls, approval_token, &pending).await;
+    record_successful_tool_execution(
+        store,
+        consumed_pending.session_id.as_deref(),
+        &tool.name,
+        &result,
+    )
+    .await;
     if matches!(
         persist_mode,
         ApprovePersistMode::AllowOnce | ApprovePersistMode::AllowAlways
     ) {
-        if let Some(key) = pending.policy_rule_key.as_deref() {
+        if let Some(key) = consumed_pending.policy_rule_key.as_deref() {
             store
                 .upsert_tool_approval_rule(
                     key,
@@ -1957,15 +1942,17 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
                         ApprovePersistMode::AllowAlways => PersistedApprovalAction::AllowAlways,
                     },
                     &tool.name,
-                    &pending.tool_fingerprint,
-                    pending.risk_level.as_deref(),
+                    &consumed_pending.tool_fingerprint,
+                    consumed_pending.risk_level.as_deref(),
                 )
                 .await
                 .map_err(|err| err.to_string())?;
         }
     }
     if matches!(persist_mode, ApprovePersistMode::AllowAlways) {
-        if let (Some(runtime), Some(key)) = (runtime_state, pending.approval_grant_key.as_deref()) {
+        if let (Some(runtime), Some(key)) =
+            (runtime_state, consumed_pending.approval_grant_key.as_deref())
+        {
             if let Some(grant) =
                 crate::modules::mcp::SessionApprovalGrant::from_key(key, now as i128)
             {
@@ -1979,6 +1966,30 @@ pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
         }
     }
     Ok(result)
+}
+
+pub(crate) async fn approve_mcp_tool_inner_with_context_and_mode(
+    approval_context: &crate::modules::mcp::ToolApprovalContext,
+    runtime_state: Option<&crate::modules::mcp::McpRuntimeState>,
+    store: &crate::modules::mcp::store::McpStore,
+    pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
+    approval_token: &str,
+    persist_mode: ApprovePersistMode,
+) -> Result<Value, String> {
+    let pending = pending_tool_calls.read().await.get(approval_token).cloned();
+    let Some(pending) = pending else {
+        return Err("pending tool call not found".to_string());
+    };
+    approve_pending_tool_with_context_and_mode(
+        approval_context,
+        runtime_state,
+        store,
+        pending_tool_calls,
+        approval_token,
+        pending,
+        persist_mode,
+    )
+    .await
 }
 
 #[cfg(test)]

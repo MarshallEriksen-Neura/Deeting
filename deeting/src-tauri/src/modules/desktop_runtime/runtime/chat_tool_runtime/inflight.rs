@@ -115,34 +115,90 @@ pub(super) fn now_unix_ms_i64() -> i64 {
     (time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000) as i64
 }
 
-pub(super) fn build_pending_approval_records(
-    pending_tool_calls: &std::collections::HashMap<String, crate::modules::mcp::PendingToolCall>,
-    approval_tokens: &[String],
+fn as_trimmed_string(value: Option<&serde_json::Value>) -> Option<String> {
+    value
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+pub(super) fn build_pending_approval_records_from_tool_call_meta(
+    tool_call_meta: &[serde_json::Value],
+    default_session_id: &str,
 ) -> Vec<PersistedPendingApproval> {
-    approval_tokens
+    let now = now_unix_ms_i64() as i128;
+    tool_call_meta
         .iter()
-        .filter_map(|approval_token| {
-            let pending = pending_tool_calls.get(approval_token)?;
+        .filter(|item| {
+            item.get("status")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|status| status.eq_ignore_ascii_case("requires_approval"))
+        })
+        .filter_map(|item| {
+            let result = item.get("result")?.as_object()?;
+            let approval_token = as_trimmed_string(result.get("approval_token"))?;
+            let expires_at_unix_ms = result
+                .get("expires_at_unix_ms")
+                .and_then(serde_json::Value::as_i64)
+                .map(|value| value as i128)
+                .or_else(|| {
+                    result
+                        .get("expires_in_ms")
+                        .and_then(serde_json::Value::as_i64)
+                        .map(|value| now + value as i128)
+                })
+                .unwrap_or(now + 5 * 60 * 1000);
+
             Some(PersistedPendingApproval {
-                approval_token: approval_token.clone(),
-                tool_id: pending.tool_id.clone(),
-                tool_name: pending.tool_name.clone(),
-                arguments: pending.arguments.clone(),
-                call_id: pending.call_id.clone(),
-                execution_token: pending.execution_token.clone(),
-                session_id: pending.session_id.clone(),
-                description: pending.description.clone(),
-                risk_level: pending.risk_level.clone(),
-                risk_reasons: pending.risk_reasons.clone(),
-                tool_fingerprint: pending.tool_fingerprint.clone(),
-                policy_rule_key: pending.policy_rule_key.clone(),
-                approval_grant_key: pending.approval_grant_key.clone(),
-                execution_graph_execution_id: pending.execution_graph_execution_id.clone(),
-                execution_graph_gate_node_id: pending.execution_graph_gate_node_id.clone(),
-                execution_graph_tool_node_id: pending.execution_graph_tool_node_id.clone(),
-                approval_status: pending.approval_status.clone(),
-                created_at_unix_ms: pending.created_at_unix_ms,
-                expires_at_unix_ms: pending.expires_at_unix_ms,
+                approval_token,
+                tool_id: as_trimmed_string(result.get("tool_id")),
+                tool_name: as_trimmed_string(item.get("name"))
+                    .or_else(|| as_trimmed_string(result.get("tool_name")))
+                    .unwrap_or_else(|| "unknown_tool".to_string()),
+                arguments: result
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({})),
+                call_id: as_trimmed_string(item.get("id")),
+                execution_token: as_trimmed_string(result.get("execution_token")),
+                session_id: as_trimmed_string(result.get("session_id"))
+                    .or_else(|| Some(default_session_id.to_string())),
+                description: as_trimmed_string(result.get("description")),
+                risk_level: as_trimmed_string(result.get("risk_level")),
+                risk_reasons: result
+                    .get("risk_reasons")
+                    .and_then(serde_json::Value::as_array)
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|item| item.as_str().map(str::trim))
+                            .filter(|value| !value.is_empty())
+                            .map(str::to_string)
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default(),
+                tool_fingerprint: as_trimmed_string(result.get("tool_fingerprint"))
+                    .unwrap_or_else(|| "unknown-fingerprint".to_string()),
+                policy_rule_key: as_trimmed_string(result.get("policy_rule_key")),
+                approval_grant_key: as_trimmed_string(result.get("approval_grant_key")),
+                execution_graph_execution_id: as_trimmed_string(
+                    result.get("execution_graph_execution_id"),
+                ),
+                execution_graph_gate_node_id: as_trimmed_string(
+                    result.get("execution_graph_gate_node_id"),
+                ),
+                execution_graph_tool_node_id: as_trimmed_string(
+                    result.get("execution_graph_tool_node_id"),
+                ),
+                approval_status: as_trimmed_string(result.get("approval_status"))
+                    .or_else(|| Some("waiting_approval".to_string())),
+                created_at_unix_ms: result
+                    .get("created_at_unix_ms")
+                    .and_then(serde_json::Value::as_i64)
+                    .map(|value| value as i128)
+                    .unwrap_or(now),
+                expires_at_unix_ms,
             })
         })
         .collect()
@@ -369,28 +425,9 @@ pub(crate) async fn materialize_pending_local_approval_from_runtime_context(
     )
     .await?
     else {
-        if execution_graph_execution_id
-            .map(str::trim)
-            .is_some_and(|value| !value.is_empty())
-        {
-            return Ok(None);
-        }
-        return Ok(app_state
-            .mcp
-            .approvals
-            .pending_tool_calls
-            .read()
-            .await
-            .get(normalized_token)
-            .cloned());
+        return Ok(None);
     };
 
-    // Graph is authoritative. If the gate for this token has already moved past
-    // `waiting_approval` (e.g. the approve is in-flight with status "approving",
-    // or the gate is completed / rejected), DO NOT materialize a fresh entry
-    // into the in-memory map — that would resurrect a zombie the rest of the
-    // system has already expired. Fixes Vector C. Fall back to whatever the
-    // in-memory map already holds.
     let graph_snapshot =
         load_execution_graph_snapshot(app_state.mcp.store.as_ref(), matched.execution_id.as_str())
             .await
@@ -409,18 +446,11 @@ pub(crate) async fn materialize_pending_local_approval_from_runtime_context(
     }
 
     let expires_at_unix_ms = (now_unix_ms_i64() as i128) + app_state.mcp.pending_tool_call_ttl_ms();
-    let materialized = pending_tool_call_from_persisted_approval(
+    Ok(Some(pending_tool_call_from_persisted_approval(
         &matched.pending,
         Some(matched.execution_id.as_str()),
         expires_at_unix_ms,
-    );
-
-    let mut pending_tool_calls = app_state.mcp.approvals.pending_tool_calls.write().await;
-    let entry = pending_tool_calls
-        .entry(normalized_token.to_string())
-        .or_insert_with(|| materialized.clone());
-    *entry = materialized;
-    Ok(Some(entry.clone()))
+    )))
 }
 
 pub(crate) fn serialize_inflight_runtime_context(
@@ -754,43 +784,6 @@ pub(super) async fn clear_execution_graph_runtime_context(
     }
 }
 
-fn suspended_execution_matches_requested_execution_id(
-    suspended: &SuspendedChatToolExecution,
-    execution_graph_execution_id: Option<&str>,
-) -> bool {
-    let Some(expected_execution_id) = execution_graph_execution_id
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    else {
-        return true;
-    };
-
-    suspended.graph_execution_id() == Some(expected_execution_id)
-}
-
-async fn take_suspended_local_chat_execution_fallback(
-    suspended_local_chat_executions: &tokio::sync::RwLock<
-        HashMap<String, SuspendedChatToolExecution>,
-    >,
-    approval_token: &str,
-    execution_graph_execution_id: Option<&str>,
-) -> Option<SuspendedChatToolExecution> {
-    let normalized_token = approval_token.trim();
-    if normalized_token.is_empty() {
-        return None;
-    }
-
-    let mut suspended_local_chat_executions = suspended_local_chat_executions.write().await;
-    let suspended = suspended_local_chat_executions.remove(normalized_token)?;
-    if suspended_execution_matches_requested_execution_id(&suspended, execution_graph_execution_id)
-    {
-        return Some(suspended);
-    }
-
-    suspended_local_chat_executions.insert(normalized_token.to_string(), suspended);
-    None
-}
-
 pub(crate) async fn load_suspended_chat_tool_execution_for_resume(
     app_state: &AppState,
     approval_token: &str,
@@ -919,16 +912,7 @@ pub(crate) async fn load_suspended_chat_tool_execution_for_resume(
         }
     }
 
-    Ok(take_suspended_local_chat_execution_fallback(
-        app_state
-            .mcp
-            .approvals
-            .suspended_local_chat_executions
-            .as_ref(),
-        approval_token,
-        execution_graph_execution_id,
-    )
-    .await)
+    Ok(None)
 }
 
 pub(super) fn pending_tool_call_from_persisted_approval(

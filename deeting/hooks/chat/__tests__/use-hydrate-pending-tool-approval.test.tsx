@@ -233,7 +233,7 @@ describe("useHydratePendingToolApproval", () => {
     expect(useBridgeApprovalStore.getState().queue[0]?.meta.message_id).toBeUndefined()
   })
 
-  it("does not rehydrate a stale runtime approval once chat history already shows the call resolved", async () => {
+  it("rehydrates canonical runtime approvals even if chat history looks resolved", async () => {
     mockListPendingMcpApprovals.mockResolvedValueOnce([
       {
         status: "REQUIRES_APPROVAL",
@@ -242,6 +242,8 @@ describe("useHydratePendingToolApproval", () => {
         arguments: { command: "dir" },
         session_id: "session-runtime-stale-history-1",
         call_id: "call-runtime-stale-history-1",
+        execution_graph_execution_id: "graph-runtime-stale-history-1",
+        execution_graph_gate_node_id: "approval_gate:call-runtime-stale-history-1",
       },
     ] as never)
 
@@ -288,8 +290,15 @@ describe("useHydratePendingToolApproval", () => {
     })
 
     await waitFor(() => {
-      expect(useBridgeApprovalStore.getState().pending).toBeNull()
-      expect(useBridgeApprovalStore.getState().queue).toEqual([])
+      expect(useBridgeApprovalStore.getState().pending).toMatchObject({
+        approval_token: "approval-runtime-stale-history-1",
+        tool_name: "shell_execute",
+        meta: {
+          call_id: "call-runtime-stale-history-1",
+          execution_graph_execution_id: "graph-runtime-stale-history-1",
+          execution_graph_gate_node_id: "approval_gate:call-runtime-stale-history-1",
+        },
+      })
     })
   })
 

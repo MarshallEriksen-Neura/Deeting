@@ -34,6 +34,7 @@ use crate::modules::mcp::commands::support::*;
 use crate::modules::sandbox::prepare_config::resolve_sandbox_prepare_config;
 use mcp_session::conversation::CreateConversationMessageRequest;
 
+mod approval_commands;
 mod inflight;
 mod recovery;
 mod replay;
@@ -45,9 +46,8 @@ mod tool_meta;
 #[cfg(test)]
 use inflight::PersistedPendingApproval;
 use inflight::{
-    build_pending_approval_records, clear_execution_graph_runtime_context, now_unix_ms_i64,
-    pending_tool_call_from_persisted_approval, persist_running_tool_execution_runtime,
-    persistable_inflight_context_from_value,
+    build_pending_approval_records_from_tool_call_meta, clear_execution_graph_runtime_context,
+    now_unix_ms_i64, persist_running_tool_execution_runtime, persistable_inflight_context_from_value,
 };
 pub(crate) use inflight::{
     collect_waiting_approval_tokens_from_graph, derive_pending_approvals_from_graph,
@@ -55,6 +55,9 @@ pub(crate) use inflight::{
     materialize_pending_local_approval_from_runtime_context,
     persist_suspended_execution_graph_runtime, serialize_inflight_runtime_context,
     InFlightExecutionStage,
+};
+pub(crate) use approval_commands::{
+    dispatch_local_chat_execution_run_command, ExecutionRunCommand,
 };
 use recovery::extract_resume_response_text;
 #[cfg(test)]
@@ -745,7 +748,7 @@ async fn continue_local_chat_complete_with_tools(
                 ));
             }
             LocalToolCallProcessingOutcome::Interrupted {
-                approval_tokens,
+                approval_tokens: _approval_tokens,
                 mut tool_call_meta,
                 results,
                 capability_update,
@@ -778,34 +781,11 @@ async fn continue_local_chat_complete_with_tools(
                 );
                 tool_call_meta = resolved_tool_call_meta;
                 attach_graph_metadata_to_pending_tool_meta(&mut tool_call_meta, &suspended);
-                {
-                    let mut pending_tool_calls =
-                        app_state.mcp.approvals.pending_tool_calls.write().await;
-                    for approval_token in &approval_tokens {
-                        let Some(pending) = pending_tool_calls.get_mut(approval_token) else {
-                            continue;
-                        };
-                        pending.execution_graph_execution_id =
-                            suspended.graph_execution_id().map(str::to_string);
-                        if let Some(call_id) = pending.call_id.as_deref() {
-                            pending.execution_graph_gate_node_id =
-                                suspended.approval_gate_node_id_for_call_id(call_id);
-                            pending.execution_graph_tool_node_id =
-                                suspended.tool_node_id_for_call_id(call_id);
-                        } else {
-                            pending.execution_graph_gate_node_id =
-                                Some(suspended.pending_gate_node_id().to_string());
-                            pending.execution_graph_tool_node_id =
-                                Some(suspended.pending_tool_node_id().to_string());
-                        }
-                    }
-                }
-                let persisted_pending_approvals = {
-                    let pending_tool_calls =
-                        app_state.mcp.approvals.pending_tool_calls.read().await;
-                    build_pending_approval_records(&pending_tool_calls, &approval_tokens)
-                };
-                let mut persisted_graph_runtime = true;
+                let persisted_pending_approvals =
+                    build_pending_approval_records_from_tool_call_meta(
+                        &tool_call_meta,
+                        state.session_id.as_str(),
+                    );
                 if let Err(err) = persist_suspended_execution_graph_runtime(
                     app_state.mcp.store.as_ref(),
                     &suspended,
@@ -822,21 +802,7 @@ async fn continue_local_chat_complete_with_tools(
                         state.session_id,
                         err
                     );
-                    persisted_graph_runtime = false;
                 }
-                if !persisted_graph_runtime {
-                    let mut suspended_local_chat_executions = app_state
-                        .mcp
-                        .approvals
-                        .suspended_local_chat_executions
-                        .write()
-                        .await;
-                    for approval_token in &approval_tokens {
-                        suspended_local_chat_executions
-                            .insert(approval_token.clone(), suspended.clone());
-                    }
-                }
-
                 let mut current_tool_call_meta = build_state_effective_tool_call_meta(&state);
                 current_tool_call_meta.extend(suspended.pending_tool_call_meta());
                 let interrupted = serde_json::json!({

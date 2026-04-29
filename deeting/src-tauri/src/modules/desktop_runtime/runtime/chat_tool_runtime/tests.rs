@@ -1,6 +1,6 @@
 use super::classify_local_tool_execution_error_code;
 use super::*;
-use crate::modules::desktop_runtime::runtime::build_local_tool_call_install_gate_error_meta;
+use crate::modules::desktop_runtime::runtime::{build_default_local_execution_policy, build_local_tool_call_install_gate_error_meta};
 use crate::modules::desktop_runtime::runtime::LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE;
 
 #[test]

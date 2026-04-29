@@ -59,19 +59,17 @@ impl<Bridge, Gateway> McpTransportFacade<Bridge, Gateway> {
 }
 
 #[derive(Clone)]
-pub struct McpApprovalFacade<Grant, SuspendedExecution> {
+pub struct McpApprovalFacade<Grant> {
     pub pending_tool_calls: Arc<RwLock<HashMap<String, PendingToolCall>>>,
     pub session_approval_grants: Arc<RwLock<HashMap<String, Grant>>>,
-    pub suspended_local_chat_executions: Arc<RwLock<HashMap<String, SuspendedExecution>>>,
     pub local_chat_tasks: Arc<RwLock<HashMap<String, AbortHandle>>>,
 }
 
-impl<Grant, SuspendedExecution> Default for McpApprovalFacade<Grant, SuspendedExecution> {
+impl<Grant> Default for McpApprovalFacade<Grant> {
     fn default() -> Self {
         Self {
             pending_tool_calls: Arc::new(RwLock::new(HashMap::new())),
             session_approval_grants: Arc::new(RwLock::new(HashMap::new())),
-            suspended_local_chat_executions: Arc::new(RwLock::new(HashMap::new())),
             local_chat_tasks: Arc::new(RwLock::new(HashMap::new())),
         }
     }

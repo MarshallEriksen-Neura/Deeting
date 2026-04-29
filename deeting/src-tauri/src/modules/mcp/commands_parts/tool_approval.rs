@@ -1,23 +1,14 @@
 use super::{
-    runtime::{
-        approve_mcp_tool_inner_with_context_and_mode, reject_mcp_tool_inner_with_mode,
-        ApprovePersistMode, RejectPersistMode,
-    },
+    runtime::{ApprovePersistMode, RejectPersistMode},
     support::*,
 };
 use crate::modules::desktop_runtime::runtime::{
-    apply_rejected_tool_result_to_execution_graph_value, delete_execution_graph_runtime_context,
-    derive_pending_approvals_from_graph, list_canonical_pending_local_approval_snapshots,
-    load_execution_graph_snapshot, load_suspended_chat_tool_execution_for_resume,
-    mark_approval_gate_approving, materialize_pending_local_approval_from_runtime_context,
-    persist_execution_graph_snapshot, persist_suspended_execution_graph_runtime,
-    project_local_chat_approval_state_payload, recover_local_chat_execution_from_action,
-    resume_suspended_chat_tool_execution_after_approval, InFlightExecutionStage,
+    dispatch_local_chat_execution_run_command, list_canonical_pending_local_approval_snapshots,
+    ExecutionRunCommand,
 };
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::policy::PersistedApprovalAction;
 use crate::modules::mcp::risk::approval_classes_from_key;
-use std::collections::HashSet;
 
 fn parse_approve_persist_mode(value: Option<String>) -> ApprovePersistMode {
     match value
@@ -52,45 +43,6 @@ fn require_approval_token(value: Option<String>) -> Result<String, String> {
         .ok_or_else(|| "approval token is required".to_string())
 }
 
-fn resolve_requested_execution_graph_id(
-    requested_execution_graph_id: Option<&str>,
-    pending_execution_graph_id: Option<&str>,
-) -> Option<String> {
-    requested_execution_graph_id
-        .and_then(|value| {
-            let normalized = value.trim();
-            (!normalized.is_empty()).then(|| normalized.to_string())
-        })
-        .or_else(|| {
-            pending_execution_graph_id.and_then(|value| {
-                let normalized = value.trim();
-                (!normalized.is_empty()).then(|| normalized.to_string())
-            })
-        })
-}
-
-fn is_idempotent_post_approval_error(error: &str) -> bool {
-    matches!(
-        error.trim(),
-        "pending tool call not found" | "pending tool call already consumed"
-    )
-}
-
-fn build_failed_approval_tool_result_payload(
-    pending: Option<&crate::modules::mcp::PendingToolCall>,
-    execution_graph_execution_id: Option<&str>,
-    error: &str,
-) -> Value {
-    serde_json::json!({
-        "error": error,
-        "execution_graph_execution_id": execution_graph_execution_id,
-        "execution_graph_gate_node_id": pending
-            .and_then(|item| item.execution_graph_gate_node_id.clone()),
-        "execution_graph_tool_node_id": pending
-            .and_then(|item| item.execution_graph_tool_node_id.clone()),
-    })
-}
-
 pub(crate) async fn approve_mcp_tool_payload(
     app: &tauri::AppHandle,
     state: &crate::state::AppState,
@@ -100,240 +52,20 @@ pub(crate) async fn approve_mcp_tool_payload(
     call_id: Option<&str>,
     execution_token: Option<&str>,
 ) -> Result<Value, String> {
-    let token = approval_token.trim();
-    if token.is_empty() {
-        return Err("approval token is required".to_string());
-    }
-    let materialized_pending = materialize_pending_local_approval_from_runtime_context(
+    dispatch_local_chat_execution_run_command(
+        Some(app),
         state,
-        token,
-        execution_graph_execution_id,
-    )
-    .await?;
-    let pending_before_approval = state
-        .mcp
-        .approvals
-        .pending_tool_calls
-        .read()
-        .await
-        .get(token)
-        .cloned()
-        .or(materialized_pending);
-    let approval_context = state
-        .mcp
-        .build_approval_context(call_id, execution_token, None);
-    let persist_mode = parse_approve_persist_mode(approval_mode.map(str::to_string));
-    let requested_execution_id = resolve_requested_execution_graph_id(
-        execution_graph_execution_id,
-        pending_before_approval
-            .as_ref()
-            .and_then(|pending| pending.execution_graph_execution_id.as_deref()),
-    );
-
-    if let Some(execution_id) = requested_execution_id.as_deref() {
-        if let Some(mut suspended) =
-            load_suspended_chat_tool_execution_for_resume(state, token, Some(execution_id)).await?
-        {
-            if let Some(pending) = pending_before_approval.as_ref() {
-                let resolved_call_id = pending.call_id.as_deref().or(call_id);
-                let _ = mark_approval_gate_approving(
-                    &mut suspended,
-                    Some(token),
-                    resolved_call_id,
-                );
-                let _ = suspended.set_pending_approval_status(token, "approving");
-                // Graph has just been flipped to "approving" for this token; derive the
-                // persisted pending_approvals list from the graph so the token we are
-                // about to consume is NOT recorded as "still waiting". This prevents a
-                // crash between this persist and the actual consume from resurrecting
-                // the token as a fresh approval dialog on next startup (Vector A).
-                let persisted_pending_approvals = derive_pending_approvals_from_graph(&suspended);
-                if let Err(err) = persist_suspended_execution_graph_runtime(
-                    state.mcp.store.as_ref(),
-                    &suspended,
-                    &persisted_pending_approvals,
-                    "desktop_local_chat_approval_approving",
-                    "active",
-                    InFlightExecutionStage::WaitingApproval,
-                    None,
-                )
-                .await
-                {
-                    log::warn!(
-                        "persist approving execution graph failed approval_token={} err={}",
-                        token,
-                        err
-                    );
-                }
-            }
-        }
-    }
-
-    let (tool_result, approval_failed) = match approve_mcp_tool_inner_with_context_and_mode(
-        &approval_context,
-        Some(&state.mcp),
-        state.mcp.store.as_ref(),
-        state.mcp.approvals.pending_tool_calls.as_ref(),
-        token,
-        persist_mode,
+        ExecutionRunCommand::ApproveGate {
+            approval_token: approval_token.trim().to_string(),
+            execution_graph_execution_id: execution_graph_execution_id
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
+            approval_context: state.mcp.build_approval_context(call_id, execution_token, None),
+            persist_mode: parse_approve_persist_mode(approval_mode.map(str::to_string)),
+        },
     )
     .await
-    {
-        Ok(approved) => (approved, false),
-        Err(err) => {
-            if is_idempotent_post_approval_error(err.as_str()) {
-                if let Some(execution_id) = requested_execution_id.as_deref() {
-                    if let Some(payload) = project_local_chat_approval_state_payload(
-                        state,
-                        execution_id,
-                        Some(err.as_str()),
-                    )
-                    .await?
-                    {
-                        return Ok(payload);
-                    }
-                }
-            }
-
-            // When the actual tool execution fails after approval, construct a
-            // tool-result-shaped payload that contains the error so the LLM can
-            // see it and decide how to continue (self-correct, retry, etc.).
-            let failed_tool_result = build_failed_approval_tool_result_payload(
-                pending_before_approval.as_ref(),
-                requested_execution_id.as_deref(),
-                err.as_str(),
-            );
-            let error_tool_result = serde_json::json!({
-                "error": err,
-                "error_code": "LOCAL_TOOL_APPROVAL_FAILED",
-                "status": "error",
-                "retryable": true,
-                "execution_graph_execution_id": requested_execution_id,
-                "execution_graph_gate_node_id": pending_before_approval
-                    .as_ref()
-                    .and_then(|pending| pending.execution_graph_gate_node_id.clone()),
-                "execution_graph_tool_node_id": pending_before_approval
-                    .as_ref()
-                    .and_then(|pending| pending.execution_graph_tool_node_id.clone()),
-                "call_id": pending_before_approval
-                    .as_ref()
-                    .and_then(|pending| pending.call_id.clone()),
-            });
-
-            // Prefer resuming the suspended execution graph so the error is
-            // injected into the message history via finalize_tool_round.
-            if let Some(resumed) = resume_suspended_chat_tool_execution_after_approval(
-                app,
-                state,
-                token,
-                &error_tool_result,
-                pending_before_approval
-                    .as_ref()
-                    .and_then(|pending| pending.call_id.as_deref()),
-                requested_execution_id.as_deref(),
-            )
-            .await?
-            {
-                return Ok(resumed);
-            }
-
-            // Fallback: no suspended execution found, return a terminal payload.
-            if let Some(execution_id) = requested_execution_id.as_deref() {
-                if let Some(mut payload) = project_local_chat_approval_state_payload(
-                    state,
-                    execution_id,
-                    Some(err.as_str()),
-                )
-                .await?
-                {
-                    if let Some(object) = payload.as_object_mut() {
-                        object.insert(
-                            "approved_tool_result".to_string(),
-                            failed_tool_result.clone(),
-                        );
-                        object.insert(
-                            "error_code".to_string(),
-                            serde_json::json!("LOCAL_TOOL_APPROVAL_FAILED"),
-                        );
-                        object.insert("error".to_string(), serde_json::json!(err.as_str()));
-                        object.insert("retryable".to_string(), serde_json::json!(true));
-                    }
-                    return Ok(payload);
-                }
-            }
-
-            return Ok(serde_json::json!({
-                "status": "LOCAL_CHAT_RESUME_FAILED",
-                "approval_token": token,
-                "resolved_gate_node_id": pending_before_approval
-                    .as_ref()
-                    .and_then(|pending| pending.execution_graph_gate_node_id.clone()),
-                "resolved_call_id": pending_before_approval
-                    .as_ref()
-                    .and_then(|pending| pending.call_id.clone()),
-                "approved_tool_result": failed_tool_result,
-                "continuation_blocks": [],
-                "execution_graph_execution_id": requested_execution_id,
-                "pending_approval_gate_ids": [],
-                "next_pending_approval_tokens": [],
-                "error_code": "LOCAL_TOOL_APPROVAL_FAILED",
-                "error": err,
-                "retryable": true,
-            }));
-        }
-    };
-
-    let approved = if approval_failed {
-        // This branch is unreachable because the Err arm above always returns,
-        // but kept for clarity: if we ever refactor to propagate the error
-        // result without returning, we still want to resume with the error.
-        tool_result
-    } else {
-        tool_result
-    };
-
-    if let Some(resumed) = resume_suspended_chat_tool_execution_after_approval(
-        app,
-        state,
-        token,
-        &approved,
-        pending_before_approval
-            .as_ref()
-            .and_then(|pending| pending.call_id.as_deref()),
-        requested_execution_id.as_deref(),
-    )
-    .await?
-    {
-        return Ok(resumed);
-    }
-
-    if let Some(execution_id) = requested_execution_id {
-        if let Some(mut payload) = project_local_chat_approval_state_payload(
-            state,
-            execution_id.as_str(),
-            Some("canonical waiting approval existed, but post-approval continuation could not be resumed"),
-        )
-        .await?
-        {
-            if let Some(object) = payload.as_object_mut() {
-                object.insert(
-                    "approved_tool_result".to_string(),
-                    approved.clone(),
-                );
-            }
-            return Ok(payload);
-        }
-
-        return Ok(serde_json::json!({
-            "status": "LOCAL_CHAT_RESUME_FAILED",
-            "approved_tool_result": approved,
-            "continuation_blocks": [],
-            "execution_graph_execution_id": execution_id,
-            "error": "canonical waiting approval existed, but post-approval continuation could not be resumed",
-        }));
-    }
-
-    Ok(approved)
 }
 
 pub(crate) async fn reject_mcp_tool_payload(
@@ -342,106 +74,19 @@ pub(crate) async fn reject_mcp_tool_payload(
     execution_graph_execution_id: Option<&str>,
     reject_mode: Option<&str>,
 ) -> Result<Value, String> {
-    let token = approval_token.trim();
-    if token.is_empty() {
-        return Err("approval token is required".to_string());
-    }
-    let materialized_pending = materialize_pending_local_approval_from_runtime_context(
+    dispatch_local_chat_execution_run_command(
+        None,
         state,
-        token,
-        execution_graph_execution_id,
+        ExecutionRunCommand::RejectGate {
+            approval_token: approval_token.trim().to_string(),
+            execution_graph_execution_id: execution_graph_execution_id
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
+            reject_mode: parse_reject_persist_mode(reject_mode.map(str::to_string)),
+        },
     )
-    .await?;
-    let pending_before_reject = state
-        .mcp
-        .approvals
-        .pending_tool_calls
-        .read()
-        .await
-        .get(token)
-        .cloned()
-        .or(materialized_pending);
-    reject_mcp_tool_inner_with_mode(
-        Some(state.mcp.store.as_ref()),
-        state.mcp.approvals.pending_tool_calls.as_ref(),
-        token,
-        parse_reject_persist_mode(reject_mode.map(str::to_string)),
-    )
-    .await?;
-    let requested_execution_id = resolve_requested_execution_graph_id(
-        execution_graph_execution_id,
-        pending_before_reject
-            .as_ref()
-            .and_then(|pending| pending.execution_graph_execution_id.as_deref()),
-    );
-    let persisted_graph = if let Some(execution_id) = requested_execution_id.as_deref() {
-        load_execution_graph_snapshot(state.mcp.store.as_ref(), execution_id)
-            .await
-            .map_err(to_string)?
-    } else {
-        None
-    };
-    if let Some(mut execution_graph) = persisted_graph {
-        let execution_id = execution_graph
-            .get("execution_id")
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
-        apply_rejected_tool_result_to_execution_graph_value(
-            &mut execution_graph,
-            execution_id.as_deref(),
-            pending_before_reject
-                .as_ref()
-                .and_then(|pending| pending.call_id.as_deref()),
-            "User rejected tool execution",
-        );
-        if let Err(err) = persist_execution_graph_snapshot(
-            state.mcp.store.as_ref(),
-            &execution_graph,
-            pending_before_reject
-                .as_ref()
-                .and_then(|pending| pending.session_id.as_deref())
-                .unwrap_or("unknown"),
-            "desktop_local_chat_rejected",
-            None,
-            Some("cancelled"),
-        )
-        .await
-        {
-            log::warn!(
-                "persist rejected execution graph failed approval_token={} err={}",
-                token,
-                err
-            );
-        }
-        if let Some(execution_id) = execution_id.as_deref() {
-            if let Err(err) =
-                delete_execution_graph_runtime_context(state.mcp.store.as_ref(), execution_id).await
-            {
-                log::warn!(
-                    "delete_execution_graph_runtime_context failed execution_id={} err={}",
-                    execution_id,
-                    err
-                );
-            }
-        }
-        return Ok(serde_json::json!({
-            "status": "LOCAL_CHAT_REJECTED",
-            "execution_graph": execution_graph,
-            "execution_graph_execution_id": execution_id,
-            "execution_graph_gate_node_id": pending_before_reject
-                .as_ref()
-                .and_then(|pending| pending.execution_graph_gate_node_id.clone()),
-            "execution_graph_tool_node_id": pending_before_reject
-                .as_ref()
-                .and_then(|pending| pending.execution_graph_tool_node_id.clone()),
-        }));
-    }
-
-    Ok(serde_json::json!({
-        "status": "REJECTED",
-    }))
+    .await
 }
 
 #[cfg(test)]
@@ -449,92 +94,21 @@ pub(crate) async fn list_pending_mcp_approvals_inner(
     pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
     session_id: Option<&str>,
 ) -> Vec<Value> {
-    list_pending_mcp_approvals_with_graph_inner(None, pending_tool_calls, None, session_id).await
+    list_pending_mcp_approvals_with_graph_inner(None, pending_tool_calls, session_id).await
 }
 
 pub(crate) async fn list_pending_mcp_approvals_with_graph_inner(
     store: Option<&crate::modules::mcp::store::McpStore>,
-    pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
-    _suspended_local_chat_executions: Option<
-        &tokio::sync::RwLock<
-            HashMap<String, crate::modules::desktop_runtime::runtime::SuspendedChatToolExecution>,
-        >,
-    >,
+    _pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
     session_id: Option<&str>,
 ) -> Vec<Value> {
-    let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
-    let session_id = session_id.map(str::trim).filter(|value| !value.is_empty());
-
-    let mut approvals = if let Some(store) = store {
-        list_canonical_pending_local_approval_snapshots(store, session_id)
-            .await
-            .unwrap_or_default()
-    } else {
-        Vec::new()
+    let Some(store) = store else {
+        return Vec::new();
     };
-    let canonical_tokens = approvals
-        .iter()
-        .filter_map(|value| {
-            value
-                .get("approval_token")
-                .and_then(serde_json::Value::as_str)
-        })
-        .map(str::to_string)
-        .collect::<HashSet<_>>();
-
-    let pending = pending_tool_calls.read().await;
-    for (approval_token, pending) in pending.iter() {
-        if canonical_tokens.contains(approval_token) {
-            continue;
-        }
-        if store.is_some() && pending.execution_graph_execution_id.is_some() {
-            continue;
-        }
-        if pending.expires_at_unix_ms <= now as i128 {
-            continue;
-        }
-
-        if let Some(expected_session_id) = session_id {
-            if pending.session_id.as_deref() != Some(expected_session_id) {
-                continue;
-            }
-        }
-
-        approvals.push(serde_json::json!({
-            "status": "REQUIRES_APPROVAL",
-            "approval_status": pending.approval_status.clone().unwrap_or_else(|| "waiting_approval".to_string()),
-            "approval_token": approval_token,
-            "tool_id": pending.tool_id.clone(),
-            "tool_name": pending.tool_name.clone(),
-            "arguments": pending.arguments.clone(),
-            "description": pending.description.clone(),
-            "risk_level": pending.risk_level.clone().unwrap_or_else(|| "HIGH".to_string()),
-            "risk_reasons": pending.risk_reasons.clone(),
-            "call_id": pending.call_id.clone(),
-            "execution_token": pending.execution_token.clone(),
-            "session_id": pending.session_id.clone(),
-            "created_at_unix_ms": pending.created_at_unix_ms,
-            "expires_at_unix_ms": pending.expires_at_unix_ms,
-            "expires_in_ms": pending.expires_at_unix_ms.saturating_sub(now as i128),
-            "execution_graph_execution_id": pending.execution_graph_execution_id.clone(),
-            "execution_graph_gate_node_id": pending.execution_graph_gate_node_id.clone(),
-            "execution_graph_tool_node_id": pending.execution_graph_tool_node_id.clone(),
-        }));
-    }
-
-    approvals.sort_by(|left, right| {
-        let left_created = left
-            .get("created_at_unix_ms")
-            .and_then(serde_json::Value::as_i64)
-            .unwrap_or_default();
-        let right_created = right
-            .get("created_at_unix_ms")
-            .and_then(serde_json::Value::as_i64)
-            .unwrap_or_default();
-        right_created.cmp(&left_created)
-    });
-
-    approvals
+    let session_id = session_id.map(str::trim).filter(|value| !value.is_empty());
+    list_canonical_pending_local_approval_snapshots(store, session_id)
+        .await
+        .unwrap_or_default()
 }
 
 fn build_tool_approval_rule_label(
@@ -673,7 +247,6 @@ pub async fn list_pending_mcp_approvals(
     Ok(list_pending_mcp_approvals_with_graph_inner(
         Some(state.mcp.store.as_ref()),
         state.mcp.approvals.pending_tool_calls.as_ref(),
-        Some(state.mcp.approvals.suspended_local_chat_executions.as_ref()),
         session_id.or(sessionId).as_deref(),
     )
     .await)
@@ -748,8 +321,15 @@ pub async fn recover_local_chat_execution(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "action is required".to_string())?;
-    recover_local_chat_execution_from_action(&app, &state, execution_id.as_str(), action.as_str())
-        .await
+    dispatch_local_chat_execution_run_command(
+        Some(&app),
+        &state,
+        ExecutionRunCommand::RecoverRun {
+            execution_graph_execution_id: execution_id,
+            action,
+        },
+    )
+    .await
 }
 
 #[cfg(test)]

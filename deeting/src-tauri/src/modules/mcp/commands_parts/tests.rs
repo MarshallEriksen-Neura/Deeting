@@ -26,12 +26,13 @@ mod tests {
     };
     use crate::modules::mcp::commands::runtime::{
         config::{hash_config, read_local_mcp_config},
+        tool_execution::execute_or_queue_mcp_tool_call,
         tool_resolution::{
             build_desktop_mcp_tool_view, build_desktop_mcp_tool_views, DesktopMcpToolIndexStatus,
             ToolAvailabilityClass,
         },
     };
-    use crate::modules::mcp::commands::tool_approval_impl::list_pending_mcp_approvals_inner;
+    use crate::modules::mcp::commands::tool_approval_impl::list_pending_mcp_approvals_with_graph_inner;
     #[cfg(not(target_os = "windows"))]
     use crate::modules::mcp::commands::tool_management_impl::{
         start_mcp_tool_inner, stop_mcp_tool_inner,
@@ -4017,144 +4018,115 @@ for raw_line in sys.stdin:
     }
 
     #[tokio::test]
-    async fn list_pending_approvals_filters_by_session_and_returns_runtime_snapshot_fields() {
-        let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
-        let pending_tool_calls = RwLock::new(
-            HashMap::<String, crate::modules::mcp::PendingToolCall>::from([
-                (
-                    "approval-session-1".to_string(),
-                    crate::modules::mcp::PendingToolCall {
-                        tool_id: Some("tool-1".to_string()),
-                        tool_name: "skill.demo.fetch".to_string(),
-                        arguments: serde_json::json!({ "url": "https://example.com" }),
-                        call_id: Some("call-session-1".to_string()),
-                        execution_token: Some("exec-session-1".to_string()),
-                        session_id: Some("session-1".to_string()),
-                        description: Some("Fetch demo content".to_string()),
-                        risk_level: Some("MEDIUM".to_string()),
-                        risk_reasons: vec!["Requires network access".to_string()],
-                        tool_fingerprint: "fingerprint-1".to_string(),
-                        policy_rule_key: None,
-                        approval_grant_key: None,
-                        execution_graph_execution_id: Some("graph-exec-1".to_string()),
-                        execution_graph_gate_node_id: Some(
-                            "approval_gate:call-session-1".to_string(),
-                        ),
-                        execution_graph_tool_node_id: Some("tool_call:call-session-1".to_string()),
-                        approval_status: Some("waiting_approval".to_string()),
-                        created_at_unix_ms: now - 1_000,
-                        expires_at_unix_ms: now + 60_000,
-                    },
-                ),
-                (
-                    "approval-session-2".to_string(),
-                    crate::modules::mcp::PendingToolCall {
-                        tool_id: Some("tool-2".to_string()),
-                        tool_name: "skill.demo.write".to_string(),
-                        arguments: serde_json::json!({ "path": "/tmp/demo.txt" }),
-                        call_id: Some("call-session-2".to_string()),
-                        execution_token: None,
-                        session_id: Some("session-2".to_string()),
-                        description: Some("Write demo content".to_string()),
-                        risk_level: Some("HIGH".to_string()),
-                        risk_reasons: vec!["Writes local files".to_string()],
-                        tool_fingerprint: "fingerprint-2".to_string(),
-                        policy_rule_key: None,
-                        approval_grant_key: None,
-                        execution_graph_execution_id: None,
-                        execution_graph_gate_node_id: None,
-                        execution_graph_tool_node_id: None,
-                        approval_status: Some("approving".to_string()),
-                        created_at_unix_ms: now - 500,
-                        expires_at_unix_ms: now + 60_000,
-                    },
-                ),
-            ]),
-        );
+    async fn list_pending_approvals_reads_only_canonical_runtime_snapshot_fields() {
+        use crate::modules::desktop_runtime::runtime::{
+            migrate_execution_graph_runtime_bootstrap, persist_execution_graph_runtime_context,
+            persist_execution_graph_snapshot, serialize_inflight_runtime_context,
+            InFlightExecutionStage,
+        };
 
-        let snapshots =
-            list_pending_mcp_approvals_inner(&pending_tool_calls, Some("session-1")).await;
+        let store = create_test_store("canonical-pending-approvals").await;
+        migrate_execution_graph_runtime_bootstrap(&store)
+            .await
+            .expect("bootstrap execution graph tables");
+
+        let execution_graph = serde_json::json!({
+            "execution_id": "graph-exec-1",
+            "session_id": "session-1",
+            "route": "chat",
+            "plane": "local",
+            "nodes": [
+                {
+                    "node_id": "approval_gate:call-session-1",
+                    "node_type": "approval_gate",
+                    "status": "waiting_approval",
+                    "dependency_ids": [],
+                    "metadata": { "approval_token": "approval-session-1", "call_id": "call-session-1" },
+                    "input_payload": null,
+                    "output_payload": { "status": "REQUIRES_APPROVAL", "approval_token": "approval-session-1" }
+                },
+                {
+                    "node_id": "tool_call:call-session-1",
+                    "node_type": "tool_call",
+                    "status": "waiting_approval",
+                    "dependency_ids": [],
+                    "metadata": { "call_id": "call-session-1", "tool_name": "skill.demo.fetch" },
+                    "input_payload": null,
+                    "output_payload": { "status": "REQUIRES_APPROVAL", "approval_token": "approval-session-1" }
+                }
+            ],
+            "events": []
+        });
+        persist_execution_graph_snapshot(
+            &store,
+            &execution_graph,
+            "session-1",
+            "desktop_local_chat_waiting_approval",
+            None,
+            Some("waiting_approval"),
+        )
+        .await
+        .expect("persist graph");
+
+        let runtime_context = serialize_inflight_runtime_context(
+            InFlightExecutionStage::WaitingApproval,
+            Some("approval_gate:call-session-1".to_string()),
+            Some("call-session-1".to_string()),
+            None,
+            true,
+            vec![serde_json::from_value(serde_json::json!({
+                "approval_token": "approval-session-1",
+                "tool_id": "tool-1",
+                "tool_name": "skill.demo.fetch",
+                "arguments": { "url": "https://example.com" },
+                "call_id": "call-session-1",
+                "execution_token": "exec-session-1",
+                "session_id": "session-1",
+                "description": "Fetch demo content",
+                "risk_level": "MEDIUM",
+                "risk_reasons": ["Requires network access"],
+                "tool_fingerprint": "fingerprint-1",
+                "policy_rule_key": null,
+                "approval_grant_key": null,
+                "execution_graph_execution_id": "graph-exec-1",
+                "execution_graph_gate_node_id": "approval_gate:call-session-1",
+                "execution_graph_tool_node_id": "tool_call:call-session-1",
+                "approval_status": "waiting_approval",
+                "created_at_unix_ms": 1,
+                "expires_at_unix_ms": 1234567890123i64
+            })).expect("pending approval")],
+            None,
+            "session-1",
+            "trace-1",
+            Some("request-1"),
+            Some("graph-exec-1"),
+            None,
+        );
+        persist_execution_graph_runtime_context(&store, "graph-exec-1", &runtime_context)
+            .await
+            .expect("persist runtime context");
+
+        let pending_tool_calls = RwLock::new(HashMap::<String, crate::modules::mcp::PendingToolCall>::new());
+        let snapshots = list_pending_mcp_approvals_with_graph_inner(
+            Some(&store),
+            &pending_tool_calls,
+            Some("session-1"),
+        )
+        .await;
 
         assert_eq!(snapshots.len(), 1);
         let snapshot = &snapshots[0];
-        assert_eq!(
-            snapshot
-                .get("approval_token")
-                .and_then(|value| value.as_str()),
-            Some("approval-session-1")
-        );
-        assert_eq!(
-            snapshot.get("status").and_then(|value| value.as_str()),
-            Some("REQUIRES_APPROVAL")
-        );
-        assert_eq!(
-            snapshot.get("session_id").and_then(|value| value.as_str()),
-            Some("session-1")
-        );
-        assert_eq!(
-            snapshot.get("call_id").and_then(|value| value.as_str()),
-            Some("call-session-1")
-        );
-        assert_eq!(
-            snapshot
-                .get("execution_token")
-                .and_then(|value| value.as_str()),
-            Some("exec-session-1")
-        );
-        assert_eq!(
-            snapshot.get("description").and_then(|value| value.as_str()),
-            Some("Fetch demo content")
-        );
-        assert_eq!(
-            snapshot.get("risk_level").and_then(|value| value.as_str()),
-            Some("MEDIUM")
-        );
-        assert_eq!(
-            snapshot
-                .get("risk_reasons")
-                .and_then(|value| value.as_array())
-                .and_then(|items| items.first())
-                .and_then(|value| value.as_str()),
-            Some("Requires network access")
-        );
-        assert_eq!(
-            snapshot
-                .get("arguments")
-                .and_then(|value| value.get("url"))
-                .and_then(|value| value.as_str()),
-            Some("https://example.com")
-        );
-        assert_eq!(
-            snapshot
-                .get("execution_graph_execution_id")
-                .and_then(|value| value.as_str()),
-            Some("graph-exec-1")
-        );
-        assert_eq!(
-            snapshot
-                .get("execution_graph_gate_node_id")
-                .and_then(|value| value.as_str()),
-            Some("approval_gate:call-session-1")
-        );
-        assert_eq!(
-            snapshot
-                .get("execution_graph_tool_node_id")
-                .and_then(|value| value.as_str()),
-            Some("tool_call:call-session-1")
-        );
-        assert_eq!(
-            snapshot
-                .get("approval_status")
-                .and_then(|value| value.as_str()),
-            Some("waiting_approval")
-        );
-        assert!(
-            snapshot
-                .get("expires_in_ms")
-                .and_then(|value| value.as_i64())
-                .unwrap_or_default()
-                > 0
-        );
+        assert_eq!(snapshot.get("approval_token").and_then(|value| value.as_str()), Some("approval-session-1"));
+        assert_eq!(snapshot.get("status").and_then(|value| value.as_str()), Some("REQUIRES_APPROVAL"));
+        assert_eq!(snapshot.get("session_id").and_then(|value| value.as_str()), Some("session-1"));
+        assert_eq!(snapshot.get("call_id").and_then(|value| value.as_str()), Some("call-session-1"));
+        assert_eq!(snapshot.get("execution_token").and_then(|value| value.as_str()), Some("exec-session-1"));
+        assert_eq!(snapshot.get("description").and_then(|value| value.as_str()), Some("Fetch demo content"));
+        assert_eq!(snapshot.get("risk_level").and_then(|value| value.as_str()), Some("MEDIUM"));
+        assert_eq!(snapshot.get("arguments").and_then(|value| value.get("url")).and_then(|value| value.as_str()), Some("https://example.com"));
+        assert_eq!(snapshot.get("execution_graph_execution_id").and_then(|value| value.as_str()), Some("graph-exec-1"));
+        assert_eq!(snapshot.get("execution_graph_gate_node_id").and_then(|value| value.as_str()), Some("approval_gate:call-session-1"));
+        assert_eq!(snapshot.get("execution_graph_tool_node_id").and_then(|value| value.as_str()), Some("tool_call:call-session-1"));
     }
 
     #[cfg(not(target_os = "windows"))]

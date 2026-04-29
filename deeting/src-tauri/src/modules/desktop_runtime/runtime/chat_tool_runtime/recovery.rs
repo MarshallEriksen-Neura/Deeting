@@ -1067,27 +1067,11 @@ pub(crate) async fn recover_inflight_local_execution_state(
                     .map(collect_waiting_approval_tokens_from_graph)
                     .unwrap_or_default();
 
-                let extended_expiry =
-                    now_unix_ms_i64() as i128 + app_state.mcp.pending_tool_call_ttl_ms();
-                let mut pending_tool_calls =
-                    app_state.mcp.approvals.pending_tool_calls.write().await;
-                let mut skipped_stale = 0usize;
-                for pending in &persisted.pending_approvals {
-                    if !waiting_tokens.contains(pending.approval_token.trim()) {
-                        skipped_stale += 1;
-                        continue;
-                    }
-                    pending_tool_calls
-                        .entry(pending.approval_token.clone())
-                        .or_insert_with(|| {
-                            pending_tool_call_from_persisted_approval(
-                                pending,
-                                Some(execution_id.as_str()),
-                                extended_expiry,
-                            )
-                        });
-                }
-                drop(pending_tool_calls);
+                let skipped_stale = persisted
+                    .pending_approvals
+                    .iter()
+                    .filter(|pending| !waiting_tokens.contains(pending.approval_token.trim()))
+                    .count();
                 if skipped_stale > 0 {
                     log::warn!(
                         "recovery_skipped_stale_pending_approvals execution_id={} skipped={} total_persisted={}",
