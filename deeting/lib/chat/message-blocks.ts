@@ -39,6 +39,23 @@ function isActiveToolCallStatus(status: ToolCallBlock["status"] | undefined) {
   return status === "running" || status === "requires_approval"
 }
 
+function isTerminalToolStatus(status: string | undefined) {
+  return status === "success" || status === "error"
+}
+
+function hasTerminalToolOutcomeForCall(
+  blocks: InternalMessageBlock[],
+  callId: string,
+  blockType?: "tool_call" | "tool_result"
+) {
+  return blocks.some((candidate) => {
+    if (candidate.callId !== callId) return false
+    if (blockType && candidate.type !== blockType) return false
+    if (candidate.type !== "tool_call" && candidate.type !== "tool_result") return false
+    return isTerminalToolStatus(candidate.status)
+  })
+}
+
 function isNarrativeBlock(
   block: MessageBlock,
 ): block is Extract<MessageBlock, { type: "text" | "thought" | "error" }> {
@@ -113,6 +130,16 @@ function upsertToolBlock(next: InternalMessageBlock[], block: InternalMessageBlo
   if (block.type !== "tool_call" && block.type !== "tool_result") return false
   const callId = typeof block.callId === "string" ? block.callId.trim() : ""
   if (!callId) return false
+
+  if (block.status === "requires_approval") {
+    const conflictingType = block.type === "tool_call" ? "tool_result" : "tool_call"
+    if (
+      hasTerminalToolOutcomeForCall(next, callId, block.type) ||
+      hasTerminalToolOutcomeForCall(next, callId, conflictingType)
+    ) {
+      return true
+    }
+  }
 
   const existingIndex = next.findIndex(
     (candidate) => candidate.type === block.type && candidate.callId === callId

@@ -106,10 +106,11 @@ describe("useHydratePendingToolApproval", () => {
         arguments: { url: "https://example.com/runtime" },
         meta: {
           call_id: "call-runtime-1",
-          message_id: "assistant-runtime-1",
         },
       })
     })
+
+    expect(useBridgeApprovalStore.getState().pending?.meta.message_id).toBeUndefined()
   })
 
   it("does not rehydrate the same runtime approval that was just approved locally", async () => {
@@ -224,11 +225,12 @@ describe("useHydratePendingToolApproval", () => {
           tool_name: "browser_click",
           meta: expect.objectContaining({
             call_id: "call-runtime-refresh-1",
-            message_id: "assistant-runtime-refresh-1",
           }),
         }),
       ])
     })
+
+    expect(useBridgeApprovalStore.getState().queue[0]?.meta.message_id).toBeUndefined()
   })
 
   it("does not rehydrate a stale runtime approval once chat history already shows the call resolved", async () => {
@@ -289,5 +291,78 @@ describe("useHydratePendingToolApproval", () => {
       expect(useBridgeApprovalStore.getState().pending).toBeNull()
       expect(useBridgeApprovalStore.getState().queue).toEqual([])
     })
+  })
+
+  it("keeps a canonical graph-bound next approval visible after a previous approval on the same call id succeeded", async () => {
+    mockListPendingMcpApprovals.mockResolvedValueOnce([
+      {
+        status: "REQUIRES_APPROVAL",
+        approval_token: "approval-runtime-next-gate-1",
+        tool_name: "firecrawl_browser_execute",
+        arguments: { code: "agent-browser scroll down", language: "bash" },
+        session_id: "session-runtime-next-gate-1",
+        call_id: "call-runtime-next-gate-1",
+        execution_graph_execution_id: "graph-runtime-next-gate-1",
+        execution_graph_gate_node_id: "approval_gate:call-runtime-next-gate-2",
+      },
+    ] as never)
+
+    act(() => {
+      announceBridgeApprovalExecution(
+        createBridgeToolApproval({
+          approval_token: "approval-runtime-prev-gate-1",
+          tool_name: "firecrawl_browser_execute",
+          arguments: { code: "agent-browser wait 3000", language: "bash" },
+          meta: {
+            call_id: "call-runtime-next-gate-1",
+            message_id: "assistant-runtime-next-gate-1",
+            execution_graph_execution_id: "graph-runtime-next-gate-1",
+            execution_graph_gate_node_id: "approval_gate:call-runtime-next-gate-1",
+          },
+        })
+      )
+    })
+
+    render(
+      <Harness
+        sessionId="session-runtime-next-gate-1"
+        messages={[
+          {
+            id: "assistant-runtime-next-gate-1",
+            role: "assistant",
+            content: "",
+            createdAt: 1,
+            fromHistory: true,
+            blocks: [
+              {
+                id: "result-runtime-next-gate-approved-1",
+                type: "tool_result",
+                callId: "call-runtime-next-gate-1",
+                toolName: "firecrawl_browser_execute",
+                status: "success",
+                result: {
+                  ok: true,
+                  execution_graph_execution_id: "graph-runtime-next-gate-1",
+                },
+              },
+            ],
+          },
+        ]}
+      />
+    )
+
+    await waitFor(() => {
+      expect(useBridgeApprovalStore.getState().pending).toMatchObject({
+        approval_token: "approval-runtime-next-gate-1",
+        tool_name: "firecrawl_browser_execute",
+        meta: {
+          call_id: "call-runtime-next-gate-1",
+          execution_graph_execution_id: "graph-runtime-next-gate-1",
+          execution_graph_gate_node_id: "approval_gate:call-runtime-next-gate-2",
+        },
+      })
+    })
+
+    expect(useBridgeApprovalStore.getState().pending?.meta.message_id).toBeUndefined()
   })
 })

@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@/lib/chat/message-protocol";
+import { deriveAssistantActivityState } from "@/lib/chat/assistant-activity";
 import {
   humanizeToolName,
   resolveToolActionPreview,
@@ -136,5 +137,38 @@ describe("tool-ux helpers", () => {
     expect(resolveToolStatusDetail("approval.required", {})).toBe(
       "Waiting for your approval",
     );
+  });
+
+  it("keeps approval-required activity active when a newer approval block reuses a previously successful call id", () => {
+    expect(
+      deriveAssistantActivityState([
+        {
+          id: "call-shared-1",
+          type: "tool_call",
+          callId: "call-shared-1",
+          toolName: "firecrawl_browser_execute",
+          status: "running",
+        } as MessageBlock,
+        {
+          id: "result-shared-success-1",
+          type: "tool_result",
+          callId: "call-shared-1",
+          toolName: "firecrawl_browser_execute",
+          status: "success",
+          result: { ok: true },
+        } as MessageBlock,
+        {
+          id: "result-shared-pending-1",
+          type: "tool_result",
+          callId: "call-shared-1",
+          toolName: "firecrawl_browser_execute",
+          status: "requires_approval",
+          result: {
+            status: "REQUIRES_APPROVAL",
+            approval_token: "approval-shared-next-1",
+          },
+        } as MessageBlock,
+      ]).statusCode,
+    ).toBe("approval.required");
   });
 });

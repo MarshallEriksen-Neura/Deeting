@@ -7,6 +7,7 @@ import {
 } from "@/lib/chat/bridge-approval-store"
 import {
   buildBridgeToolApprovalFromPendingSnapshot,
+  findLatestMessageToolApproval,
   findMessageIdForToolCall,
   findResolvedToolCallIds,
 } from "@/lib/chat/tool-approval"
@@ -43,6 +44,21 @@ function buildCallIdToMessageIdIndex(messages: Message[]) {
     }
   }
   return index
+}
+
+function messageHasInlineApprovalToken(
+  messages: Message[],
+  messageId: string | undefined,
+  approvalToken: string
+) {
+  if (!messageId) return false
+  const message = messages.find((candidate) => candidate.id === messageId)
+  if (!message || message.role !== "assistant" || !Array.isArray(message.blocks)) {
+    return false
+  }
+
+  const inlineApproval = findLatestMessageToolApproval(message.blocks, { messageId })
+  return inlineApproval?.approval_token === approvalToken
 }
 
 function orderApprovalsForQueue(
@@ -107,18 +123,15 @@ export async function refreshBridgePendingApprovalsFromCanonical({
 
   for (const snapshot of snapshots) {
     const callId = normalizeToken(snapshot.call_id)
-    if (callId && excludedCallIds.has(callId)) continue
-    if (callId && resolvedCallIds.has(callId)) continue
-
-    const resolvedMessageId =
+    const candidateMessageId =
       (callId ? callIdToMessageId.get(callId) : undefined) ??
       findMessageIdForToolCall(messages, snapshot.call_id)
-    if (!resolvedMessageId && messages.length === 0) {
+    if (!candidateMessageId && messages.length === 0) {
       continue
     }
 
     const approval = buildBridgeToolApprovalFromPendingSnapshot(snapshot, {
-      messageId: resolvedMessageId,
+      messageId: candidateMessageId,
     })
     if (!approval) continue
 
@@ -127,8 +140,33 @@ export async function refreshBridgePendingApprovalsFromCanonical({
     if (excludedApprovalTokens.has(approvalToken)) continue
     const gateNodeId = normalizeToken(approval.meta.execution_graph_gate_node_id)
     if (gateNodeId && excludedGateNodeIds.has(gateNodeId)) continue
+
+    const isGraphBound = Boolean(
+      approval.meta.execution_graph_execution_id ||
+        approval.meta.execution_graph_gate_node_id ||
+        approval.meta.execution_graph_tool_node_id
+    )
+    if (callId && excludedCallIds.has(callId) && !isGraphBound) continue
+    if (callId && resolvedCallIds.has(callId) && !isGraphBound) continue
+
+    const shouldBindInlineMessage = messageHasInlineApprovalToken(
+      messages,
+      candidateMessageId,
+      approvalToken
+    )
+
     seenTokens.add(approvalToken)
-    approvals.push(approval)
+    approvals.push(
+      shouldBindInlineMessage
+        ? approval
+        : {
+            ...approval,
+            meta: {
+              ...approval.meta,
+              message_id: undefined,
+            },
+          }
+    )
   }
 
   const orderedApprovals = orderApprovalsForQueue(approvals, preferredApprovalToken)

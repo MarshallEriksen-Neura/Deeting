@@ -14,8 +14,26 @@ import {
   createRejectedToolResultBlock,
   extractLocalChatApprovalResume,
 } from "@/lib/chat/tool-approval";
+import { deriveChatStatusUpdateForMessage } from "@/lib/chat/live-status";
 import { refreshBridgePendingApprovalsFromCanonical } from "@/lib/chat/canonical-approval-refresh";
 import type { Message } from "@/lib/chat/message-types";
+import { useChatStore } from "@/store/chat-store";
+import { useChatRuntimeStore } from "@/store/chat-runtime-store";
+
+function syncRuntimeStatusForMessage(messageId: string) {
+  const status = deriveChatStatusUpdateForMessage(
+    useChatStore.getState().messages,
+    messageId,
+  );
+  const runtime = useChatRuntimeStore.getState();
+  if (!status) {
+    runtime.setActiveMessageId(null);
+    runtime.clearStatus();
+    return;
+  }
+  runtime.setActiveMessageId(messageId);
+  runtime.setStatus(status);
+}
 
 export async function runInlineApproval({
   approval,
@@ -67,6 +85,7 @@ export async function runInlineApproval({
           );
           if (blocks.length === 0) return;
           appendMessageBlocks(messageId, blocks);
+          syncRuntimeStatusForMessage(messageId);
           streamedContinuationApplied = true;
         },
       },
@@ -92,6 +111,7 @@ export async function runInlineApproval({
         createLocalChatResumeErrorBlock(approval, resumePayload.error),
       ]);
     }
+    syncRuntimeStatusForMessage(messageId);
 
     if (resumePayload?.status === "LOCAL_CHAT_WAITING_APPROVAL") {
       try {
@@ -135,6 +155,7 @@ export async function runInlineApproval({
     appendMessageBlocks(messageId, [
       createLocalChatResumeErrorBlock(approval, errorMessage),
     ]);
+    syncRuntimeStatusForMessage(messageId);
     if (approval.meta.execution_token) {
       try {
         await bridgeCallTool({
@@ -175,11 +196,13 @@ export async function runInlineRejection({
     if (rejectedBlock) {
       upsertMessageToolResult(messageId, rejectedBlock);
     }
+    syncRuntimeStatusForMessage(messageId);
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     const errorBlock = createRejectedToolResultBlock(approval, errorMessage);
     if (errorBlock) {
       upsertMessageToolResult(messageId, errorBlock);
     }
+    syncRuntimeStatusForMessage(messageId);
   }
 }

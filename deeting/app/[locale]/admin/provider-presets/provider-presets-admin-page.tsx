@@ -1,10 +1,12 @@
 "use client"
 
+import Link from "next/link"
 import { useMemo, useState } from "react"
 import { useLocale, useTranslations } from "next-intl"
 import useSWR from "swr"
 import {
   Database,
+  Edit3,
   Filter,
   Package2,
   Plus,
@@ -70,7 +72,7 @@ export function ProviderPresetsAdminPage() {
     "admin/provider-presets",
     fetchAdminProviderPresets
   )
-  const rows = data ?? []
+  const rows = useMemo(() => data ?? [], [data])
 
   const providers = useMemo(() => {
     const unique = new Set<string>()
@@ -147,9 +149,11 @@ export function ProviderPresetsAdminPage() {
       title={t("consoleTitle")}
       description={t("managementHint")}
       actions={
-        <Button className="rounded-full px-5" disabled title={t("managementHint")}>
-          <Plus className="mr-2 size-4" />
-          {t("actions.create")}
+        <Button asChild className="rounded-full px-5">
+          <Link href="/admin/provider-presets/new">
+            <Plus className="mr-2 size-4" />
+            {t("actions.create")}
+          </Link>
         </Button>
       }
     >
@@ -275,40 +279,48 @@ export function ProviderPresetsAdminPage() {
                       </td>
                       <td className="px-5 py-4 align-top text-right">
                         {slug ? (
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="rounded-full text-rose-500 hover:text-rose-500"
-                              >
-                                <Trash2 className="mr-2 size-4" />
-                                {common("delete")}
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>{t("deleteConfirm.title")}</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  {t("deleteConfirm.description", {
-                                    name: preset.name ?? slug,
-                                  })}
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>{common("cancel")}</AlertDialogCancel>
-                                <AlertDialogAction
-                                  disabled={deletingSlug === slug}
-                                  onClick={(event) => {
-                                    event.preventDefault()
-                                    void handleDelete(slug)
-                                  }}
+                          <div className="flex items-center justify-end gap-2">
+                            <Button asChild size="sm" variant="outline" className="rounded-full">
+                              <Link href={"/admin/provider-presets/edit?slug=" + encodeURIComponent(slug)}>
+                                <Edit3 className="mr-2 size-4" />
+                                {t("actions.edit")}
+                              </Link>
+                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="rounded-full text-rose-500 hover:text-rose-500"
                                 >
+                                  <Trash2 className="mr-2 size-4" />
                                   {common("delete")}
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>{t("deleteConfirm.title")}</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    {t("deleteConfirm.description", {
+                                      name: preset.name ?? slug,
+                                    })}
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>{common("cancel")}</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    disabled={deletingSlug === slug}
+                                    onClick={(event) => {
+                                      event.preventDefault()
+                                      void handleDelete(slug)
+                                    }}
+                                  >
+                                    {common("delete")}
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
                         ) : null}
                       </td>
                     </tr>

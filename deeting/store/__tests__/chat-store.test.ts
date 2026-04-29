@@ -503,6 +503,80 @@ describe("useChatStore session state", () => {
     })
   })
 
+  it("should ignore stale requires_approval blocks that arrive after a rejected terminal result for the same call", () => {
+    useChatStore.setState({
+      messages: [
+        {
+          id: "assistant-approval-reject-stale-1",
+          role: "assistant",
+          content: "",
+          createdAt: 1,
+          blocks: [
+            {
+              id: "call-reject-stale-1",
+              type: "tool_call",
+              callId: "call-reject-stale-1",
+              toolName: "firecrawl_browser_create",
+              status: "requires_approval",
+            } as MessageBlock,
+            {
+              id: "result-reject-stale-1",
+              type: "tool_result",
+              callId: "call-reject-stale-1",
+              toolName: "firecrawl_browser_create",
+              status: "requires_approval",
+              result: { status: "REQUIRES_APPROVAL" },
+            } as MessageBlock,
+          ],
+        },
+      ],
+    })
+
+    useChatStore.getState().upsertMessageToolResult("assistant-approval-reject-stale-1", {
+      id: "result-reject-stale-1-new",
+      type: "tool_result",
+      callId: "call-reject-stale-1",
+      toolName: "firecrawl_browser_create",
+      status: "error",
+      result: { error: "User rejected tool execution" },
+    })
+
+    useChatStore.getState().appendMessageBlocks("assistant-approval-reject-stale-1", [
+      {
+        id: "call-reject-stale-1-late",
+        type: "tool_call",
+        callId: "call-reject-stale-1",
+        toolName: "firecrawl_browser_create",
+        status: "requires_approval",
+      } as MessageBlock,
+      {
+        id: "result-reject-stale-1-late",
+        type: "tool_result",
+        callId: "call-reject-stale-1",
+        toolName: "firecrawl_browser_create",
+        status: "requires_approval",
+        result: { status: "REQUIRES_APPROVAL", approval_token: "approval-stale-1" },
+      } as MessageBlock,
+      { type: "text", content: "好的，我来创建浏览器会话并打开 Twitter 首页。" } as MessageBlock,
+    ])
+
+    const message = useChatStore.getState().messages[0]
+    expect(message?.blocks?.map((block) => block.type)).toEqual([
+      "tool_call",
+      "tool_result",
+      "text",
+    ])
+    expect(message?.blocks?.[0]).toMatchObject({
+      callId: "call-reject-stale-1",
+      status: "error",
+    })
+    expect(message?.blocks?.[1]).toMatchObject({
+      callId: "call-reject-stale-1",
+      status: "error",
+      result: { error: "User rejected tool execution" },
+    })
+  })
+
   it("appendMessageBlocks should replace matching execution lifecycle blocks by root_execution_id", () => {
     useChatStore.setState({
       messages: [

@@ -796,109 +796,125 @@ pub(crate) async fn load_suspended_chat_tool_execution_for_resume(
     approval_token: &str,
     execution_graph_execution_id: Option<&str>,
 ) -> Result<Option<SuspendedChatToolExecution>, String> {
-    let persisted_execution_graph = if let Some(execution_id) = execution_graph_execution_id
+    async fn suspended_from_persisted_execution(
+        app_state: &AppState,
+        execution_id: &str,
+    ) -> Result<Option<SuspendedChatToolExecution>, String> {
+        let Some(execution_graph) = load_execution_graph_snapshot(app_state.mcp.store.as_ref(), execution_id)
+            .await
+            .map_err(|err| err.to_string())?
+        else {
+            return Ok(None);
+        };
+
+        let Some(runtime_context) =
+            load_execution_graph_runtime_context(app_state.mcp.store.as_ref(), execution_id)
+                .await
+                .map_err(|err| err.to_string())?
+        else {
+            return Ok(None);
+        };
+
+        let persisted_inflight = persistable_inflight_context_from_value(&runtime_context);
+        let raw_pending_approvals = persisted_inflight
+            .as_ref()
+            .map(|context| context.pending_approvals.clone())
+            .unwrap_or_default();
+        let persisted_pending_approvals =
+            filter_pending_approvals_by_graph(&execution_graph, &raw_pending_approvals);
+        if raw_pending_approvals.len() != persisted_pending_approvals.len() {
+            log::warn!(
+                "pending_approvals_drift_on_load execution_id={} dropped={} kept={}",
+                execution_id,
+                raw_pending_approvals.len() - persisted_pending_approvals.len(),
+                persisted_pending_approvals.len(),
+            );
+        }
+        let persisted_context = persisted_inflight
+            .and_then(|context| context.chat_runtime)
+            .unwrap_or_else(|| {
+                serde_json::from_value(runtime_context).unwrap_or_else(|_| {
+                    PersistedChatToolRuntimeContext {
+                        max_rounds: 4,
+                        round: 0,
+                        trace_id: execution_id.to_string(),
+                        request_id: None,
+                        execution_policy:
+                            crate::modules::desktop_runtime::runtime::build_default_local_execution_policy(),
+                        model_connection: LocalModelConnection {
+                            model_id: "deeting-os".to_string(),
+                            provider_model_id: "deeting-os".to_string(),
+                            logical_model_key: None,
+                            protocol_family: "openai_chat".to_string(),
+                        },
+                        orchestrated_messages: Vec::new(),
+                        task_query: None,
+                        session_id: execution_graph
+                            .get("session_id")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                        temperature: None,
+                        max_tokens: None,
+                        reasoning_enabled: None,
+                        reasoning_effort: None,
+                        active_capability: None,
+                        active_skill_context: None,
+                        discovery_gate_forced: false,
+                        verification_gate_forced: false,
+                        runtime_metrics: RuntimeMetricsAccumulator::default(),
+                        last_capability_snapshot: None,
+                        last_response: None,
+                    }
+                })
+            });
+        let state = runtime_state_from_persisted_context(persisted_context);
+        Ok(Some(SuspendedChatToolExecution {
+            max_rounds: state.max_rounds,
+            round: state.round,
+            trace_id: state.trace_id.clone(),
+            request_id: state.request_id.clone(),
+            execution_policy: state.execution_policy.clone(),
+            model_connection: state.model_connection.clone(),
+            orchestrated_messages: state.orchestrated_messages.clone(),
+            task_query: state.task_query.clone(),
+            session_id: state.session_id.clone(),
+            temperature: state.temperature,
+            max_tokens: state.max_tokens,
+            reasoning_enabled: state.reasoning_enabled,
+            reasoning_effort: state.reasoning_effort.clone(),
+            active_capability: state.active_capability.clone(),
+            active_skill_context: state.active_skill_context.clone(),
+            runtime_metrics: state.runtime_metrics.clone(),
+            last_capability_snapshot: state.last_capability_snapshot.clone(),
+            last_response: state.last_response.clone(),
+            pending_approvals: persisted_pending_approvals,
+            execution_graph,
+        }))
+    }
+
+    if let Some(execution_id) = execution_graph_execution_id
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        load_execution_graph_snapshot(app_state.mcp.store.as_ref(), execution_id)
-            .await
-            .map_err(|err| err.to_string())?
-    } else {
-        None
-    };
+        if let Some(suspended) = suspended_from_persisted_execution(app_state, execution_id).await? {
+            return Ok(Some(suspended));
+        }
+    }
 
-    if let Some(execution_graph) = persisted_execution_graph {
-        if let Some(execution_id) = execution_graph
-            .get("execution_id")
-            .and_then(serde_json::Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            if let Some(runtime_context) =
-                load_execution_graph_runtime_context(app_state.mcp.store.as_ref(), execution_id)
-                    .await
-                    .map_err(|err| err.to_string())?
+    let normalized_token = approval_token.trim();
+    if !normalized_token.is_empty() {
+        let contexts = list_canonical_waiting_approval_contexts(
+            app_state.mcp.store.as_ref(),
+            None,
+            Some(normalized_token),
+        )
+        .await?;
+        if let Some((execution_id, _)) = contexts.into_iter().next() {
+            if let Some(suspended) =
+                suspended_from_persisted_execution(app_state, execution_id.as_str()).await?
             {
-                let persisted_inflight = persistable_inflight_context_from_value(&runtime_context);
-                let raw_pending_approvals = persisted_inflight
-                    .as_ref()
-                    .map(|context| context.pending_approvals.clone())
-                    .unwrap_or_default();
-                // Graph is authoritative. Drop any persisted entry the graph has already
-                // moved past (completed / approving / rejected). Fixes Vector B: without
-                // this filter, a resume after a crash could resurrect an approval dialog
-                // for a token that was already consumed.
-                let persisted_pending_approvals =
-                    filter_pending_approvals_by_graph(&execution_graph, &raw_pending_approvals);
-                if raw_pending_approvals.len() != persisted_pending_approvals.len() {
-                    log::warn!(
-                        "pending_approvals_drift_on_load execution_id={} dropped={} kept={}",
-                        execution_id,
-                        raw_pending_approvals.len() - persisted_pending_approvals.len(),
-                        persisted_pending_approvals.len(),
-                    );
-                }
-                let persisted_context = persisted_inflight
-                    .and_then(|context| context.chat_runtime)
-                    .unwrap_or_else(|| {
-                        serde_json::from_value(runtime_context).unwrap_or_else(|_| {
-                            PersistedChatToolRuntimeContext {
-                                max_rounds: 4,
-                                round: 0,
-                                trace_id: execution_id.to_string(),
-                                request_id: None,
-                                execution_policy:
-                                    crate::modules::desktop_runtime::runtime::build_default_local_execution_policy(),
-                                model_connection: LocalModelConnection {
-                                    model_id: "deeting-os".to_string(),
-                                    provider_model_id: "deeting-os".to_string(),
-                                    logical_model_key: None,
-                                    protocol_family: "openai_chat".to_string(),
-                                },
-                                orchestrated_messages: Vec::new(),
-                                task_query: None,
-                                session_id: execution_graph
-                                    .get("session_id")
-                                    .and_then(serde_json::Value::as_str)
-                                    .unwrap_or_default()
-                                    .to_string(),
-                                temperature: None,
-                                max_tokens: None,
-                                reasoning_enabled: None,
-                                reasoning_effort: None,
-                                active_capability: None,
-                                active_skill_context: None,
-                                discovery_gate_forced: false,
-                                verification_gate_forced: false,
-                                runtime_metrics: RuntimeMetricsAccumulator::default(),
-                                last_capability_snapshot: None,
-                                last_response: None,
-                            }
-                        })
-                    });
-                let state = runtime_state_from_persisted_context(persisted_context);
-                return Ok(Some(SuspendedChatToolExecution {
-                    max_rounds: state.max_rounds,
-                    round: state.round,
-                    trace_id: state.trace_id.clone(),
-                    request_id: state.request_id.clone(),
-                    execution_policy: state.execution_policy.clone(),
-                    model_connection: state.model_connection.clone(),
-                    orchestrated_messages: state.orchestrated_messages.clone(),
-                    task_query: state.task_query.clone(),
-                    session_id: state.session_id.clone(),
-                    temperature: state.temperature,
-                    max_tokens: state.max_tokens,
-                    reasoning_enabled: state.reasoning_enabled,
-                    reasoning_effort: state.reasoning_effort.clone(),
-                    active_capability: state.active_capability.clone(),
-                    active_skill_context: state.active_skill_context.clone(),
-                    runtime_metrics: state.runtime_metrics.clone(),
-                    last_capability_snapshot: state.last_capability_snapshot.clone(),
-                    last_response: state.last_response.clone(),
-                    pending_approvals: persisted_pending_approvals,
-                    execution_graph,
-                }));
+                return Ok(Some(suspended));
             }
         }
     }

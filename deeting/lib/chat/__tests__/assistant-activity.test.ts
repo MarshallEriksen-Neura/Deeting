@@ -304,4 +304,44 @@ describe("assistant activity helpers", () => {
       statusMeta: null,
     })
   })
+
+  it("ignores a stale waiting_approval execution lifecycle once the approval has already been rejected", () => {
+    const blocks: MessageBlock[] = [
+      {
+        id: "exec-ui-waiting-stale-1",
+        type: "ui",
+        viewType: "execution.lifecycle",
+        payload: {
+          schema_version: 1,
+          root_execution_id: "exec-root-waiting-stale-1",
+          execution_kind: "workflow",
+          execution_status: "waiting_approval",
+        },
+      } as MessageBlock,
+      {
+        id: "call-rejected-1",
+        type: "tool_call",
+        callId: "call-rejected-1",
+        toolName: "firecrawl_browser_create",
+        status: "error",
+      },
+      {
+        id: "result-rejected-1",
+        type: "tool_result",
+        callId: "call-rejected-1",
+        toolName: "firecrawl_browser_create",
+        status: "error",
+        result: {
+          error: "User rejected tool execution",
+        },
+      },
+    ]
+
+    expect(deriveAssistantActivityState(blocks)).toEqual({
+      isActive: false,
+      statusStage: null,
+      statusCode: null,
+      statusMeta: null,
+    })
+  })
 })

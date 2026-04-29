@@ -66,6 +66,41 @@ function isTerminalToolResultBlock(
   return block.type === "tool_result" && !isToolApprovalResultBlock(block)
 }
 
+function hasUnresolvedApprovalEvidence(
+  blocks: MessageBlock[],
+  resolvedCallIds: Set<string>
+) {
+  return blocks.some((block) => {
+    if (block.type === "tool_call") {
+      if (block.status !== "requires_approval") return false
+      const callId = typeof block.callId === "string" ? block.callId.trim() : ""
+      return !callId || !resolvedCallIds.has(callId)
+    }
+
+    if (!isToolApprovalResultBlock(block)) return false
+    const callId = typeof block.callId === "string" ? block.callId.trim() : ""
+    if (!callId || !resolvedCallIds.has(callId)) return true
+
+    const blockStatus =
+      typeof block.status === "string" ? block.status.trim().toLowerCase() : ""
+    return blockStatus === "requires_approval"
+  })
+}
+
+function hasResolvedToolOutcomeEvidence(blocks: MessageBlock[]) {
+  return blocks.some((block) => {
+    if (block.type === "tool_result") {
+      return !isToolApprovalResultBlock(block)
+    }
+
+    if (block.type === "tool_call") {
+      return block.status === "success" || block.status === "error"
+    }
+
+    return false
+  })
+}
+
 export function deriveAssistantActivityState(
   blocks: MessageBlock[] | undefined
 ): AssistantActivityState {
@@ -87,22 +122,29 @@ export function deriveAssistantActivityState(
     typeof executionTree?.execution_status === "string"
       ? executionTree.execution_status.trim().toLowerCase()
       : ""
+  const hasPendingApprovalEvidence = hasUnresolvedApprovalEvidence(
+    safeBlocks,
+    resolvedCallIds
+  )
+  const hasResolvedOutcomeEvidence = hasResolvedToolOutcomeEvidence(safeBlocks)
 
   if (TERMINAL_EXECUTION_STATUSES.has(executionStatus)) {
     return INACTIVE_ACTIVITY
   }
 
   if (executionStatus === "waiting_approval") {
-    return {
-      isActive: true,
-      statusStage: "render",
-      statusCode: "approval.required",
-      statusMeta: {
-        execution_status: executionStatus,
-        ...(extractRootExecutionIdFromExecutionTree(executionTree)
-          ? { root_execution_id: extractRootExecutionIdFromExecutionTree(executionTree) }
-          : {}),
-      },
+    if (hasPendingApprovalEvidence || !hasResolvedOutcomeEvidence) {
+      return {
+        isActive: true,
+        statusStage: "render",
+        statusCode: "approval.required",
+        statusMeta: {
+          execution_status: executionStatus,
+          ...(extractRootExecutionIdFromExecutionTree(executionTree)
+            ? { root_execution_id: extractRootExecutionIdFromExecutionTree(executionTree) }
+            : {}),
+        },
+      }
     }
   }
 
@@ -133,7 +175,9 @@ export function deriveAssistantActivityState(
     if (!isToolApprovalResultBlock(block)) continue
     const toolName = typeof block.toolName === "string" ? block.toolName.trim() : ""
     const callId = typeof block.callId === "string" ? block.callId.trim() : ""
-    if (callId && resolvedCallIds.has(callId)) continue
+    const blockStatus =
+      typeof block.status === "string" ? block.status.trim().toLowerCase() : ""
+    if (callId && resolvedCallIds.has(callId) && blockStatus !== "requires_approval") continue
     return {
       isActive: true,
       statusStage: "render",
