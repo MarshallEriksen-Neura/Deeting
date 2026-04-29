@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslations } from "next-intl";
@@ -23,7 +23,7 @@ import { getMcpRegistryErrorNotification } from "./registry-notifications";
 import { RegistryHeader } from "./registry-header";
 import { useMcpRegistrySourceActions } from "./registry-source-actions";
 import { useMcpRegistryToolActions } from "./registry-tool-actions";
-import { useMcpRegistryViewModel } from "./registry-view-model";
+import { useMcpRegistryViewModel, type MCPRuntimeServerGroup } from "./registry-view-model";
 
 const ServerLogsSheet = dynamic(
   () => import("./server-logs-sheet").then((mod) => mod.ServerLogsSheet),
@@ -45,6 +45,10 @@ const RuntimeServerListSection = dynamic(
     loading: () => <McpSectionSkeleton cardCount={4} columnsClassName="grid-cols-1" />,
   }
 );
+const AddServerSheet = dynamic(
+  () => import("./add-server-sheet").then((mod) => mod.AddServerSheet),
+  { ssr: false }
+);
 
 interface MCPRegistryClientProps {
   initialTools?: MCPTool[];
@@ -52,6 +56,70 @@ interface MCPRegistryClientProps {
 }
 
 const MAX_LOG_LINES = 1000;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === "object" && !Array.isArray(value);
+
+const parseToolServerConfig = (tool: MCPTool): Record<string, unknown> => {
+  try {
+    const parsed = JSON.parse(tool.configJson || "{}");
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const buildEditableMcpConfig = (group: MCPRuntimeServerGroup | null): Record<string, unknown> => {
+  const representativeTool = group?.tools[0];
+  if (!group || !representativeTool) {
+    return { mcpServers: {} };
+  }
+
+  const currentConfig = parseToolServerConfig(representativeTool);
+  const entryName =
+    representativeTool.serviceKey ||
+    (typeof currentConfig.source_entry_name === "string" ? currentConfig.source_entry_name : "") ||
+    group.name;
+  const env =
+    isRecord(currentConfig.env)
+      ? currentConfig.env
+      : representativeTool.env
+        ? representativeTool.env
+        : {};
+
+  const serverConfig: Record<string, unknown> = {
+    ...currentConfig,
+    service_key: representativeTool.serviceKey || entryName,
+    service_display_name: group.name,
+    service_description: group.description || representativeTool.serviceDescription || representativeTool.description,
+  };
+
+  if (representativeTool.command && typeof serverConfig.command !== "string") {
+    serverConfig.command = representativeTool.command;
+  }
+  if (representativeTool.args && !Array.isArray(serverConfig.args)) {
+    serverConfig.args = representativeTool.args;
+  }
+  if (Object.keys(env).length > 0) {
+    serverConfig.env = env;
+  }
+  if (
+    representativeTool.source === "url" &&
+    group.source?.pathOrUrl &&
+    typeof serverConfig.url !== "string" &&
+    typeof serverConfig.sse_url !== "string"
+  ) {
+    serverConfig.type = "sse";
+    serverConfig.url = group.source.pathOrUrl;
+    serverConfig.sse_url = group.source.pathOrUrl;
+  }
+
+  return {
+    mcpServers: {
+      [entryName]: serverConfig,
+    },
+  };
+};
 
 export function MCPRegistryClient({
   initialTools = [],
@@ -69,6 +137,7 @@ export function MCPRegistryClient({
   const [conflictOpen, setConflictOpen] = useState(false);
   const [sourceTokens, setSourceTokens] = useState<Record<string, string>>({});
   const [reindexingMissingTools, setReindexingMissingTools] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<MCPRuntimeServerGroup | null>(null);
   const [indexProgress, setIndexProgress] = useState<McpToolIndexProgressEvent | null>(
     null
   );
@@ -169,6 +238,66 @@ export function MCPRegistryClient({
     setConflictOpen,
   });
 
+  const editableGroupConfig = useMemo(
+    () => buildEditableMcpConfig(editingGroup),
+    [editingGroup]
+  );
+
+  const runToolsAction = useCallback(
+    async (
+      groupTools: MCPTool[],
+      action: "start" | "stop" | "delete",
+      commandName: typeof DESKTOP_MCP_COMMANDS.startTool | typeof DESKTOP_MCP_COMMANDS.stopTool | typeof DESKTOP_MCP_COMMANDS.deleteLocalTool
+    ) => {
+      if (groupTools.length === 0) {
+        return;
+      }
+
+      const failedToolNames: string[] = [];
+      for (const tool of groupTools) {
+        try {
+          await invoke(commandName, { toolId: tool.id });
+        } catch (error) {
+          failedToolNames.push(tool.name);
+          console.warn(`[mcp] failed to ${action} grouped tool`, tool.id, error);
+        }
+      }
+
+      await refreshAll();
+
+      if (failedToolNames.length === 0) {
+        return;
+      }
+
+      addNotification({
+        type: failedToolNames.length === groupTools.length ? "error" : "warning",
+        title: t(`toast.group${action === "start" ? "Start" : action === "stop" ? "Stop" : "Delete"}Partial`),
+        description: t("toast.groupActionPartialDesc", {
+          successCount: groupTools.length - failedToolNames.length,
+          failedCount: failedToolNames.length,
+          failedTools: failedToolNames.join(", "),
+        }),
+        timestamp: Date.now(),
+      });
+    },
+    [addNotification, refreshAll, t]
+  );
+
+  const handleStartGroup = useCallback(
+    (groupTools: MCPTool[]) => runToolsAction(groupTools, "start", DESKTOP_MCP_COMMANDS.startTool),
+    [runToolsAction]
+  );
+
+  const handleStopGroup = useCallback(
+    (groupTools: MCPTool[]) => runToolsAction(groupTools, "stop", DESKTOP_MCP_COMMANDS.stopTool),
+    [runToolsAction]
+  );
+
+  const handleDeleteGroup = useCallback(
+    (groupTools: MCPTool[]) => runToolsAction(groupTools, "delete", DESKTOP_MCP_COMMANDS.deleteLocalTool),
+    [runToolsAction]
+  );
+
   const handleReindexMissingTools = useCallback(
     async (groupTools: MCPTool[]) => {
       if (groupTools.length === 0) {
@@ -231,6 +360,17 @@ export function MCPRegistryClient({
       }
     },
     [addNotification, refreshAll, t]
+  );
+
+  const handleUpdateGroup = useCallback(
+    async (group: MCPRuntimeServerGroup) => {
+      if (group.source) {
+        await handleSyncSource(group.source);
+        return;
+      }
+      await handleReindexMissingTools(group.tools);
+    },
+    [handleReindexMissingTools, handleSyncSource]
   );
 
   const visibleSources = sources.filter((source) => source.type !== "cloud");
@@ -346,10 +486,25 @@ export function MCPRegistryClient({
           onPrimaryAction={handlePrimaryAction}
           onResolveConflict={handleOpenConflict}
           onDeleteServer={handleDeleteTool}
+          onStartGroup={handleStartGroup}
+          onStopGroup={handleStopGroup}
+          onDeleteGroup={handleDeleteGroup}
+          onEditGroup={setEditingGroup}
+          onUpdateGroup={handleUpdateGroup}
           onReindexMissingTools={handleReindexMissingTools}
           reindexMissingLoading={reindexingMissingTools}
         />
       </section>
+
+      <AddServerSheet
+        mode="edit"
+        open={Boolean(editingGroup)}
+        onOpenChange={(open) => {
+          if (!open) setEditingGroup(null);
+        }}
+        initialConfig={editableGroupConfig}
+        onCreate={handleImportConfig}
+      />
 
       <ServerLogsSheet
         tool={selectedTool}

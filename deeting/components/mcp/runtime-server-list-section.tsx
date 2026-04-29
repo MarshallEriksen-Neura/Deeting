@@ -2,11 +2,34 @@
 
 import { useMemo, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { ArrowLeft, ChevronRight, Folder, Pencil, RefreshCw, Search, Sparkles, Terminal } from "lucide-react"
+import {
+  ArrowLeft,
+  ChevronRight,
+  Folder,
+  Pencil,
+  Play,
+  RefreshCw,
+  Search,
+  Sparkles,
+  Square,
+  Terminal,
+  Trash2,
+} from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Badge } from "@/components/ui/shadcn/badge"
 import { Card } from "@/components/ui/shadcn/card"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/shadcn/alert-dialog"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/shadcn/tooltip"
 import { cn } from "@/lib/utils"
 import type { MCPTool } from "@/types/mcp"
@@ -25,6 +48,11 @@ interface RuntimeServerListSectionProps {
   onResolveConflict?: (tool: MCPTool) => void
   onEditServer?: (tool: MCPTool) => void
   onDeleteServer?: (tool: MCPTool) => void
+  onStartGroup?: (tools: MCPTool[]) => Promise<void> | void
+  onStopGroup?: (tools: MCPTool[]) => Promise<void> | void
+  onDeleteGroup?: (tools: MCPTool[]) => Promise<void> | void
+  onEditGroup?: (group: MCPRuntimeServerGroup) => void
+  onUpdateGroup?: (group: MCPRuntimeServerGroup) => Promise<void> | void
   onSyncAll?: () => void
   syncAllLoading?: boolean
   onSyncTool?: (tool: MCPTool) => void
@@ -84,6 +112,8 @@ const getGroupToneKey = (group: MCPRuntimeServerGroup): keyof typeof GROUP_TONES
   return "partial"
 }
 
+type ServerGroupAction = "start" | "stop" | "delete" | "update"
+
 export function RuntimeServerListSection({
   groups,
   conflictCount,
@@ -94,6 +124,11 @@ export function RuntimeServerListSection({
   onResolveConflict,
   onEditServer,
   onDeleteServer,
+  onStartGroup,
+  onStopGroup,
+  onDeleteGroup,
+  onEditGroup,
+  onUpdateGroup,
   onSyncAll,
   syncAllLoading = false,
   onSyncTool,
@@ -104,6 +139,7 @@ export function RuntimeServerListSection({
   const t = useTranslations("mcp")
   const [activeTab, setActiveTab] = useState("all")
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
+  const [pendingGroupAction, setPendingGroupAction] = useState<ServerGroupAction | null>(null)
 
   const filteredGroups = useMemo(() => {
     return groups.filter((group) => {
@@ -121,6 +157,20 @@ export function RuntimeServerListSection({
     [groups, selectedGroupId]
   )
 
+  const runGroupAction = async (
+    action: ServerGroupAction,
+    callback: (() => Promise<void> | void) | undefined
+  ) => {
+    if (!callback || pendingGroupAction) return
+
+    setPendingGroupAction(action)
+    try {
+      await callback()
+    } finally {
+      setPendingGroupAction(null)
+    }
+  }
+
   if (selectedGroup) {
     const toneKey = getGroupToneKey(selectedGroup)
     const tone = GROUP_TONES[toneKey]
@@ -133,6 +183,12 @@ export function RuntimeServerListSection({
     const missingIndexTools = selectedGroup.tools.filter((tool) => isMcpIndexMissing(tool))
     const canReindexMissing =
       platform === "desktop" && missingIndexTools.length > 0 && Boolean(onReindexMissingTools)
+    const canStartGroup = platform === "desktop" && Boolean(onStartGroup)
+    const canStopGroup = platform === "desktop" && Boolean(onStopGroup)
+    const canDeleteGroup = platform === "desktop" && Boolean(onDeleteGroup)
+    const canEditSelectedGroup = platform === "desktop" && Boolean(onEditGroup)
+    const canUpdateSelectedGroup = platform === "desktop" && Boolean(onUpdateGroup)
+    const groupActionDisabled = Boolean(pendingGroupAction)
 
     return (
       <motion.section
@@ -239,13 +295,92 @@ export function RuntimeServerListSection({
                   </div>
                 </div>
 
-                <div className={cn("flex flex-col items-end justify-center rounded-[var(--r-10)] border p-3 min-w-[100px]", tone.metric)}>
-                  <div className="text-[10px] uppercase tracking-[0.22em] opacity-70">
-                    {t("runtime.server.running")}
+                <div className="flex shrink-0 flex-col items-end gap-3">
+                  <div className="flex flex-wrap justify-end gap-2">
+                    {canStartGroup && (
+                      <button
+                        type="button"
+                        className="flex h-[30px] items-center justify-center gap-1.5 rounded-[var(--r-6)] bg-[var(--panel-bg)] px-3 text-[11px] font-medium text-[var(--ink)] ring-1 ring-[var(--hairline)] transition-all hover:bg-[var(--panel-bg-inset)] hover:ring-[var(--hairline-strong)] disabled:cursor-not-allowed disabled:opacity-45"
+                        onClick={() => void runGroupAction("start", () => onStartGroup?.(selectedGroup.tools))}
+                        disabled={groupActionDisabled || selectedGroup.runningCount === selectedGroup.toolCount}
+                      >
+                        <Play size={13} className={pendingGroupAction === "start" ? "animate-pulse text-[var(--ok)]" : ""} />
+                        {t("actions.start")}
+                      </button>
+                    )}
+                    {canStopGroup && (
+                      <button
+                        type="button"
+                        className="flex h-[30px] items-center justify-center gap-1.5 rounded-[var(--r-6)] bg-[var(--panel-bg)] px-3 text-[11px] font-medium text-[var(--ink)] ring-1 ring-[var(--hairline)] transition-all hover:bg-[var(--panel-bg-inset)] hover:ring-[var(--hairline-strong)] disabled:cursor-not-allowed disabled:opacity-45"
+                        onClick={() => void runGroupAction("stop", () => onStopGroup?.(selectedGroup.tools))}
+                        disabled={groupActionDisabled || selectedGroup.runningCount === 0}
+                      >
+                        <Square size={12} className={pendingGroupAction === "stop" ? "animate-pulse text-[var(--warn)]" : ""} />
+                        {t("actions.stop")}
+                      </button>
+                    )}
+                    {canUpdateSelectedGroup && (
+                      <button
+                        type="button"
+                        className="flex h-[30px] items-center justify-center gap-1.5 rounded-[var(--r-6)] bg-[var(--panel-bg)] px-3 text-[11px] font-medium text-[var(--ink)] ring-1 ring-[var(--hairline)] transition-all hover:bg-[var(--panel-bg-inset)] hover:ring-[var(--hairline-strong)] disabled:cursor-not-allowed disabled:opacity-45"
+                        onClick={() => void runGroupAction("update", () => onUpdateGroup?.(selectedGroup))}
+                        disabled={groupActionDisabled}
+                      >
+                        <RefreshCw size={13} className={pendingGroupAction === "update" ? "animate-spin text-[var(--accent-strong)]" : ""} />
+                        {t("actions.update")}
+                      </button>
+                    )}
+                    {canEditSelectedGroup && (
+                      <button
+                        type="button"
+                        className="flex h-[30px] items-center justify-center gap-1.5 rounded-[var(--r-6)] bg-[var(--panel-bg)] px-3 text-[11px] font-medium text-[var(--ink)] ring-1 ring-[var(--hairline)] transition-all hover:bg-[var(--panel-bg-inset)] hover:ring-[var(--hairline-strong)] disabled:cursor-not-allowed disabled:opacity-45"
+                        onClick={() => onEditGroup?.(selectedGroup)}
+                        disabled={groupActionDisabled}
+                      >
+                        <Pencil size={13} />
+                        {t("actions.edit")}
+                      </button>
+                    )}
+                    {canDeleteGroup && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <button
+                            type="button"
+                            className="flex h-[30px] items-center justify-center gap-1.5 rounded-[var(--r-6)] bg-[var(--danger-soft)] px-3 text-[11px] font-medium text-[var(--danger)] ring-1 ring-[var(--danger-border)] transition-all hover:bg-[var(--danger-soft)] hover:ring-[var(--danger-border)] disabled:cursor-not-allowed disabled:opacity-45"
+                            disabled={groupActionDisabled}
+                          >
+                            <Trash2 size={13} />
+                            {t("actions.delete")}
+                          </button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent className="rounded-[var(--r-16)] bg-[var(--panel-bg)] text-[var(--ink)] ring-1 ring-[var(--hairline-strong)]">
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>{t("server.delete.title")}</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              {t("server.delete.description", { name: selectedGroup.name })}
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>{t("server.delete.cancel")}</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-[var(--danger)] text-white hover:bg-[var(--danger)]"
+                              onClick={() => void runGroupAction("delete", () => onDeleteGroup?.(selectedGroup.tools))}
+                            >
+                              {pendingGroupAction === "delete" ? t("toast.deleting") : t("server.delete.confirm")}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
                   </div>
-                  <div className="mt-1 font-mono text-[24px] font-semibold tabular-nums tracking-[-0.5px]">
-                    {selectedGroup.runningCount}
-                    <span className="ml-1 text-[16px] font-medium opacity-60">/ {selectedGroup.toolCount}</span>
+                  <div className={cn("flex min-w-[100px] flex-col items-end justify-center rounded-[var(--r-10)] border p-3", tone.metric)}>
+                    <div className="text-[10px] uppercase tracking-[0.22em] opacity-70">
+                      {t("runtime.server.running")}
+                    </div>
+                    <div className="mt-1 font-mono text-[24px] font-semibold tabular-nums tracking-[-0.5px]">
+                      {selectedGroup.runningCount}
+                      <span className="ml-1 text-[16px] font-medium opacity-60">/ {selectedGroup.toolCount}</span>
+                    </div>
                   </div>
                 </div>
               </div>

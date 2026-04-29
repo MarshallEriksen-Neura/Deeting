@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Loader2 } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { parseMcpRegistryImportConfig } from "@/components/mcp/registry-import"
@@ -25,6 +25,8 @@ interface AddServerSheetProps {
   onCreate: (payload: { config: Record<string, unknown> }) => Promise<boolean> | boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  mode?: "create" | "edit"
+  initialConfig?: Record<string, unknown> | null
 }
 
 const parseEnvLines = (value: string) => {
@@ -49,7 +51,14 @@ const parseArgs = (value: string) =>
 
 type ManualTransport = "stdio" | "sse"
 
-export function AddServerSheet({ children, onCreate, open, onOpenChange }: AddServerSheetProps) {
+export function AddServerSheet({
+  children,
+  onCreate,
+  open,
+  onOpenChange,
+  mode = "create",
+  initialConfig = null,
+}: AddServerSheetProps) {
   const t = useTranslations("mcp")
   const { addNotification } = useNotifications()
   const [internalOpen, setInternalOpen] = useState(false)
@@ -68,6 +77,7 @@ export function AddServerSheet({ children, onCreate, open, onOpenChange }: AddSe
   const isControlled = typeof open === "boolean"
   const isOpen = isControlled ? open : internalOpen
   const setOpen = onOpenChange ?? setInternalOpen
+  const isEditMode = mode === "edit"
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (isSubmitting) return
@@ -86,6 +96,13 @@ export function AddServerSheet({ children, onCreate, open, onOpenChange }: AddSe
     setEnvText("")
     setJsonText("")
   }
+
+  useEffect(() => {
+    if (!isOpen || !isEditMode) return
+
+    setActiveTab("json")
+    setJsonText(JSON.stringify(initialConfig ?? { mcpServers: {} }, null, 2))
+  }, [initialConfig, isEditMode, isOpen])
 
   const wizardPayload = useMemo(() => {
     const trimmedName = name.trim()
@@ -210,9 +227,9 @@ export function AddServerSheet({ children, onCreate, open, onOpenChange }: AddSe
       ) : null}
       <DialogContent className="max-w-2xl p-0">
         <DialogHeader className="px-6 pt-6 sm:px-8">
-          <DialogTitle>{t("addServer.title")}</DialogTitle>
+          <DialogTitle>{isEditMode ? t("server.edit.title") : t("addServer.title")}</DialogTitle>
           <DialogDescription>
-            {t("addServer.description")}
+            {isEditMode ? t("server.edit.description") : t("addServer.description")}
           </DialogDescription>
         </DialogHeader>
         
@@ -351,10 +368,10 @@ export function AddServerSheet({ children, onCreate, open, onOpenChange }: AddSe
               {isSubmitting ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  {t("addServer.saving")}
+                  {isEditMode ? t("server.edit.saving") : t("addServer.saving")}
                 </>
               ) : (
-                t("addServer.save")
+                isEditMode ? t("server.edit.save") : t("addServer.save")
               )}
             </GlassButton>
         </DialogFooter>
