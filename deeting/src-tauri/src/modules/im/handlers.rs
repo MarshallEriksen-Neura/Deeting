@@ -574,7 +574,6 @@ mod tests {
         assert_eq!(texts, vec!["命令已经执行完毕。".to_string()]);
     }
 
-
     #[test]
     fn extract_follow_up_texts_from_local_chat_waiting_approval_payload() {
         let texts = conversation::extract_follow_up_texts(&serde_json::json!({

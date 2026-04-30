@@ -385,9 +385,14 @@ pub(super) fn latest_tool_error_summary(
 pub(super) fn derive_local_finish_reason(
     response_json: &Value,
     response_text_was_synthesized_from_error: bool,
+    assistant_blocks: &[Value],
 ) -> String {
     if response_text_was_synthesized_from_error {
         return "error".to_string();
+    }
+
+    if has_pending_approval_state(response_json, assistant_blocks) {
+        return "blocked".to_string();
     }
 
     match response_json
@@ -401,4 +406,45 @@ pub(super) fn derive_local_finish_reason(
         Some(reason) => reason.to_string(),
         None => "stop".to_string(),
     }
+}
+
+fn has_pending_approval_state(response_json: &Value, assistant_blocks: &[Value]) -> bool {
+    fn block_requires_approval(block: &Value) -> bool {
+        block
+            .get("status")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .is_some_and(|status| status.eq_ignore_ascii_case("requires_approval"))
+    }
+
+    fn graph_has_waiting_approval(execution_graph: &Value) -> bool {
+        execution_graph
+            .get("nodes")
+            .and_then(Value::as_array)
+            .is_some_and(|nodes| {
+                nodes.iter().any(|node| {
+                    let node_type = node
+                        .get("node_type")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .unwrap_or_default();
+                    let status = node
+                        .get("status")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .unwrap_or_default();
+                    node_type.eq_ignore_ascii_case("approval_gate")
+                        && status.eq_ignore_ascii_case("waiting_approval")
+                })
+            })
+    }
+
+    assistant_blocks.iter().any(block_requires_approval)
+        || response_json
+            .get("tool_trace_blocks")
+            .and_then(Value::as_array)
+            .is_some_and(|blocks| blocks.iter().any(block_requires_approval))
+        || response_json
+            .get("execution_graph")
+            .is_some_and(graph_has_waiting_approval)
 }

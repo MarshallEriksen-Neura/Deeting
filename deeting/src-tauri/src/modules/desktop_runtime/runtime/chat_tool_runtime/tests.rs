@@ -1,7 +1,9 @@
 use super::classify_local_tool_execution_error_code;
 use super::*;
-use crate::modules::desktop_runtime::runtime::{build_default_local_execution_policy, build_local_tool_call_install_gate_error_meta};
 use crate::modules::desktop_runtime::runtime::LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE;
+use crate::modules::desktop_runtime::runtime::{
+    build_default_local_execution_policy, build_local_tool_call_install_gate_error_meta,
+};
 
 #[test]
 fn build_execution_contract_from_search_result_requires_capabilities() {
@@ -1315,15 +1317,28 @@ fn sync_remaining_pending_approvals_prefers_token_bound_graph_identity() {
 
     let approved_gate = nodes
         .iter()
-        .find(|node| node.get("node_id").and_then(serde_json::Value::as_str) == Some("approval_gate:call-33"))
+        .find(|node| {
+            node.get("node_id").and_then(serde_json::Value::as_str) == Some("approval_gate:call-33")
+        })
         .expect("approved gate");
     let next_gate = nodes
         .iter()
-        .find(|node| node.get("node_id").and_then(serde_json::Value::as_str) == Some("approval_gate:call-next"))
+        .find(|node| {
+            node.get("node_id").and_then(serde_json::Value::as_str)
+                == Some("approval_gate:call-next")
+        })
         .expect("next gate");
 
-    assert_eq!(approved_gate.get("status").and_then(serde_json::Value::as_str), Some("approved"));
-    assert_eq!(next_gate.get("status").and_then(serde_json::Value::as_str), Some("waiting_approval"));
+    assert_eq!(
+        approved_gate
+            .get("status")
+            .and_then(serde_json::Value::as_str),
+        Some("approved")
+    );
+    assert_eq!(
+        next_gate.get("status").and_then(serde_json::Value::as_str),
+        Some("waiting_approval")
+    );
 }
 
 #[test]

@@ -195,6 +195,9 @@ export async function streamDesktopApproveTool(
             return
           }
 
+          if (isLocalChatApprovalTerminalPayload(data)) {
+            terminalPayload = data
+          }
           finalPayload = data
         },
         onError: (error) => {

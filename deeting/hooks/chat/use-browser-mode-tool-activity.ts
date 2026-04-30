@@ -105,6 +105,17 @@ function applyBrowserToolResult(
     return
   }
 
+  if (asString(result.status) === "REQUIRES_APPROVAL") {
+    update.setExecutionState("waiting", "Approval required")
+    update.appendTimelineEvent({
+      kind: "tool_result",
+      phase: "waiting",
+      label: "Approval required",
+    })
+    update.setLastAction({ kind: toolName, summary: "Approval required" })
+    return
+  }
+
   if (toolName === "browser_wait_for_element") {
     update.setExecutionState("waiting", "Target element located")
     update.appendTimelineEvent({

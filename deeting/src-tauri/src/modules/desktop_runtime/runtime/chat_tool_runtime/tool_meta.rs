@@ -613,7 +613,9 @@ fn resolve_approval_graph_node_ids(
         .trim()
         .to_string();
 
-    if let Some(pending) = approval_token.and_then(|token| suspended.pending_approval_by_token(token)) {
+    if let Some(pending) =
+        approval_token.and_then(|token| suspended.pending_approval_by_token(token))
+    {
         let gate_node_id = pending
             .execution_graph_gate_node_id
             .as_deref()

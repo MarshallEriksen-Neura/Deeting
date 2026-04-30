@@ -43,11 +43,15 @@ mod suspended;
 mod tests;
 mod tool_meta;
 
+pub(crate) use approval_commands::{
+    dispatch_local_chat_execution_run_command, ExecutionRunCommand,
+};
 #[cfg(test)]
 use inflight::PersistedPendingApproval;
 use inflight::{
     build_pending_approval_records_from_tool_call_meta, clear_execution_graph_runtime_context,
-    now_unix_ms_i64, persist_running_tool_execution_runtime, persistable_inflight_context_from_value,
+    now_unix_ms_i64, persist_running_tool_execution_runtime,
+    persistable_inflight_context_from_value,
 };
 pub(crate) use inflight::{
     collect_waiting_approval_tokens_from_graph, derive_pending_approvals_from_graph,
@@ -55,9 +59,6 @@ pub(crate) use inflight::{
     materialize_pending_local_approval_from_runtime_context,
     persist_suspended_execution_graph_runtime, serialize_inflight_runtime_context,
     InFlightExecutionStage,
-};
-pub(crate) use approval_commands::{
-    dispatch_local_chat_execution_run_command, ExecutionRunCommand,
 };
 use recovery::extract_resume_response_text;
 #[cfg(test)]

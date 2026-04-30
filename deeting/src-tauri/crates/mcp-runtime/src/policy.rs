@@ -421,8 +421,10 @@ mod tests {
 
     #[test]
     fn runtime_discovery_preserves_skill_control_tools_when_base_policy_is_empty() {
-        let policy =
-            enrich_execution_policy_with_runtime_discovery(build_default_local_execution_policy(), None);
+        let policy = enrich_execution_policy_with_runtime_discovery(
+            build_default_local_execution_policy(),
+            None,
+        );
 
         assert_eq!(
             policy.allowed_tool_names,

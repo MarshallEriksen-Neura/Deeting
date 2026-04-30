@@ -2,7 +2,6 @@
 
 import { announceBridgeApprovalExecution } from "@/lib/chat/bridge-approval-store";
 import { bridgeCallTool } from "@/lib/api/bridge";
-import { listPendingMcpApprovals } from "@/lib/api/mcp-approvals";
 import {
   rejectDesktopTool,
   streamDesktopApproveTool,
@@ -14,7 +13,7 @@ import {
   createLocalChatResumeErrorBlock,
   createRejectedToolResultBlock,
   extractLocalChatApprovalResume,
-  resolveApprovalExecutionMetaFromMessage,
+  resolveAuthoritativeToolApproval,
 } from "@/lib/chat/tool-approval";
 import { deriveChatStatusUpdateForMessage } from "@/lib/chat/live-status";
 import { refreshBridgePendingApprovalsFromCanonical } from "@/lib/chat/canonical-approval-refresh";
@@ -64,33 +63,24 @@ export async function runInlineApproval({
   let streamedContinuationApplied = false;
 
   try {
-    const message = resolveMessages().find((candidate) => candidate.id === messageId);
-    const fromMessage = resolveApprovalExecutionMetaFromMessage(message, approval);
-    let executionGraphExecutionId = fromMessage.execution_graph_execution_id;
-    if (!executionGraphExecutionId && sessionId) {
-      try {
-        const snapshots = await listPendingMcpApprovals(sessionId);
-        const matched = snapshots.find(
-          (item) =>
-            typeof item.approval_token === "string" &&
-            item.approval_token.trim() === approval.approval_token,
-        );
-        executionGraphExecutionId =
-          (typeof matched?.execution_graph_execution_id === "string" &&
-          matched.execution_graph_execution_id.trim().length > 0
-            ? matched.execution_graph_execution_id.trim()
-            : undefined) ?? executionGraphExecutionId;
-      } catch {}
-    }
+    const resolution = await resolveAuthoritativeToolApproval({
+      approval,
+      messages: resolveMessages(),
+      sessionId,
+    });
+    const effectiveApproval = resolution.approval;
+    const targetMessageId = resolution.messageId ?? messageId;
+    const executionGraphExecutionId =
+      resolution.executionMeta.execution_graph_execution_id;
     if (!executionGraphExecutionId) {
       throw new Error("execution_graph_execution_id is required for desktop approval");
     }
     const result = await streamDesktopApproveTool(
       {
-        approvalToken: approval.approval_token,
+        approvalToken: effectiveApproval.approval_token,
         approvalMode,
-        callId: approval.meta.call_id,
-        executionToken: approval.meta.execution_token,
+        callId: effectiveApproval.meta.call_id,
+        executionToken: effectiveApproval.meta.execution_token,
         executionGraphExecutionId,
       },
       {
@@ -107,8 +97,8 @@ export async function runInlineApproval({
               ),
           );
           if (blocks.length === 0) return;
-          appendMessageBlocks(messageId, blocks);
-          syncRuntimeStatusForMessage(messageId);
+          appendMessageBlocks(targetMessageId, blocks);
+          syncRuntimeStatusForMessage(targetMessageId);
           streamedContinuationApplied = true;
         },
       },
@@ -117,34 +107,34 @@ export async function runInlineApproval({
     const resumePayload = extractLocalChatApprovalResume(result);
     const approvedToolResult = resumePayload?.approved_tool_result ?? result;
     const successBlock = createApprovedToolResultBlock(
-      approval,
+      effectiveApproval,
       approvedToolResult,
     );
     if (successBlock) {
-      upsertMessageToolResult(messageId, successBlock);
+      upsertMessageToolResult(targetMessageId, successBlock);
     }
     if (
       resumePayload?.continuation_blocks?.length &&
       !streamedContinuationApplied
     ) {
-      appendMessageBlocks(messageId, resumePayload.continuation_blocks);
+      appendMessageBlocks(targetMessageId, resumePayload.continuation_blocks);
     }
     if (resumePayload?.error) {
-      appendMessageBlocks(messageId, [
-        createLocalChatResumeErrorBlock(approval, resumePayload.error),
+      appendMessageBlocks(targetMessageId, [
+        createLocalChatResumeErrorBlock(effectiveApproval, resumePayload.error),
       ]);
     }
-    syncRuntimeStatusForMessage(messageId);
+    syncRuntimeStatusForMessage(targetMessageId);
 
     if (resumePayload?.status === "LOCAL_CHAT_WAITING_APPROVAL") {
       try {
         await refreshBridgePendingApprovalsFromCanonical({
           sessionId,
           messages: resolveMessages(),
-          excludeCallIds: [approval.meta.call_id],
-          excludeApprovalTokens: [approval.approval_token, resumePayload.approval_token],
+          excludeCallIds: [effectiveApproval.meta.call_id],
+          excludeApprovalTokens: [effectiveApproval.approval_token, resumePayload.approval_token],
           excludeGateNodeIds: [
-            approval.meta.execution_graph_gate_node_id,
+            effectiveApproval.meta.execution_graph_gate_node_id,
             resumePayload.resolved_gate_node_id,
           ],
           preferredApprovalToken: resumePayload.next_pending_approval_tokens[0],
@@ -158,15 +148,15 @@ export async function runInlineApproval({
       }
     }
 
-    if (approval.meta.execution_token) {
+    if (effectiveApproval.meta.execution_token) {
       await bridgeCallTool({
-        tool_name: approval.tool_name,
+        tool_name: effectiveApproval.tool_name,
         arguments: {
-          call_id: approval.meta.call_id,
+          call_id: effectiveApproval.meta.call_id,
           result,
           ok: true,
         },
-        execution_token: approval.meta.execution_token,
+        execution_token: effectiveApproval.meta.execution_token,
       });
     }
   } catch (err: unknown) {
@@ -210,38 +200,28 @@ export async function runInlineRejection({
 }) {
   removePendingByToken(approval.approval_token);
   try {
-    const message = useChatStore.getState().messages.find((candidate) => candidate.id === messageId);
-    const fromMessage = resolveApprovalExecutionMetaFromMessage(message, approval);
-    let executionGraphExecutionId = fromMessage.execution_graph_execution_id;
-    const currentSessionId = useChatStore.getState().sessionId;
-    if (!executionGraphExecutionId && currentSessionId) {
-      try {
-        const snapshots = await listPendingMcpApprovals(currentSessionId);
-        const matched = snapshots.find(
-          (item) =>
-            typeof item.approval_token === "string" &&
-            item.approval_token.trim() === approval.approval_token,
-        );
-        executionGraphExecutionId =
-          (typeof matched?.execution_graph_execution_id === "string" &&
-          matched.execution_graph_execution_id.trim().length > 0
-            ? matched.execution_graph_execution_id.trim()
-            : undefined) ?? executionGraphExecutionId;
-      } catch {}
-    }
+    const resolution = await resolveAuthoritativeToolApproval({
+      approval,
+      messages: useChatStore.getState().messages,
+      sessionId: useChatStore.getState().sessionId,
+    });
+    const effectiveApproval = resolution.approval;
+    const targetMessageId = resolution.messageId ?? messageId;
+    const executionGraphExecutionId =
+      resolution.executionMeta.execution_graph_execution_id;
     if (!executionGraphExecutionId) {
       throw new Error("execution_graph_execution_id is required for desktop reject");
     }
     await rejectDesktopTool({
-      approvalToken: approval.approval_token,
+      approvalToken: effectiveApproval.approval_token,
       rejectMode: "reject_once",
       executionGraphExecutionId,
     });
-    const rejectedBlock = createRejectedToolResultBlock(approval, rejectLabel);
+    const rejectedBlock = createRejectedToolResultBlock(effectiveApproval, rejectLabel);
     if (rejectedBlock) {
-      upsertMessageToolResult(messageId, rejectedBlock);
+      upsertMessageToolResult(targetMessageId, rejectedBlock);
     }
-    syncRuntimeStatusForMessage(messageId);
+    syncRuntimeStatusForMessage(targetMessageId);
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     const errorBlock = createRejectedToolResultBlock(approval, errorMessage);

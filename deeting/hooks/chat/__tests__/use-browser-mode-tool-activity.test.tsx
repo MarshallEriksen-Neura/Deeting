@@ -200,4 +200,58 @@ describe("useBrowserModeToolActivity", () => {
       ])
     )
   })
+
+  it("marks generic browser tool approval results as waiting for approval", async () => {
+    render(
+      <Harness
+        messages={[
+          {
+            id: "assistant-browser-4",
+            role: "assistant",
+            content: "",
+            createdAt: 1,
+            blocks: [
+              {
+                id: "call-browser-snapshot-approval-1",
+                type: "tool_call",
+                callId: "call-browser-snapshot-approval-1",
+                toolName: "browser_get_page_snapshot",
+                status: "success",
+              },
+              {
+                id: "result-browser-snapshot-approval-1",
+                type: "tool_result",
+                callId: "call-browser-snapshot-approval-1",
+                toolName: "browser_get_page_snapshot",
+                status: "requires_approval",
+                result: {
+                  status: "REQUIRES_APPROVAL",
+                  approval_token: "approval-browser-snapshot-approval-1",
+                },
+              },
+            ],
+          },
+        ]}
+      />
+    )
+
+    await waitFor(() => {
+      expect(useBrowserModeStore.getState().executionPhase).toBe("waiting")
+    })
+
+    expect(useBrowserModeStore.getState().executionLabel).toBe("Approval required")
+    expect(useBrowserModeStore.getState().lastAction).toMatchObject({
+      kind: "browser_get_page_snapshot",
+      summary: "Approval required",
+    })
+    expect(useBrowserModeStore.getState().timeline).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "tool_result",
+          phase: "waiting",
+          label: "Approval required",
+        }),
+      ])
+    )
+  })
 })

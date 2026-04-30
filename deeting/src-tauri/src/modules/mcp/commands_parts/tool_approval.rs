@@ -43,6 +43,21 @@ fn require_approval_token(value: Option<String>) -> Result<String, String> {
         .ok_or_else(|| "approval token is required".to_string())
 }
 
+fn resolve_requested_execution_graph_id(
+    explicit_request: Option<&str>,
+    pending_value: Option<&str>,
+) -> Option<String> {
+    explicit_request
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            pending_value
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+        })
+        .map(str::to_string)
+}
+
 pub(crate) async fn approve_mcp_tool_payload(
     app: &tauri::AppHandle,
     state: &crate::state::AppState,
@@ -52,16 +67,17 @@ pub(crate) async fn approve_mcp_tool_payload(
     call_id: Option<&str>,
     execution_token: Option<&str>,
 ) -> Result<Value, String> {
+    let requested_execution_graph_id =
+        resolve_requested_execution_graph_id(execution_graph_execution_id, None);
     dispatch_local_chat_execution_run_command(
         Some(app),
         state,
         ExecutionRunCommand::ApproveGate {
             approval_token: approval_token.trim().to_string(),
-            execution_graph_execution_id: execution_graph_execution_id
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string),
-            approval_context: state.mcp.build_approval_context(call_id, execution_token, None),
+            execution_graph_execution_id: requested_execution_graph_id,
+            approval_context: state
+                .mcp
+                .build_approval_context(call_id, execution_token, None),
             persist_mode: parse_approve_persist_mode(approval_mode.map(str::to_string)),
         },
     )
@@ -74,15 +90,14 @@ pub(crate) async fn reject_mcp_tool_payload(
     execution_graph_execution_id: Option<&str>,
     reject_mode: Option<&str>,
 ) -> Result<Value, String> {
+    let requested_execution_graph_id =
+        resolve_requested_execution_graph_id(execution_graph_execution_id, None);
     dispatch_local_chat_execution_run_command(
         None,
         state,
         ExecutionRunCommand::RejectGate {
             approval_token: approval_token.trim().to_string(),
-            execution_graph_execution_id: execution_graph_execution_id
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string),
+            execution_graph_execution_id: requested_execution_graph_id,
             reject_mode: parse_reject_persist_mode(reject_mode.map(str::to_string)),
         },
     )
@@ -99,7 +114,9 @@ pub(crate) async fn list_pending_mcp_approvals_inner(
 
 pub(crate) async fn list_pending_mcp_approvals_with_graph_inner(
     store: Option<&crate::modules::mcp::store::McpStore>,
-    _pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
+    _pending_tool_calls: &tokio::sync::RwLock<
+        HashMap<String, crate::modules::mcp::PendingToolCall>,
+    >,
     session_id: Option<&str>,
 ) -> Vec<Value> {
     let Some(store) = store else {
@@ -268,13 +285,15 @@ pub async fn approve_mcp_tool(
     #[allow(non_snake_case)] executionToken: Option<String>,
 ) -> Result<Value, String> {
     let token = require_approval_token(approval_token.or(approvalToken))?;
+    let requested_execution_graph_id = resolve_requested_execution_graph_id(
+        execution_graph_execution_id.as_deref(),
+        executionGraphExecutionId.as_deref(),
+    );
     approve_mcp_tool_payload(
         &app,
         &state,
         &token,
-        execution_graph_execution_id
-            .or(executionGraphExecutionId)
-            .as_deref(),
+        requested_execution_graph_id.as_deref(),
         approval_mode.or(approvalMode).as_deref(),
         call_id.or(callId).as_deref(),
         execution_token.or(executionToken).as_deref(),
@@ -293,12 +312,14 @@ pub async fn reject_mcp_tool(
     #[allow(non_snake_case)] rejectMode: Option<String>,
 ) -> Result<Value, String> {
     let token = require_approval_token(approval_token.or(approvalToken))?;
+    let requested_execution_graph_id = resolve_requested_execution_graph_id(
+        execution_graph_execution_id.as_deref(),
+        executionGraphExecutionId.as_deref(),
+    );
     reject_mcp_tool_payload(
         &state,
         &token,
-        execution_graph_execution_id
-            .or(executionGraphExecutionId)
-            .as_deref(),
+        requested_execution_graph_id.as_deref(),
         reject_mode.or(rejectMode).as_deref(),
     )
     .await

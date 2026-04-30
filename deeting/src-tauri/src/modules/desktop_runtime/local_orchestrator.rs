@@ -862,6 +862,12 @@ pub async fn execute_local_orchestrated_chat(
         }
     }
 
+    let finish_reason = derive_local_finish_reason(
+        &response_json,
+        response_text_was_synthesized_from_error,
+        &assistant_blocks,
+    );
+
     let mut response = json!({
         "id": format!("chatcmpl-local-{}", Uuid::new_v4()),
         "object": "chat.completion",
@@ -871,10 +877,7 @@ pub async fn execute_local_orchestrated_chat(
         "trace_id": trace_id,
         "choices": [{
             "index": 0,
-            "finish_reason": derive_local_finish_reason(
-                &response_json,
-                response_text_was_synthesized_from_error,
-            ),
+            "finish_reason": finish_reason,
             "message": message,
         }],
     });
@@ -882,10 +885,6 @@ pub async fn execute_local_orchestrated_chat(
 
     if !input.compare_only {
         if let Some(task_fingerprint) = ctx.task_fingerprint.as_ref() {
-            let finish_reason = derive_local_finish_reason(
-                &response_json,
-                response_text_was_synthesized_from_error,
-            );
             let evaluation = evaluate_task_learning_with_runtime(
                 app_state,
                 &model_connection,

@@ -386,12 +386,10 @@ async fn reject_local_chat_execution_gate_command(
         .await
         .remove(token);
 
-    let persisted_graph = load_execution_graph_snapshot(
-        state.mcp.store.as_ref(),
-        requested_execution_id.as_str(),
-    )
-    .await
-    .map_err(to_string)?;
+    let persisted_graph =
+        load_execution_graph_snapshot(state.mcp.store.as_ref(), requested_execution_id.as_str())
+            .await
+            .map_err(to_string)?;
     if let Some(mut execution_graph) = persisted_graph {
         let execution_id = execution_graph
             .get("execution_id")

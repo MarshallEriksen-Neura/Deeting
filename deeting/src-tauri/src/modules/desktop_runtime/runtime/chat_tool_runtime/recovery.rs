@@ -343,7 +343,6 @@ fn next_pending_approval_tokens_from_graph(execution_graph: &serde_json::Value) 
         .collect()
 }
 
-
 fn validate_waiting_approval_payload_consistency(
     consumed_approval_token: Option<&str>,
     resolved_gate_node_id: &str,
@@ -368,7 +367,10 @@ fn validate_waiting_approval_payload_consistency(
         ));
     }
 
-    if let Some(consumed_token) = consumed_approval_token.map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(consumed_token) = consumed_approval_token
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         if pending_tokens.iter().any(|token| token == consumed_token) {
             return Err(format!(
                 "consumed approval token '{}' still appears in next_pending_approval_tokens",

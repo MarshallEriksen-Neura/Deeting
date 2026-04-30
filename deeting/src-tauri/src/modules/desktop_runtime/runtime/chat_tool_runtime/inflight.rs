@@ -342,7 +342,9 @@ async fn find_canonical_pending_local_approval_match(
         .map(str::trim)
         .filter(|value| !value.is_empty())
     else {
-        return Err("execution_graph_execution_id is required for canonical approval lookup".to_string());
+        return Err(
+            "execution_graph_execution_id is required for canonical approval lookup".to_string(),
+        );
     };
 
     let contexts = load_canonical_waiting_approval_context_by_execution_id(
@@ -793,9 +795,10 @@ pub(crate) async fn load_suspended_chat_tool_execution_for_resume(
         app_state: &AppState,
         execution_id: &str,
     ) -> Result<Option<SuspendedChatToolExecution>, String> {
-        let Some(execution_graph) = load_execution_graph_snapshot(app_state.mcp.store.as_ref(), execution_id)
-            .await
-            .map_err(|err| err.to_string())?
+        let Some(execution_graph) =
+            load_execution_graph_snapshot(app_state.mcp.store.as_ref(), execution_id)
+                .await
+                .map_err(|err| err.to_string())?
         else {
             return Ok(None);
         };
@@ -890,7 +893,8 @@ pub(crate) async fn load_suspended_chat_tool_execution_for_resume(
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        if let Some(suspended) = suspended_from_persisted_execution(app_state, execution_id).await? {
+        if let Some(suspended) = suspended_from_persisted_execution(app_state, execution_id).await?
+        {
             return Ok(Some(suspended));
         }
     }

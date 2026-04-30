@@ -1,10 +1,10 @@
 "use client"
 
-import { useEffect, useMemo, useRef } from "react"
+import { useEffect, useMemo } from "react"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
 import {
   enqueueBridgeToolApproval,
-  findLatestMessageToolApproval,
+  findMessageToolApprovals,
 } from "@/lib/chat/tool-approval"
 
 export function useMessageToolApproval(
@@ -14,18 +14,17 @@ export function useMessageToolApproval(
     fromHistory?: boolean
   }
 ) {
-  const lastQueuedTokenRef = useRef<string | null>(null)
   const fromHistory = options?.fromHistory === true
 
-  const approval = useMemo(() => {
-    if (!messageId || fromHistory) return null
-    return findLatestMessageToolApproval(blocks, { messageId })
+  const approvals = useMemo(() => {
+    if (!messageId || fromHistory) return []
+    return findMessageToolApprovals(blocks, { messageId })
   }, [blocks, fromHistory, messageId])
 
   useEffect(() => {
-    if (!approval) return
-    if (lastQueuedTokenRef.current === approval.approval_token) return
-    enqueueBridgeToolApproval(approval)
-    lastQueuedTokenRef.current = approval.approval_token
-  }, [approval])
+    if (approvals.length === 0) return
+    for (const approval of approvals) {
+      enqueueBridgeToolApproval(approval)
+    }
+  }, [approvals])
 }

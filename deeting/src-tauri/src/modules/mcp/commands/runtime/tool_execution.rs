@@ -520,7 +520,11 @@ async fn maybe_queue_core_tool_approval(
                 .write()
                 .await
                 .insert(approval_token.clone(), pending);
-            let pending_snapshot = pending_tool_calls.read().await.get(&approval_token).cloned();
+            let pending_snapshot = pending_tool_calls
+                .read()
+                .await
+                .get(&approval_token)
+                .cloned();
             return Ok(Some(serde_json::json!({
                 "status": "REQUIRES_APPROVAL",
                 "approval_token": approval_token,
@@ -1588,7 +1592,11 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
                     .write()
                     .await
                     .insert(approval_token.clone(), pending);
-                let pending_snapshot = pending_tool_calls.read().await.get(&approval_token).cloned();
+                let pending_snapshot = pending_tool_calls
+                    .read()
+                    .await
+                    .get(&approval_token)
+                    .cloned();
                 return Ok(serde_json::json!({
                     "status": "REQUIRES_APPROVAL",
                     "approval_token": approval_token,
@@ -1732,7 +1740,11 @@ pub(crate) async fn execute_or_queue_mcp_tool_call_with_tool_ref(
                 .write()
                 .await
                 .insert(approval_token.clone(), pending);
-            let pending_snapshot = pending_tool_calls.read().await.get(&approval_token).cloned();
+            let pending_snapshot = pending_tool_calls
+                .read()
+                .await
+                .get(&approval_token)
+                .cloned();
             return Ok(serde_json::json!({
                 "status": "REQUIRES_APPROVAL", "approval_token": approval_token,
                 "tool_id": tool.id, "tool_name": tool.name,
@@ -1877,9 +1889,10 @@ pub(crate) async fn approve_pending_tool_with_context_and_mode(
             }
         }
         if matches!(persist_mode, ApprovePersistMode::AllowAlways) {
-            if let (Some(runtime), Some(key)) =
-                (runtime_state, consumed_pending.approval_grant_key.as_deref())
-            {
+            if let (Some(runtime), Some(key)) = (
+                runtime_state,
+                consumed_pending.approval_grant_key.as_deref(),
+            ) {
                 if let Some(grant) =
                     crate::modules::mcp::SessionApprovalGrant::from_key(key, now as i128)
                 {
@@ -2005,9 +2018,10 @@ pub(crate) async fn approve_pending_tool_with_context_and_mode(
         }
     }
     if matches!(persist_mode, ApprovePersistMode::AllowAlways) {
-        if let (Some(runtime), Some(key)) =
-            (runtime_state, consumed_pending.approval_grant_key.as_deref())
-        {
+        if let (Some(runtime), Some(key)) = (
+            runtime_state,
+            consumed_pending.approval_grant_key.as_deref(),
+        ) {
             if let Some(grant) =
                 crate::modules::mcp::SessionApprovalGrant::from_key(key, now as i128)
             {

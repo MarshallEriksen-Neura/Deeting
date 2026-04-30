@@ -589,9 +589,9 @@ fn snapshot_summary(snapshot: serde_json::Value) -> Option<serde_json::Value> {
 mod tests {
     use super::{
         bridge_socket_target, extract_result_error, is_recoverable_browser_action_error,
-        locator_is_empty, normalize_bridge_url, normalize_scroll_direction, parse_retry_action_kind,
-        requires_fresh_approval_after_recovery, result_ok, snapshot_summary,
-        BrowserRetryActionKind, DEFAULT_BROWSER_AGENT_BRIDGE_URL,
+        locator_is_empty, normalize_bridge_url, normalize_scroll_direction,
+        parse_retry_action_kind, requires_fresh_approval_after_recovery, result_ok,
+        snapshot_summary, BrowserRetryActionKind, DEFAULT_BROWSER_AGENT_BRIDGE_URL,
     };
     use crate::modules::browser_agent::types::BrowserAgentElementLocator;
     use serde_json::json;

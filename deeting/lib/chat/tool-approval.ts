@@ -1,5 +1,6 @@
 "use client"
 
+import { listPendingMcpApprovals } from "@/lib/api/mcp-approvals"
 import type { MessageBlock, ToolResultBlock } from "@/lib/chat/message-protocol"
 import type { Message } from "@/lib/chat/message-types"
 import { extractRootExecutionIdFromMessage } from "@/lib/chat/execution-tree"
@@ -49,6 +50,10 @@ export type PendingToolApprovalSnapshot = {
 }
 
 type ToolApprovalContext = BridgeToolPendingApproval["meta"]
+type ApprovalLookupMatch = {
+  approvalToken?: string | null
+  callId?: string | null
+}
 
 function toRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null
@@ -281,9 +286,68 @@ export function findLatestMessageToolApproval(
     messageId: string
   }
 ): BridgeToolPendingApproval | null {
-  for (let index = blocks.length - 1; index >= 0; index -= 1) {
-    const approval = buildBridgeToolApprovalFromMessageBlock(blocks[index], context)
-    if (approval) return approval
+  return findMessageToolApprovals(blocks, context).at(-1) ?? null
+}
+
+function matchesApprovalLookup(
+  approval: BridgeToolPendingApproval,
+  lookup: ApprovalLookupMatch
+) {
+  const approvalToken = asTrimmedString(lookup.approvalToken)
+  if (approvalToken && approval.approval_token === approvalToken) {
+    return true
+  }
+
+  const callId = asTrimmedString(lookup.callId)
+  if (callId && approval.meta.call_id === callId) {
+    return true
+  }
+
+  return false
+}
+
+export function mergeBridgeToolApproval(
+  base: BridgeToolPendingApproval,
+  incoming: BridgeToolPendingApproval
+): BridgeToolPendingApproval {
+  return {
+    ...base,
+    ...incoming,
+    meta: {
+      ...base.meta,
+      ...incoming.meta,
+    },
+  }
+}
+
+export function findMessageToolApprovals(
+  blocks: MessageBlock[],
+  context: {
+    messageId: string
+  }
+): BridgeToolPendingApproval[] {
+  const approvals: BridgeToolPendingApproval[] = []
+  for (const block of blocks) {
+    const approval = buildBridgeToolApprovalFromMessageBlock(block, context)
+    if (approval) {
+      approvals.push(approval)
+    }
+  }
+  return approvals
+}
+
+export function findMessageToolApproval(
+  blocks: MessageBlock[],
+  context: {
+    messageId: string
+  },
+  lookup: ApprovalLookupMatch
+): BridgeToolPendingApproval | null {
+  const approvals = findMessageToolApprovals(blocks, context)
+  for (let index = approvals.length - 1; index >= 0; index -= 1) {
+    if (matchesApprovalLookup(approvals[index], lookup)) {
+      return approvals[index]
+    }
   }
   return null
 }
@@ -452,6 +516,101 @@ export function findMessageIdForToolCall(
   }
 
   return undefined
+}
+
+export async function resolveAuthoritativeToolApproval(options: {
+  approval: BridgeToolPendingApproval
+  messages: Message[]
+  sessionId?: string | null | undefined
+}) {
+  const { approval, messages, sessionId } = options
+  const fallbackMessageId =
+    approval.meta.message_id ?? findMessageIdForToolCall(messages, approval.meta.call_id)
+  const message = fallbackMessageId
+    ? messages.find((candidate) => candidate.id === fallbackMessageId)
+    : undefined
+
+  let resolvedApproval = approval
+  if (message && Array.isArray(message.blocks)) {
+    const fromMessage = findMessageToolApproval(
+      message.blocks,
+      { messageId: message.id },
+      {
+        approvalToken: approval.approval_token,
+        callId: approval.meta.call_id,
+      }
+    )
+    if (fromMessage) {
+      resolvedApproval = mergeBridgeToolApproval(resolvedApproval, fromMessage)
+    }
+  }
+
+  let executionMeta = resolveApprovalExecutionMetaFromMessage(message, resolvedApproval)
+  const normalizedSessionId = asTrimmedString(sessionId)
+  if (
+    normalizedSessionId &&
+    (!executionMeta.execution_graph_execution_id ||
+      !executionMeta.execution_graph_gate_node_id ||
+      !executionMeta.execution_graph_tool_node_id)
+  ) {
+    try {
+      const snapshots = await listPendingMcpApprovals(normalizedSessionId)
+      const matchedSnapshot = snapshots.find(
+        (snapshot) =>
+          asTrimmedString(snapshot.approval_token) === resolvedApproval.approval_token ||
+          asTrimmedString(snapshot.call_id) === resolvedApproval.meta.call_id
+      )
+      const fromSnapshot = matchedSnapshot
+        ? buildBridgeToolApprovalFromPendingSnapshot(matchedSnapshot, {
+            messageId: fallbackMessageId,
+          })
+        : null
+      if (fromSnapshot) {
+        resolvedApproval = mergeBridgeToolApproval(resolvedApproval, fromSnapshot)
+        executionMeta = {
+          execution_graph_execution_id:
+            fromSnapshot.meta.execution_graph_execution_id ??
+            executionMeta.execution_graph_execution_id,
+          execution_graph_gate_node_id:
+            fromSnapshot.meta.execution_graph_gate_node_id ??
+            executionMeta.execution_graph_gate_node_id,
+          execution_graph_tool_node_id:
+            fromSnapshot.meta.execution_graph_tool_node_id ??
+            executionMeta.execution_graph_tool_node_id,
+        }
+      }
+    } catch {
+      // Swallow canonical lookup failures here; callers handle the final missing-meta error.
+    }
+  }
+
+  const nextMessageId =
+    resolvedApproval.meta.message_id ?? fallbackMessageId ?? undefined
+  resolvedApproval = {
+    ...resolvedApproval,
+    meta: {
+      ...resolvedApproval.meta,
+      message_id: nextMessageId,
+      execution_graph_execution_id:
+        executionMeta.execution_graph_execution_id ??
+        resolvedApproval.meta.execution_graph_execution_id,
+      execution_graph_gate_node_id:
+        executionMeta.execution_graph_gate_node_id ??
+        resolvedApproval.meta.execution_graph_gate_node_id,
+      execution_graph_tool_node_id:
+        executionMeta.execution_graph_tool_node_id ??
+        resolvedApproval.meta.execution_graph_tool_node_id,
+    },
+  }
+
+  enqueueBridgeToolApproval(resolvedApproval)
+
+  return {
+    approval: resolvedApproval,
+    messageId: nextMessageId,
+    message,
+    executionMeta: resolveApprovalExecutionMetaFromMessage(message, resolvedApproval),
+  }
 }
 
 export function resolveApprovalExecutionMetaFromMessage(

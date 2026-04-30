@@ -1142,11 +1142,44 @@ fn fuse_selected_knowledge_hits_merges_lexical_and_semantic_candidates() {
 
 #[test]
 fn derive_local_finish_reason_uses_error_for_synthesized_failure_text() {
-    assert_eq!(derive_local_finish_reason(&json!({}), true), "error");
-    assert_eq!(derive_local_finish_reason(&json!({}), false), "stop");
+    assert_eq!(derive_local_finish_reason(&json!({}), true, &[]), "error");
+    assert_eq!(derive_local_finish_reason(&json!({}), false, &[]), "stop");
     assert_eq!(
-        derive_local_finish_reason(&json!({ "finish_reason": "length" }), false),
+        derive_local_finish_reason(&json!({ "finish_reason": "length" }), false, &[]),
         "length"
+    );
+}
+
+#[test]
+fn derive_local_finish_reason_uses_blocked_for_pending_approval() {
+    assert_eq!(
+        derive_local_finish_reason(
+            &json!({ "finish_reason": "stop" }),
+            false,
+            &[json!({
+                "type": "tool_result",
+                "status": "requires_approval",
+                "result": { "approval_token": "approval-1" }
+            })],
+        ),
+        "blocked"
+    );
+
+    assert_eq!(
+        derive_local_finish_reason(
+            &json!({
+                "execution_graph": {
+                    "nodes": [{
+                        "node_id": "approval_gate:call-1",
+                        "node_type": "approval_gate",
+                        "status": "waiting_approval"
+                    }]
+                }
+            }),
+            false,
+            &[],
+        ),
+        "blocked"
     );
 }
 

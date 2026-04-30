@@ -132,11 +132,9 @@ function upsertToolBlock(next: InternalMessageBlock[], block: InternalMessageBlo
   if (!callId) return false
 
   if (block.status === "requires_approval") {
-    const conflictingType = block.type === "tool_call" ? "tool_result" : "tool_call"
-    if (
-      hasTerminalToolOutcomeForCall(next, callId, block.type) ||
-      hasTerminalToolOutcomeForCall(next, callId, conflictingType)
-    ) {
+    const hasTerminalSameType = hasTerminalToolOutcomeForCall(next, callId, block.type)
+    const hasTerminalResult = hasTerminalToolOutcomeForCall(next, callId, "tool_result")
+    if (hasTerminalSameType || (block.type === "tool_call" && hasTerminalResult)) {
       return true
     }
   }

@@ -204,6 +204,58 @@ describe("useChatStore session state", () => {
     expect(toolResult).toMatchObject({ status: "requires_approval" })
   })
 
+  it("appendMessageBlocks should preserve a continuation approval result after a same-call tool_call success", () => {
+    useChatStore.setState({
+      messages: [
+        {
+          id: "assistant-browser-approval-continuation-1",
+          role: "assistant",
+          content: "",
+          createdAt: 1,
+          blocks: [],
+        },
+      ],
+    })
+
+    useChatStore.getState().appendMessageBlocks("assistant-browser-approval-continuation-1", [
+      {
+        id: "call-browser-snapshot-1",
+        type: "tool_call",
+        callId: "call-browser-snapshot-1",
+        toolName: "browser_get_page_snapshot",
+        status: "success",
+      } as MessageBlock,
+      {
+        id: "result-browser-snapshot-approval-1",
+        type: "tool_result",
+        callId: "call-browser-snapshot-1",
+        toolName: "browser_get_page_snapshot",
+        status: "requires_approval",
+        result: {
+          status: "REQUIRES_APPROVAL",
+          approval_token: "approval-browser-snapshot-1",
+        },
+      } as MessageBlock,
+    ])
+
+    const message = useChatStore.getState().messages[0]
+    const toolCall = message?.blocks?.find((block) => block.type === "tool_call")
+    const toolResult = message?.blocks?.find((block) => block.type === "tool_result")
+
+    expect(message?.blocks?.map((block) => block.type)).toEqual(["tool_call", "tool_result"])
+    expect(toolCall).toMatchObject({
+      callId: "call-browser-snapshot-1",
+      status: "requires_approval",
+    })
+    expect(toolResult).toMatchObject({
+      callId: "call-browser-snapshot-1",
+      status: "requires_approval",
+      result: {
+        approval_token: "approval-browser-snapshot-1",
+      },
+    })
+  })
+
   it("setMessageBlocks should clear assistant content when no text block exists", () => {
     useChatStore.setState({
       messages: [

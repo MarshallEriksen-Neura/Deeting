@@ -3,9 +3,15 @@ import {
   extractLocalChatApprovalResume,
   findResolvedToolCallIds,
   findLatestUnresolvedToolApproval,
+  resolveAuthoritativeToolApproval,
   resolveApprovalExecutionMetaFromMessage,
 } from "@/lib/chat/tool-approval"
+import { useBridgeApprovalStore } from "@/lib/chat/bridge-approval-store"
 import type { Message } from "@/lib/chat/message-types"
+
+afterEach(() => {
+  useBridgeApprovalStore.getState().clearAll()
+})
 
 describe("findLatestUnresolvedToolApproval", () => {
   it("skips approvals that were already resolved by a later terminal tool result", () => {
@@ -291,6 +297,102 @@ describe("resolveApprovalExecutionMetaFromMessage", () => {
       execution_graph_execution_id: "graph-meta-1",
       execution_graph_gate_node_id: "approval_gate:call-graph-meta-1",
       execution_graph_tool_node_id: "tool_call:call-graph-meta-1",
+    })
+  })
+})
+
+describe("resolveAuthoritativeToolApproval", () => {
+  it("matches the targeted approval by token instead of always taking the latest approval block", async () => {
+    const messages: Message[] = [
+      {
+        id: "assistant-multi-approval",
+        role: "assistant",
+        content: "",
+        createdAt: 1,
+        blocks: [
+          {
+            id: "tool-call-1",
+            type: "tool_call",
+            callId: "call-1",
+            toolName: "browser_open_tab",
+            status: "running",
+          },
+          {
+            id: "tool-result-1",
+            type: "tool_result",
+            callId: "call-1",
+            toolName: "browser_open_tab",
+            status: "requires_approval",
+            result: {
+              status: "REQUIRES_APPROVAL",
+              approval_token: "approval-1",
+              tool_name: "browser_open_tab",
+              arguments: { url: "https://x.com/home" },
+              execution_graph_execution_id: "graph-1",
+              execution_graph_gate_node_id: "approval_gate:call-1",
+              execution_graph_tool_node_id: "tool_call:call-1",
+            },
+          },
+          {
+            id: "tool-call-2",
+            type: "tool_call",
+            callId: "call-2",
+            toolName: "browser_get_page_snapshot",
+            status: "running",
+          },
+          {
+            id: "tool-result-2",
+            type: "tool_result",
+            callId: "call-2",
+            toolName: "browser_get_page_snapshot",
+            status: "requires_approval",
+            result: {
+              status: "REQUIRES_APPROVAL",
+              approval_token: "approval-2",
+              tool_name: "browser_get_page_snapshot",
+              arguments: { tab_id: 123 },
+              execution_graph_execution_id: "graph-2",
+              execution_graph_gate_node_id: "approval_gate:call-2",
+              execution_graph_tool_node_id: "tool_call:call-2",
+            },
+          },
+        ],
+      },
+    ]
+
+    const resolution = await resolveAuthoritativeToolApproval({
+      approval: {
+        kind: "bridge_mcp",
+        approval_token: "approval-1",
+        tool_name: "browser_open_tab",
+        arguments: { url: "https://x.com/home" },
+        meta: {
+          call_id: "call-1",
+          message_id: "assistant-multi-approval",
+        },
+      },
+      messages,
+      sessionId: "session-1",
+    })
+
+    expect(resolution.approval).toMatchObject({
+      approval_token: "approval-1",
+      tool_name: "browser_open_tab",
+      meta: {
+        call_id: "call-1",
+        message_id: "assistant-multi-approval",
+        execution_graph_execution_id: "graph-1",
+        execution_graph_gate_node_id: "approval_gate:call-1",
+        execution_graph_tool_node_id: "tool_call:call-1",
+      },
+    })
+    expect(resolution.executionMeta).toEqual({
+      execution_graph_execution_id: "graph-1",
+      execution_graph_gate_node_id: "approval_gate:call-1",
+      execution_graph_tool_node_id: "tool_call:call-1",
+    })
+    expect(useBridgeApprovalStore.getState().pending).toMatchObject({
+      approval_token: "approval-1",
     })
   })
 })

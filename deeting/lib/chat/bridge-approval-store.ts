@@ -36,11 +36,143 @@ export interface RecentApprovedExecution {
   approved_at: number
 }
 
+export type ApprovalMachinePhase =
+  | "pending"
+  | "executing"
+  | "resolved"
+  | "rejected"
+  | "failed"
+
+type ApprovalMachineSource = "message" | "canonical" | "manual"
+
+interface ApprovalMachineNode {
+  approval: PendingApproval
+  phase: ApprovalMachinePhase
+  source: ApprovalMachineSource
+  updated_at: number
+}
+
 function normalizeApprovalToken(value: string | null | undefined): string {
   return typeof value === "string" ? value.trim() : ""
 }
 
+function mergeApproval(
+  current: PendingApproval | undefined,
+  incoming: PendingApproval
+): PendingApproval {
+  if (!current) return incoming
+  return {
+    ...current,
+    ...incoming,
+    meta: {
+      ...current.meta,
+      ...incoming.meta,
+    },
+  }
+}
+
+function isTerminalPhase(phase: ApprovalMachinePhase) {
+  return phase === "resolved" || phase === "rejected" || phase === "failed"
+}
+
+function upsertApprovalNode(
+  approvalsByToken: Record<string, ApprovalMachineNode>,
+  approvalOrder: string[],
+  approval: PendingApproval,
+  source: ApprovalMachineSource,
+  phase: ApprovalMachinePhase = "pending"
+) {
+  const approvalToken = normalizeApprovalToken(approval.approval_token)
+  if (!approvalToken) {
+    return { approvalsByToken, approvalOrder }
+  }
+
+  const current = approvalsByToken[approvalToken]
+  const nextPhase =
+    current && current.phase === "executing" && phase === "pending"
+      ? current.phase
+      : phase
+
+  const nextNode: ApprovalMachineNode = {
+    approval: mergeApproval(current?.approval, approval),
+    phase: nextPhase,
+    source,
+    updated_at: Date.now(),
+  }
+
+  const nextApprovalsByToken = {
+    ...approvalsByToken,
+    [approvalToken]: nextNode,
+  }
+
+  const alreadyOrdered = approvalOrder.includes(approvalToken)
+  const shouldBeVisible = !isTerminalPhase(nextPhase) && nextPhase !== "executing"
+  let nextApprovalOrder = approvalOrder
+
+  if (shouldBeVisible && !alreadyOrdered) {
+    nextApprovalOrder = [...approvalOrder, approvalToken]
+  } else if (!shouldBeVisible && alreadyOrdered) {
+    nextApprovalOrder = approvalOrder.filter((token) => token !== approvalToken)
+  }
+
+  return {
+    approvalsByToken: nextApprovalsByToken,
+    approvalOrder: nextApprovalOrder,
+  }
+}
+
+function deriveVisibleQueue(
+  approvalsByToken: Record<string, ApprovalMachineNode>,
+  approvalOrder: string[],
+  activeApprovalToken: string | null,
+  isApproving: boolean
+) {
+  const visibleTokens = approvalOrder.filter((token) => {
+    const node = approvalsByToken[token]
+    return Boolean(node && node.phase === "pending")
+  })
+
+  const normalizedActiveToken = normalizeApprovalToken(activeApprovalToken)
+  if (!isApproving || !normalizedActiveToken) {
+    return visibleTokens
+      .map((token) => approvalsByToken[token]?.approval)
+      .filter((approval): approval is PendingApproval => Boolean(approval))
+  }
+
+  const activeNode = approvalsByToken[normalizedActiveToken]
+  const activeApproval =
+    activeNode && activeNode.phase === "pending" ? activeNode.approval : null
+  const rest = visibleTokens
+    .filter((token) => token !== normalizedActiveToken)
+    .map((token) => approvalsByToken[token]?.approval)
+    .filter((approval): approval is PendingApproval => Boolean(approval))
+
+  return activeApproval ? [activeApproval, ...rest] : rest
+}
+
+function deriveProjection(
+  approvalsByToken: Record<string, ApprovalMachineNode>,
+  approvalOrder: string[],
+  activeApprovalToken: string | null,
+  isApproving: boolean
+) {
+  const queue = deriveVisibleQueue(
+    approvalsByToken,
+    approvalOrder,
+    activeApprovalToken,
+    isApproving
+  )
+  return {
+    queue,
+    pending: queue[0] ?? null,
+    isApproving,
+    activeApprovalToken,
+  }
+}
+
 interface BridgeApprovalState {
+  approvalsByToken: Record<string, ApprovalMachineNode>
+  approvalOrder: string[]
   queue: PendingApproval[]
   pending: PendingApproval | null
   isApproving: boolean
@@ -59,106 +191,204 @@ interface BridgeApprovalState {
   clearAll: () => void
 }
 
+function emptyProjection() {
+  return {
+    approvalsByToken: {},
+    approvalOrder: [],
+    queue: [],
+    pending: null,
+    isApproving: false,
+    activeApprovalToken: null,
+  }
+}
+
 export const useBridgeApprovalStore = create<BridgeApprovalState>((set) => ({
-  queue: [],
-  pending: null,
-  isApproving: false,
-  activeApprovalToken: null,
+  ...emptyProjection(),
   recentApprovedExecution: null,
   setPending: (approval) =>
     set((state) => {
       if (!approval) {
-        return { queue: [], pending: null }
+        return {
+          ...state,
+          ...emptyProjection(),
+        }
       }
-      const nextQueue = [...state.queue]
-      const existingIndex = nextQueue.findIndex(
-        (item) => item.approval_token === approval.approval_token
+
+      const next = upsertApprovalNode(
+        state.approvalsByToken,
+        state.approvalOrder.filter(
+          (token) => token !== normalizeApprovalToken(approval.approval_token)
+        ),
+        approval,
+        "manual"
       )
-      if (existingIndex >= 0) {
-        nextQueue[existingIndex] = approval
-      } else {
-        nextQueue.push(approval)
-      }
+      const nextOrder = [
+        normalizeApprovalToken(approval.approval_token),
+        ...next.approvalOrder,
+      ].filter((token, index, list) => token && list.indexOf(token) === index)
+
       return {
-        queue: nextQueue,
-        pending: nextQueue[0] ?? null,
+        ...state,
+        ...next,
+        approvalOrder: nextOrder,
+        ...deriveProjection(
+          next.approvalsByToken,
+          nextOrder,
+          state.activeApprovalToken,
+          state.isApproving
+        ),
       }
     }),
   enqueuePending: (approval) =>
     set((state) => {
-      if (state.queue.some((item) => item.approval_token === approval.approval_token)) {
-        return state
-      }
-      const nextQueue = [...state.queue, approval]
+      const next = upsertApprovalNode(
+        state.approvalsByToken,
+        state.approvalOrder,
+        approval,
+        "message"
+      )
       return {
-        queue: nextQueue,
-        pending: nextQueue[0] ?? null,
+        ...state,
+        ...next,
+        ...deriveProjection(
+          next.approvalsByToken,
+          next.approvalOrder,
+          state.activeApprovalToken,
+          state.isApproving
+        ),
       }
     }),
   replaceQueue: (approvals) =>
-    set(() => {
-      const dedupedQueue: PendingApproval[] = []
-      const seenTokens = new Set<string>()
+    set((state) => {
+      const nextApprovalsByToken: Record<string, ApprovalMachineNode> = {}
+      let nextApprovalOrder: string[] = []
+
       for (const approval of approvals) {
-        const approvalToken = approval.approval_token.trim()
-        if (!approvalToken || seenTokens.has(approvalToken)) continue
-        seenTokens.add(approvalToken)
-        dedupedQueue.push(approval)
+        const next = upsertApprovalNode(
+          nextApprovalsByToken,
+          nextApprovalOrder,
+          approval,
+          "canonical"
+        )
+        Object.assign(nextApprovalsByToken, next.approvalsByToken)
+        nextApprovalOrder = next.approvalOrder
       }
-      const activeApprovalToken = useBridgeApprovalStore.getState().activeApprovalToken
-      const lockedPending = activeApprovalToken
-        ? dedupedQueue.find((item) => item.approval_token === activeApprovalToken) ?? null
-        : null
+
+      const normalizedActiveToken = normalizeApprovalToken(state.activeApprovalToken)
+      if (state.isApproving && normalizedActiveToken) {
+        const activeNode = state.approvalsByToken[normalizedActiveToken]
+        if (activeNode) {
+          nextApprovalsByToken[normalizedActiveToken] = {
+            ...activeNode,
+            phase:
+              activeNode.phase === "executing" ? "executing" : activeNode.phase,
+          }
+          nextApprovalOrder = nextApprovalOrder.filter(
+            (token) => token !== normalizedActiveToken
+          )
+        }
+      }
+
       return {
-        queue: dedupedQueue,
-        pending: lockedPending ?? dedupedQueue[0] ?? null,
-        isApproving: activeApprovalToken ? true : false,
+        ...state,
+        approvalsByToken: nextApprovalsByToken,
+        approvalOrder: nextApprovalOrder,
+        ...deriveProjection(
+          nextApprovalsByToken,
+          nextApprovalOrder,
+          state.activeApprovalToken,
+          state.isApproving
+        ),
       }
     }),
   replacePendingByToken: (approval) =>
     set((state) => {
-      const nextQueue = state.queue.map((item) =>
-        item.approval_token === approval.approval_token ? approval : item
+      const source =
+        state.approvalsByToken[normalizeApprovalToken(approval.approval_token)]?.source ??
+        "manual"
+      const next = upsertApprovalNode(
+        state.approvalsByToken,
+        state.approvalOrder,
+        approval,
+        source
       )
       return {
-        queue: nextQueue,
-        pending: nextQueue[0] ?? null,
+        ...state,
+        ...next,
+        ...deriveProjection(
+          next.approvalsByToken,
+          next.approvalOrder,
+          state.activeApprovalToken,
+          state.isApproving
+        ),
       }
     }),
   focusPendingByToken: (approvalToken) =>
     set((state) => {
-      const normalizedToken = approvalToken.trim()
-      if (!normalizedToken) return state
-      const index = state.queue.findIndex(
-        (item) => item.approval_token === normalizedToken
-      )
-      if (index <= 0) return state
-      const nextQueue = [...state.queue]
-      const [selected] = nextQueue.splice(index, 1)
-      nextQueue.unshift(selected)
+      const normalizedToken = normalizeApprovalToken(approvalToken)
+      if (!normalizedToken || !state.approvalOrder.includes(normalizedToken)) {
+        return state
+      }
+
+      const nextApprovalOrder = [
+        normalizedToken,
+        ...state.approvalOrder.filter((token) => token !== normalizedToken),
+      ]
+
       return {
-        queue: nextQueue,
-        pending: nextQueue[0] ?? null,
+        ...state,
+        approvalOrder: nextApprovalOrder,
+        ...deriveProjection(
+          state.approvalsByToken,
+          nextApprovalOrder,
+          state.activeApprovalToken,
+          state.isApproving
+        ),
       }
     }),
   removePendingByToken: (approvalToken) =>
     set((state) => {
-      const normalizedToken = approvalToken.trim()
+      const normalizedToken = normalizeApprovalToken(approvalToken)
       if (!normalizedToken) return state
-      const nextQueue = state.queue.filter(
-        (item) => item.approval_token !== normalizedToken
+
+      const nextApprovalsByToken = { ...state.approvalsByToken }
+      const nextApprovalOrder = state.approvalOrder.filter(
+        (token) => token !== normalizedToken
       )
-      const activeApprovalToken = state.activeApprovalToken
-      const lockedPending = activeApprovalToken
-        ? nextQueue.find((item) => item.approval_token === activeApprovalToken) ?? null
-        : null
+      const current = nextApprovalsByToken[normalizedToken]
+
+      if (state.isApproving && state.activeApprovalToken === normalizedToken && current) {
+        nextApprovalsByToken[normalizedToken] = {
+          ...current,
+          phase: "executing",
+          updated_at: Date.now(),
+        }
+      } else {
+        delete nextApprovalsByToken[normalizedToken]
+      }
+
       return {
-        queue: nextQueue,
-        pending: lockedPending ?? nextQueue[0] ?? null,
-        isApproving: activeApprovalToken ? true : false,
+        ...state,
+        approvalsByToken: nextApprovalsByToken,
+        approvalOrder: nextApprovalOrder,
+        ...deriveProjection(
+          nextApprovalsByToken,
+          nextApprovalOrder,
+          state.activeApprovalToken,
+          state.isApproving
+        ),
       }
     }),
-  setApproving: (approving) => set({ isApproving: approving }),
+  setApproving: (isApproving) =>
+    set((state) => ({
+      ...state,
+      ...deriveProjection(
+        state.approvalsByToken,
+        state.approvalOrder,
+        isApproving ? state.activeApprovalToken : null,
+        isApproving
+      ),
+    })),
   setRecentApprovedExecution: (execution) => set({ recentApprovedExecution: execution }),
   clearRecentApprovedExecution: () => {
     if (recentApprovedExecutionTimer) {
@@ -169,20 +399,43 @@ export const useBridgeApprovalStore = create<BridgeApprovalState>((set) => ({
   },
   clear: () =>
     set((state) => {
-      const nextQueue = state.queue.slice(1)
-      const activeApprovalToken = state.activeApprovalToken
-      const lockedPending = activeApprovalToken
-        ? nextQueue.find((item) => item.approval_token === activeApprovalToken) ?? null
-        : null
+      const tokenToClear = state.pending?.approval_token
+      if (!tokenToClear) return state
+      const normalizedToken = normalizeApprovalToken(tokenToClear)
+      const nextApprovalsByToken = { ...state.approvalsByToken }
+      const nextApprovalOrder = state.approvalOrder.filter(
+        (token) => token !== normalizedToken
+      )
+      const current = nextApprovalsByToken[normalizedToken]
+
+      if (state.isApproving && state.activeApprovalToken === normalizedToken && current) {
+        nextApprovalsByToken[normalizedToken] = {
+          ...current,
+          phase: "executing",
+          updated_at: Date.now(),
+        }
+      } else {
+        delete nextApprovalsByToken[normalizedToken]
+      }
+
       return {
-        queue: nextQueue,
-        pending: lockedPending ?? nextQueue[0] ?? null,
-        isApproving: activeApprovalToken ? true : false,
+        ...state,
+        approvalsByToken: nextApprovalsByToken,
+        approvalOrder: nextApprovalOrder,
+        ...deriveProjection(
+          nextApprovalsByToken,
+          nextApprovalOrder,
+          state.activeApprovalToken,
+          state.isApproving
+        ),
       }
     }),
   clearAll: () => {
     inFlightApprovalTokens.clear()
-    set({ queue: [], pending: null, isApproving: false })
+    set((state) => ({
+      ...state,
+      ...emptyProjection(),
+    }))
   },
 }))
 
@@ -236,10 +489,13 @@ export function beginBridgeApprovalExecution(approvalToken: string | null | unde
   if (inFlightApprovalTokens.has(normalizedToken)) return false
   inFlightApprovalTokens.add(normalizedToken)
   useBridgeApprovalStore.setState((state) => ({
-    isApproving: true,
-    activeApprovalToken: normalizedToken,
-    pending:
-      state.queue.find((item) => item.approval_token === normalizedToken) ?? state.pending,
+    ...state,
+    ...deriveProjection(
+      state.approvalsByToken,
+      state.approvalOrder,
+      normalizedToken,
+      true
+    ),
   }))
   return true
 }
@@ -249,15 +505,28 @@ export function finishBridgeApprovalExecution(approvalToken: string | null | und
   if (!normalizedToken) return
   inFlightApprovalTokens.delete(normalizedToken)
   useBridgeApprovalStore.setState((state) => {
+    const nextApprovalsByToken = { ...state.approvalsByToken }
+    const nextApprovalOrder = state.approvalOrder.filter(
+      (token) => token !== normalizedToken
+    )
+    const activeNode = nextApprovalsByToken[normalizedToken]
+    if (activeNode?.phase === "executing") {
+      delete nextApprovalsByToken[normalizedToken]
+    }
+
     const stillApproving = inFlightApprovalTokens.size > 0
     const nextActiveApprovalToken = stillApproving ? state.activeApprovalToken : null
-    const lockedPending = nextActiveApprovalToken
-      ? state.queue.find((item) => item.approval_token === nextActiveApprovalToken) ?? null
-      : null
+
     return {
-      isApproving: stillApproving,
-      activeApprovalToken: nextActiveApprovalToken,
-      pending: lockedPending ?? state.queue[0] ?? null,
+      ...state,
+      approvalsByToken: nextApprovalsByToken,
+      approvalOrder: nextApprovalOrder,
+      ...deriveProjection(
+        nextApprovalsByToken,
+        nextApprovalOrder,
+        nextActiveApprovalToken,
+        stillApproving
+      ),
     }
   })
 }

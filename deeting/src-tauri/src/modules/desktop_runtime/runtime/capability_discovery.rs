@@ -511,7 +511,8 @@ fn score_delegation_target(
         score += (overlap.min(4) as f64) * 6.0;
     }
 
-    let callable_count = profile.callable_mcp_tool_ids.len() + profile.callable_skill_action_refs.len();
+    let callable_count =
+        profile.callable_mcp_tool_ids.len() + profile.callable_skill_action_refs.len();
     score += match callable_count {
         0 => 2.0,
         1 => 8.0,
@@ -519,10 +520,8 @@ fn score_delegation_target(
         _ => 16.0,
     };
 
-    let modality_fit = score_delegation_modality_fit(
-        profile.invocation_kind.as_str(),
-        normalized_query.as_str(),
-    );
+    let modality_fit =
+        score_delegation_modality_fit(profile.invocation_kind.as_str(), normalized_query.as_str());
     score += (modality_fit as f64) * 20.0;
 
     if profile.preferred_for_image_generation && modality_fit >= 1.0 {
@@ -601,7 +600,8 @@ fn serialize_delegation_target(
     detail_level: SearchSdkDetailLevel,
 ) -> Value {
     let description = profile.description.clone().unwrap_or_default();
-    let callable_count = profile.callable_mcp_tool_ids.len() + profile.callable_skill_action_refs.len();
+    let callable_count =
+        profile.callable_mcp_tool_ids.len() + profile.callable_skill_action_refs.len();
 
     let mut value = json!({
         "agent_id": profile.id,
@@ -2869,10 +2869,21 @@ mod tests {
             SearchSdkDetailLevel::Summary,
         );
 
-        assert_eq!(summary["delegation_targets"].as_array().map(Vec::len), Some(1));
-        assert_eq!(summary["delegation_targets"][0]["agent_id"], json!("agent-da-vinci"));
-        assert_eq!(summary["delegation_targets"][0]["recommended_tool"], json!("delegate_task"));
-        assert!(summary["delegation_targets"][0].get("callable_mcp_tool_ids").is_none());
+        assert_eq!(
+            summary["delegation_targets"].as_array().map(Vec::len),
+            Some(1)
+        );
+        assert_eq!(
+            summary["delegation_targets"][0]["agent_id"],
+            json!("agent-da-vinci")
+        );
+        assert_eq!(
+            summary["delegation_targets"][0]["recommended_tool"],
+            json!("delegate_task")
+        );
+        assert!(summary["delegation_targets"][0]
+            .get("callable_mcp_tool_ids")
+            .is_none());
     }
 
     #[test]
@@ -2906,9 +2917,18 @@ mod tests {
         );
 
         assert_eq!(full["delegation_targets"].as_array().map(Vec::len), Some(1));
-        assert_eq!(full["delegation_targets"][0]["callable_mcp_tool_ids"], json!(["tool.image.generate"]));
-        assert_eq!(full["delegation_targets"][0]["guidance_skill_ids"], json!(["skill.prompt-polish"]));
-        assert_eq!(full["delegation_targets"][0]["recommended_tool"], json!("delegate_task"));
+        assert_eq!(
+            full["delegation_targets"][0]["callable_mcp_tool_ids"],
+            json!(["tool.image.generate"])
+        );
+        assert_eq!(
+            full["delegation_targets"][0]["guidance_skill_ids"],
+            json!(["skill.prompt-polish"])
+        );
+        assert_eq!(
+            full["delegation_targets"][0]["recommended_tool"],
+            json!("delegate_task")
+        );
     }
 
     #[test]
@@ -2979,7 +2999,12 @@ mod tests {
             ),
         ];
 
-        assert!(ranked[0].0 > ranked[1].0, "da_vinci={}, researcher={}", ranked[0].0, ranked[1].0);
+        assert!(
+            ranked[0].0 > ranked[1].0,
+            "da_vinci={}, researcher={}",
+            ranked[0].0,
+            ranked[1].0
+        );
     }
 
     #[test]

@@ -367,13 +367,19 @@ mod tests {
 
         let value = serde_json::to_value(action).expect("serialize action");
 
-        assert_eq!(value.get("kind").and_then(|item| item.as_str()), Some("scroll"));
+        assert_eq!(
+            value.get("kind").and_then(|item| item.as_str()),
+            Some("scroll")
+        );
         assert_eq!(value.get("tabId").and_then(|item| item.as_i64()), Some(42));
         assert_eq!(
             value.get("direction").and_then(|item| item.as_str()),
             Some("down")
         );
-        assert_eq!(value.get("amount").and_then(|item| item.as_i64()), Some(600));
+        assert_eq!(
+            value.get("amount").and_then(|item| item.as_i64()),
+            Some(600)
+        );
     }
 
     #[test]
