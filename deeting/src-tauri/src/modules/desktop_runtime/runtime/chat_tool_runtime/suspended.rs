@@ -90,8 +90,6 @@ impl SuspendedChatToolExecution {
             reasoning_effort: self.reasoning_effort,
             active_capability: self.active_capability,
             active_skill_context: self.active_skill_context,
-            discovery_gate_forced: false,
-            verification_gate_forced: false,
             runtime_metrics: self.runtime_metrics,
             last_capability_snapshot: self.last_capability_snapshot,
             last_response: self.last_response,

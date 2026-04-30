@@ -549,6 +549,7 @@ pub(crate) fn normalize_chat_completion_response(raw: serde_json::Value) -> serd
     let finish_reason = extract_finish_reason(&raw);
     if raw.get("content").is_some() && raw.get("tool_calls").is_some() {
         let mut result = raw;
+        promote_terminal_reasoning_content(&mut result);
         if let Some(reason) = finish_reason {
             result["finish_reason"] = serde_json::json!(reason);
         }
@@ -638,8 +639,16 @@ pub(crate) fn normalize_chat_completion_response(raw: serde_json::Value) -> serd
             }
         }
     }
+    let promote_reasoning_to_content = content.trim().is_empty()
+        && normalized_tool_calls.is_empty()
+        && !reasoning_content.trim().is_empty();
+    if promote_reasoning_to_content {
+        content = reasoning_content.trim().to_string();
+        reasoning_content.clear();
+    }
+
     let mut result = serde_json::json!({ "content": content, "tool_calls": normalized_tool_calls });
-    if !reasoning_content.is_empty() {
+    if !reasoning_content.trim().is_empty() {
         result["reasoning_content"] = serde_json::json!(reasoning_content);
     }
     if let Some(usage) = usage {
@@ -649,6 +658,36 @@ pub(crate) fn normalize_chat_completion_response(raw: serde_json::Value) -> serd
         result["finish_reason"] = serde_json::json!(reason);
     }
     result
+}
+
+fn promote_terminal_reasoning_content(result: &mut serde_json::Value) {
+    let content = extract_text_content(result.get("content"));
+    if !content.trim().is_empty() {
+        return;
+    }
+
+    let has_tool_calls = result
+        .get("tool_calls")
+        .and_then(|value| value.as_array())
+        .is_some_and(|items| !items.is_empty());
+    if has_tool_calls {
+        return;
+    }
+
+    let Some(reasoning_content) = result
+        .get("reasoning_content")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+    else {
+        return;
+    };
+
+    if let Some(object) = result.as_object_mut() {
+        object.insert("content".to_string(), serde_json::json!(reasoning_content));
+        object.remove("reasoning_content");
+    }
 }
 
 fn extract_finish_reason(raw: &serde_json::Value) -> Option<String> {
@@ -826,6 +865,65 @@ mod tests {
         assert_eq!(normalized["finish_reason"], json!("end_turn"));
         assert_eq!(normalized["usage"]["input_tokens"], json!(28));
         assert_eq!(normalized["usage"]["output_tokens"], json!(9));
+    }
+
+    #[test]
+    fn normalize_chat_completion_response_promotes_reasoning_only_terminal_answer() {
+        let normalized = super::normalize_chat_completion_response(json!({
+            "choices": [{
+                "message": {
+                    "content": null,
+                    "reasoning_content": "Final visible answer."
+                },
+                "finish_reason": "stop"
+            }]
+        }));
+
+        assert_eq!(normalized["content"], json!("Final visible answer."));
+        assert_eq!(normalized["tool_calls"], json!([]));
+        assert!(normalized.get("reasoning_content").is_none());
+        assert_eq!(normalized["finish_reason"], json!("stop"));
+    }
+
+    #[test]
+    fn normalize_chat_completion_response_promotes_flat_reasoning_only_terminal_answer() {
+        let normalized = super::normalize_chat_completion_response(json!({
+            "content": "",
+            "reasoning_content": "Flat final answer.",
+            "tool_calls": [],
+            "finish_reason": "stop"
+        }));
+
+        assert_eq!(normalized["content"], json!("Flat final answer."));
+        assert!(normalized.get("reasoning_content").is_none());
+        assert_eq!(normalized["finish_reason"], json!("stop"));
+    }
+
+    #[test]
+    fn normalize_chat_completion_response_keeps_reasoning_with_tool_calls() {
+        let normalized = super::normalize_chat_completion_response(json!({
+            "choices": [{
+                "message": {
+                    "content": null,
+                    "reasoning_content": "Need to call the tool.",
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "function": {
+                            "name": "search_sdk",
+                            "arguments": "{\"query\":\"fund\"}"
+                        }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }]
+        }));
+
+        assert_eq!(normalized["content"], json!(""));
+        assert_eq!(
+            normalized["reasoning_content"],
+            json!("Need to call the tool.")
+        );
+        assert_eq!(normalized["tool_calls"][0]["name"], json!("search_sdk"));
     }
 
     #[test]

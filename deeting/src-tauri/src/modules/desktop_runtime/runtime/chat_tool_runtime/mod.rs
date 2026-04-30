@@ -267,8 +267,6 @@ struct LocalChatToolRuntimeState {
     reasoning_effort: Option<String>,
     active_capability: Option<LocalCapabilityActivationState>,
     active_skill_context: Option<ActiveSkillContextState>,
-    discovery_gate_forced: bool,
-    verification_gate_forced: bool,
     diting_think_consumed: bool,
     captured_reasoning: Option<String>,
     runtime_metrics: RuntimeMetricsAccumulator,
@@ -310,96 +308,6 @@ fn extract_initial_task_query(messages: &[LocalChatInputMessage]) -> Option<Stri
         .find(|message| message.role.eq_ignore_ascii_case("user"))
         .map(|message| message.content.trim().to_string())
         .filter(|value| !value.is_empty())
-}
-
-fn is_explanatory_answer_request(query: &str) -> bool {
-    let normalized = query.trim().to_ascii_lowercase();
-    if normalized.is_empty() {
-        return false;
-    }
-
-    let explanatory_markers = [
-        "why",
-        "what is",
-        "what are",
-        "how does",
-        "how do",
-        "relationship",
-        "difference",
-        "explain",
-        "meaning",
-        "define",
-        "为什么",
-        "是什么",
-        "什么是",
-        "有什么关系",
-        "关系",
-        "区别",
-        "解释",
-        "说明",
-        "讲讲",
-        "介绍",
-    ];
-    let action_markers = [
-        "安装", "创建", "修改", "删除", "运行", "执行", "打开", "抓取", "搜索", "查找", "验证",
-        "保存", "install", "create", "modify", "delete", "run", "execute", "open", "scrape",
-        "search", "find", "verify", "save",
-    ];
-
-    explanatory_markers
-        .iter()
-        .any(|marker| normalized.contains(marker))
-        && !action_markers
-            .iter()
-            .any(|marker| normalized.contains(marker))
-}
-
-fn response_mentions_pending_check(response: &serde_json::Value) -> bool {
-    let content = response
-        .get("content")
-        .map(extract_resume_response_text)
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    [
-        "not verified",
-        "verification remains pending",
-        "could not verify",
-        "unable to verify",
-        "需要进一步验证",
-        "尚未验证",
-        "无法验证",
-    ]
-    .iter()
-    .any(|marker| content.contains(marker))
-}
-
-fn append_policy_gate_retry_messages(
-    orchestrated_messages: &mut Vec<LocalChatInputMessage>,
-    response: &serde_json::Value,
-    feedback: &str,
-) {
-    let assistant_content = response
-        .get("content")
-        .map(extract_resume_response_text)
-        .unwrap_or_default()
-        .trim()
-        .to_string();
-    if !assistant_content.is_empty() {
-        orchestrated_messages.push(LocalChatInputMessage {
-            role: "assistant".to_string(),
-            content: assistant_content,
-            tool_calls: vec![],
-            tool_call_id: None,
-            name: None,
-        });
-    }
-    orchestrated_messages.push(LocalChatInputMessage {
-        role: "user".to_string(),
-        content: feedback.to_string(),
-        tool_calls: vec![],
-        tool_call_id: None,
-        name: None,
-    });
 }
 
 pub(crate) async fn run_local_chat_complete_with_tools(
@@ -469,8 +377,6 @@ pub(crate) async fn run_local_chat_complete_with_tools(
         reasoning_effort,
         active_capability: None,
         active_skill_context: None,
-        discovery_gate_forced: false,
-        verification_gate_forced: false,
         diting_think_consumed: false,
         captured_reasoning: None,
         runtime_metrics: RuntimeMetricsAccumulator::default(),
@@ -561,75 +467,6 @@ async fn continue_local_chat_complete_with_tools(
 
         if extract_chat_tool_calls(&response).is_empty() {
             let effective_tool_call_meta = build_state_effective_tool_call_meta(&state);
-            if let Some(query) = state.task_query.as_deref() {
-                let search_sdk_allowed = effective_allowed_tool_names
-                    .iter()
-                    .any(|name| name == "search_sdk");
-                let already_searched = effective_tool_call_meta.iter().any(|item| {
-                    item.get("name").and_then(serde_json::Value::as_str) == Some("search_sdk")
-                });
-                let policy_gates_allowed = !is_explanatory_answer_request(query);
-                if policy_gates_allowed
-                    && search_sdk_allowed
-                    && !already_searched
-                    && !state.discovery_gate_forced
-                {
-                    let advisory = Self_::consult(
-                        app_state.mcp.store.as_ref(),
-                        DecisionLocus::Discovery,
-                        query,
-                        4,
-                    )
-                    .await;
-                    if advisory.weight_for("search_sdk_early") >= 0.15 {
-                        state.discovery_gate_forced = true;
-                        state.last_response = Some(response.clone());
-                        append_policy_gate_retry_messages(
-                            &mut state.orchestrated_messages,
-                            &response,
-                            "Task policy gate: this task family requires an early `search_sdk` consult before final completion. In the next response, either call `search_sdk` or explicitly state that runtime discovery remains pending and why.",
-                        );
-                        continue;
-                    }
-                }
-
-                let has_concrete_verification = effective_tool_call_meta.iter().any(|item| {
-                    let tool_name = item.get("name").and_then(serde_json::Value::as_str);
-                    let success =
-                        item.get("status").and_then(serde_json::Value::as_str) == Some("success");
-                    success
-                        && !matches!(
-                            tool_name,
-                            Some("search_sdk" | "query_task_policy" | "attach_capability")
-                        )
-                }) || response_mentions_pending_check(&response);
-                let has_verification_path = effective_allowed_tool_names.iter().any(|name| {
-                    !matches!(name.as_str(), "query_task_policy" | "attach_capability")
-                });
-                if policy_gates_allowed
-                    && has_verification_path
-                    && !has_concrete_verification
-                    && !state.verification_gate_forced
-                {
-                    let advisory = Self_::consult(
-                        app_state.mcp.store.as_ref(),
-                        DecisionLocus::Verification,
-                        query,
-                        4,
-                    )
-                    .await;
-                    if advisory.weight_for("stronger_checks") >= 0.15 {
-                        state.verification_gate_forced = true;
-                        state.last_response = Some(response.clone());
-                        append_policy_gate_retry_messages(
-                            &mut state.orchestrated_messages,
-                            &response,
-                            "Task policy gate: stronger verification is required before final completion for this task family. In the next response, perform a concrete verification step with the available tools, or explicitly state that verification remains pending and why.",
-                        );
-                        continue;
-                    }
-                }
-            }
             return Ok(LocalChatToolRuntimeOutput {
                 captured_reasoning: state.captured_reasoning.clone(),
                 response: enrich_response_with_tool_trace(
@@ -659,8 +496,6 @@ async fn continue_local_chat_complete_with_tools(
             reasoning_effort: state.reasoning_effort.clone(),
             active_capability: state.active_capability.clone(),
             active_skill_context: state.active_skill_context.clone(),
-            discovery_gate_forced: state.discovery_gate_forced,
-            verification_gate_forced: state.verification_gate_forced,
             diting_think_consumed: state.diting_think_consumed,
             captured_reasoning: state.captured_reasoning.clone(),
             runtime_metrics: state.runtime_metrics.clone(),
@@ -1457,8 +1292,6 @@ async fn process_chat_tool_calls(
                 reasoning_effort: state.reasoning_effort.clone(),
                 active_capability: state.active_capability.clone(),
                 active_skill_context: state.active_skill_context.clone(),
-                discovery_gate_forced: state.discovery_gate_forced,
-                verification_gate_forced: state.verification_gate_forced,
                 runtime_metrics: state.runtime_metrics.clone(),
                 last_capability_snapshot: state.last_capability_snapshot.clone(),
                 last_response: state.last_response.clone(),

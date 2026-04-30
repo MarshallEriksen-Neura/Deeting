@@ -69,7 +69,7 @@ fn guidance_for_decision_point(decision_point: &str) -> Option<String> {
             "Execution priors should influence whether escalation into `execute_code_plan` is justified or whether lighter direct tools should stay preferred.".to_string(),
         ),
         DECISION_POINT_VERIFICATION => Some(
-            "Verification priors should tighten or relax completion checks before returning the answer.".to_string(),
+            "Verification priors are advisory telemetry for evidence strength. They must not override the user's requested deliverable or introduce extra verification narration unless verification is part of the user's goal.".to_string(),
         ),
         _ => None,
     }

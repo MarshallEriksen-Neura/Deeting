@@ -173,7 +173,7 @@ export async function refreshBridgePendingApprovalsFromCanonical({
     const livePending = useBridgeApprovalStore.getState().pending
     const livePendingToken = normalizeToken(livePending?.approval_token)
     const livePendingExecutionId = normalizeToken(livePending?.meta.execution_graph_execution_id)
-    if (livePendingToken && livePendingExecutionId) {
+    if (livePending && livePendingToken && livePendingExecutionId) {
       orderedApprovals = [livePending]
     }
   }

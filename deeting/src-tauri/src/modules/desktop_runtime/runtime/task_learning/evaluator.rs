@@ -541,7 +541,7 @@ fn compute_policy_delta(
             },
             state,
             rationale: format!(
-                "Verification judgment '{}' with user signal '{}' updated the completion-check prior.",
+                "Verification judgment '{}' with user signal '{}' updated the evidence-strength prior.",
                 outcome.verification_result, outcome.user_response_signal
             ),
         }),

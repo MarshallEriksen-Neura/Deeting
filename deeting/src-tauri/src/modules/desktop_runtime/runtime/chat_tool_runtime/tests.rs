@@ -215,23 +215,6 @@ fn delegate_task_preflight_allows_empty_bound_surface_for_image_agent() {
     );
 }
 #[test]
-fn explanatory_answer_requests_skip_policy_gate_forcing() {
-    assert!(is_explanatory_answer_request(
-        "能否详细地给我解释一下 ai 自学习应用和飞轮有什么关系?"
-    ));
-    assert!(is_explanatory_answer_request(
-        "Explain the relationship between AI learning apps and flywheels"
-    ));
-
-    assert!(!is_explanatory_answer_request(
-        "搜索并验证 ai 自学习应用和飞轮有什么关系?"
-    ));
-    assert!(!is_explanatory_answer_request(
-        "Install a skill and explain whether it worked"
-    ));
-}
-
-#[test]
 fn canonicalize_tool_name_for_allowed_list_accepts_underscore_variant() {
     let canonical = canonicalize_tool_name_for_allowed_list(
         "tavily_search",
@@ -871,8 +854,6 @@ fn build_max_rounds_exceeded_response_appends_visible_notice() {
         reasoning_effort: None,
         active_capability: None,
         active_skill_context: None,
-        discovery_gate_forced: false,
-        verification_gate_forced: false,
         runtime_metrics: RuntimeMetricsAccumulator::default(),
         diting_think_consumed: false,
         captured_reasoning: None,
@@ -959,8 +940,6 @@ fn rewind_round_for_post_approval_continuation_does_not_consume_user_round_budge
         reasoning_effort: None,
         active_capability: None,
         active_skill_context: None,
-        discovery_gate_forced: false,
-        verification_gate_forced: false,
         runtime_metrics: RuntimeMetricsAccumulator::default(),
         diting_think_consumed: false,
         captured_reasoning: None,

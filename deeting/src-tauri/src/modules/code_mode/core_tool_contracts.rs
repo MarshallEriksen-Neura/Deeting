@@ -128,7 +128,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
         },
         CoreToolContract {
             name: "query_task_policy",
-            description: "Read bounded task-learning priors for one decision point under the current task fingerprint. Use this at explicit decision gates such as route choice, whether to call search_sdk early, whether to attach a capability, whether execute_code_plan is justified, or whether stronger verification is needed. This is read-only policy retrieval, not execution.",
+            description: "Read bounded task-learning priors for one decision point under the current task fingerprint. Use this at explicit decision gates such as route choice, whether to call search_sdk early, whether to attach a capability, whether execute_code_plan is justified, or whether a user-requested verification needs stronger evidence. This is read-only policy retrieval and must not create a new user goal or replace the requested deliverable.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -1238,6 +1238,20 @@ mod tests {
         assert!(!tool.read_only);
         assert!(tool.mutating);
         assert_eq!(tool.risk_level, "LOW");
+    }
+
+    #[test]
+    fn query_task_policy_description_keeps_policy_advisory() {
+        let tool = desktop_runtime_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == "query_task_policy")
+            .expect("query_task_policy core tool should exist");
+
+        assert!(tool.description.contains("read-only policy retrieval"));
+        assert!(tool.description.contains("must not create a new user goal"));
+        assert!(tool
+            .description
+            .contains("replace the requested deliverable"));
     }
 
     #[test]

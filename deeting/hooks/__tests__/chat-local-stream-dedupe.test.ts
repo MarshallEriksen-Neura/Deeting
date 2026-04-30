@@ -34,6 +34,42 @@ describe("local chat stream dedupe helpers", () => {
     ).toBe(false)
   })
 
+  it("keeps final terminal text after streamed local tool blocks", () => {
+    expect(
+      shouldAppendFinalResponseBlocks({
+        currentBlocks: [
+          {
+            type: "tool_result",
+            toolName: "search_sdk",
+            status: "success",
+            result: { ok: true },
+          } as MessageBlock,
+        ],
+        responseBlocks: [{ type: "text", content: "final answer" } as MessageBlock],
+        receivedStructuredBlocks: true,
+      })
+    ).toBe(true)
+  })
+
+  it("keeps final terminal thought blocks not already streamed", () => {
+    expect(
+      shouldAppendFinalResponseBlocks({
+        currentBlocks: [
+          {
+            type: "tool_result",
+            toolName: "search_sdk",
+            status: "success",
+            result: { ok: true },
+          } as MessageBlock,
+        ],
+        responseBlocks: [
+          { type: "thought", content: "provider returned reasoning only" } as MessageBlock,
+        ],
+        receivedStructuredBlocks: true,
+      })
+    ).toBe(true)
+  })
+
   it("keeps final tool status blocks from completion payload for stream cleanup", () => {
     expect(
       extractAssistantResponseToolBlocks({

@@ -292,6 +292,14 @@ export function extractAssistantResponseToolBlocks(responseBody: Record<string, 
   )
 }
 
+function finalResponseBlockKey(block: MessageBlock): string {
+  const record = { ...(block as unknown as Record<string, unknown>) }
+  delete record.id
+  delete record.streamState
+  delete record.displayMode
+  return JSON.stringify(record)
+}
+
 function extractAssistantResponseBlocks(responseBody: Record<string, unknown>): MessageBlock[] {
   const choices = Array.isArray(responseBody.choices) ? responseBody.choices : []
   const firstChoice = choices[0]
@@ -339,10 +347,13 @@ export function shouldAppendFinalResponseBlocks({
   receivedStructuredBlocks: boolean
 }): boolean {
   if (responseBlocks.length === 0) return false
-  if (receivedStructuredBlocks) return false
 
   const responseHasOnlyText = responseBlocks.every((block) => block.type === "text")
-  if (!responseHasOnlyText) return true
+  if (!responseHasOnlyText) {
+    if (!receivedStructuredBlocks) return true
+    const currentBlockKeys = new Set(currentBlocks.map(finalResponseBlockKey))
+    return responseBlocks.some((block) => !currentBlockKeys.has(finalResponseBlockKey(block)))
+  }
 
   const currentText = extractAssistantTextFromBlocks(currentBlocks).trim()
   const responseText = extractAssistantTextFromBlocks(responseBlocks).trim()
