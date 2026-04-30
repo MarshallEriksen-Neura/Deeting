@@ -3,7 +3,7 @@
 import React from "react"
 import { render, waitFor } from "@testing-library/react"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
-import { useBridgeApprovalStore } from "@/lib/chat/bridge-approval-store"
+import { beginBridgeApprovalExecution, finishBridgeApprovalExecution, useBridgeApprovalStore } from "@/lib/chat/bridge-approval-store"
 import { useMessageToolApproval } from "@/hooks/chat/use-message-tool-approval"
 
 function Harness({
@@ -213,7 +213,43 @@ describe("useMessageToolApproval", () => {
     })
   })
 
-  it("does not queue approvals from assistant blocks in tauri runtime", async () => {
+  it("keeps the active approval token pinned while new queue items arrive", async () => {
+    useBridgeApprovalStore.getState().replaceQueue([
+      {
+        kind: "bridge_mcp",
+        approval_token: "approval-a",
+        tool_name: "firecrawl_browser_create",
+        arguments: {},
+        meta: { call_id: "call-a" },
+      },
+    ])
+
+    expect(beginBridgeApprovalExecution("approval-a")).toBe(true)
+
+    useBridgeApprovalStore.getState().replaceQueue([
+      {
+        kind: "bridge_mcp",
+        approval_token: "approval-b",
+        tool_name: "firecrawl_browser_open",
+        arguments: {},
+        meta: { call_id: "call-b" },
+      },
+      {
+        kind: "bridge_mcp",
+        approval_token: "approval-a",
+        tool_name: "firecrawl_browser_create",
+        arguments: {},
+        meta: { call_id: "call-a" },
+      },
+    ])
+
+    expect(useBridgeApprovalStore.getState().pending?.approval_token).toBe("approval-a")
+
+    finishBridgeApprovalExecution("approval-a")
+    expect(useBridgeApprovalStore.getState().pending?.approval_token).toBe("approval-b")
+  })
+
+  it("queues live approvals from assistant blocks in tauri runtime", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     ;(window as Record<string, unknown>).__TAURI__ = {}
 
@@ -246,8 +282,70 @@ describe("useMessageToolApproval", () => {
     )
 
     await waitFor(() => {
-      expect(useBridgeApprovalStore.getState().pending).toBeNull()
-      expect(useBridgeApprovalStore.getState().queue).toEqual([])
+      expect(useBridgeApprovalStore.getState().pending).toMatchObject({
+        approval_token: "approval-tauri-1",
+        tool_name: "shell_execute",
+        meta: {
+          call_id: "call-tauri-1",
+          message_id: "assistant-tauri-approval-1",
+        },
+      })
+    })
+  })
+
+  it("upgrades an existing queued approval when a later block with the same token carries graph identifiers", async () => {
+    useBridgeApprovalStore.getState().setPending({
+      kind: "bridge_mcp",
+      approval_token: "approval-upgrade-1",
+      tool_name: "browser_open_tab",
+      arguments: { url: "https://x.com/home" },
+      meta: {
+        call_id: "call-upgrade-1",
+        message_id: "assistant-upgrade-1",
+      },
+    })
+
+    render(
+      <Harness
+        messageId="assistant-upgrade-1"
+        blocks={[
+          {
+            id: "tool-call-upgrade-1",
+            type: "tool_call",
+            callId: "call-upgrade-1",
+            toolName: "browser_open_tab",
+            status: "running",
+          },
+          {
+            id: "tool-result-upgrade-1",
+            type: "tool_result",
+            callId: "call-upgrade-1",
+            toolName: "browser_open_tab",
+            status: "requires_approval",
+            result: {
+              status: "REQUIRES_APPROVAL",
+              approval_token: "approval-upgrade-1",
+              tool_name: "browser_open_tab",
+              arguments: { url: "https://x.com/home" },
+              execution_graph_execution_id: "graph-upgrade-1",
+              execution_graph_gate_node_id: "approval_gate:call-upgrade-1",
+              execution_graph_tool_node_id: "tool_call:call-upgrade-1",
+            },
+          },
+        ]}
+      />
+    )
+
+    await waitFor(() => {
+      expect(useBridgeApprovalStore.getState().pending).toMatchObject({
+        approval_token: "approval-upgrade-1",
+        meta: {
+          call_id: "call-upgrade-1",
+          execution_graph_execution_id: "graph-upgrade-1",
+          execution_graph_gate_node_id: "approval_gate:call-upgrade-1",
+          execution_graph_tool_node_id: "tool_call:call-upgrade-1",
+        },
+      })
     })
   })
 })

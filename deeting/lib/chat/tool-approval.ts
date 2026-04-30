@@ -2,6 +2,7 @@
 
 import type { MessageBlock, ToolResultBlock } from "@/lib/chat/message-protocol"
 import type { Message } from "@/lib/chat/message-types"
+import { extractRootExecutionIdFromMessage } from "@/lib/chat/execution-tree"
 import {
   type BridgeToolPendingApproval,
   useBridgeApprovalStore,
@@ -396,7 +397,33 @@ export function findLatestUnresolvedToolApproval(
 
 export function enqueueBridgeToolApproval(approval: BridgeToolPendingApproval): boolean {
   const state = useBridgeApprovalStore.getState()
-  if (state.queue.some((item) => item.approval_token === approval.approval_token)) {
+  const existing = state.queue.find((item) => item.approval_token === approval.approval_token)
+  if (existing) {
+    const existingHasGraphId = Boolean(existing.meta.execution_graph_execution_id)
+    const incomingHasGraphId = Boolean(approval.meta.execution_graph_execution_id)
+    const existingHasGateId = Boolean(existing.meta.execution_graph_gate_node_id)
+    const incomingHasGateId = Boolean(approval.meta.execution_graph_gate_node_id)
+    const existingHasToolNodeId = Boolean(existing.meta.execution_graph_tool_node_id)
+    const incomingHasToolNodeId = Boolean(approval.meta.execution_graph_tool_node_id)
+
+    const shouldUpgrade =
+      (!existingHasGraphId && incomingHasGraphId) ||
+      (!existingHasGateId && incomingHasGateId) ||
+      (!existingHasToolNodeId && incomingHasToolNodeId) ||
+      (!existing.meta.message_id && Boolean(approval.meta.message_id))
+
+    if (shouldUpgrade) {
+      state.replacePendingByToken({
+        ...existing,
+        ...approval,
+        meta: {
+          ...existing.meta,
+          ...approval.meta,
+        },
+      })
+      return true
+    }
+
     return false
   }
   state.enqueuePending(approval)
@@ -425,6 +452,60 @@ export function findMessageIdForToolCall(
   }
 
   return undefined
+}
+
+export function resolveApprovalExecutionMetaFromMessage(
+  message: Message | undefined,
+  approval: BridgeToolPendingApproval
+) {
+  const existing = {
+    execution_graph_execution_id: approval.meta.execution_graph_execution_id,
+    execution_graph_gate_node_id: approval.meta.execution_graph_gate_node_id,
+    execution_graph_tool_node_id: approval.meta.execution_graph_tool_node_id,
+  }
+  if (!message || !Array.isArray(message.blocks)) {
+    return existing
+  }
+
+  const normalizedCallId = approval.meta.call_id?.trim()
+  let resolvedExecutionId = existing.execution_graph_execution_id
+  let resolvedGateNodeId = existing.execution_graph_gate_node_id
+  let resolvedToolNodeId = existing.execution_graph_tool_node_id
+
+  for (let index = message.blocks.length - 1; index >= 0; index -= 1) {
+    const block = message.blocks[index]
+    if ((block.type !== "tool_result" && block.type !== "tool_call") || !block.callId) {
+      continue
+    }
+    if (normalizedCallId && block.callId.trim() !== normalizedCallId) {
+      continue
+    }
+    const result = toRecord(block.type === "tool_result" ? block.result : null)
+    resolvedExecutionId =
+      resolvedExecutionId ??
+      asTrimmedString(result?.execution_graph_execution_id) ??
+      undefined
+    resolvedGateNodeId =
+      resolvedGateNodeId ??
+      asTrimmedString(result?.execution_graph_gate_node_id) ??
+      undefined
+    resolvedToolNodeId =
+      resolvedToolNodeId ??
+      asTrimmedString(result?.execution_graph_tool_node_id) ??
+      undefined
+    if (resolvedExecutionId && resolvedGateNodeId && resolvedToolNodeId) {
+      break
+    }
+  }
+
+  resolvedExecutionId =
+    resolvedExecutionId ?? extractRootExecutionIdFromMessage(message) ?? undefined
+
+  return {
+    execution_graph_execution_id: resolvedExecutionId,
+    execution_graph_gate_node_id: resolvedGateNodeId,
+    execution_graph_tool_node_id: resolvedToolNodeId,
+  }
 }
 
 export function buildBridgeToolApprovalFromPendingSnapshot(

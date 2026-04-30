@@ -854,6 +854,35 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
             }),
         },
         CoreToolContract {
+            name: "browser_scroll",
+            description: "Ask the connected browser agent extension to scroll the browser page up or down by a pixel amount.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "tab_id": { "type": "integer", "description": "Browser tab identifier to target." },
+                    "direction": { "type": "string", "enum": ["up", "down"], "description": "Scroll direction." },
+                    "amount": { "type": "integer", "description": "Optional positive pixel amount. Defaults to the extension's standard page scroll amount." }
+                },
+                "required": ["tab_id", "direction"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "ok": {"type": "boolean"}
+                },
+                "required": ["ok"]
+            }),
+            permission_scope: &["browser_agent_write", "local_runtime"],
+            read_only: false,
+            mutating: true,
+            risk_level: "LOW",
+            example_arguments: json!({
+                "tab_id": 42,
+                "direction": "down",
+                "amount": 600
+            }),
+        },
+        CoreToolContract {
             name: "browser_retry_with_relocate",
             description: "Retry a browser click or type action after refreshing page context, waiting for the target, and scrolling it into view.",
             input_schema: json!({
@@ -1005,6 +1034,7 @@ fn core_tool_execution_surface(tool_name: &str) -> &'static str {
         "browser_wait_for_element" => "host",
         "browser_wait_for_navigation" => "host",
         "browser_scroll_into_view" => "host",
+        "browser_scroll" => "host",
         "browser_retry_with_relocate" => "host",
         "browser_click" => "host",
         "browser_type" => "host",
@@ -1317,6 +1347,18 @@ mod tests {
             .into_iter()
             .find(|tool| tool.name == "browser_scroll_into_view")
             .expect("browser_scroll_into_view core tool should exist");
+
+        assert!(!tool.read_only);
+        assert!(tool.mutating);
+        assert_eq!(tool.risk_level, "LOW");
+    }
+
+    #[test]
+    fn core_tool_registry_includes_browser_scroll() {
+        let tool = desktop_runtime_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == "browser_scroll")
+            .expect("browser_scroll core tool should exist");
 
         assert!(!tool.read_only);
         assert!(tool.mutating);

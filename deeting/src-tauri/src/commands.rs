@@ -133,6 +133,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::browser_agent::commands::wait_for_local_browser_agent_element,
         crate::modules::browser_agent::commands::wait_for_local_browser_agent_navigation,
         crate::modules::browser_agent::commands::scroll_local_browser_agent_element_into_view,
+        crate::modules::browser_agent::commands::scroll_local_browser_agent_page,
         crate::modules::browser_agent::commands::retry_local_browser_agent_with_relocate,
         crate::modules::browser_agent::commands::click_local_browser_agent_element,
         crate::modules::browser_agent::commands::type_local_browser_agent_element,

@@ -6,6 +6,7 @@ import {
   getLocalBrowserAgentPageSnapshot,
   retryLocalBrowserAgentWithRelocate,
   scrollLocalBrowserAgentElementIntoView,
+  scrollLocalBrowserAgentPage,
   navigateLocalBrowserAgentTab,
   openLocalBrowserAgentTab,
   queryLocalBrowserAgentDom,
@@ -107,6 +108,7 @@ describe("browser agent api", () => {
         changed: true,
       } as unknown)
       .mockResolvedValueOnce({ ok: true, visible: true } as unknown)
+      .mockResolvedValueOnce({ ok: true } as unknown)
       .mockResolvedValueOnce({
         ok: true,
         attempts: 2,
@@ -147,6 +149,10 @@ describe("browser agent api", () => {
       target: { selector: "button.primary" },
       align: "center",
     })
+    const pageScrollResult = await scrollLocalBrowserAgentPage(42, {
+      direction: "down",
+      amount: 480,
+    })
     const retryResult = await retryLocalBrowserAgentWithRelocate(42, {
       actionKind: "click",
       target: { text: "Continue" },
@@ -168,6 +174,7 @@ describe("browser agent api", () => {
     expect(waitElementResult.matched).toBe(true)
     expect(waitNavigationResult.changed).toBe(true)
     expect(scrollResult.visible).toBe(true)
+    expect(pageScrollResult.ok).toBe(true)
     expect(retryResult.recovered).toBe(true)
     expect(navigateResult.url).toBe("https://example.com/search")
     expect(openResult.tabId).toBe(42)
@@ -243,6 +250,15 @@ describe("browser agent api", () => {
     )
     expect(mockInvoke).toHaveBeenNthCalledWith(
       12,
+      "scroll_local_browser_agent_page",
+      {
+        tabId: 42,
+        direction: "down",
+        amount: 480,
+      }
+    )
+    expect(mockInvoke).toHaveBeenNthCalledWith(
+      13,
       "retry_local_browser_agent_with_relocate",
       {
         tabId: 42,
@@ -255,12 +271,12 @@ describe("browser agent api", () => {
       }
     )
     expect(mockInvoke).toHaveBeenNthCalledWith(
-      13,
+      14,
       "navigate_local_browser_agent_tab",
       { tabId: 42, url: "https://example.com/search" }
     )
     expect(mockInvoke).toHaveBeenNthCalledWith(
-      14,
+      15,
       "open_local_browser_agent_tab",
       { url: "https://example.com/docs" }
     )

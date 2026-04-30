@@ -130,6 +130,14 @@ pub enum BrowserAgentAction {
         #[serde(skip_serializing_if = "Option::is_none")]
         align: Option<String>,
     },
+    #[serde(rename = "scroll")]
+    Scroll {
+        #[serde(rename = "tabId")]
+        tab_id: i64,
+        direction: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        amount: Option<i64>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -347,6 +355,25 @@ mod tests {
                 .and_then(|item| item.as_str()),
             Some("button.primary")
         );
+    }
+
+    #[test]
+    fn scroll_action_serializes_with_expected_shape() {
+        let action = BrowserAgentAction::Scroll {
+            tab_id: 42,
+            direction: "down".to_string(),
+            amount: Some(600),
+        };
+
+        let value = serde_json::to_value(action).expect("serialize action");
+
+        assert_eq!(value.get("kind").and_then(|item| item.as_str()), Some("scroll"));
+        assert_eq!(value.get("tabId").and_then(|item| item.as_i64()), Some(42));
+        assert_eq!(
+            value.get("direction").and_then(|item| item.as_str()),
+            Some("down")
+        );
+        assert_eq!(value.get("amount").and_then(|item| item.as_i64()), Some(600));
     }
 
     #[test]

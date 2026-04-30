@@ -273,6 +273,14 @@ pub fn assess_core_tool_risk(tool_name: &str, arguments: &Value) -> ToolRiskAsse
             target_class: RiskTargetClass::Unknown,
             boundary_class: ApprovalBoundaryClass::SoftBoundary,
         },
+        "browser_scroll" | "browser_scroll_into_view" => ToolRiskAssessment {
+            requires_approval: false,
+            risk_level: "LOW",
+            reasons: vec!["browser scrolling changes only page viewport position".to_string()],
+            operation_class: RiskOperationClass::Unknown,
+            target_class: RiskTargetClass::Unknown,
+            boundary_class: ApprovalBoundaryClass::None,
+        },
         "browser_click" | "browser_type" => ToolRiskAssessment {
             requires_approval: true,
             risk_level: "HIGH",

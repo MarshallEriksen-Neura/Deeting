@@ -21,6 +21,7 @@ import {
   useBridgeApprovalStore,
 } from "@/lib/chat/bridge-approval-store"
 import { bridgeCallTool } from "@/lib/api/bridge"
+import { listPendingMcpApprovals } from "@/lib/api/mcp-approvals"
 import { rejectDesktopTool, streamDesktopApproveTool } from "@/lib/api/mcp-desktop"
 import { Loader2, ShieldAlert, AlertTriangle, Terminal } from "lucide-react"
 import { useChatStore } from "@/store/chat-store"
@@ -29,6 +30,7 @@ import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks"
 import { deriveChatStatusUpdateForMessage } from "@/lib/chat/live-status"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
 import { refreshBridgePendingApprovalsFromCanonical } from "@/lib/chat/canonical-approval-refresh"
+import { extractRootExecutionIdFromMessage } from "@/lib/chat/execution-tree"
 import {
   createOptimisticApprovalExecutionBlocks,
   createApprovedToolResultBlock,
@@ -36,6 +38,7 @@ import {
   createLocalChatResumeErrorBlock,
   createRejectedToolResultBlock,
   extractLocalChatApprovalResume,
+  resolveApprovalExecutionMetaFromMessage,
 } from "@/lib/chat/tool-approval"
 
 export function ToolApprovalDialog() {
@@ -99,6 +102,68 @@ function ToolApprovalDialogContent({
     return findMessageIdForToolCall(useChatStore.getState().messages, approval.meta.call_id)
   }
 
+  const resolveApprovalExecutionId = (approval: typeof pending) => {
+    const messageId = resolveApprovalMessageId(approval)
+    if (!messageId) return approval.meta.execution_graph_execution_id
+    const message = useChatStore
+      .getState()
+      .messages.find((candidate) => candidate.id === messageId)
+    return resolveApprovalExecutionMetaFromMessage(message, approval)
+      .execution_graph_execution_id
+  }
+
+  const resolveApprovalExecutionMetaViaSession = async (approval: typeof pending) => {
+    const messageId = resolveApprovalMessageId(approval)
+    const message = messageId
+      ? useChatStore.getState().messages.find((candidate) => candidate.id === messageId)
+      : undefined
+    const fromMessage = resolveApprovalExecutionMetaFromMessage(message, approval)
+    if (
+      fromMessage.execution_graph_execution_id &&
+      fromMessage.execution_graph_gate_node_id &&
+      fromMessage.execution_graph_tool_node_id
+    ) {
+      return fromMessage
+    }
+
+    const normalizedSessionId =
+      typeof sessionId === "string" && sessionId.trim().length > 0 ? sessionId.trim() : null
+    if (!normalizedSessionId) {
+      return fromMessage
+    }
+
+    try {
+      const snapshots = await listPendingMcpApprovals(normalizedSessionId)
+      const matched = snapshots.find(
+        (item) =>
+          typeof item.approval_token === "string" &&
+          item.approval_token.trim() === approval.approval_token,
+      )
+      if (!matched) {
+        return fromMessage
+      }
+      return {
+        execution_graph_execution_id:
+          (typeof matched.execution_graph_execution_id === "string" &&
+          matched.execution_graph_execution_id.trim().length > 0
+            ? matched.execution_graph_execution_id.trim()
+            : undefined) ?? fromMessage.execution_graph_execution_id,
+        execution_graph_gate_node_id:
+          (typeof matched.execution_graph_gate_node_id === "string" &&
+          matched.execution_graph_gate_node_id.trim().length > 0
+            ? matched.execution_graph_gate_node_id.trim()
+            : undefined) ?? fromMessage.execution_graph_gate_node_id,
+        execution_graph_tool_node_id:
+          (typeof matched.execution_graph_tool_node_id === "string" &&
+          matched.execution_graph_tool_node_id.trim().length > 0
+            ? matched.execution_graph_tool_node_id.trim()
+            : undefined) ?? fromMessage.execution_graph_tool_node_id,
+      }
+    } catch {
+      return fromMessage
+    }
+  }
+
   const formattedArguments = JSON.stringify(pending.arguments, null, 2)
 
   const approvalSourcePreview = (approval: typeof pending) => {
@@ -160,6 +225,11 @@ function ToolApprovalDialogContent({
   ) => {
     try {
       const messageId = resolveApprovalMessageId(approval)
+      const executionMeta = await resolveApprovalExecutionMetaViaSession(approval)
+      const executionGraphExecutionId = executionMeta.execution_graph_execution_id
+      if (!executionGraphExecutionId) {
+        throw new Error("execution_graph_execution_id is required for desktop approval")
+      }
       let streamedContinuationApplied = false
       const result = await streamDesktopApproveTool(
         {
@@ -167,7 +237,7 @@ function ToolApprovalDialogContent({
           approvalMode,
           callId: approval.meta.call_id,
           executionToken: approval.meta.execution_token,
-          executionGraphExecutionId: approval.meta.execution_graph_execution_id,
+          executionGraphExecutionId,
         },
         {
           onMessage: (data) => {
@@ -299,10 +369,15 @@ function ToolApprovalDialogContent({
 
     try {
       setLoadingAction("reject_once")
+      const executionMeta = await resolveApprovalExecutionMetaViaSession(approval)
+      const executionGraphExecutionId = executionMeta.execution_graph_execution_id
+      if (!executionGraphExecutionId) {
+        throw new Error("execution_graph_execution_id is required for desktop reject")
+      }
       await rejectDesktopTool({
         approvalToken: approval.approval_token,
         rejectMode: "reject_once",
-        executionGraphExecutionId: approval.meta.execution_graph_execution_id,
+        executionGraphExecutionId,
       })
 
       const messageId = resolveApprovalMessageId(approval)

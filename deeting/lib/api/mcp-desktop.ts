@@ -28,6 +28,18 @@ const LOCAL_GATEWAY_APPROVE_TOOL_PATH = "/v1/mcp/tool-approvals/approve"
 const LOCAL_GATEWAY_REJECT_TOOL_PATH = "/v1/mcp/tool-approvals/reject"
 const inFlightDesktopApprovalStreams = new Map<string, Promise<unknown>>()
 
+
+function isLocalChatApprovalTerminalPayload(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false
+  const status = (value as { status?: unknown }).status
+  return (
+    status === "LOCAL_CHAT_WAITING_APPROVAL" ||
+    status === "LOCAL_CHAT_RESUMED" ||
+    status === "LOCAL_CHAT_RESUME_FAILED"
+  )
+}
+
+
 export type DesktopMcpCommandName =
   (typeof DESKTOP_MCP_COMMANDS)[keyof typeof DESKTOP_MCP_COMMANDS]
 
@@ -78,6 +90,7 @@ export async function streamDesktopApproveTool(
     })
 
     let finalPayload: unknown = null
+    let terminalPayload: unknown = null
     let settled = false
 
     return await new Promise<unknown>((resolve, reject) => {
@@ -95,7 +108,7 @@ export async function streamDesktopApproveTool(
             if (settled) return
             settled = true
             close()
-            resolve(finalPayload)
+            resolve(terminalPayload ?? finalPayload)
             return
           }
 
@@ -112,6 +125,12 @@ export async function streamDesktopApproveTool(
             return
           }
 
+          if (isLocalChatApprovalTerminalPayload(data)) {
+            terminalPayload = data
+          }
+          if (isLocalChatApprovalTerminalPayload(data)) {
+            terminalPayload = data
+          }
           finalPayload = data
         },
         onError: (error) => {
@@ -122,7 +141,7 @@ export async function streamDesktopApproveTool(
         onClose: () => {
           if (settled) return
           settled = true
-          resolve(finalPayload)
+          resolve(terminalPayload ?? finalPayload)
         },
       })
     })
@@ -141,6 +160,7 @@ export async function streamDesktopApproveTool(
     })
 
     let finalPayload: unknown = null
+    let terminalPayload: unknown = null
     let settled = false
 
     return await new Promise<unknown>((resolve, reject) => {
@@ -158,7 +178,7 @@ export async function streamDesktopApproveTool(
             if (settled) return
             settled = true
             close()
-            resolve(finalPayload)
+            resolve(terminalPayload ?? finalPayload)
             return
           }
 
@@ -185,7 +205,7 @@ export async function streamDesktopApproveTool(
         onClose: () => {
           if (settled) return
           settled = true
-          resolve(finalPayload)
+          resolve(terminalPayload ?? finalPayload)
         },
       })
     })

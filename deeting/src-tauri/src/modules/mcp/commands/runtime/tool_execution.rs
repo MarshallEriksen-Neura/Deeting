@@ -377,6 +377,7 @@ fn resolve_core_tool_name(tool_id: Option<&str>, tool_name: Option<&str>) -> Opt
         ("browser_scroll_into_view", _) | (_, "core.browser_scroll_into_view") => {
             Some("browser_scroll_into_view")
         }
+        ("browser_scroll", _) | (_, "core.browser_scroll") => Some("browser_scroll"),
         ("browser_retry_with_relocate", _) | (_, "core.browser_retry_with_relocate") => {
             Some("browser_retry_with_relocate")
         }
@@ -839,6 +840,60 @@ async fn execute_core_tool_call_with_tool_ref_internal(
                 .browser_agent
                 .service
                 .scroll_into_view(app_state.mcp.store.as_ref(), tab_id, target, align)
+                .await?;
+            Ok(Some(result))
+        }
+        "browser_scroll" => {
+            let app_state = crate::state::global_app_state()
+                .ok_or_else(|| "global app state is unavailable".to_string())?;
+            let tab_id = arguments
+                .get("tab_id")
+                .and_then(Value::as_i64)
+                .filter(|value| *value > 0)
+                .ok_or_else(|| "browser_scroll requires a positive tab_id".to_string())?;
+            let direction = arguments
+                .get("direction")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| "browser_scroll requires direction up or down".to_string())?;
+            let amount = match arguments.get("amount") {
+                Some(Value::Null) | None => None,
+                Some(value) => Some(
+                    value
+                        .as_i64()
+                        .filter(|amount| *amount > 0)
+                        .ok_or_else(|| "browser_scroll amount must be positive".to_string())?,
+                ),
+            };
+
+            if !skip_approval_gate {
+                let risk = assess_policy_risk(PolicyTargetRef::CoreTool {
+                    tool_name: core_tool_name,
+                    arguments: &arguments,
+                });
+                if let Some(queued) = maybe_queue_core_tool_approval(
+                    approval_context,
+                    runtime_state,
+                    store,
+                    pending_tool_calls,
+                    "core.browser_scroll",
+                    "browser_scroll",
+                    &arguments,
+                    "Scroll the browser page through the local browser agent bridge.",
+                    &risk,
+                    core_tool_fingerprint("core.browser_scroll", &arguments),
+                )
+                .await?
+                {
+                    return Ok(Some(queued));
+                }
+            }
+
+            let result = app_state
+                .browser_agent
+                .service
+                .scroll_page(app_state.mcp.store.as_ref(), tab_id, direction, amount)
                 .await?;
             Ok(Some(result))
         }
@@ -2245,6 +2300,18 @@ mod tests {
         assert_eq!(
             resolve_core_tool_name(Some("core.browser_scroll_into_view"), None),
             Some("browser_scroll_into_view")
+        );
+    }
+
+    #[test]
+    fn core_tool_resolution_recognizes_browser_scroll() {
+        assert_eq!(
+            resolve_core_tool_name(None, Some("browser_scroll")),
+            Some("browser_scroll")
+        );
+        assert_eq!(
+            resolve_core_tool_name(Some("core.browser_scroll"), None),
+            Some("browser_scroll")
         );
     }
 

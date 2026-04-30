@@ -18,7 +18,6 @@ import {
 
 const DEFAULT_MAX_ROUNDS = 10
 const MIN_ROUNDS = 1
-const MAX_ROUNDS = 50
 const DEFAULT_CHAT_HISTORY_RETENTION_DAYS = "0"
 const CHAT_HISTORY_RETENTION_OPTIONS = [
   "0",
@@ -110,8 +109,8 @@ export function AgentSettingsCard({
 
   const handleSave = async () => {
     const parsed = parseInt(maxRounds, 10)
-    if (isNaN(parsed) || parsed < MIN_ROUNDS || parsed > MAX_ROUNDS) {
-      toast.error(t("agent.roundsValidation", { min: MIN_ROUNDS, max: MAX_ROUNDS }))
+    if (isNaN(parsed) || parsed < MIN_ROUNDS) {
+      toast.error(t("agent.roundsValidation", { min: MIN_ROUNDS }))
       return
     }
     setIsSaving(true)
@@ -182,14 +181,13 @@ export function AgentSettingsCard({
               id="max-agentic-rounds"
               type="number"
               min={MIN_ROUNDS}
-              max={MAX_ROUNDS}
               value={maxRounds}
               onChange={(e) => setMaxRounds(e.target.value)}
               disabled={isLoading || isSaving}
               className="w-28 rounded-xl"
             />
             <span className="text-xs text-muted-foreground">
-              {t("agent.maxRoundsRange", { min: MIN_ROUNDS, max: MAX_ROUNDS })}
+              {t("agent.maxRoundsRange", { min: MIN_ROUNDS })}
             </span>
           </div>
           <p className="text-xs text-muted-foreground">

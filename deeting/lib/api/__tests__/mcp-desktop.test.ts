@@ -83,6 +83,37 @@ describe("mcp desktop gateway approval helpers", () => {
     expect(result).toEqual(finalPayload)
   })
 
+
+  it("prefers LOCAL_CHAT_* approval payloads over intermediate tool result objects", async () => {
+    const intermediatePayload = {
+      approval_token: "approval-intermediate-1",
+      approved_tool_result: { tabId: 123, url: "https://x.com/home" },
+    }
+    const finalPayload = {
+      status: "LOCAL_CHAT_WAITING_APPROVAL",
+      approval_token: "approval-final-1",
+      next_pending_approval_tokens: ["approval-next-1"],
+      pending_approval_gate_ids: ["approval_gate:call-next-1"],
+      approved_tool_result: { ok: true },
+      continuation_blocks: [],
+    }
+
+    mockOpenSSE.mockImplementation((_url, options) => {
+      options.onMessage({ data: { type: "status", code: "approval.executing" } })
+      options.onMessage({ data: intermediatePayload })
+      options.onMessage({ data: finalPayload })
+      options.onMessage({ data: "[DONE]" })
+      return () => {}
+    })
+
+    const result = await streamDesktopApproveTool({
+      approvalToken: "approval-final-1",
+      approvalMode: "allow_once",
+    })
+
+    expect(result).toEqual(finalPayload)
+  })
+
   it("dedupes concurrent desktop approval streams by approval token", async () => {
     let resolveFirst!: (value: unknown) => void
 

@@ -2,6 +2,7 @@
 
 import { announceBridgeApprovalExecution } from "@/lib/chat/bridge-approval-store";
 import { bridgeCallTool } from "@/lib/api/bridge";
+import { listPendingMcpApprovals } from "@/lib/api/mcp-approvals";
 import {
   rejectDesktopTool,
   streamDesktopApproveTool,
@@ -13,6 +14,7 @@ import {
   createLocalChatResumeErrorBlock,
   createRejectedToolResultBlock,
   extractLocalChatApprovalResume,
+  resolveApprovalExecutionMetaFromMessage,
 } from "@/lib/chat/tool-approval";
 import { deriveChatStatusUpdateForMessage } from "@/lib/chat/live-status";
 import { refreshBridgePendingApprovalsFromCanonical } from "@/lib/chat/canonical-approval-refresh";
@@ -62,13 +64,34 @@ export async function runInlineApproval({
   let streamedContinuationApplied = false;
 
   try {
+    const message = resolveMessages().find((candidate) => candidate.id === messageId);
+    const fromMessage = resolveApprovalExecutionMetaFromMessage(message, approval);
+    let executionGraphExecutionId = fromMessage.execution_graph_execution_id;
+    if (!executionGraphExecutionId && sessionId) {
+      try {
+        const snapshots = await listPendingMcpApprovals(sessionId);
+        const matched = snapshots.find(
+          (item) =>
+            typeof item.approval_token === "string" &&
+            item.approval_token.trim() === approval.approval_token,
+        );
+        executionGraphExecutionId =
+          (typeof matched?.execution_graph_execution_id === "string" &&
+          matched.execution_graph_execution_id.trim().length > 0
+            ? matched.execution_graph_execution_id.trim()
+            : undefined) ?? executionGraphExecutionId;
+      } catch {}
+    }
+    if (!executionGraphExecutionId) {
+      throw new Error("execution_graph_execution_id is required for desktop approval");
+    }
     const result = await streamDesktopApproveTool(
       {
         approvalToken: approval.approval_token,
         approvalMode,
         callId: approval.meta.call_id,
         executionToken: approval.meta.execution_token,
-        executionGraphExecutionId: approval.meta.execution_graph_execution_id,
+        executionGraphExecutionId,
       },
       {
         onMessage: (data) => {
@@ -187,10 +210,32 @@ export async function runInlineRejection({
 }) {
   removePendingByToken(approval.approval_token);
   try {
+    const message = useChatStore.getState().messages.find((candidate) => candidate.id === messageId);
+    const fromMessage = resolveApprovalExecutionMetaFromMessage(message, approval);
+    let executionGraphExecutionId = fromMessage.execution_graph_execution_id;
+    const currentSessionId = useChatStore.getState().sessionId;
+    if (!executionGraphExecutionId && currentSessionId) {
+      try {
+        const snapshots = await listPendingMcpApprovals(currentSessionId);
+        const matched = snapshots.find(
+          (item) =>
+            typeof item.approval_token === "string" &&
+            item.approval_token.trim() === approval.approval_token,
+        );
+        executionGraphExecutionId =
+          (typeof matched?.execution_graph_execution_id === "string" &&
+          matched.execution_graph_execution_id.trim().length > 0
+            ? matched.execution_graph_execution_id.trim()
+            : undefined) ?? executionGraphExecutionId;
+      } catch {}
+    }
+    if (!executionGraphExecutionId) {
+      throw new Error("execution_graph_execution_id is required for desktop reject");
+    }
     await rejectDesktopTool({
       approvalToken: approval.approval_token,
       rejectMode: "reject_once",
-      executionGraphExecutionId: approval.meta.execution_graph_execution_id,
+      executionGraphExecutionId,
     });
     const rejectedBlock = createRejectedToolResultBlock(approval, rejectLabel);
     if (rejectedBlock) {

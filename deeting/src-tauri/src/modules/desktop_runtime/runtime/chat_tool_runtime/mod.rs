@@ -804,7 +804,9 @@ async fn continue_local_chat_complete_with_tools(
                     );
                 }
                 let mut current_tool_call_meta = build_state_effective_tool_call_meta(&state);
-                current_tool_call_meta.extend(suspended.pending_tool_call_meta());
+                // Use the graph-enriched pending meta we just prepared above so the
+                // first approval card carries execution_graph identifiers.
+                current_tool_call_meta.extend(tool_call_meta.clone());
                 let interrupted = serde_json::json!({
                     "content": last_response_content_or_empty(state.last_response.as_ref()),
                 });

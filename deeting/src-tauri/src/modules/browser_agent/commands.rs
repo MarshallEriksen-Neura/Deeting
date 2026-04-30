@@ -131,6 +131,20 @@ pub async fn scroll_local_browser_agent_element_into_view(
 }
 
 #[tauri::command]
+pub async fn scroll_local_browser_agent_page(
+    state: State<'_, AppState>,
+    tab_id: i64,
+    direction: String,
+    amount: Option<i64>,
+) -> Result<serde_json::Value, String> {
+    state
+        .browser_agent
+        .service
+        .scroll_page(state.mcp.store.as_ref(), tab_id, &direction, amount)
+        .await
+}
+
+#[tauri::command]
 pub async fn retry_local_browser_agent_with_relocate(
     state: State<'_, AppState>,
     tab_id: i64,

@@ -270,6 +270,35 @@ impl BrowserAgentService {
             .await
     }
 
+    pub async fn scroll_page(
+        &self,
+        store: &McpStore,
+        tab_id: i64,
+        direction: &str,
+        amount: Option<i64>,
+    ) -> Result<serde_json::Value, String> {
+        let (bridge_url, _source) = self.get_bridge_url(store).await?;
+        if tab_id <= 0 {
+            return Err("browser scroll requires a positive tab id".to_string());
+        }
+        let direction = normalize_scroll_direction(direction)?;
+        if let Some(value) = amount {
+            if value <= 0 {
+                return Err("browser scroll requires a positive amount when provided".to_string());
+            }
+        }
+        self.bridge
+            .dispatch_action(
+                &bridge_url,
+                crate::modules::browser_agent::types::BrowserAgentAction::Scroll {
+                    tab_id,
+                    direction: direction.to_string(),
+                    amount,
+                },
+            )
+            .await
+    }
+
     pub async fn retry_with_relocate(
         &self,
         store: &McpStore,
@@ -487,6 +516,16 @@ pub(crate) fn locator_is_empty(locator: &BrowserAgentElementLocator) -> bool {
         || locator.index.is_some())
 }
 
+fn normalize_scroll_direction(direction: &str) -> Result<&'static str, String> {
+    match direction.trim().to_lowercase().as_str() {
+        "up" => Ok("up"),
+        "down" => Ok("down"),
+        other => Err(format!(
+            "browser scroll direction must be up or down, got: {other}"
+        )),
+    }
+}
+
 fn parse_retry_action_kind(
     action_kind: &str,
     text: Option<&str>,
@@ -550,7 +589,7 @@ fn snapshot_summary(snapshot: serde_json::Value) -> Option<serde_json::Value> {
 mod tests {
     use super::{
         bridge_socket_target, extract_result_error, is_recoverable_browser_action_error,
-        locator_is_empty, normalize_bridge_url, parse_retry_action_kind,
+        locator_is_empty, normalize_bridge_url, normalize_scroll_direction, parse_retry_action_kind,
         requires_fresh_approval_after_recovery, result_ok, snapshot_summary,
         BrowserRetryActionKind, DEFAULT_BROWSER_AGENT_BRIDGE_URL,
     };
@@ -591,6 +630,13 @@ mod tests {
         };
 
         assert!(!locator_is_empty(&locator));
+    }
+
+    #[test]
+    fn normalize_scroll_direction_accepts_only_up_and_down() {
+        assert_eq!(normalize_scroll_direction("down").expect("down"), "down");
+        assert_eq!(normalize_scroll_direction(" UP ").expect("up"), "up");
+        assert!(normalize_scroll_direction("left").is_err());
     }
 
     #[test]

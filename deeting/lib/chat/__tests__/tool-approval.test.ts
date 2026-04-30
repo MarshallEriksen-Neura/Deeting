@@ -3,6 +3,7 @@ import {
   extractLocalChatApprovalResume,
   findResolvedToolCallIds,
   findLatestUnresolvedToolApproval,
+  resolveApprovalExecutionMetaFromMessage,
 } from "@/lib/chat/tool-approval"
 import type { Message } from "@/lib/chat/message-types"
 
@@ -235,6 +236,62 @@ describe("findLatestUnresolvedToolApproval", () => {
     ]
 
     expect(findLatestUnresolvedToolApproval(messages)).toBeNull()
+  })
+})
+
+describe("resolveApprovalExecutionMetaFromMessage", () => {
+  it("fills missing execution graph identifiers from the latest matching tool result block", () => {
+    const message: Message = {
+      id: "assistant-graph-meta-1",
+      role: "assistant",
+      content: "",
+      createdAt: 1,
+      blocks: [
+        {
+          id: "tool-call-graph-meta-1",
+          type: "tool_call",
+          callId: "call-graph-meta-1",
+          toolName: "browser_open_tab",
+          status: "running",
+        },
+        {
+          id: "tool-result-graph-meta-1",
+          type: "tool_result",
+          callId: "call-graph-meta-1",
+          toolName: "browser_open_tab",
+          status: "requires_approval",
+          result: {
+            status: "REQUIRES_APPROVAL",
+            approval_token: "approval-graph-meta-1",
+            execution_graph_execution_id: "graph-meta-1",
+            execution_graph_gate_node_id: "approval_gate:call-graph-meta-1",
+            execution_graph_tool_node_id: "tool_call:call-graph-meta-1",
+          },
+        },
+      ],
+      metaInfo: {
+        execution_tree: {
+          root_execution_id: "graph-meta-1",
+        } as any,
+      },
+    }
+
+    expect(
+      resolveApprovalExecutionMetaFromMessage(message, {
+        kind: "bridge_mcp",
+        approval_token: "approval-graph-meta-1",
+        tool_name: "browser_open_tab",
+        arguments: { url: "https://x.com/home" },
+        meta: {
+          call_id: "call-graph-meta-1",
+          message_id: "assistant-graph-meta-1",
+        },
+      }),
+    ).toEqual({
+      execution_graph_execution_id: "graph-meta-1",
+      execution_graph_gate_node_id: "approval_gate:call-graph-meta-1",
+      execution_graph_tool_node_id: "tool_call:call-graph-meta-1",
+    })
   })
 })
 

@@ -89,6 +89,7 @@ export async function refreshBridgePendingApprovalsFromCanonical({
   forceReplace = false,
 }: RefreshBridgePendingApprovalsOptions): Promise<RefreshBridgePendingApprovalsResult> {
   const normalizedSessionId = normalizeToken(sessionId)
+  const normalizedPreferredToken = normalizeToken(preferredApprovalToken)
   if (!normalizedSessionId) {
     return {
       approvals: [],
@@ -132,9 +133,10 @@ export async function refreshBridgePendingApprovalsFromCanonical({
 
     const approvalToken = normalizeToken(approval.approval_token)
     if (!approvalToken || seenTokens.has(approvalToken)) continue
-    if (excludedApprovalTokens.has(approvalToken)) continue
+    const isPreferredApproval = approvalToken === normalizedPreferredToken
+    if (!isPreferredApproval && excludedApprovalTokens.has(approvalToken)) continue
     const gateNodeId = normalizeToken(approval.meta.execution_graph_gate_node_id)
-    if (gateNodeId && excludedGateNodeIds.has(gateNodeId)) continue
+    if (!isPreferredApproval && gateNodeId && excludedGateNodeIds.has(gateNodeId)) continue
 
     const isGraphBound = Boolean(
       approval.meta.execution_graph_execution_id ||
@@ -163,7 +165,19 @@ export async function refreshBridgePendingApprovalsFromCanonical({
     )
   }
 
-  const orderedApprovals = orderApprovalsForQueue(approvals, preferredApprovalToken)
+  let orderedApprovals = orderApprovalsForQueue(approvals, preferredApprovalToken)
+
+  // If live continuation blocks already surfaced a graph-bound approval, do not let an
+  // immediately-following empty canonical refresh erase it during the same approval handoff.
+  if (orderedApprovals.length === 0) {
+    const livePending = useBridgeApprovalStore.getState().pending
+    const livePendingToken = normalizeToken(livePending?.approval_token)
+    const livePendingExecutionId = normalizeToken(livePending?.meta.execution_graph_execution_id)
+    if (livePendingToken && livePendingExecutionId) {
+      orderedApprovals = [livePending]
+    }
+  }
+
   const approvalKey = orderedApprovals.map((approval) => approval.approval_token).join("|")
   if (forceReplace || approvalKey !== normalizeToken(currentApprovalKey)) {
     useBridgeApprovalStore.getState().replaceQueue(orderedApprovals)

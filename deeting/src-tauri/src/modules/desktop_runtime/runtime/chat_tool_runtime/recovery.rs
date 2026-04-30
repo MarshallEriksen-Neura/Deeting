@@ -343,6 +343,43 @@ fn next_pending_approval_tokens_from_graph(execution_graph: &serde_json::Value) 
         .collect()
 }
 
+
+fn validate_waiting_approval_payload_consistency(
+    consumed_approval_token: Option<&str>,
+    resolved_gate_node_id: &str,
+    execution_graph: &serde_json::Value,
+) -> Result<(), String> {
+    let pending_tokens = next_pending_approval_tokens_from_graph(execution_graph);
+    let gate_still_waiting = execution_graph
+        .get("nodes")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|node| {
+            node.get("node_id").and_then(serde_json::Value::as_str) == Some(resolved_gate_node_id)
+        })
+        .and_then(|node| node.get("status").and_then(serde_json::Value::as_str))
+        .is_some_and(|status| status.eq_ignore_ascii_case("waiting_approval"));
+
+    if gate_still_waiting {
+        return Err(format!(
+            "resolved approval gate '{}' is still waiting_approval in the returned graph",
+            resolved_gate_node_id
+        ));
+    }
+
+    if let Some(consumed_token) = consumed_approval_token.map(str::trim).filter(|value| !value.is_empty()) {
+        if pending_tokens.iter().any(|token| token == consumed_token) {
+            return Err(format!(
+                "consumed approval token '{}' still appears in next_pending_approval_tokens",
+                consumed_token
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 fn build_local_chat_waiting_approval_payload(
     approval_token: &str,
     resolved_gate_node_id: &str,
@@ -489,6 +526,30 @@ async fn advance_local_chat_execution_from_graph_state(
             );
         }
 
+        if let Err(err) = validate_waiting_approval_payload_consistency(
+            consumed_approval_token,
+            resolved_gate_node_id.as_str(),
+            suspended.execution_graph(),
+        ) {
+            log::error!(
+                "approval_waiting_payload_invariant_failed approval_token={} resolved_gate={} err={}",
+                consumed_approval_token.unwrap_or_default(),
+                resolved_gate_node_id,
+                err
+            );
+            return Ok(build_local_chat_resume_failed_payload(
+                consumed_approval_token.unwrap_or_default(),
+                Some(resolved_gate_node_id.as_str()),
+                Some(resolved_call_id.as_str()),
+                approved_tool_result,
+                suspended.execution_graph(),
+                root_execution_id.as_deref(),
+                "LOCAL_CHAT_WAITING_PAYLOAD_INVARIANT_FAILED",
+                err.as_str(),
+                false,
+            ));
+        }
+
         return Ok(build_local_chat_waiting_approval_payload(
             consumed_approval_token.unwrap_or_default(),
             resolved_gate_node_id.as_str(),
@@ -605,6 +666,38 @@ async fn advance_local_chat_execution_from_graph_state(
                     }
                 }
                 let continuation_meta = build_effective_tool_call_meta(&output.response, &[]);
+                let waiting_graph = output
+                    .response
+                    .get("execution_graph")
+                    .unwrap_or(&serde_json::Value::Null);
+                if let Err(err) = validate_waiting_approval_payload_consistency(
+                    consumed_approval_token,
+                    resolved_gate_node_id.as_str(),
+                    waiting_graph,
+                ) {
+                    log::error!(
+                        "approval_waiting_payload_invariant_failed approval_token={} resolved_gate={} err={}",
+                        consumed_approval_token.unwrap_or_default(),
+                        resolved_gate_node_id,
+                        err
+                    );
+                    return Ok(build_local_chat_resume_failed_payload(
+                        consumed_approval_token.unwrap_or_default(),
+                        Some(resolved_gate_node_id.as_str()),
+                        Some(resolved_call_id.as_str()),
+                        approved_tool_result,
+                        waiting_graph,
+                        output
+                            .response
+                            .get("execution_graph")
+                            .and_then(|value| value.get("execution_id"))
+                            .and_then(serde_json::Value::as_str),
+                        "LOCAL_CHAT_WAITING_PAYLOAD_INVARIANT_FAILED",
+                        err.as_str(),
+                        false,
+                    ));
+                }
+
                 return Ok(build_local_chat_waiting_approval_payload(
                     consumed_approval_token.unwrap_or_default(),
                     resolved_gate_node_id.as_str(),

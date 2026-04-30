@@ -70,6 +70,10 @@ export const BrowserAgentScrollIntoViewResultSchema = z.object({
   visible: z.boolean(),
 })
 
+export const BrowserAgentScrollPageResultSchema = z.object({
+  ok: z.boolean(),
+})
+
 export const BrowserAgentRetryWithRelocateResultSchema = z.object({
   ok: z.boolean(),
   attempts: z.number(),
@@ -133,6 +137,7 @@ export type BrowserAgentPageSnapshot = z.infer<typeof BrowserAgentPageSnapshotSc
 export type BrowserAgentWaitForElementResult = z.infer<typeof BrowserAgentWaitForElementResultSchema>
 export type BrowserAgentWaitForNavigationResult = z.infer<typeof BrowserAgentWaitForNavigationResultSchema>
 export type BrowserAgentScrollIntoViewResult = z.infer<typeof BrowserAgentScrollIntoViewResultSchema>
+export type BrowserAgentScrollPageResult = z.infer<typeof BrowserAgentScrollPageResultSchema>
 export type BrowserAgentRetryWithRelocateResult = z.infer<typeof BrowserAgentRetryWithRelocateResultSchema>
 
 function parseBrowserAgentPageSnapshot(data: unknown): BrowserAgentPageSnapshot {
@@ -302,6 +307,24 @@ export async function scrollLocalBrowserAgentElementIntoView(
     align: input.align ?? null,
   })
   return BrowserAgentScrollIntoViewResultSchema.parse(data)
+}
+
+export async function scrollLocalBrowserAgentPage(
+  tabId: number,
+  input: {
+    direction: "up" | "down"
+    amount?: number | null
+  }
+): Promise<BrowserAgentScrollPageResult> {
+  if (!isTauriRuntime()) {
+    throw new Error("scrollLocalBrowserAgentPage is only supported in Tauri runtime")
+  }
+  const data = await invokeTauri<unknown>("scroll_local_browser_agent_page", {
+    tabId,
+    direction: input.direction,
+    amount: input.amount ?? null,
+  })
+  return BrowserAgentScrollPageResultSchema.parse(data)
 }
 
 export async function retryLocalBrowserAgentWithRelocate(

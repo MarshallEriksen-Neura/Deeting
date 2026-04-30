@@ -338,22 +338,22 @@ async fn find_canonical_pending_local_approval_match(
         return Ok(None);
     }
 
-    let contexts = if let Some(execution_id) = execution_graph_execution_id
+    let Some(execution_id) = execution_graph_execution_id
         .map(str::trim)
         .filter(|value| !value.is_empty())
-    {
-        load_canonical_waiting_approval_context_by_execution_id(
-            store,
-            execution_id,
-            None,
-            Some(normalized_token),
-        )
-        .await?
-        .into_iter()
-        .collect::<Vec<_>>()
-    } else {
-        list_canonical_waiting_approval_contexts(store, None, Some(normalized_token)).await?
+    else {
+        return Err("execution_graph_execution_id is required for canonical approval lookup".to_string());
     };
+
+    let contexts = load_canonical_waiting_approval_context_by_execution_id(
+        store,
+        execution_id,
+        None,
+        Some(normalized_token),
+    )
+    .await?
+    .into_iter()
+    .collect::<Vec<_>>();
 
     for (execution_id, context) in contexts {
         for pending in &context.pending_approvals {

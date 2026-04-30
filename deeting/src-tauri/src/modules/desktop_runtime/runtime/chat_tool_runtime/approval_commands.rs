@@ -36,6 +36,48 @@ fn build_failed_approval_tool_result_payload(
     })
 }
 
+fn approved_tool_result_matches_pending_tool(
+    pending: &crate::modules::mcp::PendingToolCall,
+    approved_tool_result: &serde_json::Value,
+) -> bool {
+    let tool_name = pending.tool_name.trim();
+    if tool_name.is_empty() {
+        return false;
+    }
+
+    if let Some(content) = approved_tool_result
+        .get("content")
+        .and_then(serde_json::Value::as_array)
+    {
+        let has_browser_create_payload = content.iter().any(|item| {
+            let text = item
+                .get("text")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("");
+            text.contains("\"cdpUrl\"")
+                || text.contains("\"liveViewUrl\"")
+                || text.contains("\"interactiveLiveViewUrl\"")
+        });
+        if has_browser_create_payload {
+            return tool_name.eq_ignore_ascii_case("firecrawl_browser_create");
+        }
+    }
+
+    if approved_tool_result.get("tabId").is_some() && approved_tool_result.get("url").is_some() {
+        return tool_name.eq_ignore_ascii_case("browser_open_tab")
+            || tool_name.eq_ignore_ascii_case("firecrawl_browser_open_tab");
+    }
+
+    if approved_tool_result.get("documentReadyState").is_some()
+        || approved_tool_result.get("mainText").is_some()
+        || approved_tool_result.get("visibleText").is_some()
+    {
+        return tool_name.eq_ignore_ascii_case("browser_get_page_snapshot");
+    }
+
+    true
+}
+
 fn is_idempotent_post_approval_error(error: &str) -> bool {
     matches!(
         error.trim(),
@@ -56,53 +98,50 @@ async fn approve_local_chat_execution_gate_command(
         return Err("approval token is required".to_string());
     }
 
-    let pending_before_approval = materialize_pending_local_approval_from_runtime_context(
-        state,
-        token,
-        execution_graph_execution_id,
-    )
-    .await?;
     let requested_execution_id = execution_graph_execution_id
         .and_then(|value| {
             let normalized = value.trim();
             (!normalized.is_empty()).then(|| normalized.to_string())
         })
-        .or_else(|| {
-            pending_before_approval
-                .as_ref()
-                .and_then(|pending| pending.execution_graph_execution_id.clone())
-        });
+        .ok_or_else(|| "execution_graph_execution_id is required for approve gate".to_string())?;
 
-    if let Some(execution_id) = requested_execution_id.as_deref() {
-        if let Some(mut suspended) =
-            load_suspended_chat_tool_execution_for_resume(state, token, Some(execution_id)).await?
-        {
-            if let Some(pending) = pending_before_approval.as_ref() {
-                let resolved_call_id = pending.call_id.as_deref().or(approval_context.call_id.as_deref());
-                let _ = mark_approval_gate_approving(
-                    &mut suspended,
-                    Some(token),
-                    resolved_call_id,
+    let pending_before_approval = materialize_pending_local_approval_from_runtime_context(
+        state,
+        token,
+        Some(requested_execution_id.as_str()),
+    )
+    .await?;
+    if let Some(mut suspended) = load_suspended_chat_tool_execution_for_resume(
+        state,
+        token,
+        Some(requested_execution_id.as_str()),
+    )
+    .await?
+    {
+        if let Some(pending) = pending_before_approval.as_ref() {
+            let resolved_call_id = pending
+                .call_id
+                .as_deref()
+                .or(approval_context.call_id.as_deref());
+            let _ = mark_approval_gate_approving(&mut suspended, Some(token), resolved_call_id);
+            let _ = suspended.set_pending_approval_status(token, "approving");
+            let persisted_pending_approvals = derive_pending_approvals_from_graph(&suspended);
+            if let Err(err) = persist_suspended_execution_graph_runtime(
+                state.mcp.store.as_ref(),
+                &suspended,
+                &persisted_pending_approvals,
+                "desktop_local_chat_approval_approving",
+                "active",
+                InFlightExecutionStage::WaitingApproval,
+                None,
+            )
+            .await
+            {
+                log::warn!(
+                    "persist approving execution graph failed approval_token={} err={}",
+                    token,
+                    err
                 );
-                let _ = suspended.set_pending_approval_status(token, "approving");
-                let persisted_pending_approvals = derive_pending_approvals_from_graph(&suspended);
-                if let Err(err) = persist_suspended_execution_graph_runtime(
-                    state.mcp.store.as_ref(),
-                    &suspended,
-                    &persisted_pending_approvals,
-                    "desktop_local_chat_approval_approving",
-                    "active",
-                    InFlightExecutionStage::WaitingApproval,
-                    None,
-                )
-                .await
-                {
-                    log::warn!(
-                        "persist approving execution graph failed approval_token={} err={}",
-                        token,
-                        err
-                    );
-                }
             }
         }
     }
@@ -136,22 +175,20 @@ async fn approve_local_chat_execution_gate_command(
         Ok(approved) => approved,
         Err(err) => {
             if is_idempotent_post_approval_error(err.as_str()) {
-                if let Some(execution_id) = requested_execution_id.as_deref() {
-                    if let Some(payload) = project_local_chat_approval_state_payload(
-                        state,
-                        execution_id,
-                        Some(err.as_str()),
-                    )
-                    .await?
-                    {
-                        return Ok(payload);
-                    }
+                if let Some(payload) = project_local_chat_approval_state_payload(
+                    state,
+                    requested_execution_id.as_str(),
+                    Some(err.as_str()),
+                )
+                .await?
+                {
+                    return Ok(payload);
                 }
             }
 
             let failed_tool_result = build_failed_approval_tool_result_payload(
                 pending_before_approval.as_ref(),
-                requested_execution_id.as_deref(),
+                Some(requested_execution_id.as_str()),
                 err.as_str(),
             );
             let error_tool_result = serde_json::json!({
@@ -179,35 +216,33 @@ async fn approve_local_chat_execution_gate_command(
                 pending_before_approval
                     .as_ref()
                     .and_then(|pending| pending.call_id.as_deref()),
-                requested_execution_id.as_deref(),
+                Some(requested_execution_id.as_str()),
             )
             .await?
             {
                 return Ok(resumed);
             }
 
-            if let Some(execution_id) = requested_execution_id.as_deref() {
-                if let Some(mut payload) = project_local_chat_approval_state_payload(
-                    state,
-                    execution_id,
-                    Some(err.as_str()),
-                )
-                .await?
-                {
-                    if let Some(object) = payload.as_object_mut() {
-                        object.insert(
-                            "approved_tool_result".to_string(),
-                            failed_tool_result.clone(),
-                        );
-                        object.insert(
-                            "error_code".to_string(),
-                            serde_json::json!("LOCAL_TOOL_APPROVAL_FAILED"),
-                        );
-                        object.insert("error".to_string(), serde_json::json!(err.as_str()));
-                        object.insert("retryable".to_string(), serde_json::json!(true));
-                    }
-                    return Ok(payload);
+            if let Some(mut payload) = project_local_chat_approval_state_payload(
+                state,
+                requested_execution_id.as_str(),
+                Some(err.as_str()),
+            )
+            .await?
+            {
+                if let Some(object) = payload.as_object_mut() {
+                    object.insert(
+                        "approved_tool_result".to_string(),
+                        failed_tool_result.clone(),
+                    );
+                    object.insert(
+                        "error_code".to_string(),
+                        serde_json::json!("LOCAL_TOOL_APPROVAL_FAILED"),
+                    );
+                    object.insert("error".to_string(), serde_json::json!(err.as_str()));
+                    object.insert("retryable".to_string(), serde_json::json!(true));
                 }
+                return Ok(payload);
             }
 
             return Ok(serde_json::json!({
@@ -231,6 +266,35 @@ async fn approve_local_chat_execution_gate_command(
         }
     };
 
+    if let Some(pending) = pending_before_approval.as_ref() {
+        if !approved_tool_result_matches_pending_tool(pending, &approved) {
+            log::error!(
+                "approval_command_mismatched_result approval_token={} pending_tool={} pending_call_id={:?} pending_gate={:?} approved_result={}",
+                token,
+                pending.tool_name,
+                pending.call_id,
+                pending.execution_graph_gate_node_id,
+                serde_json::to_string(&approved)
+                    .unwrap_or_else(|_| "<serialize failed>".to_string())
+            );
+            return Ok(serde_json::json!({
+                "status": "LOCAL_CHAT_RESUME_FAILED",
+                "approval_token": token,
+                "approved_tool_result": approved,
+                "continuation_blocks": [],
+                "execution_graph_execution_id": requested_execution_id,
+                "pending_approval_gate_ids": [],
+                "next_pending_approval_tokens": [],
+                "error_code": "LOCAL_TOOL_APPROVAL_RESULT_MISMATCH",
+                "error": format!(
+                    "approved tool result did not match canonical pending tool '{}'",
+                    pending.tool_name
+                ),
+                "retryable": false,
+            }));
+        }
+    }
+
     if let Some(resumed) = resume_suspended_chat_tool_execution_after_approval(
         app,
         state,
@@ -239,37 +303,33 @@ async fn approve_local_chat_execution_gate_command(
         pending_before_approval
             .as_ref()
             .and_then(|pending| pending.call_id.as_deref()),
-        requested_execution_id.as_deref(),
+        Some(requested_execution_id.as_str()),
     )
     .await?
     {
         return Ok(resumed);
     }
 
-    if let Some(execution_id) = requested_execution_id.as_deref() {
-        if let Some(mut payload) = project_local_chat_approval_state_payload(
-            state,
-            execution_id,
-            Some("canonical waiting approval existed, but post-approval continuation could not be resumed"),
-        )
-        .await?
-        {
-            if let Some(object) = payload.as_object_mut() {
-                object.insert("approved_tool_result".to_string(), approved.clone());
-            }
-            return Ok(payload);
+    if let Some(mut payload) = project_local_chat_approval_state_payload(
+        state,
+        requested_execution_id.as_str(),
+        Some("canonical waiting approval existed, but post-approval continuation could not be resumed"),
+    )
+    .await?
+    {
+        if let Some(object) = payload.as_object_mut() {
+            object.insert("approved_tool_result".to_string(), approved.clone());
         }
-
-        return Ok(serde_json::json!({
-            "status": "LOCAL_CHAT_RESUME_FAILED",
-            "approved_tool_result": approved,
-            "continuation_blocks": [],
-            "execution_graph_execution_id": execution_id,
-            "error": "canonical waiting approval existed, but post-approval continuation could not be resumed",
-        }));
+        return Ok(payload);
     }
 
-    Ok(approved)
+    Ok(serde_json::json!({
+        "status": "LOCAL_CHAT_RESUME_FAILED",
+        "approved_tool_result": approved,
+        "continuation_blocks": [],
+        "execution_graph_execution_id": requested_execution_id,
+        "error": "canonical waiting approval existed, but post-approval continuation could not be resumed",
+    }))
 }
 
 async fn reject_local_chat_execution_gate_command(
@@ -283,14 +343,24 @@ async fn reject_local_chat_execution_gate_command(
         return Err("approval token is required".to_string());
     }
 
+    let requested_execution_id = execution_graph_execution_id
+        .and_then(|value| {
+            let normalized = value.trim();
+            (!normalized.is_empty()).then(|| normalized.to_string())
+        })
+        .ok_or_else(|| "execution_graph_execution_id is required for reject gate".to_string())?;
+
     let pending_before_reject = materialize_pending_local_approval_from_runtime_context(
         state,
         token,
-        execution_graph_execution_id,
+        Some(requested_execution_id.as_str()),
     )
     .await?;
 
-    if matches!(reject_mode, crate::modules::mcp::commands::runtime::RejectPersistMode::DenyAlways) {
+    if matches!(
+        reject_mode,
+        crate::modules::mcp::commands::runtime::RejectPersistMode::DenyAlways
+    ) {
         if let Some(pending) = pending_before_reject.as_ref() {
             if let Some(key) = pending.policy_rule_key.as_deref() {
                 state
@@ -316,24 +386,12 @@ async fn reject_local_chat_execution_gate_command(
         .await
         .remove(token);
 
-    let requested_execution_id = execution_graph_execution_id
-        .and_then(|value| {
-            let normalized = value.trim();
-            (!normalized.is_empty()).then(|| normalized.to_string())
-        })
-        .or_else(|| {
-            pending_before_reject
-                .as_ref()
-                .and_then(|pending| pending.execution_graph_execution_id.clone())
-        });
-
-    let persisted_graph = if let Some(execution_id) = requested_execution_id.as_deref() {
-        load_execution_graph_snapshot(state.mcp.store.as_ref(), execution_id)
-            .await
-            .map_err(to_string)?
-    } else {
-        None
-    };
+    let persisted_graph = load_execution_graph_snapshot(
+        state.mcp.store.as_ref(),
+        requested_execution_id.as_str(),
+    )
+    .await
+    .map_err(to_string)?;
     if let Some(mut execution_graph) = persisted_graph {
         let execution_id = execution_graph
             .get("execution_id")

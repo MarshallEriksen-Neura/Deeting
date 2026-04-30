@@ -44,6 +44,7 @@ interface BridgeApprovalState {
   queue: PendingApproval[]
   pending: PendingApproval | null
   isApproving: boolean
+  activeApprovalToken: string | null
   recentApprovedExecution: RecentApprovedExecution | null
   setPending: (approval: PendingApproval | null) => void
   enqueuePending: (approval: PendingApproval) => void
@@ -62,6 +63,7 @@ export const useBridgeApprovalStore = create<BridgeApprovalState>((set) => ({
   queue: [],
   pending: null,
   isApproving: false,
+  activeApprovalToken: null,
   recentApprovedExecution: null,
   setPending: (approval) =>
     set((state) => {
@@ -103,10 +105,14 @@ export const useBridgeApprovalStore = create<BridgeApprovalState>((set) => ({
         seenTokens.add(approvalToken)
         dedupedQueue.push(approval)
       }
+      const activeApprovalToken = useBridgeApprovalStore.getState().activeApprovalToken
+      const lockedPending = activeApprovalToken
+        ? dedupedQueue.find((item) => item.approval_token === activeApprovalToken) ?? null
+        : null
       return {
         queue: dedupedQueue,
-        pending: dedupedQueue[0] ?? null,
-        isApproving: false,
+        pending: lockedPending ?? dedupedQueue[0] ?? null,
+        isApproving: activeApprovalToken ? true : false,
       }
     }),
   replacePendingByToken: (approval) =>
@@ -142,10 +148,14 @@ export const useBridgeApprovalStore = create<BridgeApprovalState>((set) => ({
       const nextQueue = state.queue.filter(
         (item) => item.approval_token !== normalizedToken
       )
+      const activeApprovalToken = state.activeApprovalToken
+      const lockedPending = activeApprovalToken
+        ? nextQueue.find((item) => item.approval_token === activeApprovalToken) ?? null
+        : null
       return {
         queue: nextQueue,
-        pending: nextQueue[0] ?? null,
-        isApproving: false,
+        pending: lockedPending ?? nextQueue[0] ?? null,
+        isApproving: activeApprovalToken ? true : false,
       }
     }),
   setApproving: (approving) => set({ isApproving: approving }),
@@ -160,10 +170,14 @@ export const useBridgeApprovalStore = create<BridgeApprovalState>((set) => ({
   clear: () =>
     set((state) => {
       const nextQueue = state.queue.slice(1)
+      const activeApprovalToken = state.activeApprovalToken
+      const lockedPending = activeApprovalToken
+        ? nextQueue.find((item) => item.approval_token === activeApprovalToken) ?? null
+        : null
       return {
         queue: nextQueue,
-        pending: nextQueue[0] ?? null,
-        isApproving: false,
+        pending: lockedPending ?? nextQueue[0] ?? null,
+        isApproving: activeApprovalToken ? true : false,
       }
     }),
   clearAll: () => {
@@ -221,7 +235,12 @@ export function beginBridgeApprovalExecution(approvalToken: string | null | unde
   if (!normalizedToken) return false
   if (inFlightApprovalTokens.has(normalizedToken)) return false
   inFlightApprovalTokens.add(normalizedToken)
-  useBridgeApprovalStore.getState().setApproving(true)
+  useBridgeApprovalStore.setState((state) => ({
+    isApproving: true,
+    activeApprovalToken: normalizedToken,
+    pending:
+      state.queue.find((item) => item.approval_token === normalizedToken) ?? state.pending,
+  }))
   return true
 }
 
@@ -229,7 +248,16 @@ export function finishBridgeApprovalExecution(approvalToken: string | null | und
   const normalizedToken = normalizeApprovalToken(approvalToken)
   if (!normalizedToken) return
   inFlightApprovalTokens.delete(normalizedToken)
-  useBridgeApprovalStore
-    .getState()
-    .setApproving(inFlightApprovalTokens.size > 0)
+  useBridgeApprovalStore.setState((state) => {
+    const stillApproving = inFlightApprovalTokens.size > 0
+    const nextActiveApprovalToken = stillApproving ? state.activeApprovalToken : null
+    const lockedPending = nextActiveApprovalToken
+      ? state.queue.find((item) => item.approval_token === nextActiveApprovalToken) ?? null
+      : null
+    return {
+      isApproving: stillApproving,
+      activeApprovalToken: nextActiveApprovalToken,
+      pending: lockedPending ?? state.queue[0] ?? null,
+    }
+  })
 }
