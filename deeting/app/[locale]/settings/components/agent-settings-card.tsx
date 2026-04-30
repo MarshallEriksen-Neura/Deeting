@@ -16,8 +16,14 @@ import {
   type DesktopApprovalPolicyLevel,
 } from "@/lib/api/desktop-config"
 
-const DEFAULT_MAX_ROUNDS = 10
+const DEFAULT_MAX_ROUNDS = 150
 const MIN_ROUNDS = 1
+const ROUND_PRESETS = [
+  { value: 30, labelKey: "maxRoundsPresetQuick" },
+  { value: 80, labelKey: "maxRoundsPresetStandard" },
+  { value: 150, labelKey: "maxRoundsPresetDeep" },
+  { value: 300, labelKey: "maxRoundsPresetLong" },
+] as const
 const DEFAULT_CHAT_HISTORY_RETENTION_DAYS = "0"
 const CHAT_HISTORY_RETENTION_OPTIONS = [
   "0",
@@ -189,6 +195,27 @@ export function AgentSettingsCard({
             <span className="text-xs text-muted-foreground">
               {t("agent.maxRoundsRange", { min: MIN_ROUNDS })}
             </span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {ROUND_PRESETS.map((preset) => {
+              const isActive = maxRounds.trim() === String(preset.value)
+              return (
+                <button
+                  key={preset.value}
+                  type="button"
+                  onClick={() => setMaxRounds(String(preset.value))}
+                  disabled={isLoading || isSaving}
+                  className={[
+                    "h-9 rounded-xl border px-3 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                    isActive
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border/60 bg-background/70 text-muted-foreground hover:border-primary/50 hover:text-foreground",
+                  ].join(" ")}
+                >
+                  {t(`agent.${preset.labelKey}`)}
+                </button>
+              )
+            })}
           </div>
           <p className="text-xs text-muted-foreground">
             {t("agent.maxRoundsHelp")}

@@ -324,7 +324,7 @@
         "message": "预览消息",
         "temperature": "温度",
         "maxTokens": "最大 Token 数",
-        "maxRounds": "最大工具轮数"
+        "maxRounds": "执行预算"
       },
       "placeholders": {
         "message": "描述你想让这个智能体处理的任务..."

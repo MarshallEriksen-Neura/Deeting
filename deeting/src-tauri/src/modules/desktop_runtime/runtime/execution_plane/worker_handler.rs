@@ -14,6 +14,7 @@ use crate::modules::custom_task_agents::types::{
     CustomTaskAgentInvocationKind, CustomTaskAgentPreviewRequest, CustomTaskAgentPreviewResponse,
     CustomTaskAgentProfile,
 };
+use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUNDS_CONFIG_KEY};
 use crate::modules::desktop_runtime::runtime::control_plane::LocalExecutionPlane;
 use crate::modules::desktop_runtime::runtime::worker_dispatch::{
     build_worker_task_packet, render_worker_task_packet_notes, WorkerTargetSelection,
@@ -491,6 +492,7 @@ where
         None,
         None,
     );
+    let max_rounds = resolve_worker_task_agent_max_rounds(&request.app_state).await;
     let execution = match preview_custom_task_agent_with_parent_model(
         &request.app_handle,
         &request.app_state,
@@ -500,7 +502,7 @@ where
             image_urls: latest_input.image_urls.clone(),
             temperature: request.temperature,
             max_tokens: request.max_tokens,
-            max_rounds: Some(4),
+            max_rounds: Some(max_rounds),
             worker_task_packet: Some(task_packet.as_value()),
         },
         Some(&request.model_connection),
@@ -595,6 +597,17 @@ where
     };
 
     Ok(Some(execution))
+}
+
+async fn resolve_worker_task_agent_max_rounds(app_state: &AppState) -> u32 {
+    let configured_max_rounds = app_state
+        .mcp
+        .store
+        .get_desktop_config(MAX_AGENTIC_ROUNDS_CONFIG_KEY)
+        .await
+        .ok()
+        .flatten();
+    parse_max_agentic_rounds(configured_max_rounds.as_deref()).min(u32::MAX as usize) as u32
 }
 
 fn build_execution_selection(

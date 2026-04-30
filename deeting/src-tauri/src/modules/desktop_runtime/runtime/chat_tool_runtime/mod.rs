@@ -827,7 +827,7 @@ async fn continue_local_chat_complete_with_tools(
 
 fn build_max_rounds_exceeded_response(state: &LocalChatToolRuntimeState) -> serde_json::Value {
     let notice = format!(
-        "Stopped because the local desktop runtime reached the agentic round limit ({}). Increase `max_agentic_rounds` to let longer approval-heavy runs continue.",
+        "本次任务已用完 {0}/{0} 轮 Agent 执行预算。当前进度已保留；如需更长的搜索、验证、委托或审批流程，请在设置中提高 `max_agentic_rounds` 后继续本任务。",
         state.max_rounds
     );
     let mut fallback = state
@@ -862,6 +862,16 @@ fn build_max_rounds_exceeded_response(state: &LocalChatToolRuntimeState) -> serd
 
 fn rewind_round_for_post_approval_continuation(state: &mut LocalChatToolRuntimeState) {
     state.round = state.round.saturating_sub(1);
+}
+
+fn resolve_child_agent_max_rounds(arguments: &serde_json::Value, runtime_max_rounds: usize) -> u32 {
+    let runtime_cap = runtime_max_rounds.max(1).min(u32::MAX as usize);
+    arguments
+        .get("max_rounds")
+        .and_then(serde_json::Value::as_u64)
+        .map(|value| value.min(u32::MAX as u64) as usize)
+        .map(|value| value.max(1).min(runtime_cap))
+        .unwrap_or(runtime_cap) as u32
 }
 
 fn classify_local_tool_execution_error_code(error: &str) -> &'static str {
@@ -1065,11 +1075,7 @@ async fn execute_delegate_task_tool(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    let max_rounds = arguments
-        .get("max_rounds")
-        .and_then(serde_json::Value::as_u64)
-        .map(|value| value.clamp(1, 8) as u32)
-        .unwrap_or(4);
+    let max_rounds = resolve_child_agent_max_rounds(arguments, state.max_rounds);
     let task_packet = build_worker_task_packet(
         &selection,
         WorkerTaskPacketInput {

@@ -348,8 +348,8 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
                     },
                     "max_rounds": {
                         "type": "integer",
-                        "description": "Optional maximum child-agent tool rounds. The runtime enforces its own cap.",
-                        "default": 4
+                        "description": "Optional maximum child-agent tool rounds. If omitted, the child inherits the current per-task execution budget. Requested values are capped by the runtime budget.",
+                        "default": 150
                     }
                 },
                 "required": ["task"]
@@ -380,7 +380,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
                 "task": "Review this bounded implementation plan for missing runtime constraints.",
                 "constraints": ["Do not modify files", "Return findings and risks only"],
                 "expected_output": {"kind": "findings"},
-                "max_rounds": 4
+                "max_rounds": 150
             }),
         },
         CoreToolContract {

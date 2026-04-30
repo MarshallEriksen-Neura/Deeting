@@ -71,7 +71,7 @@ export function TaskAgentPreviewPanel({
               {[
                 { id: "temperature", label: t("preview.fields.temperature"), value: previewDraft.temperature, placeholder: "0.2" },
                 { id: "max_tokens", label: t("preview.fields.maxTokens"), value: previewDraft.max_tokens, placeholder: "512" },
-                { id: "max_rounds", label: t("preview.fields.maxRounds"), value: previewDraft.max_rounds, placeholder: "4" },
+                { id: "max_rounds", label: t("preview.fields.maxRounds"), value: previewDraft.max_rounds, placeholder: "150" },
               ].map(field => (
                 <div key={field.id} className="space-y-2">
                   <label className="font-mono text-[9px] font-bold tracking-[0.2em] text-[var(--ink-4)] uppercase">

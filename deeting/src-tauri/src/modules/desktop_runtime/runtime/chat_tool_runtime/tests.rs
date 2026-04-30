@@ -901,7 +901,7 @@ fn build_max_rounds_exceeded_response_appends_visible_notice() {
         .expect("content");
 
     assert!(content.contains("Shell step finished."));
-    assert!(content.contains("agentic round limit (10)"));
+    assert!(content.contains("10/10"));
     assert_eq!(
         response
             .get("error_code")
@@ -913,6 +913,26 @@ fn build_max_rounds_exceeded_response_appends_visible_notice() {
             .get("stop_reason")
             .and_then(serde_json::Value::as_str),
         Some("max_agentic_rounds_exceeded")
+    );
+}
+
+#[test]
+fn resolve_child_agent_max_rounds_inherits_and_caps_to_runtime_budget() {
+    assert_eq!(
+        resolve_child_agent_max_rounds(&serde_json::json!({}), 150),
+        150
+    );
+    assert_eq!(
+        resolve_child_agent_max_rounds(&serde_json::json!({ "max_rounds": 50 }), 150),
+        50
+    );
+    assert_eq!(
+        resolve_child_agent_max_rounds(&serde_json::json!({ "max_rounds": 500 }), 150),
+        150
+    );
+    assert_eq!(
+        resolve_child_agent_max_rounds(&serde_json::json!({ "max_rounds": 0 }), 150),
+        1
     );
 }
 

@@ -32,7 +32,8 @@ use crate::modules::llm_wiki::types::SearchLocalLlmWikiCorpusRequest;
 use crate::modules::voice_capabilities::tts::request_provider_text_to_speech;
 use crate::modules::voice_capabilities::types::TtsRequest;
 
-const MAX_CUSTOM_TASK_AGENT_TOOL_ROUNDS: usize = 4;
+const MAX_CUSTOM_TASK_AGENT_TOOL_ROUNDS: usize =
+    crate::modules::desktop_config::DEFAULT_MAX_AGENTIC_ROUNDS;
 const MAX_GUIDANCE_SKILL_DOCS: usize = 3;
 const LLM_WIKI_MAINTAINER_SOURCE_KIND: &str = "llm_wiki_maintainer";
 const LLM_WIKI_SEARCH_CALLABLE_NAME: &str = "llm_wiki_search_corpus";
@@ -607,7 +608,11 @@ pub(crate) async fn preview_custom_task_agent_with_parent_model(
         });
     }
 
-    Err(format!("custom task agent exceeded {} callable rounds", max_rounds).into())
+    Err(format!(
+        "Task agent used its {0}/{0} execution budget before it finished. Increase `max_agentic_rounds` or continue with a larger budget.",
+        max_rounds
+    )
+    .into())
 }
 
 async fn resolve_request_image_urls(

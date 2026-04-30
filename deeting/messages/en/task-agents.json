@@ -325,7 +325,7 @@
         "message": "Preview Message",
         "temperature": "Temperature",
         "maxTokens": "Max Tokens",
-        "maxRounds": "Max Tool Rounds"
+        "maxRounds": "Execution Budget"
       },
       "placeholders": {
         "message": "Describe the task you want this agent to handle..."
