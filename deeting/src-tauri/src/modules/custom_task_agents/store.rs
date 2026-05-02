@@ -8,10 +8,11 @@ use crate::modules::mcp::store::McpStore;
 
 use super::types::{
     CreateCustomTaskAgentRequest, CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
-    UpdateCustomTaskAgentRequest,
+    CustomTaskAgentRun, CustomTaskAgentRunStatus, UpdateCustomTaskAgentRequest,
 };
 
 const TABLE_NAME: &str = "custom_task_agent_profiles";
+const RUN_TABLE_NAME: &str = "custom_task_agent_runs";
 
 pub(crate) async fn ensure_schema(store: &McpStore) -> Result<(), McpError> {
     sqlx::query(&format!(
@@ -85,6 +86,45 @@ pub(crate) async fn ensure_schema(store: &McpStore) -> Result<(), McpError> {
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
 
+    sqlx::query(&format!(
+        r#"
+        CREATE TABLE IF NOT EXISTS {RUN_TABLE_NAME} (
+          run_id TEXT PRIMARY KEY,
+          agent_id TEXT NOT NULL,
+          parent_execution_id TEXT NOT NULL,
+          status TEXT NOT NULL,
+          request_json TEXT NOT NULL,
+          result_json TEXT,
+          error TEXT,
+          started_at TEXT NOT NULL,
+          completed_at TEXT,
+          updated_at TEXT NOT NULL
+        );
+        "#
+    ))
+    .execute(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    sqlx::query(&format!(
+        "CREATE INDEX IF NOT EXISTS idx_{RUN_TABLE_NAME}_agent_id ON {RUN_TABLE_NAME}(agent_id);"
+    ))
+    .execute(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+    sqlx::query(&format!(
+        "CREATE INDEX IF NOT EXISTS idx_{RUN_TABLE_NAME}_parent_execution_id ON {RUN_TABLE_NAME}(parent_execution_id);"
+    ))
+    .execute(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+    sqlx::query(&format!(
+        "CREATE INDEX IF NOT EXISTS idx_{RUN_TABLE_NAME}_status ON {RUN_TABLE_NAME}(status);"
+    ))
+    .execute(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
     migrate_legacy_binding_columns(store).await?;
 
     Ok(())
@@ -115,6 +155,13 @@ pub(crate) async fn list_custom_task_agents(
 impl McpStore {
     pub async fn list_custom_task_agents(&self) -> Result<Vec<CustomTaskAgentProfile>, McpError> {
         list_custom_task_agents(self).await
+    }
+
+    pub async fn get_custom_task_agent_run(
+        &self,
+        run_id: &str,
+    ) -> Result<Option<CustomTaskAgentRun>, McpError> {
+        get_custom_task_agent_run(self, run_id).await
     }
 }
 
@@ -357,6 +404,117 @@ pub(crate) async fn update_custom_task_agent(
     })
 }
 
+pub(crate) async fn create_custom_task_agent_run(
+    store: &McpStore,
+    run_id: &str,
+    agent_id: &str,
+    parent_execution_id: &str,
+    request_json: &Value,
+) -> Result<CustomTaskAgentRun, McpError> {
+    ensure_schema(store).await?;
+    let now = now_rfc3339()?;
+    sqlx::query(&format!(
+        r#"
+        INSERT INTO {RUN_TABLE_NAME}
+          (run_id, agent_id, parent_execution_id, status, request_json, result_json, error, started_at, completed_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, NULL, ?);
+        "#
+    ))
+    .bind(run_id.trim())
+    .bind(agent_id.trim())
+    .bind(parent_execution_id.trim())
+    .bind(CustomTaskAgentRunStatus::Running.as_str())
+    .bind(serialize_json(&Some(request_json.clone()))?)
+    .bind(&now)
+    .bind(&now)
+    .execute(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    Ok(CustomTaskAgentRun {
+        run_id: run_id.trim().to_string(),
+        agent_id: agent_id.trim().to_string(),
+        parent_execution_id: parent_execution_id.trim().to_string(),
+        status: CustomTaskAgentRunStatus::Running,
+        request_json: request_json.clone(),
+        result_json: None,
+        error: None,
+        started_at: now.clone(),
+        completed_at: None,
+        updated_at: now,
+    })
+}
+
+pub(crate) async fn get_custom_task_agent_run(
+    store: &McpStore,
+    run_id: &str,
+) -> Result<Option<CustomTaskAgentRun>, McpError> {
+    ensure_schema(store).await?;
+    let row = sqlx::query(&format!(
+        r#"
+        SELECT run_id, agent_id, parent_execution_id, status, request_json, result_json, error, started_at, completed_at, updated_at
+        FROM {RUN_TABLE_NAME}
+        WHERE run_id = ?;
+        "#
+    ))
+    .bind(run_id.trim())
+    .fetch_optional(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    row.as_ref().map(row_to_run).transpose()
+}
+
+pub(crate) async fn complete_custom_task_agent_run(
+    store: &McpStore,
+    run_id: &str,
+    result_json: &Value,
+) -> Result<(), McpError> {
+    ensure_schema(store).await?;
+    let now = now_rfc3339()?;
+    sqlx::query(&format!(
+        r#"
+        UPDATE {RUN_TABLE_NAME}
+        SET status = ?, result_json = ?, error = NULL, completed_at = ?, updated_at = ?
+        WHERE run_id = ?;
+        "#
+    ))
+    .bind(CustomTaskAgentRunStatus::Completed.as_str())
+    .bind(serialize_json(&Some(result_json.clone()))?)
+    .bind(&now)
+    .bind(&now)
+    .bind(run_id.trim())
+    .execute(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+    Ok(())
+}
+
+pub(crate) async fn fail_custom_task_agent_run(
+    store: &McpStore,
+    run_id: &str,
+    error: &str,
+) -> Result<(), McpError> {
+    ensure_schema(store).await?;
+    let now = now_rfc3339()?;
+    sqlx::query(&format!(
+        r#"
+        UPDATE {RUN_TABLE_NAME}
+        SET status = ?, error = ?, completed_at = ?, updated_at = ?
+        WHERE run_id = ?;
+        "#
+    ))
+    .bind(CustomTaskAgentRunStatus::Failed.as_str())
+    .bind(error)
+    .bind(&now)
+    .bind(&now)
+    .bind(run_id.trim())
+    .execute(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+    Ok(())
+}
+
 pub(crate) async fn delete_custom_task_agent(store: &McpStore, id: &str) -> Result<(), McpError> {
     ensure_schema(store).await?;
     let now = now_rfc3339()?;
@@ -453,6 +611,55 @@ fn row_to_profile(row: &SqliteRow) -> Result<CustomTaskAgentProfile, McpError> {
             .map_err(|err| McpError::Storage(err.to_string()))?,
         created_at: row
             .try_get("created_at")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        updated_at: row
+            .try_get("updated_at")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+    })
+}
+
+fn row_to_run(row: &SqliteRow) -> Result<CustomTaskAgentRun, McpError> {
+    let status = match row
+        .try_get::<String, _>("status")
+        .map_err(|err| McpError::Storage(err.to_string()))?
+        .as_str()
+    {
+        "completed" => CustomTaskAgentRunStatus::Completed,
+        "failed" => CustomTaskAgentRunStatus::Failed,
+        "cancelled" => CustomTaskAgentRunStatus::Cancelled,
+        _ => CustomTaskAgentRunStatus::Running,
+    };
+    let request_json = row
+        .try_get::<String, _>("request_json")
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+    let result_json = row
+        .try_get::<Option<String>, _>("result_json")
+        .map_err(|err| McpError::Storage(err.to_string()))?
+        .as_deref()
+        .map(parse_json_value)
+        .transpose()?;
+
+    Ok(CustomTaskAgentRun {
+        run_id: row
+            .try_get("run_id")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        agent_id: row
+            .try_get("agent_id")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        parent_execution_id: row
+            .try_get("parent_execution_id")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        status,
+        request_json: parse_json_value(request_json.as_str())?,
+        result_json,
+        error: row
+            .try_get("error")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        started_at: row
+            .try_get("started_at")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        completed_at: row
+            .try_get("completed_at")
             .map_err(|err| McpError::Storage(err.to_string()))?,
         updated_at: row
             .try_get("updated_at")

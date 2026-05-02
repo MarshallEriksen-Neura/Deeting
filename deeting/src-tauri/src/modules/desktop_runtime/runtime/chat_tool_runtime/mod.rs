@@ -72,8 +72,8 @@ use recovery::{
 };
 pub(crate) use recovery::{
     project_local_chat_approval_state_payload, recover_inflight_local_execution_state,
-    recover_local_chat_execution_from_action, resume_suspended_chat_tool_execution_after_approval,
-    wake_delegated_runtime_for_workflow_run,
+    recover_local_chat_execution_from_action, resume_delegated_runtime_after_custom_task_agent_run,
+    resume_suspended_chat_tool_execution_after_approval, wake_delegated_runtime_for_workflow_run,
 };
 use replay::finalize_tool_round;
 #[cfg(test)]

@@ -152,6 +152,40 @@ pub struct CustomTaskAgentPreviewResponse {
     pub raw: Option<Value>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CustomTaskAgentRunStatus {
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+impl CustomTaskAgentRunStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomTaskAgentRun {
+    pub run_id: String,
+    pub agent_id: String,
+    pub parent_execution_id: String,
+    pub status: CustomTaskAgentRunStatus,
+    pub request_json: Value,
+    pub result_json: Option<Value>,
+    pub error: Option<String>,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomTaskAgentBindableMcpTool {
     pub id: String,

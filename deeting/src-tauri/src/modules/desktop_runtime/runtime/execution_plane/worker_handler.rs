@@ -1,22 +1,25 @@
 use super::{
-    build_delegated_result_feedback_messages, build_workflow_delegated_execution_session,
-    run_policy_scoped_chat_completion, DelegatedExecutionAction, DelegatedExecutionChildRecord,
-    DelegatedExecutionKind, DelegatedExecutionPacketReceipt, DelegatedExecutionRecord,
-    DelegatedExecutionSelection, DelegatedExecutionSession, DelegatedExecutionStatus,
-    DelegatedExecutionTarget, LocalExecutionOutcome, LocalExecutionRequest,
+    build_custom_task_agent_delegated_execution_session, build_delegated_result_feedback_messages,
+    build_workflow_delegated_execution_session, run_policy_scoped_chat_completion,
+    DelegatedExecutionAction, DelegatedExecutionKind, DelegatedExecutionPacketReceipt,
+    DelegatedExecutionRecord, DelegatedExecutionSelection, DelegatedExecutionSession,
+    DelegatedExecutionStatus, DelegatedExecutionTarget, LocalExecutionOutcome,
+    LocalExecutionRequest,
 };
 use crate::modules::audio::result_blocks::build_audio_result_block;
 use crate::modules::chat_assets::resolve_chat_assets_dir;
-use crate::modules::custom_task_agents::runtime::{
-    preview_custom_task_agent_with_parent_model, CustomTaskAgentRuntimeError,
+use crate::modules::custom_task_agents::runtime::preview_custom_task_agent_with_parent_model;
+use crate::modules::custom_task_agents::store::{
+    complete_custom_task_agent_run, create_custom_task_agent_run, fail_custom_task_agent_run,
 };
 use crate::modules::custom_task_agents::types::{
     CustomTaskAgentInvocationKind, CustomTaskAgentPreviewRequest, CustomTaskAgentPreviewResponse,
-    CustomTaskAgentProfile,
+    CustomTaskAgentProfile, CustomTaskAgentRunStatus,
 };
 use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUNDS_CONFIG_KEY};
 use crate::modules::desktop_runtime::runtime::chat_tool_runtime::{
     build_persisted_chat_runtime_context_from_execution_request,
+    resume_delegated_runtime_after_custom_task_agent_run,
     serialize_delegated_workflow_runtime_context,
 };
 use crate::modules::desktop_runtime::runtime::control_plane::LocalExecutionPlane;
@@ -454,107 +457,202 @@ where
         None,
     );
     let max_rounds = resolve_worker_task_agent_max_rounds(&request.app_state).await;
-    let execution = match preview_custom_task_agent_with_parent_model(
-        &request.app_handle,
-        &request.app_state,
-        &selection.profile,
-        CustomTaskAgentPreviewRequest {
-            message: latest_input.raw_text.clone(),
-            image_urls: latest_input.image_urls.clone(),
-            temperature: request.temperature,
-            max_tokens: request.max_tokens,
-            max_rounds: Some(max_rounds),
-            worker_task_packet: Some(task_packet.as_value()),
-        },
-        Some(&request.model_connection),
+    let child_run_id = Uuid::new_v4().to_string();
+    create_custom_task_agent_run(
+        request.app_state.mcp.store.as_ref(),
+        child_run_id.as_str(),
+        selection.profile.id.as_str(),
+        execution_id.as_str(),
+        &json!({
+            "message": latest_input.raw_text,
+            "image_urls": latest_input.image_urls,
+            "temperature": request.temperature,
+            "max_tokens": request.max_tokens,
+            "max_rounds": max_rounds,
+            "worker_task_packet": task_packet.as_value(),
+        }),
     )
     .await
-    {
-        Ok(result) => {
-            let summary = summarize_content(result.content.as_str());
-            emit_delegation_lifecycle(
-                emit_status,
-                "worker_delegation",
-                DelegatedExecutionStatus::Succeeded,
-                &execution_id,
-                DelegatedExecutionKind::CustomTaskAgent,
-                &selection.profile.id,
-                &selection.profile.name,
-                Some(result.invocation_kind.as_str()),
-                None,
-                execution_selection.score,
-                execution_selection.reason_text.as_deref(),
-                None,
-                summary.as_deref(),
-            );
-            let render_blocks = build_custom_task_agent_render_blocks(
-                &request.app_handle,
-                &request.app_state,
-                &selection.profile,
-                &result,
-                Some(&query),
-            )
-            .await;
-            emit_status(
-                "evolve",
-                Some("worker_delegation"),
-                "success",
-                "worker.task.completed",
-                Some(json!({
-                    "agent_id": selection.profile.id,
-                    "agent_name": selection.profile.name,
-                    "invocation_kind": result.invocation_kind.as_str(),
-                    "images": result.images.len(),
-                    "audios": result.audios.len(),
-                    "tool_trace_count": result.tool_trace.len(),
-                })),
-            );
-            build_delegated_execution_session(
-                execution_id.clone(),
-                selection.profile.clone(),
-                execution_selection.clone(),
-                packet_receipt.clone(),
-                Ok(result),
-                render_blocks,
-            )
+    .map_err(|err| err.to_string())?;
+
+    let app_handle = request.app_handle.clone();
+    let app_state = request.app_state.clone();
+    let profile = selection.profile.clone();
+    let selection_payload = execution_selection.clone();
+    let packet_receipt_payload = packet_receipt.clone();
+    let model_connection = request.model_connection.clone();
+    let execution_id_for_spawn = execution_id.clone();
+    let query_for_spawn = query.clone();
+    let child_run_id_for_spawn = child_run_id.clone();
+    let preview_request = CustomTaskAgentPreviewRequest {
+        message: latest_input.raw_text.clone(),
+        image_urls: latest_input.image_urls.clone(),
+        temperature: request.temperature,
+        max_tokens: request.max_tokens,
+        max_rounds: Some(max_rounds),
+        worker_task_packet: Some(task_packet.as_value()),
+    };
+    tauri::async_runtime::spawn(async move {
+        let result = preview_custom_task_agent_with_parent_model(
+            &app_handle,
+            &app_state,
+            &profile,
+            preview_request,
+            Some(&model_connection),
+        )
+        .await;
+
+        match result {
+            Ok(result) => {
+                let render_blocks = build_custom_task_agent_render_blocks(
+                    &app_handle,
+                    &app_state,
+                    &profile,
+                    &result,
+                    Some(&query_for_spawn),
+                )
+                .await;
+                let session = build_custom_task_agent_delegated_execution_session(
+                    execution_id_for_spawn.clone(),
+                    profile.clone(),
+                    selection_payload.clone(),
+                    packet_receipt_payload.clone(),
+                    Ok(result),
+                    render_blocks,
+                );
+                let payload = session.record.delegated_result();
+                if let Err(err) = complete_custom_task_agent_run(
+                    app_state.mcp.store.as_ref(),
+                    child_run_id_for_spawn.as_str(),
+                    &payload,
+                )
+                .await
+                {
+                    log::warn!(
+                        "complete_custom_task_agent_run failed run_id={} err={}",
+                        child_run_id_for_spawn,
+                        err
+                    );
+                }
+                let _ = resume_delegated_runtime_after_custom_task_agent_run(
+                    &app_handle,
+                    &app_state,
+                    execution_id_for_spawn.as_str(),
+                    child_run_id_for_spawn.as_str(),
+                    &format!("custom_task_agent:{}:completed", child_run_id_for_spawn),
+                    session,
+                )
+                .await;
+            }
+            Err(err) => {
+                let session = build_custom_task_agent_delegated_execution_session(
+                    execution_id_for_spawn.clone(),
+                    profile.clone(),
+                    selection_payload.clone(),
+                    packet_receipt_payload.clone(),
+                    Err(err.clone()),
+                    Vec::new(),
+                );
+                if let Err(store_err) = fail_custom_task_agent_run(
+                    app_state.mcp.store.as_ref(),
+                    child_run_id_for_spawn.as_str(),
+                    err.to_string().as_str(),
+                )
+                .await
+                {
+                    log::warn!(
+                        "fail_custom_task_agent_run failed run_id={} err={}",
+                        child_run_id_for_spawn,
+                        store_err
+                    );
+                }
+                let _ = resume_delegated_runtime_after_custom_task_agent_run(
+                    &app_handle,
+                    &app_state,
+                    execution_id_for_spawn.as_str(),
+                    child_run_id_for_spawn.as_str(),
+                    &format!("custom_task_agent:{}:failed", child_run_id_for_spawn),
+                    session,
+                )
+                .await;
+            }
         }
-        Err(err) => {
-            let err_text = err.to_string();
-            emit_delegation_lifecycle(
-                emit_status,
-                "worker_delegation",
-                DelegatedExecutionStatus::Failed,
-                &execution_id,
-                DelegatedExecutionKind::CustomTaskAgent,
-                &selection.profile.id,
-                &selection.profile.name,
-                Some(selection.profile.invocation_kind.as_str()),
-                None,
-                execution_selection.score,
-                execution_selection.reason_text.as_deref(),
-                None,
-                Some(err_text.as_str()),
-            );
-            emit_status(
-                "evolve",
-                Some("worker_delegation"),
-                "error",
-                "worker.task.failed",
-                Some(json!({
-                    "agent_id": selection.profile.id,
-                    "agent_name": selection.profile.name,
-                    "error": err_text,
-                })),
-            );
-            build_delegated_execution_session(
-                execution_id,
-                selection.profile.clone(),
-                execution_selection,
-                packet_receipt,
-                Err(err),
-                Vec::new(),
-            )
-        }
+    });
+
+    let execution = DelegatedExecutionSession {
+        feedback_messages: build_delegated_result_feedback_messages(&DelegatedExecutionRecord {
+            execution_id: execution_id.clone(),
+            kind: DelegatedExecutionKind::CustomTaskAgent,
+            status: DelegatedExecutionStatus::Running,
+            target: DelegatedExecutionTarget {
+                id: selection.profile.id.clone(),
+                name: selection.profile.name.clone(),
+                invocation_kind: Some(selection.profile.invocation_kind.as_str().to_string()),
+                worker_ref: Some(format!("custom_task_agent_run:{}", child_run_id)),
+                workflow_run_id: None,
+            },
+            selection: execution_selection.clone(),
+            packet_receipt: packet_receipt.clone(),
+            available_actions: vec![DelegatedExecutionAction {
+                kind: "open".to_string(),
+            }],
+            children: Vec::new(),
+            summary: Some(format!(
+                "custom task agent {} running",
+                selection.profile.name
+            )),
+            primary_output: Some(json!({
+                "status": CustomTaskAgentRunStatus::Running.as_str(),
+                "agent_id": selection.profile.id,
+                "agent_name": selection.profile.name,
+                "run_id": child_run_id,
+            })),
+            error: None,
+            started_at_ms: chrono::Utc::now().timestamp_millis(),
+            completed_at_ms: None,
+        }),
+        trace_blocks: build_local_tool_trace_blocks(&[json!({
+            "id": format!("delegated-agent-run-{}", child_run_id),
+            "name": format!("custom_task_agent/{}", selection.profile.name),
+            "status": "running",
+            "result": {
+                "status": CustomTaskAgentRunStatus::Running.as_str(),
+                "run_id": child_run_id,
+                "agent_id": selection.profile.id,
+                "agent_name": selection.profile.name,
+            }
+        })]),
+        record: DelegatedExecutionRecord {
+            execution_id,
+            kind: DelegatedExecutionKind::CustomTaskAgent,
+            status: DelegatedExecutionStatus::Running,
+            target: DelegatedExecutionTarget {
+                id: selection.profile.id.clone(),
+                name: selection.profile.name.clone(),
+                invocation_kind: Some(selection.profile.invocation_kind.as_str().to_string()),
+                worker_ref: Some(format!("custom_task_agent_run:{}", child_run_id)),
+                workflow_run_id: None,
+            },
+            selection: execution_selection,
+            packet_receipt,
+            available_actions: vec![DelegatedExecutionAction {
+                kind: "open".to_string(),
+            }],
+            children: Vec::new(),
+            summary: Some(format!(
+                "custom task agent {} running",
+                selection.profile.name
+            )),
+            primary_output: Some(json!({
+                "status": CustomTaskAgentRunStatus::Running.as_str(),
+                "agent_id": selection.profile.id,
+                "agent_name": selection.profile.name,
+                "run_id": child_run_id,
+            })),
+            error: None,
+            started_at_ms: chrono::Utc::now().timestamp_millis(),
+            completed_at_ms: None,
+        },
     };
 
     Ok(Some(execution))
@@ -634,19 +732,6 @@ fn emit_delegation_lifecycle<F>(
             "summary": summary,
         })),
     );
-}
-
-fn summarize_content(content: &str) -> Option<String> {
-    let summary = content
-        .split_whitespace()
-        .take(32)
-        .collect::<Vec<_>>()
-        .join(" ");
-    if summary.is_empty() {
-        None
-    } else {
-        Some(summary)
-    }
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -740,156 +825,6 @@ fn latest_user_image_input(messages: &[LocalChatInputMessage]) -> LatestUserImag
         prompt: text_parts.join("\n"),
         image_urls,
         raw_text,
-    }
-}
-
-fn build_delegated_execution_session(
-    execution_id: String,
-    profile: CustomTaskAgentProfile,
-    selection: DelegatedExecutionSelection,
-    packet_receipt: Option<DelegatedExecutionPacketReceipt>,
-    result: Result<CustomTaskAgentPreviewResponse, CustomTaskAgentRuntimeError>,
-    render_blocks: Vec<Value>,
-) -> DelegatedExecutionSession {
-    let started_at_ms = chrono::Utc::now().timestamp_millis();
-    match result {
-        Ok(result) => {
-            let payload = json!({
-                "status": result.status,
-                "agent_id": profile.id,
-                "agent_name": profile.name,
-                "invocation_kind": result.invocation_kind.as_str(),
-                "content": result.content,
-                "reasoning_content": result.reasoning_content,
-                "images": result.images,
-                "audios": result.audios,
-                "tool_trace": result.tool_trace,
-                "callable_mcp_tool_ids": result.callable_mcp_tool_ids,
-                "guidance_skill_ids": result.guidance_skill_ids,
-                "callable_skill_action_refs": result.callable_skill_action_refs,
-                "render_blocks": render_blocks,
-            });
-            let tool_trace_blocks = build_local_tool_trace_blocks(&[json!({
-                "id": format!("delegated-agent-{}", profile.id),
-                "name": format!("custom_task_agent/{}", profile.name),
-                "status": "success",
-                "result": payload.clone(),
-            })]);
-            let primary_child = build_primary_child_execution_record(
-                execution_id.as_str(),
-                &profile,
-                "succeeded",
-                summarize_content(result.content.as_str()),
-                None,
-                if render_blocks.is_empty() {
-                    Vec::new()
-                } else {
-                    vec![DelegatedExecutionAction {
-                        kind: "view_result".to_string(),
-                    }]
-                },
-            );
-            let record = DelegatedExecutionRecord {
-                execution_id,
-                kind: DelegatedExecutionKind::CustomTaskAgent,
-                status: DelegatedExecutionStatus::Succeeded,
-                target: DelegatedExecutionTarget {
-                    id: profile.id.clone(),
-                    name: profile.name.clone(),
-                    invocation_kind: Some(result.invocation_kind.as_str().to_string()),
-                    worker_ref: None,
-                    workflow_run_id: None,
-                },
-                selection,
-                packet_receipt,
-                available_actions: Vec::new(),
-                children: vec![primary_child],
-                summary: summarize_content(result.content.as_str()),
-                primary_output: Some(payload.clone()),
-                error: None,
-                started_at_ms,
-                completed_at_ms: Some(chrono::Utc::now().timestamp_millis()),
-            };
-            let feedback_messages = build_delegated_result_feedback_messages(&record);
-            DelegatedExecutionSession {
-                record,
-                feedback_messages,
-                trace_blocks: tool_trace_blocks,
-            }
-        }
-        Err(error) => {
-            let error_text = error.message.clone();
-            let payload = json!({
-                "status": "failed",
-                "agent_id": profile.id,
-                "agent_name": profile.name,
-                "error_code": error.code.clone(),
-                "error": error_text,
-            });
-            let tool_trace_blocks = build_local_tool_trace_blocks(&[json!({
-                "id": format!("delegated-agent-{}", profile.id),
-                "name": format!("custom_task_agent/{}", profile.name),
-                "status": "error",
-                "error_code": error.code,
-                "error": error.message,
-            })]);
-            let primary_child = build_primary_child_execution_record(
-                execution_id.as_str(),
-                &profile,
-                "failed",
-                Some(error_text.clone()),
-                Some(error_text.clone()),
-                Vec::new(),
-            );
-            let record = DelegatedExecutionRecord {
-                execution_id,
-                kind: DelegatedExecutionKind::CustomTaskAgent,
-                status: DelegatedExecutionStatus::Failed,
-                target: DelegatedExecutionTarget {
-                    id: profile.id.clone(),
-                    name: profile.name.clone(),
-                    invocation_kind: Some(profile.invocation_kind.as_str().to_string()),
-                    worker_ref: None,
-                    workflow_run_id: None,
-                },
-                selection,
-                packet_receipt,
-                available_actions: Vec::new(),
-                children: vec![primary_child],
-                summary: Some(error_text.clone()),
-                primary_output: Some(payload.clone()),
-                error: Some(error_text),
-                started_at_ms,
-                completed_at_ms: Some(chrono::Utc::now().timestamp_millis()),
-            };
-            let feedback_messages = build_delegated_result_feedback_messages(&record);
-            DelegatedExecutionSession {
-                record,
-                feedback_messages,
-                trace_blocks: tool_trace_blocks,
-            }
-        }
-    }
-}
-
-fn build_primary_child_execution_record(
-    execution_id: &str,
-    profile: &CustomTaskAgentProfile,
-    status: &str,
-    summary: Option<String>,
-    error: Option<String>,
-    available_actions: Vec<DelegatedExecutionAction>,
-) -> DelegatedExecutionChildRecord {
-    DelegatedExecutionChildRecord {
-        id: format!("{execution_id}:primary"),
-        phase_id: None,
-        step_type: Some("worker_call".to_string()),
-        title: profile.name.clone(),
-        status: status.to_string(),
-        worker_ref: Some(format!("user_worker_profile:{}", profile.id)),
-        summary,
-        error,
-        available_actions,
     }
 }
 
