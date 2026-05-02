@@ -243,6 +243,37 @@ describe("models api", () => {
     expect(result.instances[0]?.models[0]?.provider_model_id).toBe("pm-local-video")
   })
 
+  it("treats local rerank capabilities as embedding models", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+
+    mockInvoke
+      .mockResolvedValueOnce([
+        {
+          id: "inst-local-rerank",
+          name: "Local Rerank Provider",
+          preset_slug: "custom",
+          icon: null,
+          is_enabled: true,
+        },
+      ] as unknown)
+      .mockResolvedValueOnce([
+        {
+          id: "pm-local-rerank",
+          instance_id: "inst-local-rerank",
+          model_id: "bge-reranker-v2-m3",
+          unified_model_id: null,
+          capabilities: ["rerank"],
+          is_active: true,
+          extra_meta: {},
+        },
+      ] as unknown)
+
+    const result = await fetchChatModels({ capability: "embedding" })
+    expect(result.instances).toHaveLength(1)
+    expect(result.instances[0]?.models[0]?.provider_model_id).toBe("pm-local-rerank")
+  })
+
   it("falls back to routing and upstream capabilities for local filtering", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}

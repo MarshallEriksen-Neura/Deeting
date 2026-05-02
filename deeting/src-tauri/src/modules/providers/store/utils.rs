@@ -117,9 +117,16 @@ pub fn row_to_user_embedding_config(row: &SqliteRow) -> Result<UserEmbeddingConf
 }
 
 pub fn has_embedding_capability(capabilities: &[String]) -> bool {
-    capabilities
-        .iter()
-        .any(|capability| capability.eq_ignore_ascii_case(EMBEDDING_CAPABILITY))
+    capabilities.iter().any(|capability| {
+        let normalized = capability
+            .trim()
+            .to_ascii_lowercase()
+            .replace(['-', ' '], "_");
+        matches!(
+            normalized.as_str(),
+            EMBEDDING_CAPABILITY | "embeddings" | "vector" | "rerank" | "reranker" | "reranking"
+        )
+    })
 }
 
 pub fn contains_capability(capabilities: &[String], expected: &str) -> bool {

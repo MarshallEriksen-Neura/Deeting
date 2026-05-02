@@ -592,7 +592,9 @@ fn normalize_capability(capability: Option<&str>) -> Option<String> {
     let canonical = match normalized.as_str() {
         "chat" | "chat_completion" | "chat_completions" | "text_generation" | "text"
         | "reasoning" | "code" | "vision" => CHAT_CAPABILITY,
-        "embedding" | "embeddings" | "vector" => EMBEDDING_CAPABILITY,
+        "embedding" | "embeddings" | "vector" | "rerank" | "reranker" | "reranking" => {
+            EMBEDDING_CAPABILITY
+        }
         "image_generation" | "image" | "image_gen" | "text_to_image" => IMAGE_GENERATION_CAPABILITY,
         "text_to_speech" | "tts" | "speech" => TEXT_TO_SPEECH_CAPABILITY,
         "speech_to_text" | "stt" | "audio" | "audio_to_text" | "transcription" => {
@@ -637,6 +639,7 @@ fn guess_capabilities(model_id: &str) -> Vec<String> {
         || model_id_trimmed.starts_with("embedding")
         || model_id_trimmed.starts_with("ada-embedding")
         || model_id_trimmed.contains("embed")
+        || model_id_trimmed.contains("rerank")
     {
         EMBEDDING_CAPABILITY
     } else if model_id_trimmed.starts_with("whisper")

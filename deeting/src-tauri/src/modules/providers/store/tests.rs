@@ -580,6 +580,7 @@ async fn quick_add_models_infers_capabilities_and_upstream_paths() {
             vec![
                 "gpt-4o-mini".to_string(),
                 "text-embedding-3-small".to_string(),
+                "bge-reranker-v2-m3".to_string(),
                 "grok-imagine-1.0".to_string(),
                 "grok-video".to_string(),
                 "gemini-nano-banana-preview".to_string(),
@@ -594,7 +595,7 @@ async fn quick_add_models_infers_capabilities_and_upstream_paths() {
         .list_models(Some(instance_id.clone()), None)
         .await
         .expect("list models");
-    assert_eq!(models.len(), 6);
+    assert_eq!(models.len(), 7);
 
     let chat = models
         .iter()
@@ -609,6 +610,13 @@ async fn quick_add_models_infers_capabilities_and_upstream_paths() {
         .expect("embedding model");
     assert_eq!(embedding.capabilities, vec!["embedding".to_string()]);
     assert_eq!(embedding.upstream_path, "v1/embeddings");
+
+    let reranker = models
+        .iter()
+        .find(|model| model.model_id == "bge-reranker-v2-m3")
+        .expect("reranker model");
+    assert_eq!(reranker.capabilities, vec!["embedding".to_string()]);
+    assert_eq!(reranker.upstream_path, "v1/embeddings");
 
     let image = models
         .iter()
