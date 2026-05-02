@@ -43,8 +43,10 @@ pub(crate) use chat_completion::{
 pub(crate) use chat_tool_runtime::{
     dispatch_local_chat_execution_run_command, list_canonical_pending_local_approval_snapshots,
     recover_inflight_local_execution_state, run_local_chat_complete_with_tools,
-    serialize_inflight_runtime_context, ExecutionRunCommand, InFlightExecutionStage,
+    ExecutionRunCommand,
 };
+#[cfg(test)]
+pub(crate) use chat_tool_runtime::{serialize_inflight_runtime_context, InFlightExecutionStage};
 pub(crate) use consult::LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION;
 pub(crate) use control_plane::{
     apply_desktop_execution_policy_overrides, build_default_local_execution_policy,

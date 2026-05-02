@@ -47,6 +47,9 @@ pub(crate) use approval_commands::{
     dispatch_local_chat_execution_run_command, ExecutionRunCommand,
 };
 #[cfg(test)]
+use inflight::mark_delegated_wait_event_consumed;
+use inflight::runtime_state_from_persisted_context;
+#[cfg(test)]
 use inflight::PersistedPendingApproval;
 use inflight::{
     build_pending_approval_records_from_tool_call_meta, clear_execution_graph_runtime_context,
@@ -54,11 +57,12 @@ use inflight::{
     persistable_inflight_context_from_value,
 };
 pub(crate) use inflight::{
+    build_persisted_chat_runtime_context_from_execution_request,
     collect_waiting_approval_tokens_from_graph, derive_pending_approvals_from_graph,
     list_canonical_pending_local_approval_snapshots, load_suspended_chat_tool_execution_for_resume,
     materialize_pending_local_approval_from_runtime_context,
-    persist_suspended_execution_graph_runtime, serialize_inflight_runtime_context,
-    InFlightExecutionStage,
+    persist_suspended_execution_graph_runtime, serialize_delegated_workflow_runtime_context,
+    serialize_inflight_runtime_context, InFlightExecutionStage,
 };
 use recovery::extract_resume_response_text;
 #[cfg(test)]
@@ -69,6 +73,7 @@ use recovery::{
 pub(crate) use recovery::{
     project_local_chat_approval_state_payload, recover_inflight_local_execution_state,
     recover_local_chat_execution_from_action, resume_suspended_chat_tool_execution_after_approval,
+    wake_delegated_runtime_for_workflow_run,
 };
 use replay::finalize_tool_round;
 #[cfg(test)]

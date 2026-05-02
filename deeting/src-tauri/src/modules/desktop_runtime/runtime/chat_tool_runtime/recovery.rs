@@ -1,5 +1,231 @@
 use super::*;
+use crate::modules::custom_task_agents::types::{
+    CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
+};
+use crate::modules::desktop_runtime::runtime::chat_tool_runtime::inflight::mark_delegated_wait_event_consumed;
+use crate::modules::desktop_runtime::runtime::execution_plane::build_workflow_delegated_execution_session;
 use sqlx::Row;
+
+pub(crate) async fn resume_delegated_runtime_after_workflow_event(
+    app: &AppHandle,
+    app_state: &AppState,
+    execution_graph_execution_id: &str,
+    workflow_run_id: &str,
+    event_id: &str,
+) -> Result<Option<serde_json::Value>, String> {
+    let normalized_execution_id = execution_graph_execution_id.trim();
+    if normalized_execution_id.is_empty() {
+        return Err("execution_graph_execution_id is required".to_string());
+    }
+
+    let context_value =
+        load_execution_graph_runtime_context(app_state.mcp.store.as_ref(), normalized_execution_id)
+            .await
+            .map_err(|err| err.to_string())?
+            .ok_or_else(|| {
+                format!(
+                    "delegated runtime context not found for execution_id {}",
+                    normalized_execution_id
+                )
+            })?;
+    let mut persisted = persistable_inflight_context_from_value(&context_value)
+        .ok_or_else(|| "delegated runtime context could not be parsed".to_string())?;
+
+    let consumed = mark_delegated_wait_event_consumed(&mut persisted, workflow_run_id, event_id)?;
+    let chat_runtime = persisted
+        .chat_runtime
+        .clone()
+        .ok_or_else(|| "delegated runtime context is missing chat_runtime".to_string())?;
+
+    if !consumed {
+        return Ok(project_local_chat_approval_state_payload(
+            app_state,
+            normalized_execution_id,
+            None,
+        )
+        .await?);
+    }
+
+    persist_execution_graph_runtime_context(
+        app_state.mcp.store.as_ref(),
+        normalized_execution_id,
+        &serde_json::to_value(&persisted).unwrap_or_else(|_| serde_json::json!({})),
+    )
+    .await
+    .map_err(|err| err.to_string())?;
+
+    let detail =
+        crate::modules::workflow::service::get_workflow_run_status(app_state, workflow_run_id)
+            .await?;
+    let delegated_execution = Some(build_workflow_delegated_execution_session(
+        normalized_execution_id.to_string(),
+        CustomTaskAgentProfile {
+            id: persisted
+                .delegation
+                .as_ref()
+                .and_then(|delegation| delegation.delegated_target_id.clone())
+                .unwrap_or_else(|| "workflow".to_string()),
+            name: persisted
+                .delegation
+                .as_ref()
+                .and_then(|delegation| delegation.delegated_target_name.clone())
+                .unwrap_or_else(|| "Workflow".to_string()),
+            description: None,
+            task_prompt: "delegated workflow wake resume".to_string(),
+            invocation_kind: CustomTaskAgentInvocationKind::Chat,
+            preferred_for_image_generation: false,
+            model_config: None,
+            callable_mcp_tool_ids: Vec::new(),
+            guidance_skill_ids: Vec::new(),
+            callable_skill_action_refs: Vec::new(),
+            bound_asset_id: None,
+            tags: Vec::new(),
+            discoverable: false,
+            is_enabled: true,
+            is_deleted: false,
+            source_kind: Some("delegated_workflow_runtime".to_string()),
+            source_path: None,
+            source_repo: None,
+            source_ref: None,
+            source_hash: None,
+            created_at: "1970-01-01T00:00:00Z".to_string(),
+            updated_at: "1970-01-01T00:00:00Z".to_string(),
+        },
+        DelegatedExecutionSelection {
+            explicit: false,
+            score: None,
+            reason_codes: Vec::new(),
+            reason_text: Some("delegated workflow wake resume".to_string()),
+            candidate_count: 0,
+            selected_from_top_k: 0,
+            callable_coverage_score: None,
+            modality_fit_score: None,
+            profile_prior_score: None,
+        },
+        None,
+        persisted
+            .delegation
+            .as_ref()
+            .and_then(|delegation| delegation.delegated_target_id.clone())
+            .map(|id| format!("user_worker_profile:{id}"))
+            .unwrap_or_else(|| "workflow".to_string()),
+        Ok(crate::modules::workflow::types::QuickWorkflowResult {
+            run: detail.run.clone(),
+            steps: detail.steps.clone(),
+            content: crate::modules::workflow::service::extract_primary_content(&detail),
+            succeeded: detail.run.status
+                == crate::modules::workflow::types::WorkflowRunStatus::Completed,
+        }),
+    ));
+
+    let mut state = runtime_state_from_persisted_context(chat_runtime);
+    state.orchestrated_messages.extend(
+        delegated_execution
+            .as_ref()
+            .map(|execution| execution.feedback_messages.clone())
+            .unwrap_or_default(),
+    );
+
+    let session_id = state.session_id.clone();
+    let model_connection = state.model_connection.clone();
+    let execution_policy = state.execution_policy.clone();
+    match continue_local_chat_complete_with_tools(app, app_state, state).await {
+        Ok(mut output) => {
+            attach_execution_graph_to_response(
+                &mut output.response,
+                &session_id,
+                &execution_policy,
+                Some(normalized_execution_id),
+                true,
+            );
+            if let Err(err) = persist_resumed_local_chat_assistant_message(
+                app_state,
+                &session_id,
+                &model_connection,
+                &output.response,
+            )
+            .await
+            {
+                log::warn!("{err}");
+            }
+            clear_execution_graph_runtime_context(
+                app_state.mcp.store.as_ref(),
+                Some(normalized_execution_id),
+            )
+            .await;
+            Ok(Some(output.response))
+        }
+        Err(err) => {
+            let failed_context = serialize_delegated_workflow_runtime_context(
+                Some(format!("workflow:{}", workflow_run_id.trim())),
+                None,
+                workflow_run_id.trim().to_string(),
+                persisted
+                    .delegation
+                    .as_ref()
+                    .and_then(|delegation| delegation.delegated_target_id.as_deref()),
+                persisted
+                    .delegation
+                    .as_ref()
+                    .and_then(|delegation| delegation.delegated_target_name.as_deref()),
+                Some("failed"),
+                true,
+                persisted.chat_runtime.clone(),
+                session_id.as_str(),
+                persisted.trace_id.as_str(),
+                persisted.request_id.as_deref(),
+                Some(normalized_execution_id),
+                Some(err.as_str()),
+            );
+            persist_execution_graph_runtime_context(
+                app_state.mcp.store.as_ref(),
+                normalized_execution_id,
+                &failed_context,
+            )
+            .await
+            .map_err(|persist_err| persist_err.to_string())?;
+            Err(err)
+        }
+    }
+}
+
+pub(crate) async fn wake_delegated_runtime_for_workflow_run(
+    app: &AppHandle,
+    app_state: &AppState,
+    workflow_run_id: &str,
+    event_id: &str,
+) -> Result<bool, String> {
+    let normalized_workflow_run_id = workflow_run_id.trim();
+    if normalized_workflow_run_id.is_empty() {
+        return Err("workflow_run_id is required".to_string());
+    }
+
+    let rows = list_execution_graph_runtime_contexts(app_state.mcp.store.as_ref())
+        .await
+        .map_err(|err| err.to_string())?;
+    for row in rows {
+        let Some(context) = persistable_inflight_context_from_value(&row.context) else {
+            continue;
+        };
+        let Some(delegation) = context.delegation.as_ref() else {
+            continue;
+        };
+        if delegation.delegated_run_id.trim() != normalized_workflow_run_id {
+            continue;
+        }
+        return Ok(resume_delegated_runtime_after_workflow_event(
+            app,
+            app_state,
+            row.execution_id.as_str(),
+            normalized_workflow_run_id,
+            event_id,
+        )
+        .await?
+        .is_some());
+    }
+
+    Ok(false)
+}
 
 fn apply_approved_tool_result_to_suspended_round(
     suspended: &mut SuspendedChatToolExecution,
@@ -765,7 +991,6 @@ async fn advance_local_chat_execution_from_graph_state(
                     InFlightExecutionStage::ResumeFailed,
                     Some(resume_gate_node_id.clone()),
                     Some(resume_call_id.clone()),
-                    None,
                     true,
                     Vec::new(),
                     Some(failed_chat_runtime.clone()),
@@ -1317,7 +1542,14 @@ pub(crate) async fn recover_inflight_local_execution_state(
                 if persisted.recovery_notice_emitted_at_unix_ms.is_some() {
                     continue;
                 }
-                let Some(workflow_run_id) = persisted.workflow_run_id.as_deref() else {
+                let workflow_run_id = persisted
+                    .delegation
+                    .as_ref()
+                    .map(|delegation| delegation.delegated_run_id.as_str())
+                    .filter(|value| !value.trim().is_empty())
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty());
+                let Some(workflow_run_id) = workflow_run_id else {
                     persisted.stage = InFlightExecutionStage::Interrupted;
                     persisted.recovery_notice_emitted_at_unix_ms = Some(now_unix_ms_i64());
                     persist_execution_graph_runtime_context(
@@ -1336,6 +1568,20 @@ pub(crate) async fn recover_inflight_local_execution_state(
                 .await?;
                 let workflow_text = match detail.run.status {
                     crate::modules::workflow::types::WorkflowRunStatus::Completed => {
+                        if let Ok(Some(_)) = resume_delegated_runtime_after_workflow_event(
+                            _app,
+                            app_state,
+                            execution_id.as_str(),
+                            workflow_run_id,
+                            &format!(
+                                "workflow:{}:completed:{}",
+                                workflow_run_id, detail.run.updated_at
+                            ),
+                        )
+                        .await
+                        {
+                            continue;
+                        }
                         crate::modules::workflow::service::extract_primary_content(&detail)
                             .unwrap_or_else(|| {
                                 format!(

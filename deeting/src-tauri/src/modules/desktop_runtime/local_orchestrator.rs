@@ -634,15 +634,26 @@ pub async fn execute_local_orchestrated_chat(
         assistant_blocks.extend(render_resolution.blocks);
     }
     if let Some(execution) = delegated_execution.as_ref() {
+        let status_for_meta = if execution.record.status
+            == crate::modules::desktop_runtime::runtime::execution_plane::DelegatedExecutionStatus::Running
+        {
+            crate::modules::desktop_runtime::runtime::execution_plane::DelegatedExecutionStatus::Running
+        } else {
+            crate::modules::desktop_runtime::runtime::execution_plane::DelegatedExecutionStatus::Integrated
+        };
         ctx.emit_status(
             "evolve",
             Some("worker_delegation"),
             "success",
-            "delegation.integrated",
+            if status_for_meta
+                == crate::modules::desktop_runtime::runtime::execution_plane::DelegatedExecutionStatus::Running
+            {
+                "delegation.running"
+            } else {
+                "delegation.integrated"
+            },
             Some(
-                execution.record.status_meta_with_status(
-                    crate::modules::desktop_runtime::runtime::execution_plane::DelegatedExecutionStatus::Integrated,
-                ),
+                execution.record.status_meta_with_status(status_for_meta),
             ),
         );
     }
@@ -686,7 +697,13 @@ pub async fn execute_local_orchestrated_chat(
         Some(execution_graph.clone()),
         delegated_execution.as_ref().map(|execution| {
             execution.record.status_meta_with_status(
-                crate::modules::desktop_runtime::runtime::execution_plane::DelegatedExecutionStatus::Integrated,
+                if execution.record.status
+                    == crate::modules::desktop_runtime::runtime::execution_plane::DelegatedExecutionStatus::Running
+                {
+                    crate::modules::desktop_runtime::runtime::execution_plane::DelegatedExecutionStatus::Running
+                } else {
+                    crate::modules::desktop_runtime::runtime::execution_plane::DelegatedExecutionStatus::Integrated
+                },
             )
         }),
         if input.compare_only {

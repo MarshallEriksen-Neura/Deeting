@@ -141,6 +141,18 @@ async fn run_workflow_inner(
         None,
     )
     .await;
+    if matches!(
+        final_status,
+        WorkflowRunStatus::Completed | WorkflowRunStatus::Failed | WorkflowRunStatus::Cancelled
+    ) {
+        let _ = crate::modules::desktop_runtime::runtime::chat_tool_runtime::wake_delegated_runtime_for_workflow_run(
+            app_handle,
+            app_state,
+            run_id,
+            &format!("workflow:{}:{}:{}", run_id, final_status.as_str(), detail_run_timestamp(&run)),
+        )
+        .await;
+    }
     send_run_detail(
         store_ref,
         stream_tx.as_ref(),
@@ -150,6 +162,10 @@ async fn run_workflow_inner(
     .await;
 
     Ok(final_status)
+}
+
+fn detail_run_timestamp(run: &WorkflowRun) -> &str {
+    run.updated_at.as_str()
 }
 
 async fn execute_single_phase(

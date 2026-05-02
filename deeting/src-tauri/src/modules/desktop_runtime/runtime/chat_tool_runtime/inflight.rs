@@ -1,5 +1,33 @@
 use super::*;
 
+pub(crate) fn build_persisted_chat_runtime_context_from_execution_request(
+    request: &crate::modules::desktop_runtime::runtime::LocalExecutionRequest,
+    task_query: Option<String>,
+    trace_id: String,
+    max_rounds: usize,
+) -> PersistedChatToolRuntimeContext {
+    PersistedChatToolRuntimeContext {
+        max_rounds,
+        round: 0,
+        trace_id,
+        request_id: request.request_id.clone(),
+        execution_policy: request.execution_policy.clone(),
+        model_connection: request.model_connection.clone(),
+        orchestrated_messages: request.messages.clone(),
+        task_query,
+        session_id: request.session_id.clone(),
+        temperature: request.temperature,
+        max_tokens: request.max_tokens,
+        reasoning_enabled: request.reasoning_enabled,
+        reasoning_effort: request.reasoning_effort.clone(),
+        active_capability: None,
+        active_skill_context: None,
+        runtime_metrics: Default::default(),
+        last_capability_snapshot: request.execution_policy.capability_snapshot.clone(),
+        last_response: None,
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PersistedChatToolRuntimeContext {
     pub(super) max_rounds: usize,
@@ -36,6 +64,30 @@ pub(crate) enum InFlightExecutionStage {
     Interrupted,
 }
 
+fn default_delegation_resume_policy() -> String {
+    "on_completed".to_string()
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub(crate) struct PersistedDelegationWait {
+    pub(super) kind: String,
+    pub(super) delegated_run_id: String,
+    #[serde(default)]
+    pub(super) delegated_target_id: Option<String>,
+    #[serde(default)]
+    pub(super) delegated_target_name: Option<String>,
+    #[serde(default = "default_delegation_resume_policy")]
+    pub(super) resume_policy: String,
+    #[serde(default)]
+    pub(super) consumed_event_ids: Vec<String>,
+    #[serde(default)]
+    pub(super) last_status: Option<String>,
+    #[serde(default)]
+    pub(super) result_ref: Option<String>,
+    #[serde(default)]
+    pub(super) started_at_unix_ms: i64,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PersistedPendingApproval {
     pub(super) approval_token: String,
@@ -69,7 +121,8 @@ pub(crate) struct PersistedInFlightExecutionContext {
     pub(super) stage: InFlightExecutionStage,
     pub(super) current_node: Option<String>,
     pub(super) current_call_id: Option<String>,
-    pub(super) workflow_run_id: Option<String>,
+    #[serde(default)]
+    pub(super) delegation: Option<PersistedDelegationWait>,
     pub(super) started_at_unix_ms: i64,
     pub(super) last_heartbeat_at_unix_ms: i64,
     pub(super) recoverable: bool,
@@ -204,6 +257,112 @@ pub(super) fn persistable_inflight_context_from_value(
     value: &serde_json::Value,
 ) -> Option<PersistedInFlightExecutionContext> {
     serde_json::from_value::<PersistedInFlightExecutionContext>(value.clone()).ok()
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(super) fn mark_delegated_wait_event_consumed(
+    persisted: &mut PersistedInFlightExecutionContext,
+    delegated_run_id: &str,
+    event_id: &str,
+) -> Result<bool, String> {
+    if persisted.stage != InFlightExecutionStage::DelegatedWorkflowRunning {
+        let stage = serde_json::to_value(&persisted.stage)
+            .ok()
+            .and_then(|value| value.as_str().map(str::to_string))
+            .unwrap_or_else(|| "unknown".to_string());
+        return Err(format!(
+            "expected delegated_workflow_running stage, got {stage}"
+        ));
+    }
+
+    let normalized_run_id = delegated_run_id.trim();
+    if normalized_run_id.is_empty() {
+        return Err("delegated_run_id is required".to_string());
+    }
+
+    let normalized_event_id = event_id.trim();
+    if normalized_event_id.is_empty() {
+        return Err("event_id is required".to_string());
+    }
+
+    let expected_run_id = persisted
+        .delegation
+        .as_ref()
+        .ok_or_else(|| "delegated runtime context is missing delegation".to_string())?
+        .delegated_run_id
+        .trim();
+    let expected_run_id = (!expected_run_id.is_empty())
+        .then_some(expected_run_id)
+        .ok_or_else(|| "delegated runtime context is missing delegated_run_id".to_string())?;
+
+    if expected_run_id != normalized_run_id {
+        return Err(format!(
+            "delegated_run_id mismatch: expected '{}', got '{}'",
+            expected_run_id, normalized_run_id
+        ));
+    }
+
+    let delegation = persisted
+        .delegation
+        .as_mut()
+        .expect("delegation should exist after validation");
+
+    if delegation
+        .consumed_event_ids
+        .iter()
+        .any(|consumed| consumed.trim() == normalized_event_id)
+    {
+        return Ok(false);
+    }
+
+    delegation
+        .consumed_event_ids
+        .push(normalized_event_id.to_string());
+    persisted.last_heartbeat_at_unix_ms = now_unix_ms_i64();
+    Ok(true)
+}
+
+#[allow(dead_code)]
+pub(crate) async fn consume_delegated_wait_event_marker(
+    store: &crate::modules::mcp::store::McpStore,
+    execution_id: &str,
+    delegated_run_id: &str,
+    event_id: &str,
+) -> Result<serde_json::Value, String> {
+    let normalized_execution_id = execution_id.trim();
+    if normalized_execution_id.is_empty() {
+        return Err("execution_id is required".to_string());
+    }
+
+    let context = load_execution_graph_runtime_context(store, normalized_execution_id)
+        .await
+        .map_err(|err| err.to_string())?
+        .ok_or_else(|| {
+            format!(
+                "delegated runtime context not found for execution_id {normalized_execution_id}"
+            )
+        })?;
+    let mut persisted = persistable_inflight_context_from_value(&context)
+        .ok_or_else(|| "delegated runtime context could not be parsed".to_string())?;
+
+    let consumed = mark_delegated_wait_event_consumed(&mut persisted, delegated_run_id, event_id)?;
+    if consumed {
+        persist_execution_graph_runtime_context(
+            store,
+            normalized_execution_id,
+            &serde_json::to_value(&persisted).unwrap_or_else(|_| serde_json::json!({})),
+        )
+        .await
+        .map_err(|err| err.to_string())?;
+    }
+
+    Ok(serde_json::json!({
+        "status": if consumed { "consumed" } else { "duplicate" },
+        "execution_graph_execution_id": normalized_execution_id,
+        "delegated_run_id": delegated_run_id.trim(),
+        "event_id": event_id.trim(),
+        "stage": persisted.stage,
+    }))
 }
 
 #[derive(Debug, Clone)]
@@ -455,7 +614,6 @@ pub(crate) fn serialize_inflight_runtime_context(
     stage: InFlightExecutionStage,
     current_node: Option<String>,
     current_call_id: Option<String>,
-    workflow_run_id: Option<String>,
     recoverable: bool,
     pending_approvals: Vec<PersistedPendingApproval>,
     chat_runtime: Option<PersistedChatToolRuntimeContext>,
@@ -465,8 +623,94 @@ pub(crate) fn serialize_inflight_runtime_context(
     execution_graph_execution_id: Option<&str>,
     last_error: Option<&str>,
 ) -> serde_json::Value {
+    serialize_inflight_runtime_context_with_delegation(
+        stage,
+        current_node,
+        current_call_id,
+        None,
+        recoverable,
+        pending_approvals,
+        chat_runtime,
+        session_id,
+        trace_id,
+        request_id,
+        execution_graph_execution_id,
+        last_error,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn serialize_delegated_workflow_runtime_context(
+    current_node: Option<String>,
+    current_call_id: Option<String>,
+    workflow_run_id: String,
+    target_id: Option<&str>,
+    target_name: Option<&str>,
+    last_status: Option<&str>,
+    recoverable: bool,
+    chat_runtime: Option<PersistedChatToolRuntimeContext>,
+    session_id: &str,
+    trace_id: &str,
+    request_id: Option<&str>,
+    execution_graph_execution_id: Option<&str>,
+    last_error: Option<&str>,
+) -> serde_json::Value {
+    let normalized_workflow_run_id = workflow_run_id.trim().to_string();
+    let delegation = (!normalized_workflow_run_id.is_empty()).then(|| PersistedDelegationWait {
+        kind: "workflow".to_string(),
+        delegated_run_id: normalized_workflow_run_id.clone(),
+        delegated_target_id: target_id
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        delegated_target_name: target_name
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        resume_policy: "on_completed".to_string(),
+        consumed_event_ids: Vec::new(),
+        last_status: last_status
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        result_ref: None,
+        started_at_unix_ms: now_unix_ms_i64(),
+    });
+
+    serialize_inflight_runtime_context_with_delegation(
+        InFlightExecutionStage::DelegatedWorkflowRunning,
+        current_node,
+        current_call_id,
+        delegation,
+        recoverable,
+        Vec::new(),
+        chat_runtime,
+        session_id,
+        trace_id,
+        request_id,
+        execution_graph_execution_id,
+        last_error,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn serialize_inflight_runtime_context_with_delegation(
+    stage: InFlightExecutionStage,
+    current_node: Option<String>,
+    current_call_id: Option<String>,
+    delegation: Option<PersistedDelegationWait>,
+    recoverable: bool,
+    pending_approvals: Vec<PersistedPendingApproval>,
+    chat_runtime: Option<PersistedChatToolRuntimeContext>,
+    session_id: &str,
+    trace_id: &str,
+    request_id: Option<&str>,
+    execution_graph_execution_id: Option<&str>,
+    last_error: Option<&str>,
+) -> serde_json::Value {
+    let schema_version = if delegation.is_some() { 2 } else { 1 };
     serde_json::to_value(PersistedInFlightExecutionContext {
-        schema_version: 1,
+        schema_version,
         session_id: session_id.to_string(),
         trace_id: trace_id.to_string(),
         request_id: request_id
@@ -480,7 +724,7 @@ pub(crate) fn serialize_inflight_runtime_context(
         stage,
         current_node,
         current_call_id,
-        workflow_run_id,
+        delegation,
         started_at_unix_ms: now_unix_ms_i64(),
         last_heartbeat_at_unix_ms: now_unix_ms_i64(),
         recoverable,
@@ -555,7 +799,6 @@ pub(super) async fn persist_running_tool_execution_runtime(
             InFlightExecutionStage::ToolRunning,
             Some(format!("tool_call:{normalized_call_id}")),
             Some(normalized_call_id.to_string()),
-            None,
             true,
             Vec::new(),
             Some(PersistedChatToolRuntimeContext {
@@ -725,7 +968,6 @@ pub(crate) async fn persist_suspended_execution_graph_runtime(
             stage,
             Some(suspended.pending_gate_node_id().to_string()),
             Some(suspended.pending_call_id().to_string()),
-            None,
             true,
             pending_approvals.to_vec(),
             Some(PersistedChatToolRuntimeContext {

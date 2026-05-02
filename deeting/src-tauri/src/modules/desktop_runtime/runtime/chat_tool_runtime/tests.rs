@@ -1346,7 +1346,6 @@ fn serialize_inflight_runtime_context_round_trips_waiting_approval_state() {
         InFlightExecutionStage::WaitingApproval,
         Some("approval_gate:call-1".to_string()),
         Some("call-1".to_string()),
-        None,
         true,
         vec![PersistedPendingApproval {
             approval_token: "approval-1".to_string(),
@@ -1397,7 +1396,6 @@ fn serialize_inflight_runtime_context_round_trips_resume_failed_state() {
         InFlightExecutionStage::ResumeFailed,
         Some("approval_gate:call-2".to_string()),
         Some("call-2".to_string()),
-        None,
         true,
         Vec::new(),
         None,
@@ -1418,4 +1416,143 @@ fn serialize_inflight_runtime_context_round_trips_resume_failed_state() {
         parsed.last_error.as_deref(),
         Some("resume continuation failed")
     );
+}
+
+#[test]
+fn delegated_runtime_context_without_delegation_is_not_a_valid_wake_source() {
+    let value = serde_json::json!({
+        "schema_version": 1,
+        "session_id": "session-legacy",
+        "trace_id": "trace-legacy",
+        "request_id": "request-legacy",
+        "execution_graph_execution_id": "graph-legacy",
+        "stage": "delegated_workflow_running",
+        "current_node": "workflow:run-legacy",
+        "current_call_id": null,
+        "workflow_run_id": "run-legacy",
+        "started_at_unix_ms": 1,
+        "last_heartbeat_at_unix_ms": 1,
+        "recoverable": true,
+        "pending_approvals": [],
+        "chat_runtime": null,
+        "last_error": null,
+        "recovery_notice_emitted_at_unix_ms": null
+    });
+
+    let mut parsed = persistable_inflight_context_from_value(&value).expect("parse legacy context");
+
+    assert_eq!(
+        parsed.stage,
+        InFlightExecutionStage::DelegatedWorkflowRunning
+    );
+    assert!(parsed.delegation.is_none());
+    let err = mark_delegated_wait_event_consumed(&mut parsed, "run-legacy", "event-legacy")
+        .expect_err("delegation envelope is required");
+    assert!(err.contains("missing delegation"));
+}
+
+#[test]
+fn serialize_delegated_workflow_runtime_context_writes_delegation_envelope() {
+    let value = serialize_delegated_workflow_runtime_context(
+        Some("workflow:run-1".to_string()),
+        None,
+        "run-1".to_string(),
+        Some("agent-1"),
+        Some("Research Agent"),
+        Some("running"),
+        true,
+        None,
+        "session-1",
+        "trace-1",
+        Some("request-1"),
+        Some("graph-1"),
+        None,
+    );
+
+    let parsed = persistable_inflight_context_from_value(&value).expect("parse delegated context");
+    let delegation = parsed.delegation.expect("delegation envelope");
+
+    assert_eq!(parsed.schema_version, 2);
+    assert_eq!(
+        parsed.stage,
+        InFlightExecutionStage::DelegatedWorkflowRunning
+    );
+    assert_eq!(delegation.kind, "workflow");
+    assert_eq!(delegation.delegated_run_id, "run-1");
+    assert_eq!(delegation.delegated_target_id.as_deref(), Some("agent-1"));
+    assert_eq!(
+        delegation.delegated_target_name.as_deref(),
+        Some("Research Agent")
+    );
+    assert_eq!(delegation.resume_policy, "on_completed");
+    assert_eq!(delegation.last_status.as_deref(), Some("running"));
+    assert!(delegation.consumed_event_ids.is_empty());
+}
+
+#[test]
+fn mark_delegated_wait_event_consumed_is_idempotent() {
+    let value = serialize_delegated_workflow_runtime_context(
+        Some("workflow:run-1".to_string()),
+        None,
+        "run-1".to_string(),
+        Some("agent-1"),
+        Some("Research Agent"),
+        Some("running"),
+        true,
+        None,
+        "session-1",
+        "trace-1",
+        Some("request-1"),
+        Some("graph-1"),
+        None,
+    );
+    let mut parsed =
+        persistable_inflight_context_from_value(&value).expect("parse delegated context");
+
+    let first =
+        mark_delegated_wait_event_consumed(&mut parsed, "run-1", "event-1").expect("first consume");
+    let second = mark_delegated_wait_event_consumed(&mut parsed, "run-1", "event-1")
+        .expect("duplicate consume");
+    let consumed = parsed
+        .delegation
+        .as_ref()
+        .expect("delegation")
+        .consumed_event_ids
+        .clone();
+
+    assert!(first);
+    assert!(!second);
+    assert_eq!(consumed, vec!["event-1".to_string()]);
+}
+
+#[test]
+fn mark_delegated_wait_event_consumed_rejects_mismatched_run_id() {
+    let value = serialize_delegated_workflow_runtime_context(
+        Some("workflow:run-1".to_string()),
+        None,
+        "run-1".to_string(),
+        Some("agent-1"),
+        Some("Research Agent"),
+        Some("running"),
+        true,
+        None,
+        "session-1",
+        "trace-1",
+        Some("request-1"),
+        Some("graph-1"),
+        None,
+    );
+    let mut parsed =
+        persistable_inflight_context_from_value(&value).expect("parse delegated context");
+
+    let err = mark_delegated_wait_event_consumed(&mut parsed, "other-run", "event-1")
+        .expect_err("mismatched run should fail");
+
+    assert!(err.contains("delegated_run_id mismatch"));
+    assert!(parsed
+        .delegation
+        .as_ref()
+        .expect("delegation")
+        .consumed_event_ids
+        .is_empty());
 }

@@ -4072,7 +4072,6 @@ for raw_line in sys.stdin:
             InFlightExecutionStage::WaitingApproval,
             Some("approval_gate:call-session-1".to_string()),
             Some("call-session-1".to_string()),
-            None,
             true,
             vec![serde_json::from_value(serde_json::json!({
                 "approval_token": "approval-session-1",
