@@ -752,13 +752,13 @@ impl LocalRealtimeToolTraceEmitter {
         }
     }
 
-    fn emit_execution_section_once(&mut self) {
+    fn emit_execution_section_once(&mut self, title: &str) {
         if self.emitted_execution_section {
             return;
         }
         self.emitted_execution_section = true;
         self.emit_blocks(vec![
-            serde_json::json!({ "type": "execution_section", "title": "Code Execution" }),
+            serde_json::json!({ "type": "execution_section", "title": title }),
         ]);
     }
 
@@ -1317,7 +1317,7 @@ async fn process_chat_tool_calls(
         .flatten();
 
         if tool_name == "execute_code_plan" {
-            realtime_emitter.emit_execution_section_once();
+            realtime_emitter.emit_execution_section_once("Code Execution");
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
             let execution_gate_advisory = Box::pin(consult_task_policy_advisory(
                 app_state,
@@ -1679,7 +1679,7 @@ async fn process_chat_tool_calls(
                 }
             }
         } else if tool_name == "delegate_task" {
-            realtime_emitter.emit_execution_section_once();
+            realtime_emitter.emit_execution_section_once("Delegate Task");
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
             match execute_delegate_task_tool(
                 app,
