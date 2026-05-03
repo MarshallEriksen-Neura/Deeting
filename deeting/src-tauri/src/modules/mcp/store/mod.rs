@@ -5,6 +5,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use sqlx::Row;
 
 use crate::modules::admin::store_init::init_admin_tables;
+use crate::modules::ai_access::store::init_ai_access_tables;
 use crate::modules::asset_registry::store::init_asset_registry_tables;
 use crate::modules::assistants::store::init_assistant_tables;
 use crate::modules::conversations::store::init_conversation_tables;
@@ -313,6 +314,8 @@ impl McpStore {
         init_assistant_tables(self).await?;
 
         init_skill_tables(self).await?;
+
+        init_ai_access_tables(self).await?;
 
         sqlx::query(
             r#"

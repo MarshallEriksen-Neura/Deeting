@@ -7,6 +7,7 @@ import {
   Bot,
   Database,
   Globe,
+  KeyRound,
   Network,
   Rocket,
   Server,
@@ -24,6 +25,7 @@ export interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: "models", icon: Boxes, desktopOnly: false },
+  { id: "aiAccess", icon: KeyRound, desktopOnly: true },
   { id: "ecosystem", icon: Network, desktopOnly: true },
   { id: "storage", icon: Database, desktopOnly: true },
   { id: "agent", icon: Bot, desktopOnly: true },

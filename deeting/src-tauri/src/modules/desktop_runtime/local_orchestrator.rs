@@ -40,6 +40,7 @@ use crate::modules::memory::types::LocalMemoryItem;
 use crate::modules::providers::model_guard::ensure_required_local_models_configured;
 use crate::modules::render_runtime::resolve_response_rendering;
 use crate::state::AppState;
+use mcp_core::types::LocalChatInputMessage;
 use mcp_session::conversation::{
     CreateConversationMessageRequest, LocalConversationHistoryMessage,
 };
@@ -93,6 +94,8 @@ pub struct LocalOrchestratorInput {
     pub regenerate: bool,
     pub compare_only: bool,
     pub user_content: Option<String>,
+    pub provided_messages: Option<Vec<LocalChatInputMessage>>,
+    pub persist_runtime_artifacts: bool,
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
     pub reasoning_enabled: Option<bool>,
@@ -137,8 +140,16 @@ pub async fn execute_local_orchestrated_chat(
     ensure_required_local_models_configured(app_state).await?;
 
     let store = &app_state.mcp.store;
-    let (capability_id, summary_text, messages, conversation_model_binding) = if input.compare_only
+    let (capability_id, summary_text, messages, conversation_model_binding) = if let Some(
+        messages,
+    ) =
+        input.provided_messages.clone()
     {
+        if messages.is_empty() {
+            return Err("provided messages are required for external engine access".to_string());
+        }
+        (input.capability_id.clone(), None, messages, None)
+    } else if input.compare_only {
         let runtime_window = store
             .load_local_conversation_runtime_window(&session_id)
             .await
@@ -371,7 +382,7 @@ pub async fn execute_local_orchestrated_chat(
     };
     let provider_model_id = model_connection.provider_model_id.clone();
     let model_id = model_connection.model_id.clone();
-    if !input.compare_only {
+    if !input.compare_only && input.persist_runtime_artifacts {
         if let Err(err) = store
             .update_local_conversation_model_context(
                 &session_id,
@@ -713,7 +724,7 @@ pub async fn execute_local_orchestrated_chat(
         },
     );
     let mut assistant_meta = assistant_meta;
-    if !input.compare_only {
+    if !input.compare_only && input.persist_runtime_artifacts {
         let persistence = persist_local_assistant_turn(
             store.as_ref(),
             &session_id,
@@ -900,7 +911,7 @@ pub async fn execute_local_orchestrated_chat(
     });
     ctx.enrich_payload(&mut response);
 
-    if !input.compare_only {
+    if !input.compare_only && input.persist_runtime_artifacts {
         if let Some(task_fingerprint) = ctx.task_fingerprint.as_ref() {
             let evaluation = evaluate_task_learning_with_runtime(
                 app_state,

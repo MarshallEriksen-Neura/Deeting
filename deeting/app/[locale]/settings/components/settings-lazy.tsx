@@ -7,6 +7,14 @@ export const DeferredAgentSettingsCard = dynamic(
   { ssr: false }
 )
 
+export const DeferredDesktopAiAccessSettingsCard = dynamic(
+  () =>
+    import("./desktop-ai-access-settings-card").then(
+      (mod) => mod.DesktopAiAccessSettingsCard
+    ),
+  { ssr: false }
+)
+
 export const DeferredDesktopSandboxSettingsCard = dynamic(
   () =>
     import("./desktop-sandbox-settings-card").then(

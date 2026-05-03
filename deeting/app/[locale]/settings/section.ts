@@ -1,5 +1,6 @@
 export type SettingsSection =
   | "models"
+  | "aiAccess"
   | "ecosystem"
   | "storage"
   | "agent"
@@ -10,6 +11,7 @@ export type SettingsSection =
 
 const SETTINGS_SECTIONS = new Set<SettingsSection>([
   "models",
+  "aiAccess",
   "ecosystem",
   "storage",
   "agent",

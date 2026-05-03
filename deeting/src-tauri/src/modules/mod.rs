@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod ai_access;
 pub mod ai_upstream;
 pub mod asset_registry;
 pub mod assistants;

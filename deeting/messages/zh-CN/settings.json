@@ -482,11 +482,96 @@
         "deleteFailed": "删除 connector 失败。"
       }
     },
+    "aiAccess": {
+      "title": "Local AI Access",
+      "description": "为 Cherry Studio、LobeChat 等 OpenAI 兼容客户端开放本机引擎。所有请求仍走桌面 runtime。",
+      "footerHint": "默认仅绑定 127.0.0.1。Key 经哈希存储，仅在创建时显示一次。",
+      "refresh": "刷新",
+      "badge": {
+        "running": "运行中",
+        "stopped": "已停用"
+      },
+      "gateway": {
+        "sectionTitle": "网关",
+        "enabledLabel": "启用本地兼容网关",
+        "enableHint": "保存后桌面会在 127.0.0.1 监听并提供 /v1/models 与 /v1/chat/completions。",
+        "disableHint": "保存后桌面将关闭兼容监听器；不影响内部 chat 入口。",
+        "portLabel": "端口",
+        "saveAction": "保存网关",
+        "baseUrlLabel": "Base URL",
+        "baseUrlEmpty": "未启动",
+        "baseUrlHelp": "把这个地址连同任意一个本地 API key 配置到 Cherry Studio / LobeChat 即可。",
+        "copyBaseUrl": "复制",
+        "copied": "已复制"
+      },
+      "keys": {
+        "sectionTitle": "API Key",
+        "countLabel": "{active} 个活跃 / 共 {total}",
+        "createAction": "新建 Key",
+        "createdAt": "创建于 {value}",
+        "lastUsedAt": "最近使用 {value}",
+        "neverUsed": "尚未使用",
+        "statusActive": "active",
+        "statusRevoked": "revoked",
+        "revoke": "撤销",
+        "revoking": "撤销中…",
+        "archived": "已归档"
+      },
+      "empty": {
+        "title": "还没有本地 API Key",
+        "description": "新建一个 key 即可让兼容客户端访问你的桌面引擎。",
+        "action": "新建 Key"
+      },
+      "create": {
+        "title": "新建本地 API Key",
+        "description": "创建后明文只会展示一次，请立即复制保存。",
+        "nameLabel": "名称",
+        "namePlaceholder": "如：Cherry Studio · 我的 Mac",
+        "nameHelp": "用于在列表中辨识 key 的用途，可随时撤销。",
+        "scopeLabel": "权限",
+        "scopeHelp": "默认 chat-only：可调用 /v1/chat/completions，不暴露内部审批与工具控制 API。",
+        "submit": "生成 Key",
+        "cancel": "取消"
+      },
+      "reveal": {
+        "title": "已生成 “{name}”",
+        "description": "下面是这一次生成的完整 key，关闭后将不再显示。",
+        "warning": "请立即复制并安全保存。Deeting 不会再次展示此 key。",
+        "secretLabel": "API Key",
+        "copySecret": "复制 Key",
+        "usage1": "在 Cherry Studio / LobeChat 的 OpenAI provider 设置中：",
+        "usage2": "Base URL 填",
+        "confirm": "我已保存 Key"
+      },
+      "revokeConfirm": {
+        "title": "撤销该 API Key？",
+        "description": "“{name}” 撤销后将立即失效，使用它的客户端会收到 401。该操作不可恢复。",
+        "cancel": "取消",
+        "confirm": "撤销",
+        "revoking": "撤销中…"
+      },
+      "toast": {
+        "loadFailed": "读取 AI 接入信息失败：{error}",
+        "saveFailed": "保存网关配置失败：{error}",
+        "startFailed": "启动兼容网关失败：{error}",
+        "gatewaySaved": "网关配置已保存",
+        "portInvalid": "端口范围必须在 1 – 65535 之间",
+        "createSuccess": "已创建 API Key",
+        "createFailed": "创建 Key 失败：{error}",
+        "nameRequired": "请输入 Key 名称",
+        "revokeSuccess": "已撤销该 Key",
+        "revokeNoop": "该 Key 已经被撤销",
+        "revokeFailed": "撤销 Key 失败：{error}",
+        "copyFailed": "复制失败，请手动选取"
+      }
+    },
     "nav": {
       "ecosystem": "生态观察",
       "ecosystemDesc": "外部 connector 与原始观察记录",
       "models": "模型",
       "modelsDesc": "Embedding 与秘书模型",
+      "aiAccess": "AI 接入",
+      "aiAccessDesc": "OpenAI 兼容本地网关与 API key",
       "storage": "存储",
       "storageDesc": "桌面端 OSS 存储桶",
       "agent": "Agent",

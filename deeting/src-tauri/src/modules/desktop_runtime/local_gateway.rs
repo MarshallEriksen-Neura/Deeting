@@ -827,6 +827,8 @@ fn map_request_to_orchestrator_input(
         regenerate: payload.regenerate.unwrap_or(false),
         compare_only: payload.compare_only.unwrap_or(false),
         user_content,
+        provided_messages: None,
+        persist_runtime_artifacts: true,
         temperature: payload.temperature,
         max_tokens: payload.max_tokens,
         reasoning_enabled: payload.reasoning_enabled,

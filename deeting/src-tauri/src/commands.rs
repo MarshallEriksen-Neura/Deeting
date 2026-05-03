@@ -1,6 +1,12 @@
 pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
     tauri::generate_handler![
         // MCP Commands
+        crate::modules::ai_access::commands::create_local_ai_access_key,
+        crate::modules::ai_access::commands::list_local_ai_access_keys,
+        crate::modules::ai_access::commands::revoke_local_ai_access_key,
+        crate::modules::ai_access::commands::get_local_ai_access_gateway_config,
+        crate::modules::ai_access::commands::set_local_ai_access_gateway_config,
+        crate::modules::ai_access::commands::start_local_ai_access_gateway,
         crate::modules::desktop_config::commands::set_cloud_base_url,
         crate::modules::desktop_config::commands::get_desktop_config,
         crate::modules::desktop_config::commands::get_effective_desktop_scout_base_url,

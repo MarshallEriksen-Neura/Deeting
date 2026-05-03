@@ -47,6 +47,7 @@ import { type ModelGroup, type SettingsFormValues } from "../types";
 import { isBrowserAgentPanelEnabled } from "./browser-agent-panel-flags";
 import {
   DeferredAgentSettingsCard,
+  DeferredDesktopAiAccessSettingsCard,
   DeferredDesktopBrowserAgentPanelCard,
   DeferredExternalEcosystemSettingsCard,
   DeferredDesktopNetworkSettingsCard,
@@ -770,6 +771,13 @@ export function SettingsForm({
             </div>
           )}
 
+          {/* AI Access section */}
+          {activeSection === "aiAccess" && (
+            <div className="flex flex-col gap-5 md:gap-6">
+              <DeferredDesktopAiAccessSettingsCard isTauriRuntime={isTauriRuntime} />
+            </div>
+          )}
+
           {/* Window section */}
           {activeSection === "window" && (
             <div className="flex flex-col gap-5 md:gap-6">
@@ -828,6 +836,7 @@ export function SettingsForm({
           )}
 
           {activeSection !== "agent" &&
+            activeSection !== "aiAccess" &&
             activeSection !== "ecosystem" &&
             activeSection !== "window" &&
             activeSection !== "version" &&

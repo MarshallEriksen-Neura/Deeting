@@ -506,9 +506,94 @@
         "deleteFailed": "Failed to delete connector."
       }
     },
+    "aiAccess": {
+      "title": "Local AI Access",
+      "description": "Expose this desktop's engine to OpenAI-compatible clients like Cherry Studio or LobeChat. Requests still run through the desktop runtime.",
+      "footerHint": "Localhost-only by default. Keys are stored hashed and shown in plaintext once at creation.",
+      "refresh": "Refresh",
+      "badge": {
+        "running": "Running",
+        "stopped": "Stopped"
+      },
+      "gateway": {
+        "sectionTitle": "Gateway",
+        "enabledLabel": "Enable local compatible gateway",
+        "enableHint": "After saving, the desktop binds 127.0.0.1 and serves /v1/models and /v1/chat/completions.",
+        "disableHint": "After saving, the compatible listener stops. Internal chat is not affected.",
+        "portLabel": "Port",
+        "saveAction": "Save gateway",
+        "baseUrlLabel": "Base URL",
+        "baseUrlEmpty": "Not running",
+        "baseUrlHelp": "Paste this URL along with any local API key into Cherry Studio / LobeChat / Chatbox.",
+        "copyBaseUrl": "Copy",
+        "copied": "Copied"
+      },
+      "keys": {
+        "sectionTitle": "API Keys",
+        "countLabel": "{active} active / {total} total",
+        "createAction": "New key",
+        "createdAt": "Created {value}",
+        "lastUsedAt": "Used {value}",
+        "neverUsed": "Never used",
+        "statusActive": "active",
+        "statusRevoked": "revoked",
+        "revoke": "Revoke",
+        "revoking": "Revoking…",
+        "archived": "Archived"
+      },
+      "empty": {
+        "title": "No local API keys yet",
+        "description": "Create a key to let compatible clients reach your desktop engine.",
+        "action": "Create key"
+      },
+      "create": {
+        "title": "Create a local API key",
+        "description": "The plaintext value is shown only once. Copy it before closing.",
+        "nameLabel": "Label",
+        "namePlaceholder": "e.g. Cherry Studio · My Mac",
+        "nameHelp": "Used only to identify this key in the list. You can revoke it anytime.",
+        "scopeLabel": "Scopes",
+        "scopeHelp": "Default chat-only: calls /v1/chat/completions but no internal approval or tool-control APIs.",
+        "submit": "Generate key",
+        "cancel": "Cancel"
+      },
+      "reveal": {
+        "title": "Generated \"{name}\"",
+        "description": "This is the full key. It will not be shown again after this dialog closes.",
+        "warning": "Copy it now and store it securely — Deeting will not display this key again.",
+        "secretLabel": "API Key",
+        "copySecret": "Copy key",
+        "usage1": "In the OpenAI provider settings of Cherry Studio / LobeChat:",
+        "usage2": "Base URL is",
+        "confirm": "I have saved the key"
+      },
+      "revokeConfirm": {
+        "title": "Revoke this API key?",
+        "description": "\"{name}\" will stop working immediately. Clients using it will receive 401. This cannot be undone.",
+        "cancel": "Cancel",
+        "confirm": "Revoke",
+        "revoking": "Revoking…"
+      },
+      "toast": {
+        "loadFailed": "Failed to load AI access state: {error}",
+        "saveFailed": "Failed to save gateway settings: {error}",
+        "startFailed": "Failed to start compatible gateway: {error}",
+        "gatewaySaved": "Gateway settings saved",
+        "portInvalid": "Port must be between 1 and 65535",
+        "createSuccess": "API key created",
+        "createFailed": "Failed to create key: {error}",
+        "nameRequired": "Please name the key first",
+        "revokeSuccess": "Key revoked",
+        "revokeNoop": "That key was already revoked",
+        "revokeFailed": "Failed to revoke key: {error}",
+        "copyFailed": "Copy failed — please select manually"
+      }
+    },
     "nav": {
       "models": "Models",
       "modelsDesc": "Embedding & secretary models",
+      "aiAccess": "AI Access",
+      "aiAccessDesc": "OpenAI-compatible local gateway & API keys",
       "ecosystem": "Ecosystems",
       "ecosystemDesc": "External source connectors and raw observation",
       "storage": "Storage",

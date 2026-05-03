@@ -369,6 +369,11 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    crate::modules::ai_access::compatible_gateway::spawn_if_enabled(
+        sync_state.clone(),
+        app.handle().clone(),
+    );
+
     let im_state = sync_state.clone();
     let im_app_handle = app.handle().clone();
     spawn_im_runtime_worker(im_state, im_app_handle);
