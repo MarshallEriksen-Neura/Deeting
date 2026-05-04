@@ -50,6 +50,18 @@ pub async fn open_local_browser_agent_tab(
 }
 
 #[tauri::command]
+pub async fn navigate_local_browser_agent_tab(
+    state: State<'_, AppState>,
+    tab_id: i64,
+    url: String,
+) -> Result<serde_json::Value, String> {
+    state
+        .browser_agent
+        .service
+        .navigate_tab(state.mcp.store.as_ref(), tab_id, &url)
+        .await
+}
+#[tauri::command]
 pub async fn get_local_browser_agent_page_snapshot(
     state: State<'_, AppState>,
     tab_id: i64,
@@ -171,6 +183,18 @@ pub async fn retry_local_browser_agent_with_relocate(
         .await
 }
 
+#[tauri::command]
+pub async fn dispatch_local_browser_agent_action(
+    state: State<'_, AppState>,
+    action_name: String,
+    payload: serde_json::Map<String, serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    state
+        .browser_agent
+        .service
+        .dispatch_expanded_action(state.mcp.store.as_ref(), &action_name, payload)
+        .await
+}
 #[tauri::command]
 pub async fn click_local_browser_agent_element(
     state: State<'_, AppState>,

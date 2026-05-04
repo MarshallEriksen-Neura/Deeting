@@ -73,6 +73,16 @@
         "approvalExecuting": "Approved, now running {name}",
         "approvalExecutingFallback": "Approved, now running the tool"
       },
+      "knowledgeSummary": {
+        "loading": "Reading {selectedFiles} selected document(s)",
+        "loaded": "Knowledge context ready",
+        "fallback": "Using document-opening fallback",
+        "empty": "No usable knowledge excerpts",
+        "error": "Knowledge search partially failed",
+        "excerpts": "{count} excerpts",
+        "overviews": "{count} overviews",
+        "expanded": "{count} expanded"
+      },
       "metrics": {
         "total": "Total {value}",
         "upstream": "Upstream {value}",
@@ -340,12 +350,22 @@
       "video": "Video",
       "knowledge": "Knowledge Files",
       "knowledgePickerTitle": "Select Knowledge Files",
-      "knowledgePickerLoading": "Loading indexed files...",
-      "knowledgePickerEmpty": "No indexed files available",
+      "knowledgePickerLoading": "Loading local files...",
+      "knowledgePickerEmpty": "No local knowledge files yet",
       "knowledgePickerLoadFailed": "Failed to load knowledge files. Please retry.",
       "knowledgeRefresh": "Refresh",
       "knowledgeRemove": "Remove knowledge file",
       "knowledgeClear": "Clear",
+      "knowledgeUnavailableHint": "Remove failed or indexing files before sending.",
+      "knowledgeUnavailableSelected": "Remove failed or indexing knowledge files before sending.",
+      "knowledgeChunks": "chunks",
+      "knowledgeProcessingHint": "Still indexing. It will be selectable after processing finishes.",
+      "knowledgeStatus": {
+        "ready": "Ready",
+        "processing": "Indexing",
+        "failed": "Failed",
+        "unknown": "Checking"
+      },
       "attachCurrentPage": "Attach current page",
       "attachingCurrentPage": "Attaching page",
       "pageContextAttached": "Current page attached for the next reply.",
@@ -371,6 +391,7 @@
           "title": "Recovered interrupted execution",
           "stageLabel": "Stage",
           "executionLabel": "Execution",
+          "nextStepLabel": "Next",
           "description": {
             "waitingApproval": "This run is paused at a tool approval gate. Review the pending approval to continue.",
             "resumingAfterApproval": "The previous run was interrupted while continuing after approval. Continue to resume from the restored state, or retry to re-drive the continuation.",
@@ -386,6 +407,14 @@
             "toolRunningInterrupted": "Tool interrupted",
             "delegatedWorkflowRunning": "Workflow interrupted",
             "unknown": "Recovered state"
+          },
+          "nextStep": {
+            "waitingApproval": "Handle the pending approval in the tool card, then continue from the restored execution.",
+            "resumingAfterApproval": "Continue if the restored state is current; retry only if the continuation did not move forward.",
+            "resumeFailed": "Retry is usually the right action. The tool may have completed, but the post-approval continuation was not restored.",
+            "toolRunningInterrupted": "Check whether the tool produced a result before retrying the same operation.",
+            "delegatedWorkflowRunning": "Retry to reconnect the delegated workflow to this chat, or abandon if the workflow is no longer needed.",
+            "fallback": "Choose continue, retry, or abandon after checking the latest assistant message."
           },
           "actions": {
             "continue": "Continue",
@@ -547,6 +576,13 @@
       "badges": {
         "approved": "Approved"
       },
+      "inlineStatus": {
+        "waiting": "Waiting for approval",
+        "executing": "Approved, continuing",
+        "rejecting": "Rejecting",
+        "duplicate": "Already running",
+        "approved": "Approved"
+      },
       "toast": {
         "approvedPending": "Approved. Running {toolName} locally",
         "approvedAlwaysPending": "Approved and remembered. Running {toolName} locally",
@@ -558,6 +594,38 @@
       "result": {
         "userRejected": "User rejected tool execution",
         "userDeniedAlways": "User blocked this operation for future runs"
+      }
+    },
+    "toolResult": {
+      "outcome": {
+        "next": "Next:",
+        "continuations": "{count} continuation block(s)",
+        "pendingApprovals": "{count} pending approval(s)",
+        "resume_failed": {
+          "title": "Continuation recovery failed",
+          "description": "The approved tool may have finished, but the post-approval chat continuation was not restored.",
+          "next": "Check the tool output before retrying. Retry should re-drive the continuation, not duplicate the approval."
+        },
+        "resumed": {
+          "title": "Continuation restored",
+          "description": "The approved tool finished and the chat continuation was attached back to this message.",
+          "next": "Continue from the latest assistant output."
+        },
+        "waiting_approval": {
+          "title": "Next approval required",
+          "description": "This approval completed and the runtime is waiting at another approval gate.",
+          "next": "Review the next tool card before continuing."
+        },
+        "rejected": {
+          "title": "Approval rejected",
+          "description": "The tool did not run because the approval was rejected.",
+          "next": "No retry is needed unless you want to approve a new run."
+        },
+        "tool_failed": {
+          "title": "Tool execution failed",
+          "description": "The tool returned an error before producing a successful result.",
+          "next": "Review the error details, then retry only if the inputs or environment are corrected."
+        }
       }
     },
     "voice": {

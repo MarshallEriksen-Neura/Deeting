@@ -73,6 +73,16 @@
         "approvalExecuting": "已批准，正在执行 {name}",
         "approvalExecutingFallback": "已批准，正在执行工具"
       },
+      "knowledgeSummary": {
+        "loading": "正在读取 {selectedFiles} 份已选文档",
+        "loaded": "知识上下文已就绪",
+        "fallback": "正在使用文档开头兜底",
+        "empty": "未找到可用知识片段",
+        "error": "知识检索部分失败",
+        "excerpts": "{count} 个片段",
+        "overviews": "{count} 份概览",
+        "expanded": "扩展 {count} 个相邻片段"
+      },
       "metrics": {
         "total": "总 {value}",
         "upstream": "上游 {value}",
@@ -344,6 +354,38 @@
         "userDeniedAlways": "用户已将该操作加入阻止规则"
       }
     },
+    "toolResult": {
+      "outcome": {
+        "next": "下一步：",
+        "continuations": "{count} 个续写块",
+        "pendingApprovals": "{count} 个待审批",
+        "resume_failed": {
+          "title": "续写恢复失败",
+          "description": "已批准的工具可能已经完成，但审批后的聊天续写没有恢复成功。",
+          "next": "重试前先检查工具输出。重试应重新驱动续写，而不是重复审批。"
+        },
+        "resumed": {
+          "title": "续写已恢复",
+          "description": "已批准的工具完成后，聊天续写已重新接回当前消息。",
+          "next": "从最新助手输出继续即可。"
+        },
+        "waiting_approval": {
+          "title": "需要下一次审批",
+          "description": "当前审批已完成，运行时停在另一个审批节点。",
+          "next": "继续前先处理下一张工具卡。"
+        },
+        "rejected": {
+          "title": "审批已拒绝",
+          "description": "由于审批被拒绝，这个工具没有继续执行。",
+          "next": "除非你想重新批准一次新的运行，否则不需要重试。"
+        },
+        "tool_failed": {
+          "title": "工具执行失败",
+          "description": "工具在产出成功结果前返回了错误。",
+          "next": "先查看错误详情；只有输入或环境已修正时再重试。"
+        }
+      }
+    },
     "routing": {
       "auto": "自动路由",
       "autoDesc": "系统智能选择助手",
@@ -396,12 +438,22 @@
       "video": "视频",
       "knowledge": "知识库文件",
       "knowledgePickerTitle": "选择知识库文件",
-      "knowledgePickerLoading": "正在加载文件列表...",
-      "knowledgePickerEmpty": "暂无可选的已索引文件",
+      "knowledgePickerLoading": "正在加载本地文件...",
+      "knowledgePickerEmpty": "暂无本地知识库文件",
       "knowledgePickerLoadFailed": "加载知识库文件失败，请重试",
       "knowledgeRefresh": "刷新",
       "knowledgeRemove": "移除知识文件",
       "knowledgeClear": "清空选择",
+      "knowledgeUnavailableHint": "发送前请先移除失败或索引中的文件。",
+      "knowledgeUnavailableSelected": "发送前请先移除失败或索引中的知识文件。",
+      "knowledgeChunks": "片段",
+      "knowledgeProcessingHint": "仍在索引，处理完成后可选择。",
+      "knowledgeStatus": {
+        "ready": "可用",
+        "processing": "索引中",
+        "failed": "失败",
+        "unknown": "检查中"
+      },
       "attachCurrentPage": "附带当前页面",
       "attachingCurrentPage": "正在附带页面",
       "pageContextAttached": "已将当前页面附带到下一次回复上下文。",
@@ -428,6 +480,7 @@
       "recovery": {
         "stageLabel": "阶段",
         "executionLabel": "执行 ID",
+        "nextStepLabel": "下一步",
         "title": "已恢复中断执行",
         "description": {
           "waitingApproval": "当前执行暂停在工具审批节点。请先处理待审批项，然后再继续。",
@@ -444,6 +497,14 @@
           "toolRunningInterrupted": "工具执行中断",
           "delegatedWorkflowRunning": "Workflow 中断",
           "unknown": "已恢复状态"
+        },
+        "nextStep": {
+          "waitingApproval": "先在工具卡里处理待审批项，再从已恢复的执行继续。",
+          "resumingAfterApproval": "如果恢复状态仍然有效，直接继续；只有后续流程没有推进时再重试。",
+          "resumeFailed": "通常应先重试。工具可能已经完成，但审批后的继续流程没有恢复成功。",
+          "toolRunningInterrupted": "重试同一个操作前，先确认工具是否已经产出结果。",
+          "delegatedWorkflowRunning": "重试可把委派 workflow 重新接回当前聊天；不再需要时可以放弃。",
+          "fallback": "先查看最近一条助手消息，再选择继续、重试或放弃。"
         },
         "actions": {
           "continue": "继续",

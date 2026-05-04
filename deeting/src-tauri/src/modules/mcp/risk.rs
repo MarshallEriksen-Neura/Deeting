@@ -265,26 +265,58 @@ pub fn assess_core_tool_risk(tool_name: &str, arguments: &Value) -> ToolRiskAsse
                 },
             }
         }
-        "browser_get_page_snapshot" => ToolRiskAssessment {
+        "browser_get_active_page" => ToolRiskAssessment {
+            requires_approval: false,
+            risk_level: "LOW",
+            reasons: vec!["active browser page metadata has no side effects".to_string()],
+            operation_class: RiskOperationClass::NetworkRead,
+            target_class: RiskTargetClass::Unknown,
+            boundary_class: ApprovalBoundaryClass::None,
+        },
+        "browser_get_page_snapshot"
+        | "browser_find_element"
+        | "browser_extract"
+        | "browser_region_screenshot"
+        | "browser_full_page_screenshot"
+        | "browser_wait"
+        | "browser_downloads"
+        | "browser_console_log"
+        | "browser_network_log"
+        | "browser_storage_read"
+        | "browser_accessibility_audit" => ToolRiskAssessment {
             requires_approval: true,
             risk_level: "MEDIUM",
-            reasons: vec!["browser snapshot can expose page content".to_string()],
+            reasons: vec![
+                "browser inspection can expose page content or browsing context".to_string(),
+            ],
             operation_class: RiskOperationClass::NetworkRead,
             target_class: RiskTargetClass::Unknown,
             boundary_class: ApprovalBoundaryClass::SoftBoundary,
         },
-        "browser_scroll" | "browser_scroll_into_view" => ToolRiskAssessment {
+        "browser_scroll" | "browser_scroll_into_view" | "browser_highlight" => ToolRiskAssessment {
             requires_approval: false,
             risk_level: "LOW",
-            reasons: vec!["browser scrolling changes only page viewport position".to_string()],
+            reasons: vec!["browser viewport targeting changes only local visual state".to_string()],
             operation_class: RiskOperationClass::Unknown,
             target_class: RiskTargetClass::Unknown,
             boundary_class: ApprovalBoundaryClass::None,
         },
-        "browser_click" | "browser_type" => ToolRiskAssessment {
+        "browser_click"
+        | "browser_type"
+        | "browser_navigate_tab"
+        | "browser_tabs"
+        | "browser_fill"
+        | "browser_key"
+        | "browser_select"
+        | "browser_upload_file"
+        | "browser_dialog"
+        | "browser_storage_write"
+        | "browser_eval" => ToolRiskAssessment {
             requires_approval: true,
             risk_level: "HIGH",
-            reasons: vec!["browser automation can trigger host-side mutations".to_string()],
+            reasons: vec![
+                "browser automation can trigger page, network, or host-side mutations".to_string(),
+            ],
             operation_class: RiskOperationClass::ProcessExec,
             target_class: RiskTargetClass::Host,
             boundary_class: ApprovalBoundaryClass::HardBoundary,
@@ -932,6 +964,33 @@ mod tests {
         assert_eq!(risk.target_class, RiskTargetClass::PublicInternet);
     }
 
+    #[test]
+    fn assess_core_tool_risk_classifies_expanded_browser_tools() {
+        let find = assess_core_tool_risk("browser_find_element", &json!({"tab_id": 1}));
+        assert!(find.requires_approval);
+        assert_eq!(find.risk_level, "MEDIUM");
+        assert_eq!(find.operation_class, RiskOperationClass::NetworkRead);
+
+        let active = assess_core_tool_risk("browser_get_active_page", &json!({}));
+        assert!(!active.requires_approval);
+        assert_eq!(active.risk_level, "LOW");
+
+        let highlight = assess_core_tool_risk("browser_highlight", &json!({"tab_id": 1}));
+        assert!(!highlight.requires_approval);
+        assert_eq!(highlight.risk_level, "LOW");
+
+        let fill = assess_core_tool_risk("browser_fill", &json!({"tab_id": 1}));
+        assert!(fill.requires_approval);
+        assert_eq!(fill.risk_level, "HIGH");
+        assert_eq!(fill.operation_class, RiskOperationClass::ProcessExec);
+
+        let storage_write = assess_core_tool_risk(
+            "browser_storage_write",
+            &json!({"tab_id": 1, "area": "localStorage"}),
+        );
+        assert!(storage_write.requires_approval);
+        assert_eq!(storage_write.risk_level, "HIGH");
+    }
     #[test]
     fn assess_core_tool_risk_allows_browser_agent_status_probe() {
         let risk = assess_core_tool_risk("browser_agent_status", &json!({}));

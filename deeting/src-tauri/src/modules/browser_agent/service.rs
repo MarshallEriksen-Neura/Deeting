@@ -1,5 +1,5 @@
 use reqwest::Url;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 use crate::modules::browser_agent::bridge::BrowserAgentBridgeState;
 use crate::modules::browser_agent::types::{
@@ -151,6 +151,38 @@ impl BrowserAgentService {
         }
     }
 
+    pub async fn navigate_tab(
+        &self,
+        store: &McpStore,
+        tab_id: i64,
+        url: &str,
+    ) -> Result<serde_json::Value, String> {
+        let (bridge_url, _source) = self.get_bridge_url(store).await?;
+        if tab_id <= 0 {
+            return Err("browser navigate_tab requires a positive tab id".to_string());
+        }
+        let normalized = url.trim();
+        if normalized.is_empty() {
+            return Err("browser navigate_tab requires a non-empty url".to_string());
+        }
+        let parsed = Url::parse(normalized).map_err(|err| err.to_string())?;
+        match parsed.scheme() {
+            "http" | "https" => {
+                self.bridge
+                    .dispatch_action(
+                        &bridge_url,
+                        crate::modules::browser_agent::types::BrowserAgentAction::NavigateTab {
+                            tab_id,
+                            url: parsed.to_string(),
+                        },
+                    )
+                    .await
+            }
+            scheme => Err(format!(
+                "browser navigate_tab does not support scheme: {scheme}"
+            )),
+        }
+    }
     pub async fn get_page_snapshot(
         &self,
         store: &McpStore,
@@ -423,6 +455,85 @@ impl BrowserAgentService {
         }))
     }
 
+    pub async fn dispatch_expanded_action(
+        &self,
+        store: &McpStore,
+        action_name: &str,
+        payload: Map<String, Value>,
+    ) -> Result<serde_json::Value, String> {
+        let (bridge_url, _source) = self.get_bridge_url(store).await?;
+        validate_expanded_action_payload(action_name, &payload)?;
+        let action = match action_name {
+            "browser_find_element" => {
+                crate::modules::browser_agent::types::BrowserAgentAction::FindElement { payload }
+            }
+            "browser_extract" => {
+                crate::modules::browser_agent::types::BrowserAgentAction::Extract { payload }
+            }
+            "browser_region_screenshot" => {
+                crate::modules::browser_agent::types::BrowserAgentAction::RegionScreenshot {
+                    payload,
+                }
+            }
+            "browser_full_page_screenshot" => {
+                crate::modules::browser_agent::types::BrowserAgentAction::FullPageScreenshot {
+                    payload,
+                }
+            }
+            "browser_get_active_page" => {
+                crate::modules::browser_agent::types::BrowserAgentAction::GetActivePage { payload }
+            }
+            "browser_wait" => {
+                crate::modules::browser_agent::types::BrowserAgentAction::Wait { payload }
+            }
+            "browser_tabs" => {
+                crate::modules::browser_agent::types::BrowserAgentAction::Tabs { payload }
+            }
+            "browser_fill" => {
+                crate::modules::browser_agent::types::BrowserAgentAction::Fill { payload }
+            }
+            "browser_key" => {
+                crate::modules::browser_agent::types::BrowserAgentAction::Key { payload }
+            }
+            "browser_select" => {
+                crate::modules::browser_agent::types::BrowserAgentAction::Select { payload }
+            }
+            "browser_upload_file" => {
+                crate::modules::browser_agent::types::BrowserAgentAction::UploadFile { payload }
+            }
+            "browser_downloads" => {
+                crate::modules::browser_agent::types::BrowserAgentAction::Downloads { payload }
+            }
+            "browser_dialog" => {
+                crate::modules::browser_agent::types::BrowserAgentAction::Dialog { payload }
+            }
+            "browser_console_log" => {
+                crate::modules::browser_agent::types::BrowserAgentAction::ConsoleLog { payload }
+            }
+            "browser_network_log" => {
+                crate::modules::browser_agent::types::BrowserAgentAction::NetworkLog { payload }
+            }
+            "browser_storage_read" => {
+                crate::modules::browser_agent::types::BrowserAgentAction::StorageRead { payload }
+            }
+            "browser_storage_write" => {
+                crate::modules::browser_agent::types::BrowserAgentAction::StorageWrite { payload }
+            }
+            "browser_eval" => {
+                crate::modules::browser_agent::types::BrowserAgentAction::Eval { payload }
+            }
+            "browser_highlight" => {
+                crate::modules::browser_agent::types::BrowserAgentAction::Highlight { payload }
+            }
+            "browser_accessibility_audit" => {
+                crate::modules::browser_agent::types::BrowserAgentAction::AccessibilityAudit {
+                    payload,
+                }
+            }
+            other => return Err(format!("unsupported expanded browser action: {other}")),
+        };
+        self.bridge.dispatch_action(&bridge_url, action).await
+    }
     pub async fn click_element(
         &self,
         store: &McpStore,
@@ -475,6 +586,45 @@ impl BrowserAgentService {
     }
 }
 
+fn validate_expanded_action_payload(
+    action_name: &str,
+    payload: &Map<String, Value>,
+) -> Result<(), String> {
+    match action_name {
+        "browser_full_page_screenshot" | "browser_get_active_page" | "browser_downloads" => Ok(()),
+        "browser_eval" => {
+            let code = payload
+                .get("code")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| "browser_eval requires non-empty code".to_string())?;
+            if code.len() > 20_000 {
+                return Err("browser_eval code is too large".to_string());
+            }
+            Ok(())
+        }
+        "browser_tabs" => {
+            payload
+                .get("action")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| "browser_tabs requires an action".to_string())?;
+            Ok(())
+        }
+        _ => {
+            if payload
+                .get("tabId")
+                .or_else(|| payload.get("tab_id"))
+                .is_none()
+            {
+                return Err(format!("{action_name} requires tab_id"));
+            }
+            Ok(())
+        }
+    }
+}
 fn normalize_bridge_url(raw: &str) -> Result<String, String> {
     let normalized = raw.trim();
     if normalized.is_empty() {
@@ -513,6 +663,12 @@ pub(crate) fn locator_is_empty(locator: &BrowserAgentElementLocator) -> bool {
         || has_non_empty(&locator.role)
         || has_non_empty(&locator.tag_name)
         || has_non_empty(&locator.placeholder)
+        || has_non_empty(&locator.element_id)
+        || has_non_empty(&locator.aria_label)
+        || has_non_empty(&locator.accessible_name)
+        || has_non_empty(&locator.href)
+        || has_non_empty(&locator.test_id)
+        || has_non_empty(&locator.frame_id)
         || locator.index.is_some())
 }
 
@@ -626,6 +782,12 @@ mod tests {
             role: None,
             tag_name: None,
             placeholder: Some("Search".to_string()),
+            element_id: None,
+            aria_label: None,
+            accessible_name: None,
+            href: None,
+            test_id: None,
+            frame_id: None,
             index: None,
         };
 

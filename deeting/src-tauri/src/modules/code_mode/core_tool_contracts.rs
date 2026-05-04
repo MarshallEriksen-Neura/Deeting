@@ -85,6 +85,45 @@ pub(crate) fn build_core_tool_assets() -> Vec<Value> {
         .collect()
 }
 
+fn browser_expanded_tool_contract(
+    name: &'static str,
+    description: &'static str,
+    read_only: bool,
+    mutating: bool,
+    risk_level: &'static str,
+    example_arguments: Value,
+) -> CoreToolContract {
+    CoreToolContract {
+        name,
+        description,
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "tab_id": {"type": "integer", "description": "Optional browser tab identifier. Required for tab-scoped actions."},
+                "target": {"type": "object", "description": "Optional structured locator using selector, text, role, label, placeholder, element_id, test_id, or frame_id."},
+                "action": {"type": "string", "description": "Sub-action for grouped browser tools such as tabs, storage, downloads, or dialog."},
+                "text": {"type": "string"},
+                "value": {},
+                "url": {"type": "string"},
+                "timeout_ms": {"type": "integer"},
+                "mode": {"type": "string"},
+                "code": {"type": "string"},
+                "path": {"type": "string"},
+                "options": {"type": "object"}
+            },
+            "additionalProperties": true
+        }),
+        output_schema: json!({
+            "type": "object",
+            "additionalProperties": true
+        }),
+        permission_scope: &["browser_agent_read", "browser_agent_write", "local_runtime"],
+        read_only,
+        mutating,
+        risk_level,
+        example_arguments,
+    }
+}
 pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
     vec![
         CoreToolContract {
@@ -732,7 +771,174 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
             risk_level: "LOW",
             example_arguments: json!({"tab_id": 42}),
         },
-        CoreToolContract {
+        browser_expanded_tool_contract(
+            "browser_navigate_tab",
+            "Navigate an existing browser tab to an http or https URL through the local browser agent bridge.",
+            false,
+            true,
+            "MEDIUM",
+            json!({"tab_id": 42, "url": "https://example.com/search"}),
+        ),
+        browser_expanded_tool_contract(
+            "browser_find_element",
+            "Find a browser element by text, role, label, placeholder, selector, href, test id, or stable snapshot element id.",
+            true,
+            false,
+            "MEDIUM",
+            json!({"tab_id": 42, "target": {"text": "Continue"}}),
+        ),
+        browser_expanded_tool_contract(
+            "browser_extract",
+            "Extract structured content from a browser tab, such as visible text, article text, tables, links, images, metadata, or JSON-LD.",
+            true,
+            false,
+            "MEDIUM",
+            json!({"tab_id": 42, "mode": "main_text"}),
+        ),
+        browser_expanded_tool_contract(
+            "browser_region_screenshot",
+            "Capture a screenshot of a browser element or viewport region.",
+            true,
+            false,
+            "MEDIUM",
+            json!({"tab_id": 42, "target": {"selector": ".result"}}),
+        ),
+        browser_expanded_tool_contract(
+            "browser_full_page_screenshot",
+            "Capture a full-page screenshot from a browser tab with bounded output metadata.",
+            true,
+            false,
+            "MEDIUM",
+            json!({"tab_id": 42}),
+        ),
+        browser_expanded_tool_contract(
+            "browser_get_active_page",
+            "Return the active browser page known by the desktop browser bridge.",
+            true,
+            false,
+            "LOW",
+            json!({}),
+        ),
+        browser_expanded_tool_contract(
+            "browser_wait",
+            "Wait for a browser condition such as element, text, URL, title, readyState, network idle, download, or dialog.",
+            true,
+            false,
+            "MEDIUM",
+            json!({"tab_id": 42, "mode": "text", "text": "Loaded", "timeout_ms": 10000}),
+        ),
+        browser_expanded_tool_contract(
+            "browser_tabs",
+            "List, switch, create, or close browser tabs through the local browser agent bridge.",
+            false,
+            true,
+            "HIGH",
+            json!({"action": "list"}),
+        ),
+        browser_expanded_tool_contract(
+            "browser_fill",
+            "Clear and fill a browser form field using a structured locator.",
+            false,
+            true,
+            "HIGH",
+            json!({"tab_id": 42, "target": {"placeholder": "Search"}, "text": "browser agent"}),
+        ),
+        browser_expanded_tool_contract(
+            "browser_key",
+            "Send a keyboard key or shortcut to the browser or a targeted element.",
+            false,
+            true,
+            "HIGH",
+            json!({"tab_id": 42, "key": "Enter"}),
+        ),
+        browser_expanded_tool_contract(
+            "browser_select",
+            "Select an option, checkbox, radio button, multi-select value, or date input in the browser.",
+            false,
+            true,
+            "HIGH",
+            json!({"tab_id": 42, "target": {"selector": "select[name=country]"}, "value": "US"}),
+        ),
+        browser_expanded_tool_contract(
+            "browser_upload_file",
+            "Attach a local file to a browser file input using a structured locator.",
+            false,
+            true,
+            "HIGH",
+            json!({"tab_id": 42, "target": {"selector": "input[type=file]"}, "path": "C:/path/file.txt"}),
+        ),
+        browser_expanded_tool_contract(
+            "browser_downloads",
+            "Inspect or wait for browser downloads and return bounded download metadata.",
+            true,
+            false,
+            "MEDIUM",
+            json!({"action": "list"}),
+        ),
+        browser_expanded_tool_contract(
+            "browser_dialog",
+            "Detect, accept, dismiss, or respond to browser alert, confirm, and prompt dialogs.",
+            false,
+            true,
+            "HIGH",
+            json!({"tab_id": 42, "action": "dismiss"}),
+        ),
+        browser_expanded_tool_contract(
+            "browser_console_log",
+            "Read recent browser console logs, warnings, and errors with source locations.",
+            true,
+            false,
+            "MEDIUM",
+            json!({"tab_id": 42, "level": "error"}),
+        ),
+        browser_expanded_tool_contract(
+            "browser_network_log",
+            "Read recent browser network requests, failures, status codes, timings, and redacted summaries.",
+            true,
+            false,
+            "MEDIUM",
+            json!({"tab_id": 42, "include_failed": true}),
+        ),
+        browser_expanded_tool_contract(
+            "browser_storage_read",
+            "Read selected browser storage values such as cookies, localStorage, sessionStorage, or IndexedDB metadata with redaction.",
+            true,
+            false,
+            "MEDIUM",
+            json!({"tab_id": 42, "area": "localStorage"}),
+        ),
+        browser_expanded_tool_contract(
+            "browser_storage_write",
+            "Write selected browser storage values such as localStorage or sessionStorage with hard approval.",
+            false,
+            true,
+            "HIGH",
+            json!({"tab_id": 42, "area": "localStorage", "key": "feature", "value": "on"}),
+        ),
+        browser_expanded_tool_contract(
+            "browser_eval",
+            "Evaluate JavaScript in the browser page context. Read-only inspection should use mode='read'; mutating eval requires hard approval.",
+            false,
+            true,
+            "HIGH",
+            json!({"tab_id": 42, "mode": "read", "code": "document.title"}),
+        ),
+        browser_expanded_tool_contract(
+            "browser_highlight",
+            "Highlight a browser element before an action or approval so the user can see the intended target.",
+            false,
+            true,
+            "LOW",
+            json!({"tab_id": 42, "target": {"text": "Continue"}}),
+        ),
+        browser_expanded_tool_contract(
+            "browser_accessibility_audit",
+            "Run local accessibility checks over labels, names, focusability, contrast hints, and keyboard reachability.",
+            true,
+            false,
+            "MEDIUM",
+            json!({"tab_id": 42}),
+        ),        CoreToolContract {
             name: "browser_wait_for_element",
             description: "Ask the connected browser agent extension to wait until a target element appears in a browser tab and return the matched locator plus current page metadata.",
             input_schema: json!({
@@ -1031,6 +1237,27 @@ fn core_tool_execution_surface(tool_name: &str) -> &'static str {
         "execute_code_plan" => "sandbox",
         "run_local_code_snippet" => "sandbox",
         "browser_open_tab" => "host",
+        "browser_navigate_tab" => "host",
+        "browser_find_element" => "host",
+        "browser_extract" => "host",
+        "browser_region_screenshot" => "host",
+        "browser_full_page_screenshot" => "host",
+        "browser_get_active_page" => "host",
+        "browser_wait" => "host",
+        "browser_tabs" => "host",
+        "browser_fill" => "host",
+        "browser_key" => "host",
+        "browser_select" => "host",
+        "browser_upload_file" => "host",
+        "browser_downloads" => "host",
+        "browser_dialog" => "host",
+        "browser_console_log" => "host",
+        "browser_network_log" => "host",
+        "browser_storage_read" => "host",
+        "browser_storage_write" => "host",
+        "browser_eval" => "host",
+        "browser_highlight" => "host",
+        "browser_accessibility_audit" => "host",
         "browser_wait_for_element" => "host",
         "browser_wait_for_navigation" => "host",
         "browser_scroll_into_view" => "host",
@@ -1331,6 +1558,44 @@ mod tests {
         assert_eq!(tool.risk_level, "LOW");
     }
 
+    #[test]
+    fn core_tool_registry_includes_expanded_browser_tools() {
+        let tools = desktop_runtime_core_tools();
+        let expected = [
+            ("browser_navigate_tab", false, true, "MEDIUM"),
+            ("browser_find_element", true, false, "MEDIUM"),
+            ("browser_extract", true, false, "MEDIUM"),
+            ("browser_region_screenshot", true, false, "MEDIUM"),
+            ("browser_full_page_screenshot", true, false, "MEDIUM"),
+            ("browser_get_active_page", true, false, "LOW"),
+            ("browser_wait", true, false, "MEDIUM"),
+            ("browser_tabs", false, true, "HIGH"),
+            ("browser_fill", false, true, "HIGH"),
+            ("browser_key", false, true, "HIGH"),
+            ("browser_select", false, true, "HIGH"),
+            ("browser_upload_file", false, true, "HIGH"),
+            ("browser_downloads", true, false, "MEDIUM"),
+            ("browser_dialog", false, true, "HIGH"),
+            ("browser_console_log", true, false, "MEDIUM"),
+            ("browser_network_log", true, false, "MEDIUM"),
+            ("browser_storage_read", true, false, "MEDIUM"),
+            ("browser_storage_write", false, true, "HIGH"),
+            ("browser_eval", false, true, "HIGH"),
+            ("browser_highlight", false, true, "LOW"),
+            ("browser_accessibility_audit", true, false, "MEDIUM"),
+        ];
+
+        for (name, read_only, mutating, risk_level) in expected {
+            let tool = tools
+                .iter()
+                .find(|tool| tool.name == name)
+                .unwrap_or_else(|| panic!("{name} core tool should exist"));
+
+            assert_eq!(tool.read_only, read_only, "{name} read_only");
+            assert_eq!(tool.mutating, mutating, "{name} mutating");
+            assert_eq!(tool.risk_level, risk_level, "{name} risk");
+        }
+    }
     #[test]
     fn core_tool_registry_includes_browser_wait_for_element() {
         let tool = desktop_runtime_core_tools()

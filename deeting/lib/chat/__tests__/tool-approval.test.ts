@@ -278,7 +278,7 @@ describe("resolveApprovalExecutionMetaFromMessage", () => {
       metaInfo: {
         execution_tree: {
           root_execution_id: "graph-meta-1",
-        } as any,
+        },
       },
     }
 
@@ -519,6 +519,41 @@ describe("createApprovedToolResultBlock", () => {
       result: {
         structuredContent: {
           markdown: "# EvoMap",
+        },
+      },
+    })
+  })
+
+  it("preserves post-approval resume status on approved results", () => {
+    expect(
+      createApprovedToolResultBlock(
+        {
+          kind: "bridge_mcp",
+          approval_token: "approval-1",
+          tool_name: "browser_click",
+          arguments: {},
+          meta: {
+            call_id: "call-1",
+          },
+        },
+        { ok: true },
+        {
+          local_chat_resume: {
+            status: "LOCAL_CHAT_RESUME_FAILED",
+            error_code: "APPROVAL_GRAPH_NOT_ADVANCED",
+            retryable: true,
+          },
+        },
+      )
+    ).toMatchObject({
+      callId: "call-1",
+      status: "success",
+      result: {
+        ok: true,
+        local_chat_resume: {
+          status: "LOCAL_CHAT_RESUME_FAILED",
+          error_code: "APPROVAL_GRAPH_NOT_ADVANCED",
+          retryable: true,
         },
       },
     })

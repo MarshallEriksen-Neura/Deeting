@@ -26,7 +26,6 @@ import {
   CollapsibleTrigger,
 } from "@/ui/shadcn/collapsible";
 import { Badge } from "@/ui/shadcn/badge";
-import { Button } from "@/ui/shadcn/button";
 import { MarkdownViewer } from "@/components/chat/markdown-viewer";
 import { TaskLiveBlock } from "@/components/chat/messages/task-live-block";
 import { isToolApprovalResultBlock } from "@/lib/chat/assistant-activity";
@@ -37,7 +36,6 @@ import {
 } from "@/lib/chat/bridge-approval-store";
 import {
   humanizeToolName as sharedHumanizeToolName,
-  isInternalTool as sharedIsInternalTool,
   resolveToolPreview as sharedResolveToolPreview,
   resolveToolResultPreview as sharedResolveToolResultPreview,
   resolveToolResultTitle as sharedResolveToolResultTitle,
@@ -120,6 +118,27 @@ type LocalCodeSnippetInsight = {
 };
 
 type ToolVisualState = "running" | "success" | "error" | "pending";
+type ApprovalInlineStage =
+  | "waiting"
+  | "executing"
+  | "rejecting"
+  | "duplicate"
+  | "approved";
+type ToolOutcomeKind =
+  | "resume_failed"
+  | "resumed"
+  | "waiting_approval"
+  | "rejected"
+  | "tool_failed";
+
+type ToolOutcomeInsight = {
+  kind: ToolOutcomeKind;
+  tone: "success" | "warning" | "danger" | "neutral";
+  error?: string | null;
+  errorCode?: string | null;
+  continuationCount?: number | null;
+  pendingApprovalCount?: number | null;
+};
 
 function toRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") return null;
@@ -214,6 +233,59 @@ function toStringArray(value: unknown): string[] {
   return value
     .map((item) => (typeof item === "string" ? item.trim() : ""))
     .filter((item) => item.length > 0);
+}
+
+function extractToolOutcomeInsight(
+  resultBlock?: MessageToolResultBlock,
+): ToolOutcomeInsight | null {
+  if (!resultBlock) return null;
+  const result = toRecord(resultBlock.result);
+  const localChatResume = toRecord(result?.local_chat_resume);
+  const resumeStatus = asTrimmedString(localChatResume?.status);
+  if (resumeStatus === "LOCAL_CHAT_RESUME_FAILED") {
+    return {
+      kind: "resume_failed",
+      tone: "danger",
+      error: asTrimmedString(localChatResume?.error),
+      errorCode: asTrimmedString(localChatResume?.error_code),
+      continuationCount: toNumber(localChatResume?.continuation_blocks_count),
+      pendingApprovalCount: toNumber(
+        localChatResume?.next_pending_approval_count,
+      ),
+    };
+  }
+  if (resumeStatus === "LOCAL_CHAT_WAITING_APPROVAL") {
+    return {
+      kind: "waiting_approval",
+      tone: "warning",
+      pendingApprovalCount: toNumber(
+        localChatResume?.next_pending_approval_count,
+      ),
+    };
+  }
+  if (resumeStatus === "LOCAL_CHAT_RESUMED") {
+    return {
+      kind: "resumed",
+      tone: "success",
+      continuationCount: toNumber(localChatResume?.continuation_blocks_count),
+    };
+  }
+  if (resultBlock.status !== "error") return null;
+
+  const error = asTrimmedString(result?.error);
+  const normalizedError = (error ?? "").toLowerCase();
+  const isRejected =
+    resultBlock.id.endsWith("-rejected") ||
+    normalizedError.includes("user rejected") ||
+    normalizedError.includes("cancelled") ||
+    normalizedError.includes("拒绝");
+
+  return {
+    kind: isRejected ? "rejected" : "tool_failed",
+    tone: isRejected ? "neutral" : "danger",
+    error,
+    errorCode: asTrimmedString(result?.error_code),
+  };
 }
 
 function extractSkillInstallInsight(
@@ -886,6 +958,73 @@ function ToolDebugPanel({ debug }: { debug?: Record<string, unknown> }) {
   );
 }
 
+function ToolOutcomeStatusCard({
+  insight,
+}: {
+  insight: ToolOutcomeInsight | null;
+}) {
+  const t = useI18n("chat");
+  if (!insight) return null;
+
+  const toneClass =
+    insight.tone === "success"
+      ? "border-emerald-300 bg-emerald-50/80 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-200"
+      : insight.tone === "warning"
+        ? "border-amber-300 bg-amber-50/80 text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-200"
+        : insight.tone === "danger"
+          ? "border-red-300 bg-red-50/80 text-red-800 dark:border-red-900 dark:bg-red-950/20 dark:text-red-200"
+          : "border-slate-300 bg-slate-50/80 text-slate-700 dark:border-slate-800 dark:bg-slate-950/20 dark:text-slate-200";
+  const icon =
+    insight.tone === "success" ? (
+      <Check size={13} />
+    ) : insight.tone === "danger" ? (
+      <AlertTriangle size={13} />
+    ) : (
+      <Zap size={13} />
+    );
+
+  return (
+    <div className={cn("mb-3 rounded-lg border px-3 py-2 text-xs", toneClass)}>
+      <div className="flex items-center gap-2 font-bold uppercase tracking-wider">
+        {icon}
+        <span>{t(`toolResult.outcome.${insight.kind}.title`)}</span>
+      </div>
+      <div className="mt-1 leading-relaxed">
+        {t(`toolResult.outcome.${insight.kind}.description`)}
+      </div>
+      <div className="mt-2 rounded-md border border-current/15 bg-white/40 px-2 py-1.5 leading-relaxed dark:bg-black/10">
+        <span className="font-semibold">{t("toolResult.outcome.next")} </span>
+        {t(`toolResult.outcome.${insight.kind}.next`)}
+      </div>
+      {insight.error ? (
+        <div className="mt-2 font-mono text-[11px] leading-relaxed opacity-90">
+          {insight.errorCode ? `[${insight.errorCode}] ` : ""}
+          {insight.error}
+        </div>
+      ) : null}
+      {insight.continuationCount != null ||
+      insight.pendingApprovalCount != null ? (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {insight.continuationCount != null ? (
+            <Badge variant="outline" className="h-5 text-[10px] font-normal">
+              {t("toolResult.outcome.continuations", {
+                count: insight.continuationCount,
+              })}
+            </Badge>
+          ) : null}
+          {insight.pendingApprovalCount != null ? (
+            <Badge variant="outline" className="h-5 text-[10px] font-normal">
+              {t("toolResult.outcome.pendingApprovals", {
+                count: insight.pendingApprovalCount,
+              })}
+            </Badge>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export const ToolCallBlock = memo<{
   messageId?: string;
   callId?: string;
@@ -908,6 +1047,12 @@ export const ToolCallBlock = memo<{
   const [approvalAction, setApprovalAction] = useState<
     "allow_once" | "allow_always" | "reject_once" | null
   >(null);
+  const [approvalNotice, setApprovalNotice] = useState<"duplicate" | null>(
+    null,
+  );
+  const approvalNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const cardRef = useRef<HTMLDivElement>(null);
   const recentApprovedExecution = useBridgeApprovalStore(
     (state) => state.recentApprovedExecution,
@@ -1003,10 +1148,19 @@ export const ToolCallBlock = memo<{
     () => formatObjectAsMarkdown(resultBlock?.result),
     [resultBlock?.result],
   );
+  const toolOutcomeInsight = useMemo(
+    () => extractToolOutcomeInsight(resultBlock),
+    [resultBlock],
+  );
 
-  const isResultError = resultBlock?.status === "error";
-  const isResultPendingApproval = Boolean(
-    resultBlock && isToolApprovalResultBlock(resultBlock),
+  useEffect(
+    () => () => {
+      if (approvalNoticeTimer.current) {
+        clearTimeout(approvalNoticeTimer.current);
+        approvalNoticeTimer.current = null;
+      }
+    },
+    [],
   );
   const inlineApproval = useMemo(() => {
     if (!messageId || !callId || !resultBlock) return null;
@@ -1042,10 +1196,63 @@ export const ToolCallBlock = memo<{
     }
   }, [inlineApproval, messageId, setMessageBlocks]);
 
+  const clearApprovalNotice = useCallback(() => {
+    if (approvalNoticeTimer.current) {
+      clearTimeout(approvalNoticeTimer.current);
+      approvalNoticeTimer.current = null;
+    }
+    setApprovalNotice(null);
+  }, []);
+
+  const flashApprovalNotice = useCallback((notice: "duplicate") => {
+    if (approvalNoticeTimer.current) {
+      clearTimeout(approvalNoticeTimer.current);
+    }
+    setApprovalNotice(notice);
+    approvalNoticeTimer.current = setTimeout(() => {
+      approvalNoticeTimer.current = null;
+      setApprovalNotice(null);
+    }, 2200);
+  }, []);
+
+  const approvalStage: ApprovalInlineStage = approvalAction
+    ? approvalAction === "reject_once"
+      ? "rejecting"
+      : "executing"
+    : approvalNotice ?? (isRecentlyApproved ? "approved" : "waiting");
+
+  const approvalStageToneClass =
+    approvalStage === "executing"
+      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+      : approvalStage === "rejecting"
+        ? "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300"
+        : approvalStage === "duplicate"
+          ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+          : approvalStage === "approved"
+            ? "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300"
+            : "border-slate-300/70 bg-slate-50/80 text-slate-600 dark:border-slate-700 dark:bg-slate-950/20 dark:text-slate-300";
+
+  const approvalStageIcon =
+    approvalStage === "executing" ? (
+      <Loader2 size={10} className="animate-spin" />
+    ) : approvalStage === "rejecting" || approvalStage === "duplicate" ? (
+      <AlertTriangle size={10} />
+    ) : approvalStage === "approved" ? (
+      <Check size={10} />
+    ) : (
+      <Zap size={10} />
+    );
+
+  const approvalStageLabel = t(`approvalDialog.inlineStatus.${approvalStage}`);
+
   const handleApprove = useCallback(
     async (mode: "allow_once" | "allow_always" = "allow_once") => {
       if (!inlineApproval || !messageId) return;
-      if (!beginBridgeApprovalExecution(inlineApproval.approval_token)) return;
+      if (!beginBridgeApprovalExecution(inlineApproval.approval_token)) {
+        flashApprovalNotice("duplicate");
+        return;
+      }
+      clearApprovalNotice();
       setApprovalAction(mode);
       try {
         await runInlineApproval({
@@ -1066,7 +1273,9 @@ export const ToolCallBlock = memo<{
     },
     [
       appendMessageBlocks,
+      clearApprovalNotice,
       applyOptimisticExecutionState,
+      flashApprovalNotice,
       inlineApproval,
       messageId,
       sessionId,
@@ -1081,6 +1290,7 @@ export const ToolCallBlock = memo<{
 
   const handleReject = useCallback(async () => {
     if (!inlineApproval || !messageId) return;
+    clearApprovalNotice();
     setApprovalAction("reject_once");
     try {
       await runInlineRejection({
@@ -1094,6 +1304,7 @@ export const ToolCallBlock = memo<{
       setApprovalAction(null);
     }
   }, [
+    clearApprovalNotice,
     inlineApproval,
     messageId,
     removePendingByToken,
@@ -1140,57 +1351,67 @@ export const ToolCallBlock = memo<{
     <motion.div
       initial={{ opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0 }}
-      className="flex flex-wrap items-center gap-2 mt-2 ml-4"
+      className="mt-2 ml-4 flex flex-col gap-2"
       onClick={(e) => e.stopPropagation()}
     >
-      <button
-        type="button"
-        disabled={approvalAction !== null}
-        onClick={() => void handleReject()}
-        className={cn(
-          "px-3 py-1 rounded-full border border-[var(--hairline)] text-[10px] font-bold uppercase tracking-wider transition-all",
-          "hover:bg-red-500/10 hover:border-red-500/50 hover:text-red-600 dark:hover:text-red-400",
-          "disabled:opacity-50 disabled:cursor-not-allowed"
-        )}
-      >
-        {approvalAction === "reject_once" ? (
-          <Loader2 size={10} className="animate-spin mr-1 inline" />
-        ) : null}
-        {t("approvalDialog.actions.reject")}
-      </button>
-      <button
-        type="button"
-        disabled={approvalAction !== null}
-        onClick={() => void handleApprove()}
-        className={cn(
-          "px-3 py-1 rounded-full border border-[var(--ink)] bg-[var(--ink)] text-[var(--panel-bg)] text-[10px] font-bold uppercase tracking-wider transition-all",
-          "hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-white"
-        )}
-      >
-        {approvalAction === "allow_once" ? (
-          <Loader2 size={10} className="animate-spin mr-1 inline text-white" />
-        ) : null}
-        {t("approvalDialog.actions.approve")}
-      </button>
-      <button
-        type="button"
-        disabled={approvalAction !== null}
-        onClick={() => {
-          // 在 ToolCallBlock 中，handleApprove 默认调用时没有传参，
-          // 我需要确保它能处理 allow_always
-          void handleApproveAlways();
-        }}
-        className={cn(
-          "px-3 py-1 rounded-full border border-amber-500/30 text-amber-600 dark:text-amber-400 text-[10px] font-bold uppercase tracking-wider transition-all",
-          "hover:bg-amber-500/10 hover:border-amber-500/60",
-          "disabled:opacity-50 disabled:cursor-not-allowed"
-        )}
-      >
-        {approvalAction === "allow_always" ? (
-          <Loader2 size={10} className="animate-spin mr-1 inline" />
-        ) : null}
-        {t("approvalDialog.actions.approveAlways")}
-      </button>
+      <div className="flex items-center gap-2" aria-live="polite">
+        <Badge
+          variant="outline"
+          className={cn(
+            "h-5 gap-1.5 rounded-full border px-2 text-[10px] font-bold uppercase tracking-wider",
+            approvalStageToneClass,
+          )}
+        >
+          {approvalStageIcon}
+          {approvalStageLabel}
+        </Badge>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          disabled={approvalAction !== null}
+          onClick={() => void handleReject()}
+          className={cn(
+            "px-3 py-1 rounded-full border border-[var(--hairline)] text-[10px] font-bold uppercase tracking-wider transition-all",
+            "hover:bg-red-500/10 hover:border-red-500/50 hover:text-red-600 dark:hover:text-red-400",
+            "disabled:opacity-50 disabled:cursor-not-allowed",
+          )}
+        >
+          {approvalAction === "reject_once" ? (
+            <Loader2 size={10} className="animate-spin mr-1 inline" />
+          ) : null}
+          {t("approvalDialog.actions.reject")}
+        </button>
+        <button
+          type="button"
+          disabled={approvalAction !== null}
+          onClick={() => void handleApprove()}
+          className={cn(
+            "px-3 py-1 rounded-full border border-[var(--ink)] bg-[var(--ink)] text-[var(--panel-bg)] text-[10px] font-bold uppercase tracking-wider transition-all",
+            "hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed text-white",
+          )}
+        >
+          {approvalAction === "allow_once" ? (
+            <Loader2 size={10} className="animate-spin mr-1 inline text-white" />
+          ) : null}
+          {t("approvalDialog.actions.approve")}
+        </button>
+        <button
+          type="button"
+          disabled={approvalAction !== null}
+          onClick={() => void handleApproveAlways()}
+          className={cn(
+            "px-3 py-1 rounded-full border border-amber-500/30 text-amber-600 dark:text-amber-400 text-[10px] font-bold uppercase tracking-wider transition-all",
+            "hover:bg-amber-500/10 hover:border-amber-500/60",
+            "disabled:opacity-50 disabled:cursor-not-allowed",
+          )}
+        >
+          {approvalAction === "allow_always" ? (
+            <Loader2 size={10} className="animate-spin mr-1 inline" />
+          ) : null}
+          {t("approvalDialog.actions.approveAlways")}
+        </button>
+      </div>
     </motion.div>
   ) : null;
 
@@ -1207,6 +1428,7 @@ export const ToolCallBlock = memo<{
             className="overflow-hidden"
           >
             <div className="mb-4 p-4 rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg)]">
+              <ToolOutcomeStatusCard insight={toolOutcomeInsight} />
               {taskLiveId ? (
                 <TaskLiveBlock taskId={taskLiveId} />
               ) : skillInstallInsight ? (

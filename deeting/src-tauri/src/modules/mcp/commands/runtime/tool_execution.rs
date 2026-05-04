@@ -368,6 +368,43 @@ fn resolve_core_tool_name(tool_id: Option<&str>, tool_name: Option<&str>) -> Opt
         ("browser_get_page_snapshot", _) | (_, "core.browser_get_page_snapshot") => {
             Some("browser_get_page_snapshot")
         }
+        ("browser_navigate_tab", _) | (_, "core.browser_navigate_tab") => {
+            Some("browser_navigate_tab")
+        }
+        ("browser_find_element", _) | (_, "core.browser_find_element") => {
+            Some("browser_find_element")
+        }
+        ("browser_extract", _) | (_, "core.browser_extract") => Some("browser_extract"),
+        ("browser_region_screenshot", _) | (_, "core.browser_region_screenshot") => {
+            Some("browser_region_screenshot")
+        }
+        ("browser_full_page_screenshot", _) | (_, "core.browser_full_page_screenshot") => {
+            Some("browser_full_page_screenshot")
+        }
+        ("browser_get_active_page", _) | (_, "core.browser_get_active_page") => {
+            Some("browser_get_active_page")
+        }
+        ("browser_wait", _) | (_, "core.browser_wait") => Some("browser_wait"),
+        ("browser_tabs", _) | (_, "core.browser_tabs") => Some("browser_tabs"),
+        ("browser_fill", _) | (_, "core.browser_fill") => Some("browser_fill"),
+        ("browser_key", _) | (_, "core.browser_key") => Some("browser_key"),
+        ("browser_select", _) | (_, "core.browser_select") => Some("browser_select"),
+        ("browser_upload_file", _) | (_, "core.browser_upload_file") => Some("browser_upload_file"),
+        ("browser_downloads", _) | (_, "core.browser_downloads") => Some("browser_downloads"),
+        ("browser_dialog", _) | (_, "core.browser_dialog") => Some("browser_dialog"),
+        ("browser_console_log", _) | (_, "core.browser_console_log") => Some("browser_console_log"),
+        ("browser_network_log", _) | (_, "core.browser_network_log") => Some("browser_network_log"),
+        ("browser_storage_read", _) | (_, "core.browser_storage_read") => {
+            Some("browser_storage_read")
+        }
+        ("browser_storage_write", _) | (_, "core.browser_storage_write") => {
+            Some("browser_storage_write")
+        }
+        ("browser_eval", _) | (_, "core.browser_eval") => Some("browser_eval"),
+        ("browser_highlight", _) | (_, "core.browser_highlight") => Some("browser_highlight"),
+        ("browser_accessibility_audit", _) | (_, "core.browser_accessibility_audit") => {
+            Some("browser_accessibility_audit")
+        }
         ("browser_wait_for_element", _) | (_, "core.browser_wait_for_element") => {
             Some("browser_wait_for_element")
         }
@@ -551,6 +588,78 @@ async fn maybe_queue_core_tool_approval(
     Ok(None)
 }
 
+fn expanded_browser_tool_description(tool_name: &str) -> &'static str {
+    match tool_name {
+        "browser_navigate_tab" => {
+            "Navigate an existing browser tab through the local browser agent bridge."
+        }
+        "browser_find_element" => "Find a browser element through the local browser agent bridge.",
+        "browser_extract" => {
+            "Extract structured browser page content through the local browser agent bridge."
+        }
+        "browser_region_screenshot" => {
+            "Capture a browser region screenshot through the local browser agent bridge."
+        }
+        "browser_full_page_screenshot" => {
+            "Capture a full browser page screenshot through the local browser agent bridge."
+        }
+        "browser_get_active_page" => {
+            "Read the active browser page through the local browser agent bridge."
+        }
+        "browser_wait" => "Wait for a browser condition through the local browser agent bridge.",
+        "browser_tabs" => "Manage browser tabs through the local browser agent bridge.",
+        "browser_fill" => "Fill a browser field through the local browser agent bridge.",
+        "browser_key" => "Send a browser key or shortcut through the local browser agent bridge.",
+        "browser_select" => "Select a browser form value through the local browser agent bridge.",
+        "browser_upload_file" => "Upload a local file through a browser file input.",
+        "browser_downloads" => {
+            "Inspect browser download state through the local browser agent bridge."
+        }
+        "browser_dialog" => "Handle a browser dialog through the local browser agent bridge.",
+        "browser_console_log" => {
+            "Read browser console logs through the local browser agent bridge."
+        }
+        "browser_network_log" => {
+            "Read browser network logs through the local browser agent bridge."
+        }
+        "browser_storage_read" => "Read browser storage through the local browser agent bridge.",
+        "browser_storage_write" => "Write browser storage through the local browser agent bridge.",
+        "browser_eval" => "Evaluate JavaScript through the local browser agent bridge.",
+        "browser_highlight" => {
+            "Highlight a browser element through the local browser agent bridge."
+        }
+        "browser_accessibility_audit" => {
+            "Run a browser accessibility audit through the local browser agent bridge."
+        }
+        _ => "Use the local browser agent bridge.",
+    }
+}
+
+fn is_expanded_browser_tool(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "browser_find_element"
+            | "browser_extract"
+            | "browser_region_screenshot"
+            | "browser_full_page_screenshot"
+            | "browser_get_active_page"
+            | "browser_wait"
+            | "browser_tabs"
+            | "browser_fill"
+            | "browser_key"
+            | "browser_select"
+            | "browser_upload_file"
+            | "browser_downloads"
+            | "browser_dialog"
+            | "browser_console_log"
+            | "browser_network_log"
+            | "browser_storage_read"
+            | "browser_storage_write"
+            | "browser_eval"
+            | "browser_highlight"
+            | "browser_accessibility_audit"
+    )
+}
 async fn execute_core_tool_call_with_tool_ref_internal(
     approval_context: &crate::modules::mcp::ToolApprovalContext,
     runtime_state: Option<&crate::modules::mcp::McpRuntimeState>,
@@ -656,6 +765,90 @@ async fn execute_core_tool_call_with_tool_ref_internal(
                 .browser_agent
                 .service
                 .get_page_snapshot(app_state.mcp.store.as_ref(), tab_id)
+                .await?;
+            Ok(Some(result))
+        }
+        "browser_navigate_tab" => {
+            let app_state = crate::state::global_app_state()
+                .ok_or_else(|| "global app state is unavailable".to_string())?;
+            let tab_id = arguments
+                .get("tab_id")
+                .or_else(|| arguments.get("tabId"))
+                .and_then(Value::as_i64)
+                .filter(|value| *value > 0)
+                .ok_or_else(|| "browser_navigate_tab requires a positive tab_id".to_string())?;
+            let url = arguments
+                .get("url")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| "browser_navigate_tab requires a non-empty url".to_string())?;
+
+            if !skip_approval_gate {
+                let risk = assess_policy_risk(PolicyTargetRef::CoreTool {
+                    tool_name: core_tool_name,
+                    arguments: &arguments,
+                });
+                if let Some(queued) = maybe_queue_core_tool_approval(
+                    approval_context,
+                    runtime_state,
+                    store,
+                    pending_tool_calls,
+                    "core.browser_navigate_tab",
+                    "browser_navigate_tab",
+                    &arguments,
+                    expanded_browser_tool_description(core_tool_name),
+                    &risk,
+                    core_tool_fingerprint("core.browser_navigate_tab", &arguments),
+                )
+                .await?
+                {
+                    return Ok(Some(queued));
+                }
+            }
+
+            let result = app_state
+                .browser_agent
+                .service
+                .navigate_tab(app_state.mcp.store.as_ref(), tab_id, url)
+                .await?;
+            Ok(Some(result))
+        }
+        tool if is_expanded_browser_tool(tool) => {
+            let app_state = crate::state::global_app_state()
+                .ok_or_else(|| "global app state is unavailable".to_string())?;
+
+            if !skip_approval_gate {
+                let risk = assess_policy_risk(PolicyTargetRef::CoreTool {
+                    tool_name: core_tool_name,
+                    arguments: &arguments,
+                });
+                if let Some(queued) = maybe_queue_core_tool_approval(
+                    approval_context,
+                    runtime_state,
+                    store,
+                    pending_tool_calls,
+                    &format!("core.{core_tool_name}"),
+                    core_tool_name,
+                    &arguments,
+                    expanded_browser_tool_description(core_tool_name),
+                    &risk,
+                    core_tool_fingerprint(&format!("core.{core_tool_name}"), &arguments),
+                )
+                .await?
+                {
+                    return Ok(Some(queued));
+                }
+            }
+
+            let payload = arguments
+                .as_object()
+                .cloned()
+                .ok_or_else(|| format!("{core_tool_name} requires object arguments"))?;
+            let result = app_state
+                .browser_agent
+                .service
+                .dispatch_expanded_action(app_state.mcp.store.as_ref(), core_tool_name, payload)
                 .await?;
             Ok(Some(result))
         }
@@ -2281,6 +2474,40 @@ mod tests {
         );
     }
 
+    #[test]
+    fn core_tool_resolution_recognizes_expanded_browser_tools() {
+        let names = [
+            "browser_navigate_tab",
+            "browser_find_element",
+            "browser_extract",
+            "browser_region_screenshot",
+            "browser_full_page_screenshot",
+            "browser_get_active_page",
+            "browser_wait",
+            "browser_tabs",
+            "browser_fill",
+            "browser_key",
+            "browser_select",
+            "browser_upload_file",
+            "browser_downloads",
+            "browser_dialog",
+            "browser_console_log",
+            "browser_network_log",
+            "browser_storage_read",
+            "browser_storage_write",
+            "browser_eval",
+            "browser_highlight",
+            "browser_accessibility_audit",
+        ];
+
+        for name in names {
+            assert_eq!(resolve_core_tool_name(None, Some(name)), Some(name));
+            assert_eq!(
+                resolve_core_tool_name(Some(&format!("core.{name}")), None),
+                Some(name)
+            );
+        }
+    }
     #[test]
     fn core_tool_resolution_recognizes_browser_wait_for_element() {
         assert_eq!(

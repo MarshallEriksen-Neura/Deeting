@@ -501,6 +501,8 @@ mod tests {
                     role: "extension".to_string(),
                     session_id: "session-1".to_string(),
                     extension_version: Some("0.1.0".to_string()),
+                    schema_version: Some("1".to_string()),
+                    supported_actions: Some(vec!["get_page_snapshot".to_string()]),
                 },
                 sender: tx,
                 connected_at_unix_ms: 1,

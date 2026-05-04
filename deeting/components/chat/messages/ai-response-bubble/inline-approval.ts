@@ -36,6 +36,20 @@ function syncRuntimeStatusForMessage(messageId: string) {
   runtime.setStatus(status);
 }
 
+function buildLocalChatResumeResultMeta(
+  resumePayload: NonNullable<ReturnType<typeof extractLocalChatApprovalResume>>,
+) {
+  return {
+    status: resumePayload.status,
+    error_code: resumePayload.error_code,
+    error: resumePayload.error,
+    retryable: resumePayload.retryable === true,
+    continuation_blocks_count: resumePayload.continuation_blocks.length,
+    pending_approval_gate_count: resumePayload.pending_approval_gate_ids.length,
+    next_pending_approval_count: resumePayload.next_pending_approval_tokens.length,
+  };
+}
+
 export async function runInlineApproval({
   approval,
   messageId,
@@ -109,6 +123,11 @@ export async function runInlineApproval({
     const successBlock = createApprovedToolResultBlock(
       effectiveApproval,
       approvedToolResult,
+      resumePayload
+        ? {
+            local_chat_resume: buildLocalChatResumeResultMeta(resumePayload),
+          }
+        : undefined,
     );
     if (successBlock) {
       upsertMessageToolResult(targetMessageId, successBlock);

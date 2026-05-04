@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowUp, Sliders, MessageSquarePlus, Paperclip, X, Square, FileText, Play, Check, Loader2, Globe } from 'lucide-react';
+import { AlertCircle, ArrowUp, CircleDashed, Sliders, MessageSquarePlus, Paperclip, X, Square, FileText, Play, Check, Loader2, Globe } from 'lucide-react';
 import { useMemo, useRef, useState, useCallback, useEffect, memo } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
@@ -47,6 +47,20 @@ import { extractLatestComposerRecoveryPrompt } from '@/lib/chat/recovery';
 import { shouldSuggestWorkflowPlanning } from '@/lib/chat/workflow-planning-suggestion';
 
 type ComposerMode = 'chat' | 'workflow';
+
+type KnowledgeStatusTone = 'ready' | 'processing' | 'failed';
+
+function resolveKnowledgeStatusTone(status: KnowledgeFile['status']): KnowledgeStatusTone {
+  if (status === 'active') return 'ready';
+  if (status === 'failed') return 'failed';
+  return 'processing';
+}
+
+function getKnowledgeStatusIcon(statusTone: KnowledgeStatusTone) {
+  if (statusTone === 'ready') return Check;
+  if (statusTone === 'processing') return CircleDashed;
+  return AlertCircle;
+}
 
 function buildWorkflowPlanningHints(agent?: { id: string; name: string } | null) {
   if (!agent) return undefined;
@@ -232,6 +246,15 @@ function ControlsContainer() {
   const knowledgeFileMap = useMemo(() => {
     return new Map(knowledgeFiles.map((file) => [file.id, file]));
   }, [knowledgeFiles]);
+  const unavailableSelectedKnowledgeFiles = useMemo(() => {
+    return selectedKnowledgeFileIds
+      .map((fileId) => knowledgeFileMap.get(fileId))
+      .filter(
+        (file): file is KnowledgeFile =>
+          Boolean(file) && resolveKnowledgeStatusTone(file.status) !== 'ready'
+      );
+  }, [knowledgeFileMap, selectedKnowledgeFileIds]);
+  const hasUnavailableSelectedKnowledge = unavailableSelectedKnowledgeFiles.length > 0;
   const workflowGoal = useMemo(
     () => resolveWorkflowGoal(input, resolvedTaskAgentMention),
     [input, resolvedTaskAgentMention]
@@ -346,15 +369,15 @@ function ControlsContainer() {
     setIsParamsOpen(open);
   }, []);
 
-  const loadIndexedKnowledgeFiles = useCallback(async () => {
+  const loadKnowledgeFiles = useCallback(async () => {
     if (!isTauriRuntime) return;
     setKnowledgeLoading(true);
     setKnowledgeLoadError(null);
     try {
-      const files = await listLocalUserDocuments({ status: "indexed" });
+      const files = await listLocalUserDocuments();
       setKnowledgeFiles(files);
     } catch (error) {
-      console.warn("load_indexed_knowledge_files_failed", error);
+      console.warn("load_knowledge_files_failed", error);
       setKnowledgeLoadError(t("controls.knowledgePickerLoadFailed"));
     } finally {
       setKnowledgeLoading(false);
@@ -364,8 +387,15 @@ function ControlsContainer() {
   useEffect(() => {
     if (!isTauriRuntime) return;
     if (!isKnowledgePickerOpen) return;
-    void loadIndexedKnowledgeFiles();
-  }, [isTauriRuntime, isKnowledgePickerOpen, loadIndexedKnowledgeFiles]);
+    void loadKnowledgeFiles();
+  }, [isTauriRuntime, isKnowledgePickerOpen, loadKnowledgeFiles]);
+
+  useEffect(() => {
+    if (!isTauriRuntime) return;
+    if (selectedKnowledgeFileIds.length === 0) return;
+    if (knowledgeFiles.length > 0 || knowledgeLoading) return;
+    void loadKnowledgeFiles();
+  }, [isTauriRuntime, knowledgeFiles.length, knowledgeLoading, loadKnowledgeFiles, selectedKnowledgeFileIds.length]);
 
   useEffect(() => {
     if (!isTauriRuntime) return;
@@ -460,6 +490,10 @@ function ControlsContainer() {
   ]);
 
   const handleSend = useCallback(async () => {
+    if (hasUnavailableSelectedKnowledge) {
+      toast.error(t("controls.knowledgeUnavailableSelected"));
+      return;
+    }
     if (canQueuePendingTakeover) {
       queuePendingTakeoverFromCurrentDraft("send_after_step");
       return;
@@ -497,6 +531,7 @@ function ControlsContainer() {
     composerMode,
     handleGeneratePlan,
     handleSendMessage,
+    hasUnavailableSelectedKnowledge,
     input,
     isTauriRuntime,
     openWorkspaceView,
@@ -724,6 +759,10 @@ function ControlsContainer() {
   const handleSendOrCancel = useCallback(() => {
     if (isGenerating) {
       if (hasComposerContent) {
+        if (hasUnavailableSelectedKnowledge) {
+          toast.error(t("controls.knowledgeUnavailableSelected"));
+          return;
+        }
         queuePendingTakeoverFromCurrentDraft("send_after_step");
         return;
       }
@@ -738,11 +777,13 @@ function ControlsContainer() {
   }, [
     isGenerating,
     hasComposerContent,
+    hasUnavailableSelectedKnowledge,
     queuePendingTakeoverFromCurrentDraft,
     canContinueGeneration,
     cancelActiveRequest,
     continueInterruptedGeneration,
     handleSend,
+    t,
   ]);
 
   return (
@@ -988,39 +1029,65 @@ function ControlsContainer() {
       ) : null}
 
       {isTauriRuntime && selectedKnowledgeFileIds.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 px-1">
-          {selectedKnowledgeFileIds.map((fileId) => {
-            const file = knowledgeFileMap.get(fileId);
-            return (
-              <div
-                key={fileId}
-                className="group relative flex h-8 max-w-[240px] shrink-0 items-center gap-2 rounded-full border border-sky-200/80 bg-sky-50 px-3 text-xs text-sky-700 dark:border-sky-400/30 dark:bg-sky-500/10 dark:text-sky-200"
-              >
-                <span className="truncate">
-                  {file?.name ?? fileId}
-                </span>
-                <button
-                  type="button"
-                  className="inline-flex h-4 w-4 items-center justify-center rounded-full hover:bg-sky-200/60 dark:hover:bg-sky-500/30"
-                  onClick={() => handleRemoveKnowledgeFile(fileId)}
-                  aria-label={t("controls.knowledgeRemove")}
-                  disabled={isLoading}
+        <div className="flex flex-col gap-1 px-1">
+          <div className="flex flex-wrap items-center gap-2">
+            {selectedKnowledgeFileIds.map((fileId) => {
+              const file = knowledgeFileMap.get(fileId);
+              const statusTone = file ? resolveKnowledgeStatusTone(file.status) : 'ready';
+              const StatusIcon = getKnowledgeStatusIcon(statusTone);
+              const statusLabel = file ? t(`controls.knowledgeStatus.${statusTone}`) : t("controls.knowledgeStatus.unknown");
+              const errorText = statusTone === 'failed' ? file?.errorMessage : null;
+              return (
+                <div
+                  key={fileId}
+                  className={cn(
+                    "group relative flex min-h-8 max-w-[320px] shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs",
+                    statusTone === 'ready'
+                      ? "border-sky-200/80 bg-sky-50 text-sky-700 dark:border-sky-400/30 dark:bg-sky-500/10 dark:text-sky-200"
+                      : statusTone === 'processing'
+                        ? "border-amber-200/80 bg-amber-50 text-amber-800 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-200"
+                        : "border-red-200/80 bg-red-50 text-red-700 dark:border-red-400/30 dark:bg-red-500/10 dark:text-red-200"
+                  )}
+                  title={errorText ?? undefined}
                 >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            );
-          })}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-8 rounded-full px-3 text-xs text-slate-600 dark:text-white/70"
-            onClick={handleClearKnowledgeFiles}
-            disabled={isLoading}
-          >
-            {t("controls.knowledgeClear")}
-          </Button>
+                  <StatusIcon className="h-3.5 w-3.5 shrink-0" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">
+                      {file?.name ?? fileId}
+                    </span>
+                    <span className="block truncate text-[10px] opacity-75">
+                      {statusLabel}{errorText ? ` · ${errorText}` : ""}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+                    onClick={() => handleRemoveKnowledgeFile(fileId)}
+                    aria-label={t("controls.knowledgeRemove")}
+                    disabled={isLoading}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              );
+            })}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 rounded-full px-3 text-xs text-slate-600 dark:text-white/70"
+              onClick={handleClearKnowledgeFiles}
+              disabled={isLoading}
+            >
+              {t("controls.knowledgeClear")}
+            </Button>
+          </div>
+          {hasUnavailableSelectedKnowledge ? (
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-amber-700 dark:text-amber-200/85">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              <span>{t("controls.knowledgeUnavailableHint")}</span>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -1106,7 +1173,7 @@ function ControlsContainer() {
                     variant="ghost"
                     size="xs"
                     className="rounded-full"
-                    onClick={() => void loadIndexedKnowledgeFiles()}
+                    onClick={() => void loadKnowledgeFiles()}
                     disabled={knowledgeLoading}
                   >
                     {knowledgeLoading ? (
@@ -1134,25 +1201,53 @@ function ControlsContainer() {
                   <div className="max-h-64 space-y-1 overflow-y-auto pr-1">
                     {knowledgeFiles.map((file) => {
                       const isSelected = selectedKnowledgeFileIds.includes(file.id);
+                      const statusTone = resolveKnowledgeStatusTone(file.status);
+                      const isReady = statusTone === 'ready';
+                      const statusLabel = t(`controls.knowledgeStatus.${statusTone}`);
                       return (
                         <button
                           key={file.id}
                           type="button"
+                          disabled={!isReady && !isSelected}
                           className={cn(
-                            "flex w-full items-center justify-between gap-2 rounded-2xl border px-3 py-2 text-left transition-colors",
+                            "flex w-full items-center justify-between gap-2 rounded-2xl border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed",
                             isSelected
                               ? "border-sky-200/70 bg-sky-100/90 text-sky-700 dark:border-sky-400/30 dark:bg-sky-500/20 dark:text-sky-200"
-                              : "border-transparent hover:bg-[color:var(--ios-shell-subtle)]"
+                              : isReady
+                                ? "border-transparent hover:bg-[color:var(--ios-shell-subtle)]"
+                                : statusTone === 'processing'
+                                  ? "border-amber-200/70 bg-amber-50/70 text-amber-800 dark:border-amber-400/25 dark:bg-amber-500/10 dark:text-amber-200"
+                                  : "border-red-200/70 bg-red-50/80 text-red-700 dark:border-red-400/25 dark:bg-red-500/10 dark:text-red-200"
                           )}
-                          onClick={() => handleToggleKnowledgeFile(file.id)}
+                          onClick={() => {
+                            if (isReady || isSelected) handleToggleKnowledgeFile(file.id);
+                          }}
                         >
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-xs font-medium">{file.name}</span>
                             <span className="block truncate text-[10px] text-slate-500 dark:text-white/45">
-                              {formatFileSize(file.size)} · {file.chunks ?? 0} chunks
+                              {formatFileSize(file.size)} · {file.chunks ?? 0} {t("controls.knowledgeChunks")} · {statusLabel}
                             </span>
+                            {statusTone === 'failed' && file.errorMessage ? (
+                              <span className="mt-0.5 block truncate text-[10px] text-red-600/90 dark:text-red-200/80">
+                                {file.errorMessage}
+                              </span>
+                            ) : null}
+                            {statusTone === 'processing' ? (
+                              <span className="mt-0.5 block truncate text-[10px] text-amber-700/80 dark:text-amber-200/75">
+                                {t("controls.knowledgeProcessingHint")}
+                              </span>
+                            ) : null}
                           </span>
-                          {isSelected ? <Check className="h-4 w-4 shrink-0" /> : null}
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                            {isSelected ? (
+                              <Check className="h-4 w-4" />
+                            ) : statusTone === 'processing' ? (
+                              <CircleDashed className="h-4 w-4" />
+                            ) : statusTone === 'failed' ? (
+                              <AlertCircle className="h-4 w-4" />
+                            ) : null}
+                          </span>
                         </button>
                       );
                     })}
@@ -1302,10 +1397,3 @@ function ControlsContainer() {
 
 // 使用 React.memo 优化，避免不必要的重渲染
 export default memo(ControlsContainer);
-
-
-
-
-
-
-

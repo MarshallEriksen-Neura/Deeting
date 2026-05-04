@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useReducer, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { AlertCircle, BookOpenCheck, CircleDashed } from "lucide-react";
 
 import { resolveStatusDetail } from "@/lib/chat/status-detail";
 import { useI18n } from "@/hooks/use-i18n";
@@ -28,6 +29,83 @@ const INITIAL_BUBBLE_UI_STATE: BubbleUiState = {
   detailRepeat: 1,
   stableDetail: null,
 };
+
+type KnowledgeContextSummary = {
+  state: "loading" | "loaded" | "empty" | "fallback" | "error";
+  selectedFiles: number;
+  excerptCount: number;
+  overviewCount: number;
+  windowExpandedCount: number;
+};
+
+function toFiniteCount(value: unknown) {
+  const count = Number(value ?? 0);
+  return Number.isFinite(count) && count > 0 ? Math.round(count) : 0;
+}
+
+function resolveKnowledgeContextSummary(
+  statusCode: string | null,
+  statusMeta: Record<string, unknown> | null,
+): KnowledgeContextSummary | null {
+  if (statusCode !== "knowledge.context.loading" && statusCode !== "knowledge.context.loaded") {
+    return null;
+  }
+
+  const selectedFiles = toFiniteCount(statusMeta?.selected_files);
+  const excerptCount = toFiniteCount(statusMeta?.count);
+  const overviewCount = toFiniteCount(statusMeta?.overview_count);
+  const windowExpandedCount = toFiniteCount(statusMeta?.window_expanded_count);
+  const fallbackUsed = Boolean(statusMeta?.fallback_used);
+  const searchError = Boolean(statusMeta?.search_error);
+
+  if (statusCode === "knowledge.context.loading") {
+    return { state: "loading", selectedFiles, excerptCount, overviewCount, windowExpandedCount };
+  }
+  if (searchError) {
+    return { state: "error", selectedFiles, excerptCount, overviewCount, windowExpandedCount };
+  }
+  if (excerptCount > 0 && fallbackUsed) {
+    return { state: "fallback", selectedFiles, excerptCount, overviewCount, windowExpandedCount };
+  }
+  if (excerptCount > 0 || overviewCount > 0) {
+    return { state: "loaded", selectedFiles, excerptCount, overviewCount, windowExpandedCount };
+  }
+  return { state: "empty", selectedFiles, excerptCount, overviewCount, windowExpandedCount };
+}
+
+function KnowledgeContextSummaryCard({ summary }: { summary: KnowledgeContextSummary }) {
+  const t = useI18n("chat");
+  const isLoading = summary.state === "loading";
+  const isError = summary.state === "error";
+  const isEmpty = summary.state === "empty";
+  const Icon = isLoading ? CircleDashed : isError || isEmpty ? AlertCircle : BookOpenCheck;
+  const toneClass = isError || isEmpty
+    ? "border-amber-200/70 bg-amber-50/80 text-amber-800 dark:border-amber-400/25 dark:bg-amber-500/10 dark:text-amber-200"
+    : "border-emerald-200/70 bg-emerald-50/80 text-emerald-800 dark:border-emerald-400/25 dark:bg-emerald-500/10 dark:text-emerald-200";
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -3 }}
+      className={`mt-1.5 flex w-fit max-w-full items-center gap-2 rounded-2xl border px-3 py-2 text-xs shadow-[0_12px_28px_-24px_rgba(15,23,42,0.45)] ${toneClass}`}
+    >
+      <Icon className={isLoading ? "h-4 w-4 shrink-0 animate-spin" : "h-4 w-4 shrink-0"} />
+      <div className="min-w-0">
+        <div className="truncate font-medium">
+          {t(`status.knowledgeSummary.${summary.state}`, { selectedFiles: summary.selectedFiles })}
+        </div>
+        <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] opacity-75">
+          <span>{t("status.knowledgeSummary.excerpts", { count: summary.excerptCount })}</span>
+          <span>{t("status.knowledgeSummary.overviews", { count: summary.overviewCount })}</span>
+          {summary.windowExpandedCount > 0 ? (
+            <span>{t("status.knowledgeSummary.expanded", { count: summary.windowExpandedCount })}</span>
+          ) : null}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
 function bubbleUiReducer(
   state: BubbleUiState,
@@ -61,12 +139,9 @@ function bubbleUiReducer(
 export function AIResponseStatusRail({
   isActive,
   hasContent,
-  hasToolActivity,
   statusStage,
   statusCode,
   statusMeta,
-  streamEnabled,
-  shouldRevealCallChain,
 }: {
   isActive: boolean;
   hasContent: boolean;
@@ -101,6 +176,10 @@ export function AIResponseStatusRail({
   const statusDetail = useMemo(
     () => resolveStatusDetail(t, statusCode, statusMeta),
     [t, statusCode, statusMeta],
+  );
+  const knowledgeSummary = useMemo(
+    () => resolveKnowledgeContextSummary(statusCode, statusMeta),
+    [statusCode, statusMeta],
   );
 
   useEffect(() => {
@@ -149,6 +228,14 @@ export function AIResponseStatusRail({
             label={currentStepLabel}
             status={terminalDetail}
           />
+          <AnimatePresence mode="wait" initial={false}>
+            {knowledgeSummary ? (
+              <KnowledgeContextSummaryCard
+                key={`${knowledgeSummary.state}-${knowledgeSummary.selectedFiles}-${knowledgeSummary.excerptCount}-${knowledgeSummary.overviewCount}`}
+                summary={knowledgeSummary}
+              />
+            ) : null}
+          </AnimatePresence>
         </motion.div>
       )}
     </AnimatePresence>

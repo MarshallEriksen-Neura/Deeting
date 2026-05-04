@@ -271,6 +271,30 @@ describe("knowledge api", () => {
     mockInvoke
       .mockResolvedValueOnce([
         {
+          id: "d-1",
+          name: "ready.md",
+          file_type: "md",
+          size: 32,
+          status: "indexed",
+          chunks: 4,
+          error_message: null,
+          folder_id: null,
+          created_at: "2026-03-03T00:00:00Z",
+          updated_at: "2026-03-03T00:00:00Z",
+        },
+        {
+          id: "d-pending",
+          name: "pending.txt",
+          file_type: "txt",
+          size: 16,
+          status: "pending",
+          chunks: null,
+          error_message: null,
+          folder_id: null,
+          created_at: "2026-03-03T00:00:00Z",
+          updated_at: "2026-03-03T00:00:00Z",
+        },
+        {
           id: "d-2",
           name: "file.json",
           file_type: "json",
@@ -299,7 +323,8 @@ describe("knowledge api", () => {
     const listed = await listLocalUserDocuments({ q: "file" })
     const created = await createLocalUserDocument({ filename: "file.txt" })
 
-    expect(listed[0]?.status).toBe("failed")
+    expect(listed.map((file) => file.status)).toEqual(["active", "processing", "failed"])
+    expect(listed[2]?.errorMessage).toBe("parse error")
     expect(created.status).toBe("processing")
     expect(mockInvoke).toHaveBeenNthCalledWith(1, "list_local_user_documents", {
       query: {

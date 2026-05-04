@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BrowserAgentBridgeStatus {
@@ -54,6 +54,38 @@ pub struct BrowserAgentElementLocator {
     pub tag_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub placeholder: Option<String>,
+    #[serde(
+        rename = "elementId",
+        alias = "element_id",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub element_id: Option<String>,
+    #[serde(
+        rename = "ariaLabel",
+        alias = "aria_label",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub aria_label: Option<String>,
+    #[serde(
+        rename = "accessibleName",
+        alias = "accessible_name",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub accessible_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub href: Option<String>,
+    #[serde(
+        rename = "testId",
+        alias = "test_id",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub test_id: Option<String>,
+    #[serde(
+        rename = "frameId",
+        alias = "frame_id",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub frame_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub index: Option<i64>,
 }
@@ -73,6 +105,106 @@ pub enum BrowserAgentAction {
     GetPageSnapshot {
         #[serde(rename = "tabId")]
         tab_id: i64,
+    },
+    #[serde(rename = "find_element")]
+    FindElement {
+        #[serde(flatten)]
+        payload: Map<String, Value>,
+    },
+    #[serde(rename = "extract")]
+    Extract {
+        #[serde(flatten)]
+        payload: Map<String, Value>,
+    },
+    #[serde(rename = "region_screenshot")]
+    RegionScreenshot {
+        #[serde(flatten)]
+        payload: Map<String, Value>,
+    },
+    #[serde(rename = "full_page_screenshot")]
+    FullPageScreenshot {
+        #[serde(flatten)]
+        payload: Map<String, Value>,
+    },
+    #[serde(rename = "get_active_page")]
+    GetActivePage {
+        #[serde(flatten)]
+        payload: Map<String, Value>,
+    },
+    #[serde(rename = "wait")]
+    Wait {
+        #[serde(flatten)]
+        payload: Map<String, Value>,
+    },
+    #[serde(rename = "tabs")]
+    Tabs {
+        #[serde(flatten)]
+        payload: Map<String, Value>,
+    },
+    #[serde(rename = "fill")]
+    Fill {
+        #[serde(flatten)]
+        payload: Map<String, Value>,
+    },
+    #[serde(rename = "key")]
+    Key {
+        #[serde(flatten)]
+        payload: Map<String, Value>,
+    },
+    #[serde(rename = "select")]
+    Select {
+        #[serde(flatten)]
+        payload: Map<String, Value>,
+    },
+    #[serde(rename = "upload_file")]
+    UploadFile {
+        #[serde(flatten)]
+        payload: Map<String, Value>,
+    },
+    #[serde(rename = "downloads")]
+    Downloads {
+        #[serde(flatten)]
+        payload: Map<String, Value>,
+    },
+    #[serde(rename = "dialog")]
+    Dialog {
+        #[serde(flatten)]
+        payload: Map<String, Value>,
+    },
+    #[serde(rename = "console_log")]
+    ConsoleLog {
+        #[serde(flatten)]
+        payload: Map<String, Value>,
+    },
+    #[serde(rename = "network_log")]
+    NetworkLog {
+        #[serde(flatten)]
+        payload: Map<String, Value>,
+    },
+    #[serde(rename = "storage_read")]
+    StorageRead {
+        #[serde(flatten)]
+        payload: Map<String, Value>,
+    },
+    #[serde(rename = "storage_write")]
+    StorageWrite {
+        #[serde(flatten)]
+        payload: Map<String, Value>,
+    },
+    #[serde(rename = "eval")]
+    Eval {
+        #[serde(flatten)]
+        payload: Map<String, Value>,
+    },
+    #[serde(rename = "highlight")]
+    Highlight {
+        #[serde(flatten)]
+        payload: Map<String, Value>,
+    },
+    #[serde(rename = "accessibility_audit")]
+    AccessibilityAudit {
+        #[serde(flatten)]
+        payload: Map<String, Value>,
     },
     #[serde(rename = "click")]
     Click {
@@ -149,6 +281,10 @@ pub struct BrowserAgentHelloMessage {
     pub session_id: String,
     #[serde(rename = "extensionVersion")]
     pub extension_version: Option<String>,
+    #[serde(rename = "schemaVersion", alias = "schema_version", default)]
+    pub schema_version: Option<String>,
+    #[serde(rename = "supportedActions", alias = "supported_actions", default)]
+    pub supported_actions: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -257,6 +393,12 @@ mod tests {
                 role: None,
                 tag_name: None,
                 placeholder: None,
+                element_id: None,
+                aria_label: None,
+                accessible_name: None,
+                href: None,
+                test_id: None,
+                frame_id: None,
                 index: None,
             },
             timeout_ms: 10_000,
@@ -332,6 +474,12 @@ mod tests {
                 role: None,
                 tag_name: None,
                 placeholder: None,
+                element_id: None,
+                aria_label: None,
+                accessible_name: None,
+                href: None,
+                test_id: None,
+                frame_id: None,
                 index: None,
             },
             align: Some("center".to_string()),
@@ -434,6 +582,71 @@ mod tests {
         assert_eq!(
             parsed.params.page_context.headings_summary,
             vec!["Example Docs"]
+        );
+    }
+    #[test]
+    fn extended_locator_serializes_stable_fields() {
+        let locator = BrowserAgentElementLocator {
+            selector: None,
+            text: None,
+            role: Some("button".to_string()),
+            tag_name: None,
+            placeholder: None,
+            element_id: Some("el-1".to_string()),
+            aria_label: Some("Submit".to_string()),
+            accessible_name: Some("Submit order".to_string()),
+            href: Some("https://example.com/submit".to_string()),
+            test_id: Some("submit-button".to_string()),
+            frame_id: Some("main".to_string()),
+            index: None,
+        };
+
+        let value = serde_json::to_value(locator).expect("serialize locator");
+
+        assert_eq!(
+            value.get("elementId").and_then(|item| item.as_str()),
+            Some("el-1")
+        );
+        assert_eq!(
+            value.get("ariaLabel").and_then(|item| item.as_str()),
+            Some("Submit")
+        );
+        assert_eq!(
+            value.get("accessibleName").and_then(|item| item.as_str()),
+            Some("Submit order")
+        );
+        assert_eq!(
+            value.get("testId").and_then(|item| item.as_str()),
+            Some("submit-button")
+        );
+        assert_eq!(
+            value.get("frameId").and_then(|item| item.as_str()),
+            Some("main")
+        );
+    }
+
+    #[test]
+    fn expanded_browser_action_serializes_flat_payload() {
+        let action = BrowserAgentAction::FindElement {
+            payload: serde_json::Map::from_iter([
+                ("tabId".to_string(), serde_json::json!(42)),
+                ("target".to_string(), serde_json::json!({"text":"Continue"})),
+            ]),
+        };
+
+        let value = serde_json::to_value(action).expect("serialize action");
+
+        assert_eq!(
+            value.get("kind").and_then(|item| item.as_str()),
+            Some("find_element")
+        );
+        assert_eq!(value.get("tabId").and_then(|item| item.as_i64()), Some(42));
+        assert_eq!(
+            value
+                .get("target")
+                .and_then(|item| item.get("text"))
+                .and_then(|item| item.as_str()),
+            Some("Continue")
         );
     }
 }
