@@ -603,6 +603,7 @@
       "translator": {
         "title": "Translator",
         "subtitle": "Quick translation without entering the full chat runtime",
+        "open": "Open translator",
         "close": "Back",
         "sourceLanguage": "Source language",
         "targetLanguage": "Target language",

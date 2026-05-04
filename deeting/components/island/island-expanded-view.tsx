@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowLeftRight,
   ChevronUp,
@@ -91,6 +91,8 @@ function IslandAssistantPanel({
   latestBadge,
   emptyText,
   approvalEmptyText,
+  openTranslatorLabel,
+  onOpenTranslator,
 }: {
   message: IslandRecentMessage | null;
   isActive: boolean;
@@ -100,6 +102,8 @@ function IslandAssistantPanel({
   latestBadge: string;
   emptyText: string;
   approvalEmptyText: string;
+  openTranslatorLabel?: string;
+  onOpenTranslator?: () => void;
 }) {
   return (
     <div className="relative px-4 py-4">
@@ -147,6 +151,16 @@ function IslandAssistantPanel({
             <p className="max-w-[240px] text-[12px] leading-5 text-foreground/48">
               {compact ? approvalEmptyText : emptyText}
             </p>
+            {!compact && onOpenTranslator ? (
+              <button
+                type="button"
+                onClick={onOpenTranslator}
+                className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-full border border-island-gold/22 bg-island-gold/10 px-3 text-[11px] font-semibold text-island-gold shadow-[0_10px_22px_-18px_rgba(0,0,0,0.28)] transition-colors hover:bg-island-gold/16"
+              >
+                <Languages className="h-3.5 w-3.5" />
+                <span>{openTranslatorLabel}</span>
+              </button>
+            ) : null}
           </div>
         )}
       </div>
@@ -282,7 +296,7 @@ function IslandBrowserLookupCard({
 }
 
 type TranslatorSeed = {
-  selectionId: string;
+  selectionId: string | null;
   text: string;
   sourceLanguage?: string;
   targetLanguage: string;
@@ -479,6 +493,19 @@ function IslandTranslatorView({
   );
 }
 
+function resolveManualTranslatorTarget() {
+  if (typeof navigator !== "undefined" && navigator.language?.startsWith("zh")) {
+    return "Chinese";
+  }
+  if (
+    typeof document !== "undefined" &&
+    document.documentElement.lang?.startsWith("zh")
+  ) {
+    return "Chinese";
+  }
+  return "English";
+}
+
 export function IslandExpandedView({
   headerDragRegion = false,
 }: {
@@ -513,7 +540,8 @@ export function IslandExpandedView({
   );
   const translatorOpen =
     translatorSeed !== null &&
-    selectionContext?.selectionId === translatorSeed.selectionId;
+    (translatorSeed.selectionId === null ||
+      selectionContext?.selectionId === translatorSeed.selectionId);
 
   const isActive =
     statusLabel === "Working..." || statusLabel === "Pending approval";
@@ -682,6 +710,14 @@ export function IslandExpandedView({
               latestBadge={t("island.badges.latest")}
               emptyText={t("island.keepNearby")}
               approvalEmptyText={t("island.approvalEmpty")}
+              openTranslatorLabel={t("island.translator.open")}
+              onOpenTranslator={() => {
+                setTranslatorSeed({
+                  selectionId: null,
+                  text: "",
+                  targetLanguage: resolveManualTranslatorTarget(),
+                });
+              }}
             />
           ) : null}
 

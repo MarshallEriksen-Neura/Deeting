@@ -710,6 +710,7 @@
       "translator": {
         "title": "翻译器",
         "subtitle": "不进入完整聊天 runtime 的快速翻译",
+        "open": "打开翻译",
         "close": "返回",
         "sourceLanguage": "源语言",
         "targetLanguage": "目标语言",
