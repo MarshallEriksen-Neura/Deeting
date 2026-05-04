@@ -88,6 +88,7 @@ interface IslandState {
   hide: () => void;
   toggleExpand: () => void;
   restoreWorkspace: () => void;
+  startNewConversation: () => Promise<void>;
   hydrateFromChat: (snapshot: IslandChatSnapshot) => void;
   presentBrowserLookup: (payload: IslandBrowserLookupPayload) => void;
   clearBrowserLookup: (lookupId?: string | null) => void;
@@ -340,6 +341,63 @@ export const useIslandStore = create<IslandState>((set) => ({
       mode: state.mode === "expanded" ? "collapsed" : "expanded",
     })),
   restoreWorkspace: () => set({ mode: "hidden" }),
+  startNewConversation: async () => {
+    set({
+      mode: "expanded",
+      isBusy: true,
+      errorMessage: null,
+      statusLabel: "Working...",
+      pendingApproval: null,
+      statusStage: null,
+      statusCode: null,
+      statusMeta: null,
+      stageHistory: [],
+    });
+
+    try {
+      const created = await createConversation({});
+      const sessionId = created.session_id;
+      useBridgeApprovalStore.getState().clearAll();
+      useChatRuntimeStore.getState().resetSession();
+      useChatRuntimeStore.getState().setSessionId(sessionId);
+      useChatStore.setState({
+        messages: [],
+        focusedMessageId: null,
+        compareByMessageId: {},
+        input: "",
+        attachments: [],
+        selectedKnowledgeFileIds: [],
+        pageContext: null,
+      });
+      set({
+        mode: "expanded",
+        statusLabel: "Ready",
+        summaryText: DEFAULT_SUMMARY,
+        lastReplyText: DEFAULT_LAST_REPLY,
+        lastReplyAt: null,
+        recentMessages: [],
+        pendingApproval: null,
+        browserLookup: null,
+        selectionContext: null,
+        isBusy: false,
+        errorMessage: null,
+        statusStage: null,
+        statusCode: null,
+        statusMeta: null,
+        stageHistory: [],
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to create conversation";
+      set({
+        isBusy: false,
+        errorMessage: message,
+        statusLabel: "Needs attention",
+      });
+    }
+  },
   hydrateFromChat: (snapshot) => {
     const latestAssistant = findLatestAssistantMessage(snapshot.messages);
     const pendingApproval = derivePendingApproval(snapshot.pendingApprovalSource);

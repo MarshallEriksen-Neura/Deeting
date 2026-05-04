@@ -851,7 +851,7 @@ function ControlsContainer() {
   ]);
 
   return (
-    <div className="relative flex flex-col gap-2 overflow-hidden rounded-[28px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-bg)] p-2.5 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.38)] backdrop-blur-2xl supports-[backdrop-filter]:bg-[color:var(--ios-shell-bg)]">
+    <div className="relative flex flex-col gap-2 overflow-visible rounded-[28px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-bg)] p-2.5 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.38)] backdrop-blur-2xl supports-[backdrop-filter]:bg-[color:var(--ios-shell-bg)]">
       <div className="pointer-events-none absolute inset-x-8 top-0 h-16 rounded-full bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.72),transparent_70%)] opacity-70 dark:opacity-40" />
       <BrowserModeConfirmationBar />
 

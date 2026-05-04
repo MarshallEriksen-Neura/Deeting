@@ -1,4 +1,9 @@
 import { streamChatCompletion, streamDesktopLocalChatCompletion } from "@/lib/api/chat"
+import {
+  listCustomTaskAgents,
+  previewCustomTaskAgent,
+  type CustomTaskAgentProfile,
+} from "@/lib/api/custom-task-agents"
 import { rejectDesktopTool, streamDesktopApproveTool } from "@/lib/api/mcp-desktop"
 import { z } from "zod"
 
@@ -6,6 +11,8 @@ import { handleModelConfigRequiredError } from "@/lib/model-config-required"
 
 const EXECUTE_LOCAL_TEXT_CONVERSATION_COMMAND = "execute_local_text_conversation"
 const QUICK_TRANSLATE_COMMAND = "translate_selection_text"
+export const ISLAND_TTS_AGENT_NOT_CONFIGURED = "ISLAND_TTS_AGENT_NOT_CONFIGURED"
+export const ISLAND_TTS_AUDIO_EMPTY = "ISLAND_TTS_AUDIO_EMPTY"
 
 async function invokeTauri<T>(
   command: string,
@@ -47,10 +54,17 @@ export const IslandTranslationResultSchema = z.object({
   targetLanguage: z.string(),
 })
 
+export const IslandSpeechResultSchema = z.object({
+  agentId: z.string(),
+  agentName: z.string(),
+  payload: z.unknown(),
+})
+
 export type IslandToolApproval = z.infer<typeof IslandToolApprovalSchema>
 export type IslandTextConversationReply = z.infer<typeof IslandTextConversationReplySchema>
 export type IslandApprovalActionResult = z.infer<typeof IslandApprovalActionResultSchema>
 export type IslandTranslationResult = z.infer<typeof IslandTranslationResultSchema>
+export type IslandSpeechResult = z.infer<typeof IslandSpeechResultSchema>
 
 function extractFollowUpTextsFromApprovalResult(result: unknown): string[] {
   if (!result || typeof result !== "object") return []
@@ -91,6 +105,10 @@ export interface IslandQuickTranslateRequest {
   sourceLanguage?: string
   targetLanguage: string
   requestConfig: IslandChatRequestConfig
+}
+
+export interface IslandSpeakTextRequest {
+  text: string
 }
 
 /** @deprecated Use {@link IslandQuickTranslateRequest}. */
@@ -157,6 +175,58 @@ export async function translateIslandSelection({
 
 /** Convenience alias used by the dedicated translator mode. */
 export const quickTranslateIsland = translateIslandSelection
+
+function pickIslandTextToSpeechAgent(
+  agents: CustomTaskAgentProfile[],
+): CustomTaskAgentProfile | null {
+  const voiceAgents = agents.filter(
+    (agent) =>
+      agent.invocation_kind === "text_to_speech" &&
+      agent.is_enabled &&
+      !agent.is_deleted,
+  )
+  return (
+    voiceAgents.find((agent) => agent.discoverable) ??
+    voiceAgents[0] ??
+    null
+  )
+}
+
+export async function speakIslandText({
+  text,
+}: IslandSpeakTextRequest): Promise<IslandSpeechResult> {
+  const trimmed = text.trim()
+  if (!trimmed) {
+    throw new Error(ISLAND_TTS_AUDIO_EMPTY)
+  }
+
+  const agent = pickIslandTextToSpeechAgent(await listCustomTaskAgents())
+  if (!agent) {
+    throw new Error(ISLAND_TTS_AGENT_NOT_CONFIGURED)
+  }
+
+  const result = await previewCustomTaskAgent(agent.id, {
+    message: trimmed,
+  })
+  const payload =
+    result.raw ??
+    (result.audios[0]
+      ? {
+          source_url: result.audios[0],
+          prompt_text: trimmed,
+        }
+      : null)
+
+  if (!payload) {
+    throw new Error(ISLAND_TTS_AUDIO_EMPTY)
+  }
+
+  return IslandSpeechResultSchema.parse({
+    agentId: agent.id,
+    agentName: agent.name,
+    payload,
+  })
+}
 
 export async function approveIslandTool(
   approvalToken: string,

@@ -41,6 +41,7 @@ export interface IslandContextValue {
   hide: () => void;
   toggleExpand: () => void;
   restoreWorkspace: () => void;
+  startNewConversation: () => Promise<void>;
   sendQuickReply: (text: string) => Promise<void>;
   approvePendingApproval: () => Promise<void>;
   rejectPendingApproval: () => Promise<void>;

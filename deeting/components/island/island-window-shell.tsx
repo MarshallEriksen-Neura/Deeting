@@ -132,6 +132,7 @@ export function IslandWindowShell() {
       hide: s.hide,
       toggleExpand: s.toggleExpand,
       restoreWorkspace: s.restoreWorkspace,
+      startNewConversation: s.startNewConversation,
       attachBrowserLookup: s.attachBrowserLookup,
       dismissBrowserLookup: s.clearBrowserLookup,
       dismissSelectionContext: s.clearSelectionContext,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { SendHorizontal } from "lucide-react";
+import { MessageSquarePlus, SendHorizontal } from "lucide-react";
 import { motion } from "framer-motion";
 
 import { useI18n } from "@/hooks/use-i18n";
@@ -9,18 +9,22 @@ import { cn } from "@/lib/utils";
 
 interface IslandQuickReplyProps {
   onSend?: (text: string) => void | Promise<void>;
+  onNewConversation?: () => void | Promise<void>;
   placeholder?: string;
   disabled?: boolean;
 }
 
 export function IslandQuickReply({
   onSend,
+  onNewConversation,
   placeholder,
   disabled = false,
 }: IslandQuickReplyProps) {
   const t = useI18n("chat");
   const [value, setValue] = useState("");
   const [justSent, setJustSent] = useState(false);
+  const [isStartingNewConversation, setIsStartingNewConversation] =
+    useState(false);
   const resolvedPlaceholder = placeholder ?? t("island.quickReplyPlaceholder");
 
   const handleSubmit = useCallback(
@@ -35,6 +39,17 @@ export function IslandQuickReply({
     },
     [value, onSend, disabled],
   );
+
+  const handleNewConversation = useCallback(async () => {
+    if (disabled || isStartingNewConversation || !onNewConversation) return;
+    setIsStartingNewConversation(true);
+    try {
+      await onNewConversation();
+      setValue("");
+    } finally {
+      setIsStartingNewConversation(false);
+    }
+  }, [disabled, isStartingNewConversation, onNewConversation]);
 
   return (
     <form onSubmit={handleSubmit} className="flex items-center gap-2">
@@ -54,9 +69,29 @@ export function IslandQuickReply({
           "transition-colors",
         )}
       />
+      {onNewConversation ? (
+        <motion.button
+          type="button"
+          onClick={() => void handleNewConversation()}
+          disabled={disabled || isStartingNewConversation}
+          whileTap={{ scale: 0.96 }}
+          className={cn(
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
+            "border border-island-gold/18 bg-white/54 text-island-gold",
+            "shadow-[0_10px_22px_-18px_rgba(0,0,0,0.32)] hover:bg-island-gold/12 hover:scale-[1.02]",
+            "dark:border-white/10 dark:bg-white/6",
+            "disabled:cursor-not-allowed disabled:opacity-35",
+            "transition-colors",
+          )}
+          aria-label={t("island.newConversation")}
+          title={t("island.newConversation")}
+        >
+          <MessageSquarePlus className="h-3.5 w-3.5" />
+        </motion.button>
+      ) : null}
       <motion.button
         type="submit"
-        disabled={disabled || !value.trim()}
+        disabled={disabled || isStartingNewConversation || !value.trim()}
         animate={justSent ? { scale: [1, 1.14, 1] } : {}}
         transition={{ duration: 0.3, ease: "easeOut" }}
         className={cn(

@@ -22,6 +22,7 @@ import type { IslandSelectionCapturedPayload } from "./selection-context-types";
 
 type IslandActionCompletedPayload = {
   sessionId?: string | null;
+  action?: "new_conversation";
 };
 
 const AUTO_COLLAPSE_DELAY_MS = 1800;
@@ -50,6 +51,7 @@ export function IslandShell() {
       hide: s.hide,
       toggleExpand: s.toggleExpand,
       restoreWorkspace: s.restoreWorkspace,
+      startNewConversation: s.startNewConversation,
       sendQuickReply: s.sendQuickReply,
       runSelectionAction: s.runSelectionAction,
       approvePendingApproval: s.approvePendingApproval,
@@ -285,6 +287,9 @@ export function IslandShell() {
           : useChatRuntimeStore.getState().sessionId;
       if (!sessionId) return;
       try {
+        if (payload?.action === "new_conversation") {
+          useBridgeApprovalStore.getState().clearAll();
+        }
         if (useChatRuntimeStore.getState().sessionId !== sessionId) {
           useChatRuntimeStore.getState().setSessionId(sessionId);
         }

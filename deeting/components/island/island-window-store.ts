@@ -64,6 +64,7 @@ interface IslandWindowState {
   hide: () => void;
   toggleExpand: () => void;
   restoreWorkspace: () => void;
+  startNewConversation: () => Promise<void>;
   syncFromEvent: (payload: IslandSyncPayload) => void;
   presentBrowserLookup: (payload: IslandBrowserLookupPayload) => void;
   clearBrowserLookup: (lookupId?: string | null) => void;
@@ -101,7 +102,11 @@ export interface IslandSyncPayload {
 
 type IslandActionCompletedPayload = {
   sessionId: string | null;
+  action?: "new_conversation";
 };
+
+const DEFAULT_LAST_REPLY = "No replies yet.";
+const DEFAULT_SUMMARY = "Open a conversation to keep Deeting nearby.";
 
 async function emitActionCompleted(payload: IslandActionCompletedPayload) {
   const { emit } = await import("@tauri-apps/api/event");
@@ -209,6 +214,72 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
       const message =
         error instanceof Error ? error.message : "Failed to restore workspace";
       set({ errorMessage: message });
+    }
+  },
+
+  startNewConversation: async () => {
+    const previousState = get();
+    set({
+      mode: "expanded",
+      isBusy: true,
+      errorMessage: null,
+      statusLabel: "Working...",
+      pendingApproval: null,
+      statusStage: null,
+      statusCode: null,
+      statusMeta: null,
+      stageHistory: [],
+      suspendRemoteSync: true,
+    });
+
+    try {
+      const created = await createConversation({});
+      const sessionId = created.session_id;
+      useBridgeApprovalStore.getState().clearAll();
+      set({
+        mode: "expanded",
+        statusLabel: "Ready",
+        summaryText: DEFAULT_SUMMARY,
+        lastReplyText: DEFAULT_LAST_REPLY,
+        lastReplyAt: null,
+        recentMessages: [],
+        pendingApproval: null,
+        browserLookup: null,
+        selectionContext: null,
+        isBusy: false,
+        errorMessage: null,
+        sessionId,
+        chatRequestConfig: previousState.chatRequestConfig,
+        statusStage: null,
+        statusCode: null,
+        statusMeta: null,
+        stageHistory: [],
+        suspendRemoteSync: false,
+      });
+      await emitActionCompleted({ sessionId, action: "new_conversation" });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to create conversation";
+      set({
+        statusLabel: "Needs attention",
+        summaryText: previousState.summaryText,
+        lastReplyText: previousState.lastReplyText,
+        lastReplyAt: previousState.lastReplyAt,
+        recentMessages: previousState.recentMessages,
+        pendingApproval: previousState.pendingApproval,
+        browserLookup: previousState.browserLookup,
+        selectionContext: previousState.selectionContext,
+        errorMessage: message,
+        chatRequestConfig: previousState.chatRequestConfig,
+        statusStage: previousState.statusStage,
+        statusCode: previousState.statusCode,
+        statusMeta: previousState.statusMeta,
+        stageHistory: previousState.stageHistory,
+        isBusy: false,
+        suspendRemoteSync: false,
+      });
     }
   },
 

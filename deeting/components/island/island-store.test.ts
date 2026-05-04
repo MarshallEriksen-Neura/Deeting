@@ -1,10 +1,22 @@
 import type { Message } from "@/lib/chat/message-types"
+import { createConversation } from "@/lib/api/conversations"
+import { useBridgeApprovalStore } from "@/lib/chat/bridge-approval-store"
+import { useChatRuntimeStore } from "@/store/chat-runtime-store"
+import { useChatStore } from "@/store/chat-store"
 
 import { useIslandStore } from "./island-store"
+
+jest.mock("@/lib/api/conversations", () => ({
+  createConversation: jest.fn(),
+}))
 
 type HydrateSnapshot = Parameters<
   ReturnType<typeof useIslandStore.getState>["hydrateFromChat"]
 >[0]
+
+const mockCreateConversation = createConversation as jest.MockedFunction<
+  typeof createConversation
+>
 
 function resetIslandStore() {
   useIslandStore.setState({
@@ -47,6 +59,9 @@ function buildAssistantMessage(): Message {
 
 describe("useIslandStore hydrateFromChat", () => {
   beforeEach(() => {
+    mockCreateConversation.mockReset()
+    useChatRuntimeStore.getState().resetSession()
+    useBridgeApprovalStore.getState().clearAll()
     resetIslandStore()
   })
 
@@ -121,5 +136,79 @@ describe("useIslandStore hydrateFromChat", () => {
 
     useIslandStore.getState().clearSelectionContext("selection-1")
     expect(useIslandStore.getState().selectionContext).toBeNull()
+  })
+
+  it("starts a clean conversation from the island without restoring the workspace", async () => {
+    mockCreateConversation.mockResolvedValue({
+      session_id: "new-session",
+      title: null,
+    })
+    useChatRuntimeStore.getState().setSessionId("old-session")
+    useChatStore.setState({
+      messages: [
+        {
+          id: "old-message",
+          role: "user",
+          content: "old draft",
+          createdAt: 100,
+          metaInfo: {},
+          blocks: [],
+        },
+      ],
+      input: "draft",
+      attachments: [],
+      selectedKnowledgeFileIds: ["file-1"],
+      pageContext: {
+        tabId: "tab-1",
+        title: "Page",
+        url: "https://example.test",
+        host: "example.test",
+        headingsSummary: [],
+        mainTextSnippet: "main",
+        visibleTextSnippet: "visible",
+        capturedAt: 100,
+      },
+    })
+    useBridgeApprovalStore.getState().setPending({
+      kind: "bridge_mcp",
+      approval_token: "approval-old",
+      tool_name: "shell_execute",
+      arguments: {},
+      meta: { call_id: "call-old" },
+    })
+    useIslandStore.setState({
+      mode: "expanded",
+      statusLabel: "Ready",
+      summaryText: "old summary",
+      recentMessages: [{ role: "user", content: "old", createdAt: 100 }],
+      pendingApproval: {
+        id: "approval-old",
+        title: "shell_execute",
+        desc: "old approval",
+        approvalToken: "approval-old",
+        toolName: "shell_execute",
+      },
+    })
+
+    await useIslandStore.getState().startNewConversation()
+
+    expect(mockCreateConversation).toHaveBeenCalledWith({})
+    expect(useChatRuntimeStore.getState().sessionId).toBe("new-session")
+    expect(useChatStore.getState()).toMatchObject({
+      messages: [],
+      input: "",
+      selectedKnowledgeFileIds: [],
+      pageContext: null,
+    })
+    expect(useBridgeApprovalStore.getState().pending).toBeNull()
+    expect(useIslandStore.getState()).toMatchObject({
+      mode: "expanded",
+      statusLabel: "Ready",
+      summaryText: "Open a conversation to keep Deeting nearby.",
+      lastReplyText: "No replies yet.",
+      recentMessages: [],
+      pendingApproval: null,
+      isBusy: false,
+    })
   })
 })

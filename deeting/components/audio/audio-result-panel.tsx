@@ -40,6 +40,7 @@ function resolvePayloadSource(payload: AudioResultPayload) {
 interface AudioResultPanelProps {
   payload: AudioResultPayload
   className?: string
+  autoPlay?: boolean
 }
 
 function formatDuration(durationMs?: number | null) {
@@ -86,6 +87,7 @@ async function resolveAudioSrc(
 export const AudioResultPanel = memo<AudioResultPanelProps>(function AudioResultPanel({
   payload,
   className,
+  autoPlay = false,
 }) {
   const source = useMemo(() => resolvePayloadSource(payload), [payload])
   const [resolvedSrc, setResolvedSrc] = useState(source.src)
@@ -135,7 +137,7 @@ export const AudioResultPanel = memo<AudioResultPanelProps>(function AudioResult
       </div>
 
       {resolvedSrc ? (
-        <audio controls preload="none" className="w-full" src={resolvedSrc}>
+        <audio controls preload="none" autoPlay={autoPlay} className="w-full" src={resolvedSrc}>
           Your browser does not support audio playback.
         </audio>
       ) : (

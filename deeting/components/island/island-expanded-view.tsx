@@ -7,8 +7,10 @@ import {
   Copy,
   CornerLeftDown,
   Languages,
+  Loader2,
   Maximize2,
   MessageSquareText,
+  Play,
   SendHorizontal,
   Sparkles,
   User,
@@ -19,9 +21,15 @@ import { useI18n } from "@/hooks/use-i18n";
 import { cn } from "@/lib/utils";
 import { MarkdownViewer } from "@/components/chat/markdown-viewer";
 import {
+  ISLAND_TTS_AGENT_NOT_CONFIGURED,
+  ISLAND_TTS_AUDIO_EMPTY,
   quickTranslateIsland,
+  speakIslandText,
   type IslandChatRequestConfig,
 } from "@/lib/api/island";
+import AudioResultPanel, {
+  type AudioResultPayload,
+} from "@/components/audio/audio-result-panel";
 import type { IslandRecentMessage } from "./island-store";
 
 import { IslandApprovalCard } from "./island-approval-card";
@@ -310,6 +318,12 @@ export type IslandTranslatorPhase =
   | "completed"
   | "failed";
 
+type IslandTranslatorSpeechPhase =
+  | "idle"
+  | "speaking"
+  | "completed"
+  | "failed";
+
 export interface IslandTranslatorMode {
   source: "selection" | "manual";
   selectionId: string | null;
@@ -378,6 +392,11 @@ function IslandTranslatorView({
   const [output, setOutput] = useState<string>("");
   const [phase, setPhase] = useState<IslandTranslatorPhase>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [speechPhase, setSpeechPhase] =
+    useState<IslandTranslatorSpeechPhase>("idle");
+  const [speechPayload, setSpeechPayload] =
+    useState<AudioResultPayload | null>(null);
+  const [speechError, setSpeechError] = useState<string | null>(null);
 
   // Storage-backed picker data; keep in sync with selection panel.
   const [recent, setRecent] = useState<string[]>(() => readStoredRecentTargets());
@@ -386,6 +405,12 @@ function IslandTranslatorView({
   const refreshPreferences = useCallback(() => {
     setRecent(readStoredRecentTargets());
     setFavorites(readFavoriteTargets());
+  }, []);
+
+  const resetSpeech = useCallback(() => {
+    setSpeechPhase("idle");
+    setSpeechPayload(null);
+    setSpeechError(null);
   }, []);
 
   // Re-pull preferences whenever the popover-host page regains focus or
@@ -432,6 +457,7 @@ function IslandTranslatorView({
       lastTranslatedKeyRef.current = dedupeKey;
       setPhase("translating");
       setError(null);
+      resetSpeech();
       try {
         const result = await quickTranslateIsland({
           text: trimmed,
@@ -457,11 +483,12 @@ function IslandTranslatorView({
         setPhase("failed");
       }
     },
-    [chatRequestConfig, t],
+    [chatRequestConfig, resetSpeech, t],
   );
 
   // Reset state when the mode reseeds (new selection / new manual open).
   // Auto-run if the mode declares it.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     const fingerprint = fingerprintTranslatorMode(mode);
     if (lastModeFingerprintRef.current === fingerprint) return;
@@ -473,6 +500,7 @@ function IslandTranslatorView({
     setOutput("");
     setError(null);
     setPhase("idle");
+    resetSpeech();
     lastTranslatedKeyRef.current = null;
 
     if (mode.autoRun && mode.initialText.trim().length > 0) {
@@ -482,7 +510,8 @@ function IslandTranslatorView({
         mode.targetLanguage,
       );
     }
-  }, [mode, performTranslate]);
+  }, [mode, performTranslate, resetSpeech]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Report header state up so the island shell can replace its chat status
   // with translator-specific copy.
@@ -507,6 +536,32 @@ function IslandTranslatorView({
     }
   }
 
+  async function handleSpeakOutput() {
+    const text = output.trim();
+    if (!text) return;
+    setSpeechPhase("speaking");
+    setSpeechPayload(null);
+    setSpeechError(null);
+    try {
+      const result = await speakIslandText({ text });
+      setSpeechPayload(result.payload as AudioResultPayload);
+      setSpeechPhase("completed");
+    } catch (speakError) {
+      const message =
+        speakError instanceof Error &&
+        speakError.message === ISLAND_TTS_AGENT_NOT_CONFIGURED
+          ? t("island.translator.noVoiceAgent")
+          : speakError instanceof Error &&
+              speakError.message === ISLAND_TTS_AUDIO_EMPTY
+            ? t("island.translator.speakFailed")
+            : speakError instanceof Error
+              ? speakError.message
+              : t("island.translator.speakFailed");
+      setSpeechError(message);
+      setSpeechPhase("failed");
+    }
+  }
+
   function handleSwapLanguages() {
     const previousSource = sourceLanguage;
     const previousTarget = targetLanguage;
@@ -521,6 +576,7 @@ function IslandTranslatorView({
       setOutput("");
       setError(null);
       setPhase("idle");
+      resetSpeech();
       lastTranslatedKeyRef.current = null;
     }
   }
@@ -531,10 +587,12 @@ function IslandTranslatorView({
     setOutput("");
     setError(null);
     setPhase("idle");
+    resetSpeech();
     lastTranslatedKeyRef.current = null;
   }
 
   const isTranslating = phase === "translating";
+  const isSpeaking = speechPhase === "speaking";
   const inputCharCount = input.trim().length;
 
   return (
@@ -624,6 +682,21 @@ function IslandTranslatorView({
         <div className="rounded-full bg-background/72 px-2.5 py-1 text-[10px] font-medium text-foreground/50">
           {t("island.translator.outputLabel")}
         </div>
+        <button
+          type="button"
+          disabled={!output.trim() || isTranslating || isSpeaking}
+          onClick={() => void handleSpeakOutput()}
+          className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-island-gold/28 bg-island-gold/10 px-2.5 text-[10px] font-semibold text-island-gold transition-colors hover:bg-island-gold/18 disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          {isSpeaking ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <Play className="h-3 w-3" />
+          )}
+          {isSpeaking
+            ? t("island.translator.speaking")
+            : t("island.translator.speak")}
+        </button>
         <div className="h-px flex-1 bg-foreground/10" />
       </div>
 
@@ -663,6 +736,22 @@ function IslandTranslatorView({
           {t("island.translator.copy")}
         </button>
       </div>
+
+      {speechError ? (
+        <div className="mt-2 rounded-[16px] border border-amber-400/20 bg-amber-400/8 px-3 py-2 text-[11px] leading-5 text-amber-700 dark:text-amber-300">
+          {speechError}
+        </div>
+      ) : null}
+
+      {speechPayload ? (
+        <div className="mt-2">
+          <AudioResultPanel
+            payload={speechPayload}
+            autoPlay
+            className="rounded-[18px] border-white/35 bg-white/45 p-3 dark:border-white/10 dark:bg-white/5"
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -699,6 +788,7 @@ export function IslandExpandedView({
     statusMeta,
     stageHistory,
     collapse,
+    startNewConversation,
     sendQuickReply,
     runSelectionAction,
     approvePendingApproval,
@@ -1019,7 +1109,11 @@ export function IslandExpandedView({
                 : t("island.continueHere")}
             </div>
             <div className="min-w-0 flex-1">
-              <IslandQuickReply onSend={sendFooterReply} disabled={isBusy} />
+              <IslandQuickReply
+                onSend={sendFooterReply}
+                onNewConversation={startNewConversation}
+                disabled={isBusy}
+              />
             </div>
             <button
               onClick={restoreWorkspace}
