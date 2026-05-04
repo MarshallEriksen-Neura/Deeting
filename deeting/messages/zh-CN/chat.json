@@ -723,7 +723,19 @@
         "outputPlaceholder": "翻译结果会显示在这里。",
         "copy": "复制",
         "noModel": "当前没有选择本地聊天模型。",
-        "failed": "翻译失败"
+        "failed": "翻译失败",
+        "auto": "自动",
+        "useAsInput": "用作输入",
+        "popular": "常用",
+        "favorites": "收藏",
+        "recent": "最近",
+        "customPlaceholder": "其他语言...",
+        "customApply": "使用",
+        "phaseIdle": "就绪",
+        "phaseTranslating": "翻译中",
+        "phaseCompleted": "已完成",
+        "phaseFailed": "失败",
+        "languagePair": "{source} → {target}"
       },
       "toolStatus": {
         "pendingApproval": "正在等待你批准 {name}",

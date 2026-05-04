@@ -31,16 +31,18 @@ import {
 } from "./detect-text-language";
 import {
   IslandTranslateConfigSheet,
-  readFavoriteTargets,
 } from "./island-translate-config-sheet";
+import {
+  persistRecentTargets,
+  pushRecentTarget,
+  readFavoriteTargets,
+  readStoredRecentTargets,
+} from "./island-translator-preferences";
 import type {
   IslandSelectionActionKind,
   IslandSelectionContext,
 } from "./selection-context-types";
 import type { SelectionActionPromptOptions } from "./selection-action-prompts";
-
-const RECENT_TARGETS_STORAGE_KEY = "island-selection-recent-targets";
-const MAX_RECENT_TARGETS = 3;
 
 const POPULAR_LANGUAGES: ReadonlyArray<{
   code: Exclude<DetectedLanguageCode, "unknown">;
@@ -84,50 +86,6 @@ function isZhUiLocale() {
 
 function resolveUiTargetDisplayName() {
   return isZhUiLocale() ? "Chinese" : "English";
-}
-
-function readStoredRecentTargets(): string[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(RECENT_TARGETS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    if (Array.isArray(parsed)) {
-      return parsed
-        .filter(
-          (entry): entry is string =>
-            typeof entry === "string" && entry.trim().length > 0,
-        )
-        .slice(0, MAX_RECENT_TARGETS);
-    }
-  } catch {
-    /* swallow malformed storage */
-  }
-  return [];
-}
-
-function persistRecentTargets(targets: ReadonlyArray<string>) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(
-      RECENT_TARGETS_STORAGE_KEY,
-      JSON.stringify(targets.slice(0, MAX_RECENT_TARGETS)),
-    );
-  } catch {
-    /* swallow quota errors */
-  }
-}
-
-function pushRecentTarget(
-  current: ReadonlyArray<string>,
-  target: string,
-): string[] {
-  const trimmed = target.trim();
-  if (!trimmed) return [...current];
-  const filtered = current.filter(
-    (entry) => entry.toLowerCase() !== trimmed.toLowerCase(),
-  );
-  return [trimmed, ...filtered].slice(0, MAX_RECENT_TARGETS);
 }
 
 function shortLabelForTarget(target: string, uiLocale: "zh" | "en"): string {

@@ -52,7 +52,7 @@ fn resolve_assistant_model_selection(
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TranslateSelectionRequest {
+pub struct QuickTranslateRequest {
     pub text: String,
     pub source_language: Option<String>,
     pub target_language: String,
@@ -62,15 +62,22 @@ pub struct TranslateSelectionRequest {
     pub max_tokens: Option<u32>,
 }
 
+/// Backwards-compatible alias for callers that still reference the legacy name.
+/// The DTO was renamed when manual-entry translation was added — selection is
+/// no longer the only entry point — but the wire format is unchanged.
+pub type TranslateSelectionRequest = QuickTranslateRequest;
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TranslateSelectionResponse {
+pub struct QuickTranslateResponse {
     pub text: String,
     pub source_language: Option<String>,
     pub target_language: String,
 }
 
-fn build_translate_selection_messages(
+pub type TranslateSelectionResponse = QuickTranslateResponse;
+
+fn build_quick_translate_messages(
     text: &str,
     source_language: Option<&str>,
     target_language: &str,
@@ -499,8 +506,8 @@ pub async fn preview_local_assistant(
 #[tauri::command]
 pub async fn translate_selection_text(
     state: State<'_, AppState>,
-    payload: TranslateSelectionRequest,
-) -> Result<TranslateSelectionResponse, String> {
+    payload: QuickTranslateRequest,
+) -> Result<QuickTranslateResponse, String> {
     let text = payload.text.trim();
     if text.is_empty() {
         return Err("selected text is required".to_string());
@@ -519,7 +526,7 @@ pub async fn translate_selection_text(
     let model_connection =
         resolve_local_model_connection(state.inner(), payload.model.trim(), provider_model_id)
             .await?;
-    let messages = build_translate_selection_messages(
+    let messages = build_quick_translate_messages(
         text,
         payload.source_language.as_deref(),
         target_language,
@@ -545,7 +552,7 @@ pub async fn translate_selection_text(
         .ok_or_else(|| "translation response was empty".to_string())?
         .to_string();
 
-    Ok(TranslateSelectionResponse {
+    Ok(QuickTranslateResponse {
         text: translated,
         source_language: payload
             .source_language
@@ -584,6 +591,33 @@ mod tests {
 
         assert_eq!(model, "gpt-4.1");
         assert_eq!(provider_model_id, None);
+    }
+
+    #[test]
+    fn build_quick_translate_messages_uses_explicit_source_language() {
+        let messages =
+            build_quick_translate_messages("Hello", Some("English"), "Chinese");
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, "system");
+        assert_eq!(messages[1].role, "user");
+        assert!(messages[1].content.contains("from English into Chinese"));
+        assert!(messages[1].content.contains("Hello"));
+    }
+
+    #[test]
+    fn build_quick_translate_messages_falls_back_when_source_missing() {
+        let messages = build_quick_translate_messages("Bonjour", None, "English");
+        assert!(messages[1]
+            .content
+            .contains("from auto-detected source language into English"));
+    }
+
+    #[test]
+    fn build_quick_translate_messages_treats_blank_source_as_auto() {
+        let messages = build_quick_translate_messages("Hola", Some("   "), "English");
+        assert!(messages[1]
+            .content
+            .contains("from auto-detected source language into English"));
     }
 }
 

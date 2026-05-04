@@ -5,7 +5,7 @@ import { z } from "zod"
 import { handleModelConfigRequiredError } from "@/lib/model-config-required"
 
 const EXECUTE_LOCAL_TEXT_CONVERSATION_COMMAND = "execute_local_text_conversation"
-const TRANSLATE_SELECTION_TEXT_COMMAND = "translate_selection_text"
+const QUICK_TRANSLATE_COMMAND = "translate_selection_text"
 
 async function invokeTauri<T>(
   command: string,
@@ -86,12 +86,15 @@ export interface IslandChatRequestConfig {
   useDesktopLocalGateway: boolean
 }
 
-export interface IslandTranslateSelectionRequest {
+export interface IslandQuickTranslateRequest {
   text: string
   sourceLanguage?: string
   targetLanguage: string
   requestConfig: IslandChatRequestConfig
 }
+
+/** @deprecated Use {@link IslandQuickTranslateRequest}. */
+export type IslandTranslateSelectionRequest = IslandQuickTranslateRequest
 
 export async function streamIslandTextConversation(
   sessionId: string,
@@ -139,8 +142,8 @@ export async function translateIslandSelection({
   sourceLanguage,
   targetLanguage,
   requestConfig,
-}: IslandTranslateSelectionRequest): Promise<IslandTranslationResult> {
-  const data = await invokeTauri<unknown>(TRANSLATE_SELECTION_TEXT_COMMAND, {
+}: IslandQuickTranslateRequest): Promise<IslandTranslationResult> {
+  const data = await invokeTauri<unknown>(QUICK_TRANSLATE_COMMAND, {
     payload: {
       text,
       sourceLanguage,
@@ -151,6 +154,9 @@ export async function translateIslandSelection({
   })
   return IslandTranslationResultSchema.parse(data)
 }
+
+/** Convenience alias used by the dedicated translator mode. */
+export const quickTranslateIsland = translateIslandSelection
 
 export async function approveIslandTool(
   approvalToken: string,

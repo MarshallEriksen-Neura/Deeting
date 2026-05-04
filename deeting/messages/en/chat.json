@@ -616,7 +616,19 @@
         "outputPlaceholder": "Translation will appear here.",
         "copy": "Copy",
         "noModel": "No local chat model is selected.",
-        "failed": "Translation failed"
+        "failed": "Translation failed",
+        "auto": "Auto",
+        "useAsInput": "Use as input",
+        "popular": "Popular",
+        "favorites": "Favorites",
+        "recent": "Recent",
+        "customPlaceholder": "Other language...",
+        "customApply": "Use",
+        "phaseIdle": "Ready",
+        "phaseTranslating": "Translating",
+        "phaseCompleted": "Completed",
+        "phaseFailed": "Failed",
+        "languagePair": "{source} → {target}"
       },
       "toolStatus": {
         "pendingApproval": "Waiting for approval to continue with {name}",

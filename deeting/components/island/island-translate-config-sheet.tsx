@@ -25,9 +25,19 @@ import { useI18n } from "@/hooks/use-i18n";
 import { cn } from "@/lib/utils";
 
 import { lookupLanguageCode } from "./detect-text-language";
+import {
+  FAVORITE_TARGETS_STORAGE_KEY,
+  RECENT_TARGETS_STORAGE_KEY,
+  clearStoredRecentTargets,
+  persistFavoriteTargets,
+  readFavoriteTargets,
+} from "./island-translator-preferences";
 
-export const FAVORITE_TARGETS_STORAGE_KEY = "island-selection-favorite-targets";
-export const RECENT_TARGETS_STORAGE_KEY = "island-selection-recent-targets";
+export {
+  FAVORITE_TARGETS_STORAGE_KEY,
+  RECENT_TARGETS_STORAGE_KEY,
+  readFavoriteTargets,
+};
 
 const SUGGESTED_LANGUAGES = [
   "English",
@@ -48,45 +58,6 @@ export interface IslandTranslateConfigSheetProps {
   onOpenChange: (open: boolean) => void;
   /** Fired whenever localStorage is mutated, so the panel can refresh chips. */
   onChange?: () => void;
-}
-
-export function readFavoriteTargets(): string[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(FAVORITE_TARGETS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    if (Array.isArray(parsed)) {
-      return parsed.filter(
-        (entry): entry is string =>
-          typeof entry === "string" && entry.trim().length > 0,
-      );
-    }
-  } catch {
-    /* swallow malformed storage */
-  }
-  return [];
-}
-
-function persistFavoriteTargets(targets: ReadonlyArray<string>) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(
-      FAVORITE_TARGETS_STORAGE_KEY,
-      JSON.stringify(targets),
-    );
-  } catch {
-    /* swallow quota errors */
-  }
-}
-
-function clearStoredRecentTargets() {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.removeItem(RECENT_TARGETS_STORAGE_KEY);
-  } catch {
-    /* swallow */
-  }
 }
 
 export function IslandTranslateConfigSheet({
