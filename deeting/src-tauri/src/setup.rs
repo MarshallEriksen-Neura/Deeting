@@ -20,12 +20,13 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tauri::{App, AppHandle, Emitter, Listener, Manager};
+use tauri::{App, AppHandle, Listener, Manager};
 use tauri_plugin_log::{Target, TargetKind};
 
 const DESKTOP_RUNTIME_DEBUG_LOG_TARGET_PREFIXES: &[&str] =
     &["app_lib::modules::mcp::commands::runtime::tool_execution"];
 const DESKTOP_UI_READY_EVENT: &str = "desktop-ui-ready";
+pub(crate) const MAIN_WINDOW_SHORTCUT: &str = "CommandOrControl+Shift+D";
 
 fn should_skip_file_log_for_target(target: &str) -> bool {
     let normalized = target.trim();
@@ -390,7 +391,7 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Setup Global Shortcuts
-    setup_shortcuts(app)?;
+    setup_shortcuts(app, &sync_state)?;
 
     log_startup_phase("setup_app_total", setup_started_at);
 
@@ -504,16 +505,11 @@ fn spawn_background_tasks(_handle: AppHandle, sync_state: AppState) {
     });
 }
 
-fn setup_shortcuts(app: &App) -> Result<(), Box<dyn std::error::Error>> {
+fn setup_shortcuts(app: &App, sync_state: &AppState) -> Result<(), Box<dyn std::error::Error>> {
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
-    const MAIN_WINDOW_SHORTCUT: &str = "CommandOrControl+Shift+D";
-    const SELECTION_ASSISTANT_SHORTCUT: &str = "CommandOrControl+Shift+Space";
     let shortcut_manager = app.global_shortcut();
     if shortcut_manager.is_registered(MAIN_WINDOW_SHORTCUT) {
         let _ = shortcut_manager.unregister(MAIN_WINDOW_SHORTCUT);
-    }
-    if shortcut_manager.is_registered(SELECTION_ASSISTANT_SHORTCUT) {
-        let _ = shortcut_manager.unregister(SELECTION_ASSISTANT_SHORTCUT);
     }
     if let Err(err) = shortcut_manager.on_shortcut(MAIN_WINDOW_SHORTCUT, |app, _shortcut, event| {
         if event.state == ShortcutState::Pressed {
@@ -532,35 +528,79 @@ fn setup_shortcuts(app: &App) -> Result<(), Box<dyn std::error::Error>> {
             err
         );
     }
-    if let Err(err) =
-        shortcut_manager.on_shortcut(SELECTION_ASSISTANT_SHORTCUT, |app, _shortcut, event| {
-            if event.state == ShortcutState::Pressed {
-                let app_handle = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    let capture = tauri::async_runtime::spawn_blocking(
-                        crate::modules::selection_assistant::capture::capture_active_selection,
-                    )
-                    .await
-                    .unwrap_or_else(|err| {
-                        log::warn!("selection assistant capture task failed: {err}");
-                        crate::modules::selection_assistant::capture::unavailable_capture_result(
-                            format!("capture task failed: {err}"),
-                        )
-                    });
 
-                    if let Some(island) = app_handle.get_webview_window("island") {
-                        let _ = island.show();
-                        let _ = island.set_focus();
-                    }
-                    let _ = app_handle.emit("island:selection-captured", capture);
-                });
-            }
-        })
+    let selection_shortcut = tauri::async_runtime::block_on(
+        crate::modules::selection_assistant::shortcut::resolve_selection_assistant_shortcut(
+            sync_state.mcp.store.as_ref(),
+        ),
+    )?;
+    if selection_shortcut.eq_ignore_ascii_case(MAIN_WINDOW_SHORTCUT) {
+        warn!(
+            "selection assistant shortcut conflicts with main window shortcut; using default ({})",
+            crate::modules::selection_assistant::shortcut::DEFAULT_SELECTION_ASSISTANT_SHORTCUT
+        );
+    }
+    let selection_shortcut = if selection_shortcut.eq_ignore_ascii_case(MAIN_WINDOW_SHORTCUT) {
+        crate::modules::selection_assistant::shortcut::DEFAULT_SELECTION_ASSISTANT_SHORTCUT
+            .to_string()
+    } else {
+        selection_shortcut
+    };
+    crate::modules::selection_assistant::shortcut::unregister_selection_assistant_shortcut(
+        app.handle(),
+        selection_shortcut.as_str(),
+    );
+    if let Err(err) =
+        crate::modules::selection_assistant::shortcut::register_selection_assistant_shortcut(
+            app.handle(),
+            selection_shortcut.as_str(),
+        )
     {
         warn!(
-            "global shortcut registration skipped ({SELECTION_ASSISTANT_SHORTCUT}): {}",
-            err
+            "global shortcut registration skipped ({}): {}",
+            selection_shortcut, err
         );
+    }
+
+    let island_shortcut = tauri::async_runtime::block_on(
+        crate::modules::island_window::resolve_island_toggle_shortcut(
+            sync_state.mcp.store.as_ref(),
+        ),
+    )?;
+    let island_shortcut_conflicts = island_shortcut.eq_ignore_ascii_case(MAIN_WINDOW_SHORTCUT)
+        || island_shortcut.eq_ignore_ascii_case(selection_shortcut.as_str());
+    if island_shortcut_conflicts {
+        warn!(
+            "island toggle shortcut conflicts with an existing shortcut; using default ({})",
+            crate::modules::island_window::DEFAULT_ISLAND_TOGGLE_SHORTCUT
+        );
+    }
+    let island_shortcut = if island_shortcut_conflicts {
+        crate::modules::island_window::DEFAULT_ISLAND_TOGGLE_SHORTCUT.to_string()
+    } else {
+        island_shortcut
+    };
+    if island_shortcut.eq_ignore_ascii_case(MAIN_WINDOW_SHORTCUT)
+        || island_shortcut.eq_ignore_ascii_case(selection_shortcut.as_str())
+    {
+        warn!(
+            "global shortcut registration skipped ({}) because it conflicts after fallback",
+            island_shortcut
+        );
+    } else {
+        crate::modules::island_window::unregister_island_toggle_shortcut(
+            app.handle(),
+            island_shortcut.as_str(),
+        );
+        if let Err(err) = crate::modules::island_window::register_island_toggle_shortcut(
+            app.handle(),
+            island_shortcut.as_str(),
+        ) {
+            warn!(
+                "global shortcut registration skipped ({}): {}",
+                island_shortcut, err
+            );
+        }
     }
     Ok(())
 }

@@ -612,6 +612,17 @@
       "minimizeLabel": "最小化按钮",
       "minimizeValue": "正常最小化",
       "minimizeHelp": "现在点击最小化只会正常最小化主窗口，不会自动显示灵动岛。",
+      "islandShortcutLabel": "灵动岛显示/隐藏快捷键",
+      "islandShortcutHelp": "不拉起主窗口，直接切换灵动岛窗口。隐藏后 Deeting 仍可从托盘栏恢复。",
+      "islandShortcutRequired": "请填写灵动岛显示/隐藏快捷键",
+      "wakeShortcutLabel": "划词唤醒快捷键",
+      "wakeShortcutHelp": "选中文本后按这个快捷键，将选区捕获到灵动岛。",
+      "wakeShortcutRequired": "请填写划词唤醒快捷键",
+      "shortcutSyntaxHelp": "录制时按下至少带一个修饰键的组合键，例如 Ctrl + Shift + Space 或 Alt + Space。",
+      "shortcutRecord": "录制",
+      "shortcutRecording": "取消",
+      "shortcutWaiting": "请按下快捷键...",
+      "shortcutReset": "恢复默认",
       "closeActionLabel": "关闭主窗口时",
       "closeActionHelp": "作用于当前设备上的关闭按钮和其他关闭窗口动作。",
       "closeAction": {
@@ -626,8 +637,8 @@
       },
       "save": "保存",
       "saving": "保存中...",
-      "saveSuccess": "桌面窗口行为已保存",
-      "saveFailed": "桌面窗口行为保存失败",
+      "saveSuccess": "桌面窗口偏好已保存",
+      "saveFailed": "桌面窗口偏好保存失败",
       "footerHint": "仅当前桌面设备生效，设置会本地持久化。"
     }
   }

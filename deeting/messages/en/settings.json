@@ -298,6 +298,17 @@
       "minimizeLabel": "Minimize button",
       "minimizeValue": "Normal minimize",
       "minimizeHelp": "Minimizing the desktop window now keeps the Island hidden and performs a standard window minimize.",
+      "islandShortcutLabel": "Island show/hide shortcut",
+      "islandShortcutHelp": "Toggle the Island window without bringing the main window forward. When hidden, Deeting remains available from the tray.",
+      "islandShortcutRequired": "Island show/hide shortcut is required",
+      "wakeShortcutLabel": "Selection wake shortcut",
+      "wakeShortcutHelp": "Use this shortcut after selecting text to capture it into the Island.",
+      "wakeShortcutRequired": "Selection wake shortcut is required",
+      "shortcutSyntaxHelp": "Record a shortcut with at least one modifier, for example Ctrl + Shift + Space or Alt + Space.",
+      "shortcutRecord": "Record",
+      "shortcutRecording": "Cancel",
+      "shortcutWaiting": "Press a shortcut now...",
+      "shortcutReset": "Use default",
       "closeActionLabel": "When closing the main window",
       "closeActionHelp": "Applies to the desktop close button and other close-window actions on this device.",
       "closeAction": {
@@ -312,8 +323,8 @@
       },
       "save": "Save",
       "saving": "Saving...",
-      "saveSuccess": "Desktop window behavior saved",
-      "saveFailed": "Failed to save desktop window behavior",
+      "saveSuccess": "Desktop window preferences saved",
+      "saveFailed": "Failed to save desktop window preferences",
       "footerHint": "Desktop only. This preference is stored locally on the current device."
     },
     "version": {

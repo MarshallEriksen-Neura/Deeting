@@ -325,9 +325,7 @@ export function IslandWindowShell() {
         mode === "expanded"
           ? hasPendingApproval
             ? APPROVAL_FOCUSED_SIZE
-            : store.selectionContext
-              ? { width: 592, height: 620 }
-              : EXPANDED_SIZE
+            : EXPANDED_SIZE
           : COLLAPSED_SIZE;
       await invoke("set_island_size", size);
     })();

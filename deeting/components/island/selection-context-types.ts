@@ -1,3 +1,8 @@
+import {
+  detectTextLanguage,
+  type DetectedLanguage,
+} from "./detect-text-language"
+
 export type IslandSelectionActionKind =
   | "translate"
   | "explain"
@@ -29,6 +34,8 @@ export interface IslandSelectionContext {
   charCount: number
   truncated: boolean
   activeAction: IslandSelectionActionKind | null
+  /** Heuristic source-language detection done at capture time. */
+  detectedLanguage: DetectedLanguage
 }
 
 const SELECTION_PREVIEW_MAX_CHARS = 500
@@ -51,5 +58,6 @@ export function toIslandSelectionContext(
     charCount: payload.charCount,
     truncated: payload.truncated,
     activeAction: null,
+    detectedLanguage: detectTextLanguage(payload.text),
   }
 }

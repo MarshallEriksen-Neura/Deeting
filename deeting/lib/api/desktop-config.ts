@@ -18,6 +18,8 @@ export const DESKTOP_CONFIG_KEYS = {
   approvalPolicyLevel: "chat.approval_policy_level",
   workerWorkflowRouting: "workflow.route_worker_through_workflow",
   desktopWindowCloseAction: "desktop.window.close_action",
+  islandToggleShortcut: "island.toggle_shortcut",
+  selectionAssistantWakeShortcut: "selection_assistant.wake_shortcut",
   /** Persisted after login so desktop can call credits proxy with Authorization. */
   authToken: "auth.token",
   desktopProxyMode: "network.proxy.mode",
@@ -36,6 +38,9 @@ export interface DesktopNetworkProxySettings {
 
 export const DEFAULT_DESKTOP_WINDOW_CLOSE_ACTION: DesktopWindowCloseAction =
   "show_island";
+export const DEFAULT_ISLAND_TOGGLE_SHORTCUT = "CommandOrControl+Shift+I";
+export const DEFAULT_SELECTION_ASSISTANT_WAKE_SHORTCUT =
+  "CommandOrControl+Shift+Space";
 
 export function normalizeDesktopProxyMode(
   value: string | null | undefined,
@@ -101,6 +106,58 @@ export async function setDesktopWindowCloseAction(
   await setDesktopConfig(
     DESKTOP_CONFIG_KEYS.desktopWindowCloseAction,
     normalizeDesktopWindowCloseAction(value),
+  );
+}
+
+export function normalizeSelectionAssistantWakeShortcut(
+  value: string | null | undefined,
+): string {
+  const shortcut = value?.trim() ?? "";
+  return shortcut || DEFAULT_SELECTION_ASSISTANT_WAKE_SHORTCUT;
+}
+
+export async function getSelectionAssistantWakeShortcut(): Promise<string> {
+  if (!isTauriRuntime()) return DEFAULT_SELECTION_ASSISTANT_WAKE_SHORTCUT;
+  const { invoke } = await import("@tauri-apps/api/core");
+  return normalizeSelectionAssistantWakeShortcut(
+    await invoke<string>("get_selection_assistant_shortcut"),
+  );
+}
+
+export async function setSelectionAssistantWakeShortcut(
+  value: string,
+): Promise<string> {
+  if (!isTauriRuntime()) return normalizeSelectionAssistantWakeShortcut(value);
+  const { invoke } = await import("@tauri-apps/api/core");
+  return normalizeSelectionAssistantWakeShortcut(
+    await invoke<string>("set_selection_assistant_shortcut", {
+      shortcut: value.trim(),
+    }),
+  );
+}
+
+export function normalizeIslandToggleShortcut(
+  value: string | null | undefined,
+): string {
+  const shortcut = value?.trim() ?? "";
+  return shortcut || DEFAULT_ISLAND_TOGGLE_SHORTCUT;
+}
+
+export async function getIslandToggleShortcut(): Promise<string> {
+  if (!isTauriRuntime()) return DEFAULT_ISLAND_TOGGLE_SHORTCUT;
+  const { invoke } = await import("@tauri-apps/api/core");
+  return normalizeIslandToggleShortcut(
+    await invoke<string>("get_island_toggle_shortcut"),
+  );
+}
+
+export async function setIslandToggleShortcut(value: string): Promise<string> {
+  if (!isTauriRuntime()) return normalizeIslandToggleShortcut(value);
+  const { invoke } = await import("@tauri-apps/api/core");
+  return normalizeIslandToggleShortcut(
+    await invoke<string>("set_island_toggle_shortcut", {
+      shortcut: value.trim(),
+    }),
   );
 }
 

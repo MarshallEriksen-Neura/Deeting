@@ -2,10 +2,8 @@
 
 import dynamic from "next/dynamic"
 import { Skeleton } from "@/ui/shadcn/skeleton"
-import { useI18n } from "@/hooks/use-i18n"
 import { useUserProfile } from "@/hooks/use-user"
 import type { SettingsSection } from "../section"
-import { SettingsHeader } from "./settings-header"
 import { SettingsAlerts } from "./settings-alerts"
 
 const SettingsForm = dynamic(
@@ -22,27 +20,11 @@ interface SettingsClientProps {
 export function SettingsClient({
   initialSection = "models",
 }: SettingsClientProps) {
-  const t = useI18n("settings")
   const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === "true"
-  const { profile, isLoading: isLoadingProfile, isAuthenticated } = useUserProfile()
-
-  const isAdmin = Boolean(profile?.is_superuser)
-  const roleLabel = !isAuthenticated
-    ? t("role.guest")
-    : isAdmin
-      ? t("role.admin")
-      : t("role.user")
+  const { isAuthenticated } = useUserProfile()
 
   return (
     <div className="relative flex flex-col gap-6">
-      <div className="pointer-events-none absolute inset-x-10 top-12 -z-10 h-48 rounded-full bg-[radial-gradient(circle,color-mix(in_srgb,var(--accent-soft)_82%,white_18%),transparent_68%)] blur-3xl" />
-      <SettingsHeader
-        isTauri={isTauri}
-        isAdmin={isAdmin}
-        roleLabel={roleLabel}
-        isLoading={isLoadingProfile}
-      />
-
       <SettingsAlerts isAuthenticated={isAuthenticated} />
 
       <SettingsForm

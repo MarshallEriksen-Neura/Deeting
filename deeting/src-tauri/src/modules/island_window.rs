@@ -4,6 +4,35 @@
 
 use tauri::window::Color;
 use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+
+use crate::modules::mcp::error::McpError;
+use crate::modules::mcp::store::McpStore;
+
+pub(crate) const ISLAND_TOGGLE_SHORTCUT_CONFIG_KEY: &str = "island.toggle_shortcut";
+pub(crate) const DEFAULT_ISLAND_TOGGLE_SHORTCUT: &str = "CommandOrControl+Shift+I";
+
+pub(crate) fn normalize_island_toggle_shortcut(raw: &str) -> Result<String, String> {
+    let shortcut = raw.trim();
+    if shortcut.is_empty() {
+        return Err("island toggle shortcut is required".to_string());
+    }
+    if shortcut.chars().any(|ch| ch.is_control()) {
+        return Err("island toggle shortcut contains invalid characters".to_string());
+    }
+    Ok(shortcut.to_string())
+}
+
+pub(crate) async fn resolve_island_toggle_shortcut(store: &McpStore) -> Result<String, McpError> {
+    let configured = store
+        .get_desktop_config(ISLAND_TOGGLE_SHORTCUT_CONFIG_KEY)
+        .await?;
+
+    Ok(configured
+        .as_deref()
+        .and_then(|value| normalize_island_toggle_shortcut(value).ok())
+        .unwrap_or_else(|| DEFAULT_ISLAND_TOGGLE_SHORTCUT.to_string()))
+}
 
 /// 在应用启动时预创建 Island 窗口（隐藏状态）。
 pub fn create_island_window(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
@@ -19,6 +48,70 @@ pub fn create_island_window(app: &AppHandle) -> Result<(), Box<dyn std::error::E
         .skip_taskbar(true)
         .shadow(false)
         .build()?;
+    Ok(())
+}
+
+pub(crate) fn toggle_island_visibility(app: &AppHandle) -> Result<(), String> {
+    if let Some(island) = app.get_webview_window("island") {
+        let is_visible = island.is_visible().map_err(|e| e.to_string())?;
+        if is_visible {
+            island.hide().map_err(|e| e.to_string())?;
+        } else {
+            island.show().map_err(|e| e.to_string())?;
+            island.set_focus().map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn unregister_island_toggle_shortcut(app: &AppHandle, shortcut: &str) {
+    let manager = app.global_shortcut();
+    if manager.is_registered(shortcut) {
+        let _ = manager.unregister(shortcut);
+    }
+}
+
+pub(crate) fn register_island_toggle_shortcut(
+    app: &AppHandle,
+    shortcut: &str,
+) -> Result<(), String> {
+    let shortcut = normalize_island_toggle_shortcut(shortcut)?;
+    let manager = app.global_shortcut();
+    manager
+        .on_shortcut(shortcut.as_str(), |app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                if let Err(err) = toggle_island_visibility(app) {
+                    log::warn!("island toggle shortcut failed: {err}");
+                }
+            }
+        })
+        .map_err(|err| err.to_string())
+}
+
+pub(crate) fn replace_island_toggle_shortcut(
+    app: &AppHandle,
+    previous_shortcut: &str,
+    next_shortcut: &str,
+) -> Result<(), String> {
+    let previous_shortcut = normalize_island_toggle_shortcut(previous_shortcut)?;
+    let next_shortcut = normalize_island_toggle_shortcut(next_shortcut)?;
+    let manager = app.global_shortcut();
+
+    if !previous_shortcut.eq_ignore_ascii_case(&next_shortcut)
+        && manager.is_registered(next_shortcut.as_str())
+    {
+        return Err(format!("shortcut is already registered: {next_shortcut}"));
+    }
+
+    unregister_island_toggle_shortcut(app, previous_shortcut.as_str());
+
+    if let Err(err) = register_island_toggle_shortcut(app, next_shortcut.as_str()) {
+        if !previous_shortcut.eq_ignore_ascii_case(&next_shortcut) {
+            let _ = register_island_toggle_shortcut(app, previous_shortcut.as_str());
+        }
+        return Err(err);
+    }
+
     Ok(())
 }
 
@@ -80,4 +173,27 @@ pub async fn set_island_position(app: AppHandle, x: f64, y: f64) -> Result<(), S
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        normalize_island_toggle_shortcut, DEFAULT_ISLAND_TOGGLE_SHORTCUT,
+        ISLAND_TOGGLE_SHORTCUT_CONFIG_KEY,
+    };
+
+    #[test]
+    fn normalize_island_toggle_shortcut_trims_valid_shortcuts() {
+        assert_eq!(
+            normalize_island_toggle_shortcut("  CommandOrControl+Shift+I  ").unwrap(),
+            "CommandOrControl+Shift+I"
+        );
+        assert_eq!(DEFAULT_ISLAND_TOGGLE_SHORTCUT, "CommandOrControl+Shift+I");
+        assert_eq!(ISLAND_TOGGLE_SHORTCUT_CONFIG_KEY, "island.toggle_shortcut");
+    }
+
+    #[test]
+    fn normalize_island_toggle_shortcut_rejects_empty_values() {
+        assert!(normalize_island_toggle_shortcut("").is_err());
+    }
 }

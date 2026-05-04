@@ -60,14 +60,7 @@ export function SettingsNav({
       <aside className="hidden md:block md:w-[292px] md:shrink-0">
         <div className="sticky top-0 overflow-hidden rounded-[26px] border border-[var(--hairline-strong)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--panel-bg)_78%,white_22%)_0%,color-mix(in_srgb,var(--panel-bg-inset)_82%,white_18%)_100%)] p-3 shadow-[var(--elev-floating)]">
           <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-[linear-gradient(90deg,transparent,var(--accent-border),transparent)]" />
-          <div className="relative mb-4 px-2 pt-1">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[var(--ink-3)]">
-              Settings Rail
-            </p>
-            <p className="mt-1 text-[13px] leading-5 text-[var(--ink-2)]">
-              Choose the control plane you want to tune. Runtime-heavy sections stay grouped together.
-            </p>
-          </div>
+      
 
           <nav className="flex flex-col gap-1.5">
             {visibleItems.map((item, index) => {

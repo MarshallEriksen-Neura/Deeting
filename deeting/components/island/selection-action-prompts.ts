@@ -19,11 +19,19 @@ const ACTION_LABELS: Record<Exclude<IslandSelectionActionKind, "copy">, string> 
 
 function buildInstruction(
   kind: Exclude<IslandSelectionActionKind, "copy">,
+  context: IslandSelectionContext,
   options: SelectionActionPromptOptions,
 ) {
   switch (kind) {
     case "translate": {
-      const source = options.translateSource?.trim() || "auto-detected source language"
+      const detectedSource =
+        context.detectedLanguage.code !== "unknown"
+          ? context.detectedLanguage.displayName
+          : null
+      const source =
+        options.translateSource?.trim() ||
+        detectedSource ||
+        "auto-detected source language"
       const target = options.translateTarget?.trim() || "the user's current language"
       return [
         `Translate the selected text from ${source} into ${target}.`,
@@ -53,7 +61,7 @@ export function buildSelectionActionPrompt(
     context.text,
     "",
     "[Action]",
-    `${ACTION_LABELS[kind]}: ${buildInstruction(kind, options)}`,
+    `${ACTION_LABELS[kind]}: ${buildInstruction(kind, context, options)}`,
   ]
 
   if (kind === "ask" && question) {
