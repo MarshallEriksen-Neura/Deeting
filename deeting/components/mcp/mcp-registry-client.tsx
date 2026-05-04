@@ -7,8 +7,8 @@ import { useTranslations } from "next-intl";
 import { mapDesktopToolRecordToTool } from "@/lib/mcp/registry-mappers";
 import { DESKTOP_MCP_COMMANDS } from "@/lib/api/mcp-desktop";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
-import { GlassCard } from "@/components/ui/common/glass-card";
 import { useNotifications } from "@/components/contexts/notification-context";
+import { cn } from "@/lib/utils";
 import type { MCPLogEntry, MCPSource, MCPTool, McpToolRecord } from "@/types/mcp";
 import {
   useMcpRegistryClearLogsAction,
@@ -376,58 +376,15 @@ export function MCPRegistryClient({
   const visibleSources = sources.filter((source) => source.type !== "cloud");
 
   return (
-    <div className="relative min-h-0 w-full min-w-0 space-y-8">
+    <div className="relative min-h-0 w-full min-w-0 space-y-5">
       <RegistryHeader onCreateManual={handleImportConfig} />
 
-      {/* KPI Dashboard */}
       {runtimeGroups.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          {(() => {
-            const runningCount = runtimeGroups.filter((g) => g.runningCount > 0).length
-            const stoppedCount = runtimeGroups.length - runningCount
-            return (
-              <>
-                <GlassCard padding="sm" hover="none" className="flex flex-col gap-1">
-                  <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">
-                    {t("kpi.total")}
-                  </span>
-                  <span className="font-mono text-[22px] font-semibold leading-none tracking-[-0.5px] text-[var(--ink)]">
-                    {runtimeGroups.length}
-                  </span>
-                </GlassCard>
-                <GlassCard padding="sm" hover="none" theme="primary" className="flex flex-col gap-1">
-                  <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">
-                    {t("kpi.running")}
-                  </span>
-                  <span className="font-mono text-[22px] font-semibold leading-none tracking-[-0.5px] text-[var(--ok)]">
-                    {runningCount}
-                  </span>
-                </GlassCard>
-                <GlassCard padding="sm" hover="none" className="flex flex-col gap-1">
-                  <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">
-                    {t("kpi.stopped")}
-                  </span>
-                  <span className="font-mono text-[22px] font-semibold leading-none tracking-[-0.5px] text-[var(--ink-3)]">
-                    {stoppedCount}
-                  </span>
-                </GlassCard>
-                <GlassCard
-                  padding="sm"
-                  hover="none"
-                  theme={conflictCount > 0 ? "primary" : "default"}
-                  className="flex flex-col gap-1"
-                >
-                  <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--ink-3)]">
-                    {t("kpi.conflicts")}
-                  </span>
-                  <span className="font-mono text-[22px] font-semibold leading-none tracking-[-0.5px] text-[var(--warn)]">
-                    {conflictCount}
-                  </span>
-                </GlassCard>
-              </>
-            )
-          })()}
-        </div>
+        <RuntimeSummaryBar
+          total={runtimeGroups.length}
+          running={runtimeGroups.filter((group) => group.runningCount > 0).length}
+          conflicts={conflictCount}
+        />
       )}
 
       <SupplyChainSection
@@ -524,6 +481,52 @@ export function MCPRegistryClient({
         onOpenChange={handleConflictOpenChange}
         onResolve={handleResolveConflict}
       />
+    </div>
+  );
+}
+
+function RuntimeSummaryBar({
+  total,
+  running,
+  conflicts,
+}: {
+  total: number;
+  running: number;
+  conflicts: number;
+}) {
+  const t = useTranslations("mcp");
+  const stopped = total - running;
+  const items = [
+    { label: t("kpi.total"), value: total, tone: "ink" },
+    { label: t("kpi.running"), value: running, tone: "ok" },
+    { label: t("kpi.stopped"), value: stopped, tone: "muted" },
+    { label: t("kpi.conflicts"), value: conflicts, tone: "warn" },
+  ];
+
+  return (
+    <div className="flex h-10 items-center justify-between rounded-[var(--r-12)] border border-[var(--hairline)] bg-[var(--panel-bg)] px-3 shadow-[var(--elev-inset-hi)]">
+      <div className="flex items-center gap-2 text-[12px] font-medium text-[var(--ink-3)]">
+        <span className="h-2 w-2 rounded-full bg-[var(--ok)]" />
+        {t("runtime.title")}
+      </div>
+      <div className="flex items-center gap-5">
+        {items.map((item) => (
+          <div key={item.label} className="flex items-center gap-1.5 text-[12px] text-[var(--ink-3)]">
+            <span>{item.label}</span>
+            <span
+              className={cn(
+                "font-mono text-[13px] font-semibold tabular-nums",
+                item.tone === "ok" && "text-[var(--ok)]",
+                item.tone === "warn" && "text-[var(--warn)]",
+                item.tone === "muted" && "text-[var(--ink-3)]",
+                item.tone === "ink" && "text-[var(--ink)]"
+              )}
+            >
+              {item.value}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

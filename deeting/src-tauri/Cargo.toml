@@ -86,3 +86,23 @@ encoding_rs = "0.8"
 rand_distr = "0.4"
 # Office file generation
 zip = "0.6"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+clipboard-win = "5.4.1"
+windows = { version = "0.61.3", features = [
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_System_DataExchange",
+  "Win32_UI_Accessibility",
+  "Win32_UI_Input_KeyboardAndMouse",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+core-graphics = "0.24"
+libc = "0.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+atspi-common = "0.13.0"
+atspi-connection = { version = "0.13.0", default-features = false }
+atspi-proxies = { version = "0.13.0", default-features = false }

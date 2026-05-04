@@ -4,6 +4,11 @@ import { createContext, useContext } from "react";
 import type { IslandApproval, IslandMode, IslandRecentMessage } from "./island-store";
 import type { IslandStatusStep } from "./island-runtime-status";
 import type { IslandBrowserLookupPayload } from "./browser-lookup-types";
+import type {
+  IslandSelectionActionKind,
+  IslandSelectionContext,
+} from "./selection-context-types";
+import type { SelectionActionPromptOptions } from "./selection-action-prompts";
 
 export interface IslandContextValue {
   mode: IslandMode;
@@ -14,6 +19,7 @@ export interface IslandContextValue {
   recentMessages: IslandRecentMessage[];
   pendingApproval: IslandApproval | null;
   browserLookup: IslandBrowserLookupPayload | null;
+  selectionContext: IslandSelectionContext | null;
   isBusy: boolean;
   errorMessage: string | null;
   statusStage: string | null;
@@ -38,6 +44,11 @@ export interface IslandContextValue {
   rejectPendingApproval: () => Promise<void>;
   attachBrowserLookup: (lookupId: string, prompt: string) => Promise<void> | void;
   dismissBrowserLookup: (lookupId: string) => Promise<void> | void;
+  runSelectionAction: (
+    kind: IslandSelectionActionKind,
+    options?: SelectionActionPromptOptions
+  ) => Promise<void> | void;
+  dismissSelectionContext: (selectionId?: string | null) => Promise<void> | void;
 }
 
 const IslandContext = createContext<IslandContextValue | null>(null);

@@ -23,6 +23,17 @@ import {
 import type {
   IslandBrowserLookupPayload,
 } from "./browser-lookup-types";
+import {
+  buildSelectionActionPrompt,
+  buildSelectionActionSummary,
+  type SelectionActionPromptOptions,
+} from "./selection-action-prompts";
+import type {
+  IslandSelectionActionKind,
+  IslandSelectionCapturedPayload,
+  IslandSelectionContext,
+} from "./selection-context-types";
+import { toIslandSelectionContext } from "./selection-context-types";
 
 export interface IslandRecentMessage {
   role: "user" | "assistant";
@@ -64,6 +75,7 @@ interface IslandState {
   recentMessages: IslandRecentMessage[];
   pendingApproval: IslandApproval | null;
   browserLookup: IslandBrowserLookupPayload | null;
+  selectionContext: IslandSelectionContext | null;
   isBusy: boolean;
   errorMessage: string | null;
   statusStage: string | null;
@@ -79,6 +91,12 @@ interface IslandState {
   hydrateFromChat: (snapshot: IslandChatSnapshot) => void;
   presentBrowserLookup: (payload: IslandBrowserLookupPayload) => void;
   clearBrowserLookup: (lookupId?: string | null) => void;
+  presentSelectionContext: (payload: IslandSelectionCapturedPayload) => void;
+  clearSelectionContext: (selectionId?: string | null) => void;
+  runSelectionAction: (
+    kind: IslandSelectionActionKind,
+    options?: SelectionActionPromptOptions
+  ) => Promise<void>;
   sendQuickReply: (text: string) => Promise<void>;
   approvePendingApproval: () => Promise<void>;
   rejectPendingApproval: () => Promise<void>;
@@ -306,6 +324,7 @@ export const useIslandStore = create<IslandState>((set) => ({
   recentMessages: [],
   pendingApproval: null,
   browserLookup: null,
+  selectionContext: null,
   isBusy: false,
   errorMessage: null,
   statusStage: null,
@@ -380,6 +399,166 @@ export const useIslandStore = create<IslandState>((set) => ({
           ? state.browserLookup
           : null,
     })),
+  presentSelectionContext: (payload) =>
+    set({
+      mode: "expanded",
+      selectionContext: toIslandSelectionContext(payload),
+      statusLabel: payload.text.trim().length > 0 ? "Ready" : "Needs attention",
+      errorMessage: null,
+    }),
+  clearSelectionContext: (selectionId) =>
+    set((state) => ({
+      selectionContext:
+        !state.selectionContext ||
+        (selectionId && state.selectionContext.selectionId !== selectionId)
+          ? state.selectionContext
+          : null,
+    })),
+  runSelectionAction: async (kind, options = {}) => {
+    const context = useIslandStore.getState().selectionContext;
+    if (!context) return;
+
+    if (kind === "ask" && !options.question?.trim()) {
+      set({
+        selectionContext: { ...context, activeAction: "ask" },
+        mode: "expanded",
+        errorMessage: null,
+        statusLabel: "Ready",
+      });
+      return;
+    }
+
+    if (kind === "copy") {
+      try {
+        await navigator.clipboard.writeText(context.text);
+        set({
+          selectionContext: { ...context, activeAction: "copy" },
+          statusLabel: "Ready",
+          errorMessage: null,
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to copy selection";
+        set({ errorMessage: message, statusLabel: "Needs attention" });
+      }
+      return;
+    }
+
+    const previousState = useIslandStore.getState();
+    const requestConfig = resolveCurrentIslandChatRequest();
+    if (!requestConfig) {
+      set({ errorMessage: "No chat model selected" });
+      return;
+    }
+
+    const prompt = buildSelectionActionPrompt(kind, context, options);
+    const summary = buildSelectionActionSummary(kind, context, options);
+    let streamErrorMessage: string | null = null;
+
+    set({
+      isBusy: true,
+      mode: "expanded",
+      selectionContext: { ...context, activeAction: kind },
+      errorMessage: null,
+      statusLabel: "Working...",
+      summaryText: truncate(summary, 52),
+      recentMessages: buildOptimisticRecentMessages(
+        previousState.recentMessages,
+        summary,
+      ),
+      pendingApproval: null,
+      statusStage: "listen",
+      statusCode: null,
+      statusMeta: null,
+      stageHistory: [],
+    });
+
+    try {
+      const sessionId = await ensureSessionId();
+      await streamIslandTextConversation(sessionId, prompt, requestConfig, {
+        onDelta: (_delta, snapshot) => {
+          set((state) => ({
+            statusLabel: "Working...",
+            lastReplyText: truncate(snapshot, 220),
+            lastReplyAt: Date.now(),
+            recentMessages: upsertStreamingAssistantPreview(
+              state.recentMessages,
+              snapshot,
+            ),
+          }));
+        },
+        onMessage: (data) => {
+          if (
+            data &&
+            typeof data === "object" &&
+            "type" in data &&
+            (data as { type?: string }).type === "status"
+          ) {
+            const streamStatus = data as {
+              stage?: string | null;
+              code?: string | null;
+              meta?: Record<string, unknown> | null;
+            };
+            set((state) => {
+              const runtimeStatus = resolveIslandRuntimeStatus(
+                {
+                  ...getChatSnapshot(),
+                  statusStage: streamStatus.stage ?? null,
+                  statusCode: streamStatus.code ?? null,
+                  statusMeta: streamStatus.meta ?? null,
+                },
+                state.pendingApproval,
+                state.stageHistory
+              );
+              return {
+                statusStage: runtimeStatus.statusStage,
+                statusCode: runtimeStatus.statusCode,
+                statusMeta: runtimeStatus.statusMeta,
+                stageHistory: runtimeStatus.stageHistory,
+              };
+            });
+            return;
+          }
+          if (
+            data &&
+            typeof data === "object" &&
+            "type" in data &&
+            (data as { type?: string }).type === "error"
+          ) {
+            const message = (data as { message?: unknown }).message;
+            streamErrorMessage =
+              typeof message === "string"
+                ? message
+                : "Selection action failed";
+          }
+        },
+      });
+      if (streamErrorMessage) {
+        throw new Error(streamErrorMessage);
+      }
+      await syncChatHistory(sessionId);
+      useIslandStore.getState().hydrateFromChat(getChatSnapshot());
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Selection action failed";
+      set({
+        statusLabel: previousState.statusLabel,
+        summaryText: previousState.summaryText,
+        lastReplyText: previousState.lastReplyText,
+        lastReplyAt: previousState.lastReplyAt,
+        recentMessages: previousState.recentMessages,
+        pendingApproval: previousState.pendingApproval,
+        selectionContext: previousState.selectionContext,
+        errorMessage: message,
+        statusStage: previousState.statusStage,
+        statusCode: previousState.statusCode,
+        statusMeta: previousState.statusMeta,
+        stageHistory: previousState.stageHistory,
+      });
+    } finally {
+      set({ isBusy: false });
+    }
+  },
   sendQuickReply: async (text) => {
     const trimmed = text.trim();
     if (!trimmed) return;

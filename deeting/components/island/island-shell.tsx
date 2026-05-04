@@ -18,6 +18,7 @@ import type {
   IslandBrowserLookupDismissPayload,
   IslandBrowserLookupPayload,
 } from "./browser-lookup-types";
+import type { IslandSelectionCapturedPayload } from "./selection-context-types";
 
 type IslandActionCompletedPayload = {
   sessionId?: string | null;
@@ -37,6 +38,7 @@ export function IslandShell() {
       recentMessages: s.recentMessages,
       pendingApproval: s.pendingApproval,
       browserLookup: s.browserLookup,
+      selectionContext: s.selectionContext,
       isBusy: s.isBusy,
       errorMessage: s.errorMessage,
       statusStage: s.statusStage,
@@ -49,6 +51,7 @@ export function IslandShell() {
       toggleExpand: s.toggleExpand,
       restoreWorkspace: s.restoreWorkspace,
       sendQuickReply: s.sendQuickReply,
+      runSelectionAction: s.runSelectionAction,
       approvePendingApproval: s.approvePendingApproval,
       rejectPendingApproval: s.rejectPendingApproval,
     })),
@@ -56,6 +59,8 @@ export function IslandShell() {
   const presentBrowserLookup = useIslandStore((s) => s.presentBrowserLookup);
   const clearBrowserLookup = useIslandStore((s) => s.clearBrowserLookup);
   const attachBrowserLookup = useIslandStore((s) => s.attachBrowserLookup);
+  const presentSelectionContext = useIslandStore((s) => s.presentSelectionContext);
+  const clearSelectionContext = useIslandStore((s) => s.clearSelectionContext);
 
   const { mode } = storeValues;
   const autoCollapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -245,6 +250,7 @@ export function IslandShell() {
           recentMessages: state.recentMessages,
           pendingApproval: state.pendingApproval,
           browserLookup: state.browserLookup,
+          selectionContext: state.selectionContext,
           isBusy: state.isBusy,
           errorMessage: state.errorMessage,
           statusStage: state.statusStage,
@@ -324,10 +330,17 @@ export function IslandShell() {
     let unlistenLookup: (() => void) | undefined;
     let unlistenAttach: (() => void) | undefined;
     let unlistenDismiss: (() => void) | undefined;
+    let unlistenSelection: (() => void) | undefined;
 
     (async () => {
       try {
         const { listen, emit } = await import("@tauri-apps/api/event");
+        unlistenSelection = await listen<IslandSelectionCapturedPayload>(
+          "island:selection-captured",
+          (event) => {
+            presentSelectionContext(event.payload);
+          },
+        );
         unlistenLookup = await listen<IslandBrowserLookupPayload>(
           "browser-agent-lookup",
           (event) => {
@@ -358,11 +371,12 @@ export function IslandShell() {
     })();
 
     return () => {
+      unlistenSelection?.();
       unlistenLookup?.();
       unlistenAttach?.();
       unlistenDismiss?.();
     };
-  }, [attachBrowserLookup, clearBrowserLookup, presentBrowserLookup]);
+  }, [attachBrowserLookup, clearBrowserLookup, presentBrowserLookup, presentSelectionContext]);
 
   if (mode === "hidden") return null;
 
@@ -372,6 +386,7 @@ export function IslandShell() {
         ...storeValues,
         attachBrowserLookup,
         dismissBrowserLookup: clearBrowserLookup,
+        dismissSelectionContext: clearSelectionContext,
         collapsedHighlight,
       }}
     >

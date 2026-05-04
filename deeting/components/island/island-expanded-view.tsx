@@ -17,6 +17,7 @@ import type { IslandRecentMessage } from "./island-store";
 import { IslandApprovalCard } from "./island-approval-card";
 import { resolveIslandStatusLabelKey } from "./island-labels";
 import { IslandQuickReply } from "./island-quick-reply";
+import { IslandSelectionPanel } from "./island-selection-panel";
 import { IslandSeedLogo } from "./island-seed-logo";
 import { IslandStatusTimeline } from "./island-status-timeline";
 import { useIslandContext } from "./island-context";
@@ -281,6 +282,7 @@ export function IslandExpandedView({
     recentMessages,
     pendingApproval,
     browserLookup,
+    selectionContext,
     isBusy,
     errorMessage,
     statusStage,
@@ -289,11 +291,13 @@ export function IslandExpandedView({
     stageHistory,
     collapse,
     sendQuickReply,
+    runSelectionAction,
     approvePendingApproval,
     rejectPendingApproval,
     restoreWorkspace,
     attachBrowserLookup,
     dismissBrowserLookup,
+    dismissSelectionContext,
   } = useIslandContext();
   const t = useI18n("chat");
 
@@ -309,6 +313,10 @@ export function IslandExpandedView({
   const showTimeline = Boolean(
     statusStage || statusCode || stageHistory.length > 0 || pendingApproval,
   );
+  const sendFooterReply =
+    selectionContext?.activeAction === "ask"
+      ? (text: string) => runSelectionAction("ask", { question: text })
+      : sendQuickReply;
 
   return (
     <motion.div
@@ -375,6 +383,32 @@ export function IslandExpandedView({
         className="min-h-0 flex-1 overflow-y-auto island-content-scrollbar"
       >
         <motion.div variants={itemVariants} className="space-y-3 px-3.5 pb-3">
+          {pendingApproval ? (
+            <motion.div variants={itemVariants}>
+              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/40">
+                {t("island.approvalTitle")}
+              </p>
+              <IslandApprovalCard
+                title={pendingApproval.title}
+                desc={pendingApproval.desc}
+                onApprove={approvePendingApproval}
+                onReject={rejectPendingApproval}
+                disabled={isBusy}
+              />
+            </motion.div>
+          ) : null}
+          {selectionContext && !pendingApproval ? (
+            <IslandSelectionPanel
+              selection={selectionContext}
+              isBusy={isBusy}
+              onRunAction={(kind, options) => {
+                void runSelectionAction(kind, options);
+              }}
+              onDismiss={(selectionId) => {
+                void dismissSelectionContext(selectionId);
+              }}
+            />
+          ) : null}
           {browserLookup ? (
             <IslandBrowserLookupCard
               lookup={browserLookup}
@@ -406,20 +440,6 @@ export function IslandExpandedView({
               message={latestUserMessage}
               requestLabel={t("island.requestLabel")}
             />
-          ) : null}
-          {pendingApproval ? (
-            <motion.div variants={itemVariants}>
-              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/40">
-                {t("island.approvalTitle")}
-              </p>
-              <IslandApprovalCard
-                title={pendingApproval.title}
-                desc={pendingApproval.desc}
-                onApprove={approvePendingApproval}
-                onReject={rejectPendingApproval}
-                disabled={isBusy}
-              />
-            </motion.div>
           ) : null}
           <IslandAssistantPanel
             message={latestAssistantMessage}
@@ -471,10 +491,12 @@ export function IslandExpandedView({
         >
           <div className="flex items-center gap-2 rounded-[22px] bg-white/48 px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.58)] dark:bg-white/5">
             <div className="hidden min-w-0 rounded-[18px] bg-white/42 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/42 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] md:block">
-              {t("island.continueHere")}
+              {selectionContext?.activeAction === "ask"
+                ? t("island.selection.askFooter")
+                : t("island.continueHere")}
             </div>
             <div className="min-w-0 flex-1">
-              <IslandQuickReply onSend={sendQuickReply} disabled={isBusy} />
+              <IslandQuickReply onSend={sendFooterReply} disabled={isBusy} />
             </div>
             <button
               onClick={restoreWorkspace}

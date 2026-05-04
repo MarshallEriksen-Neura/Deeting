@@ -20,7 +20,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tauri::{App, AppHandle, Listener, Manager};
+use tauri::{App, AppHandle, Emitter, Listener, Manager};
 use tauri_plugin_log::{Target, TargetKind};
 
 const DESKTOP_RUNTIME_DEBUG_LOG_TARGET_PREFIXES: &[&str] =
@@ -507,9 +507,13 @@ fn spawn_background_tasks(_handle: AppHandle, sync_state: AppState) {
 fn setup_shortcuts(app: &App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
     const MAIN_WINDOW_SHORTCUT: &str = "CommandOrControl+Shift+D";
+    const SELECTION_ASSISTANT_SHORTCUT: &str = "CommandOrControl+Shift+Space";
     let shortcut_manager = app.global_shortcut();
     if shortcut_manager.is_registered(MAIN_WINDOW_SHORTCUT) {
         let _ = shortcut_manager.unregister(MAIN_WINDOW_SHORTCUT);
+    }
+    if shortcut_manager.is_registered(SELECTION_ASSISTANT_SHORTCUT) {
+        let _ = shortcut_manager.unregister(SELECTION_ASSISTANT_SHORTCUT);
     }
     if let Err(err) = shortcut_manager.on_shortcut(MAIN_WINDOW_SHORTCUT, |app, _shortcut, event| {
         if event.state == ShortcutState::Pressed {
@@ -525,6 +529,36 @@ fn setup_shortcuts(app: &App) -> Result<(), Box<dyn std::error::Error>> {
     }) {
         warn!(
             "global shortcut registration skipped ({MAIN_WINDOW_SHORTCUT}): {}",
+            err
+        );
+    }
+    if let Err(err) =
+        shortcut_manager.on_shortcut(SELECTION_ASSISTANT_SHORTCUT, |app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                let app_handle = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let capture = tauri::async_runtime::spawn_blocking(
+                        crate::modules::selection_assistant::capture::capture_active_selection,
+                    )
+                    .await
+                    .unwrap_or_else(|err| {
+                        log::warn!("selection assistant capture task failed: {err}");
+                        crate::modules::selection_assistant::capture::unavailable_capture_result(
+                            format!("capture task failed: {err}"),
+                        )
+                    });
+
+                    if let Some(island) = app_handle.get_webview_window("island") {
+                        let _ = island.show();
+                        let _ = island.set_focus();
+                    }
+                    let _ = app_handle.emit("island:selection-captured", capture);
+                });
+            }
+        })
+    {
+        warn!(
+            "global shortcut registration skipped ({SELECTION_ASSISTANT_SHORTCUT}): {}",
             err
         );
     }

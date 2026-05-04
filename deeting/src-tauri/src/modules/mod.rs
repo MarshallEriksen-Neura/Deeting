@@ -30,6 +30,7 @@ pub mod render_runtime;
 pub mod retrieval_kernel;
 pub mod sandbox;
 pub mod scan;
+pub mod selection_assistant;
 pub mod skill_runtime;
 pub mod skills;
 pub mod voice;

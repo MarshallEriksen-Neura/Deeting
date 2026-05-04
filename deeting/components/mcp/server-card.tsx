@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Terminal, AlertCircle, Trash2 } from "lucide-react"
+import { Pencil, Play, RefreshCw, Terminal, AlertCircle, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/shadcn/badge"
 import { Card } from "@/components/ui/shadcn/card"
 import { Switch } from "@/components/ui/shadcn/switch"
@@ -116,13 +116,8 @@ const statusTheme: Record<MCPToolStatus, {
 
 const StatusDot = ({ status }: { status: MCPToolStatus }) => {
   const theme = statusTheme[status]
-  const showPing = status === "healthy" || status === "starting" || status === "updating"
-
   return (
     <span className="relative flex h-[6px] w-[6px] shrink-0 items-center justify-center">
-      {showPing && (
-        <span className={cn("animate-ping absolute inline-flex h-[12px] w-[12px] rounded-full opacity-40", theme.dotPing || theme.dot)} />
-      )}
       <span className={cn("relative inline-flex rounded-full h-[6px] w-[6px]", theme.dot)} />
     </span>
   )
@@ -173,28 +168,18 @@ export function ServerCard({
       layout
       variants={itemVariants}
       className={cn(
-        "group relative rounded-[var(--r-18)] p-[6px] transition-all duration-[220ms] ease-[cubic-bezier(0.32,0.72,0,1)]",
-        "bg-[var(--panel-bg-inset)] ring-1 ring-[var(--hairline)] hover:ring-[var(--hairline-strong)]",
-        "shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
-        (showConflict || showUpdate) && "ring-[var(--warn-border)] bg-[var(--warn-soft)]"
+        "group relative rounded-[var(--r-12)] transition-all duration-[220ms] ease-[cubic-bezier(0.32,0.72,0,1)]",
+        "border border-[var(--hairline)] bg-[var(--panel-bg)] hover:border-[var(--hairline-strong)] hover:bg-[var(--panel-bg-inset)]/45",
+        "shadow-[var(--elev-inset-hi)]",
+        (showConflict || showUpdate) && "border-[var(--warn-border)] bg-[var(--warn-soft)]/50"
       )}
     >
       <Card className={cn(
         "relative flex flex-col gap-0 overflow-hidden border-0 py-0",
-        "rounded-[calc(var(--r-18)-6px)] bg-[var(--panel-bg)] ring-1 ring-[var(--hairline)]",
-        "shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
-        isCompact ? "h-full" : "min-h-[160px]"
+        "rounded-[var(--r-12)] bg-transparent shadow-none",
+        isCompact ? "h-full min-h-[118px]" : "min-h-[150px]"
       )}>
-        {/* Top Status Gradient */}
-        <div
-          className={cn(
-            "absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r transition-all duration-500",
-            theme.bar,
-            !isActive && "opacity-30 grayscale-[50%]"
-          )}
-        />
-
-        <div className={cn("flex flex-1 flex-col", isCompact ? "gap-2.5 p-3.5" : "gap-3 p-4")}>
+        <div className={cn("flex flex-1 flex-col", isCompact ? "gap-2 p-3" : "gap-3 p-4")}>
           {/* Header Row */}
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-start gap-3">
@@ -205,8 +190,8 @@ export function ServerCard({
                     <div
                       className={cn(
                         "relative shrink-0 transition-all duration-[320ms]",
-                        "rounded-[var(--r-10)] border shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]",
-                        isCompact ? "p-2" : "p-2.5",
+                        "rounded-[var(--r-9)] border shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]",
+                        isCompact ? "p-1.5" : "p-2.5",
                         isActive ? theme.iconBg : isSynced ? "bg-[var(--accent-soft)] border-[var(--accent-border)]" : "bg-[var(--panel-bg-inset)] border-[var(--hairline)]"
                       )}
                     >
@@ -271,7 +256,7 @@ export function ServerCard({
                   </AnimatePresence>
                 </div>
 
-                <div className="flex items-center flex-wrap gap-1.5 text-[11px] font-medium uppercase tracking-[0.02em]">
+                <div className="flex items-center flex-wrap gap-1.5 text-[11px] font-medium tracking-[0.02em]">
                   <div className="flex items-center gap-1.5 rounded-[var(--r-4)] bg-[var(--panel-bg-inset)] px-1.5 py-[2px] ring-1 ring-[var(--hairline)]">
                     <StatusDot status={tool.status} />
                     <span className={theme.label}>{t(`tool.status.${tool.status}`)}</span>
@@ -303,6 +288,37 @@ export function ServerCard({
                     className="scale-[0.8] data-[state=checked]:bg-[var(--accent-strong)]"
                   />
                 </div>
+              )}
+
+              {onPrimaryAction && (
+                <button
+                  type="button"
+                  className="flex h-[28px] w-[28px] items-center justify-center rounded-[var(--r-6)] bg-transparent text-[var(--ink-3)] transition-colors hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-strong)] focus-visible:ring-offset-[var(--window-bg)]"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPrimaryAction(); }}
+                >
+                  <Play size={14} />
+                </button>
+              )}
+
+              {onSync && (
+                <button
+                  type="button"
+                  className="flex h-[28px] w-[28px] items-center justify-center rounded-[var(--r-6)] bg-transparent text-[var(--ink-3)] transition-colors hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-strong)] focus-visible:ring-offset-[var(--window-bg)]"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSync(); }}
+                  disabled={syncLoading}
+                >
+                  <RefreshCw size={14} className={syncLoading ? "animate-spin text-[var(--accent-strong)]" : undefined} />
+                </button>
+              )}
+
+              {onEdit && (
+                <button
+                  type="button"
+                  className="flex h-[28px] w-[28px] items-center justify-center rounded-[var(--r-6)] bg-transparent text-[var(--ink-3)] transition-colors hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-strong)] focus-visible:ring-offset-[var(--window-bg)]"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(); }}
+                >
+                  <Pencil size={14} />
+                </button>
               )}
 
               {onDelete && (
@@ -345,7 +361,7 @@ export function ServerCard({
           </div>
 
           {/* Description */}
-          <div className="flex-1 mt-1">
+          <div className="flex-1 mt-0.5">
             <p className={cn(
               "text-[var(--ink-2)] font-normal leading-[1.5] tracking-[0]",
               isCompact ? "line-clamp-1 text-[12px]" : "line-clamp-2 text-[13px]"
@@ -364,7 +380,7 @@ export function ServerCard({
                   </div>
                 </motion.div>
               )}
-              {tool.indexStatus === "missing" && (
+              {showIndexMissing && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
                   <div className="mt-2 rounded-[var(--r-6)] bg-[var(--accent-soft)] px-2.5 py-1.5 border border-[var(--accent-border)]">
                     <span className="text-[11px] text-[var(--accent-ink)]">

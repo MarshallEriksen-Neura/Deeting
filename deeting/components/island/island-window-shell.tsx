@@ -17,6 +17,7 @@ import type {
   IslandBrowserLookupDismissPayload,
   IslandBrowserLookupPayload,
 } from "./browser-lookup-types";
+import type { IslandSelectionCapturedPayload } from "./selection-context-types";
 
 const COLLAPSED_SIZE = { width: 372, height: 64 };
 const EXPANDED_SIZE = { width: 592, height: 548 };
@@ -118,6 +119,7 @@ export function IslandWindowShell() {
       recentMessages: s.recentMessages,
       pendingApproval: s.pendingApproval,
       browserLookup: s.browserLookup,
+      selectionContext: s.selectionContext,
       isBusy: s.isBusy,
       errorMessage: s.errorMessage,
       statusStage: s.statusStage,
@@ -131,7 +133,9 @@ export function IslandWindowShell() {
       restoreWorkspace: s.restoreWorkspace,
       attachBrowserLookup: s.attachBrowserLookup,
       dismissBrowserLookup: s.clearBrowserLookup,
+      dismissSelectionContext: s.clearSelectionContext,
       sendQuickReply: s.sendQuickReply,
+      runSelectionAction: s.runSelectionAction,
       approvePendingApproval: s.approvePendingApproval,
       rejectPendingApproval: s.rejectPendingApproval,
     })),
@@ -140,6 +144,7 @@ export function IslandWindowShell() {
   const syncFromEvent = useIslandWindowStore((s) => s.syncFromEvent);
   const presentBrowserLookup = useIslandWindowStore((s) => s.presentBrowserLookup);
   const clearBrowserLookup = useIslandWindowStore((s) => s.clearBrowserLookup);
+  const presentSelectionContext = useIslandWindowStore((s) => s.presentSelectionContext);
   const mode = store.mode;
   const autoCollapseTimerRef = React.useRef<ReturnType<
     typeof setTimeout
@@ -274,6 +279,7 @@ export function IslandWindowShell() {
     let unlisten: (() => void) | undefined;
     let unlistenLookup: (() => void) | undefined;
     let unlistenDismiss: (() => void) | undefined;
+    let unlistenSelection: (() => void) | undefined;
 
     (async () => {
       const { listen } = await import("@tauri-apps/api/event");
@@ -281,6 +287,12 @@ export function IslandWindowShell() {
         "island:state-sync",
         (event) => {
           syncFromEvent(event.payload);
+        },
+      );
+      unlistenSelection = await listen<IslandSelectionCapturedPayload>(
+        "island:selection-captured",
+        (event) => {
+          presentSelectionContext(event.payload);
         },
       );
       unlistenLookup = await listen<IslandBrowserLookupPayload>(
@@ -299,10 +311,11 @@ export function IslandWindowShell() {
 
     return () => {
       unlisten?.();
+      unlistenSelection?.();
       unlistenLookup?.();
       unlistenDismiss?.();
     };
-  }, [clearBrowserLookup, presentBrowserLookup, syncFromEvent]);
+  }, [clearBrowserLookup, presentBrowserLookup, presentSelectionContext, syncFromEvent]);
 
   // Resize window when mode changes
   useEffect(() => {
@@ -312,11 +325,13 @@ export function IslandWindowShell() {
         mode === "expanded"
           ? hasPendingApproval
             ? APPROVAL_FOCUSED_SIZE
-            : EXPANDED_SIZE
+            : store.selectionContext
+              ? { width: 592, height: 620 }
+              : EXPANDED_SIZE
           : COLLAPSED_SIZE;
       await invoke("set_island_size", size);
     })();
-  }, [hasPendingApproval, mode]);
+  }, [hasPendingApproval, mode, store.selectionContext]);
 
   // Position management: restore saved position, snap to edges after drag
   const positionInitRef = React.useRef(false);

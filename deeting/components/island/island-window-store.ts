@@ -27,6 +27,17 @@ import {
   type IslandStatusStep,
   resolveIslandRuntimeStatus,
 } from "./island-runtime-status";
+import {
+  buildSelectionActionPrompt,
+  buildSelectionActionSummary,
+  type SelectionActionPromptOptions,
+} from "./selection-action-prompts";
+import type {
+  IslandSelectionActionKind,
+  IslandSelectionCapturedPayload,
+  IslandSelectionContext,
+} from "./selection-context-types";
+import { toIslandSelectionContext } from "./selection-context-types";
 
 interface IslandWindowState {
   mode: IslandMode;
@@ -37,6 +48,7 @@ interface IslandWindowState {
   recentMessages: IslandRecentMessage[];
   pendingApproval: IslandApproval | null;
   browserLookup: IslandBrowserLookupPayload | null;
+  selectionContext: IslandSelectionContext | null;
   isBusy: boolean;
   errorMessage: string | null;
   sessionId: string | null;
@@ -55,6 +67,12 @@ interface IslandWindowState {
   syncFromEvent: (payload: IslandSyncPayload) => void;
   presentBrowserLookup: (payload: IslandBrowserLookupPayload) => void;
   clearBrowserLookup: (lookupId?: string | null) => void;
+  presentSelectionContext: (payload: IslandSelectionCapturedPayload) => void;
+  clearSelectionContext: (selectionId?: string | null) => void;
+  runSelectionAction: (
+    kind: IslandSelectionActionKind,
+    options?: SelectionActionPromptOptions
+  ) => Promise<void>;
   sendQuickReply: (text: string) => Promise<void>;
   approvePendingApproval: () => Promise<void>;
   rejectPendingApproval: () => Promise<void>;
@@ -70,6 +88,7 @@ export interface IslandSyncPayload {
   recentMessages: IslandRecentMessage[];
   pendingApproval: IslandApproval | null;
   browserLookup?: IslandBrowserLookupPayload | null;
+  selectionContext?: IslandSelectionContext | null;
   isBusy: boolean;
   errorMessage: string | null;
   sessionId: string | null;
@@ -163,6 +182,7 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
   recentMessages: [],
   pendingApproval: null,
   browserLookup: null,
+  selectionContext: null,
   isBusy: false,
   errorMessage: null,
   sessionId: null,
@@ -201,6 +221,7 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
         statusCode: payload.statusCode ?? state.statusCode,
         statusMeta: payload.statusMeta ?? state.statusMeta,
         stageHistory: payload.stageHistory ?? state.stageHistory,
+        selectionContext: payload.selectionContext ?? state.selectionContext,
       }));
       return;
     }
@@ -213,6 +234,7 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
       recentMessages: payload.recentMessages,
       pendingApproval: payload.pendingApproval,
       browserLookup: payload.browserLookup ?? null,
+      selectionContext: payload.selectionContext ?? null,
       isBusy: payload.isBusy,
       errorMessage: payload.errorMessage,
       sessionId: payload.sessionId,
@@ -238,6 +260,182 @@ export const useIslandWindowStore = create<IslandWindowState>((set, get) => ({
           ? state.browserLookup
           : null,
     })),
+  presentSelectionContext: (payload) =>
+    set({
+      mode: "expanded",
+      selectionContext: toIslandSelectionContext(payload),
+      statusLabel: payload.text.trim().length > 0 ? "Ready" : "Needs attention",
+      errorMessage: null,
+    }),
+  clearSelectionContext: (selectionId) =>
+    set((state) => ({
+      selectionContext:
+        !state.selectionContext ||
+        (selectionId && state.selectionContext.selectionId !== selectionId)
+          ? state.selectionContext
+          : null,
+    })),
+  runSelectionAction: async (kind, options = {}) => {
+    const context = get().selectionContext;
+    if (!context) return;
+
+    if (kind === "ask" && !options.question?.trim()) {
+      set({
+        selectionContext: { ...context, activeAction: "ask" },
+        mode: "expanded",
+        errorMessage: null,
+        statusLabel: "Ready",
+      });
+      return;
+    }
+
+    if (kind === "copy") {
+      try {
+        await navigator.clipboard.writeText(context.text);
+        set({
+          selectionContext: { ...context, activeAction: "copy" },
+          statusLabel: "Ready",
+          errorMessage: null,
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to copy selection";
+        set({ errorMessage: message, statusLabel: "Needs attention" });
+      }
+      return;
+    }
+
+    const previousState = get();
+    const requestConfig = previousState.chatRequestConfig;
+    if (!requestConfig) {
+      set({ errorMessage: "No chat model selected" });
+      return;
+    }
+
+    const prompt = buildSelectionActionPrompt(kind, context, options);
+    const summary = buildSelectionActionSummary(kind, context, options);
+    let streamErrorMessage: string | null = null;
+    set({
+      isBusy: true,
+      mode: "expanded",
+      errorMessage: null,
+      suspendRemoteSync: true,
+      selectionContext: { ...context, activeAction: kind },
+      statusLabel: "Working...",
+      summaryText: truncateIslandText(summary, 52),
+      recentMessages: buildOptimisticRecentMessages(
+        previousState.recentMessages,
+        summary,
+      ),
+      pendingApproval: null,
+      statusStage: "listen",
+      statusCode: null,
+      statusMeta: null,
+      stageHistory: [],
+    });
+
+    try {
+      const sessionId = await ensureSessionId(previousState.sessionId);
+      await streamIslandTextConversation(sessionId, prompt, requestConfig, {
+        onDelta: (_delta, snapshot) => {
+          set((state) => ({
+            statusLabel: "Working...",
+            lastReplyText: truncateIslandText(snapshot, 220),
+            lastReplyAt: Date.now(),
+            recentMessages: upsertStreamingAssistantPreview(
+              state.recentMessages,
+              snapshot,
+            ),
+          }));
+        },
+        onMessage: (data) => {
+          if (
+            data &&
+            typeof data === "object" &&
+            "type" in data &&
+            (data as { type?: string }).type === "status"
+          ) {
+            const streamStatus = data as {
+              stage?: string | null;
+              code?: string | null;
+              meta?: Record<string, unknown> | null;
+            };
+            set((state) => {
+              const runtimeStatus = resolveIslandRuntimeStatus(
+                {
+                  messages: [],
+                  isLoading: true,
+                  globalLoading: false,
+                  statusStage: streamStatus.stage ?? null,
+                  statusCode: streamStatus.code ?? null,
+                  statusMeta: streamStatus.meta ?? null,
+                  errorMessage: null,
+                },
+                state.pendingApproval,
+                state.stageHistory
+              );
+              return {
+                statusStage: runtimeStatus.statusStage,
+                statusCode: runtimeStatus.statusCode,
+                statusMeta: runtimeStatus.statusMeta,
+                stageHistory: runtimeStatus.stageHistory,
+              };
+            });
+            return;
+          }
+          if (
+            data &&
+            typeof data === "object" &&
+            "type" in data &&
+            (data as { type?: string }).type === "error"
+          ) {
+            const message = (data as { message?: unknown }).message;
+            streamErrorMessage =
+              typeof message === "string"
+                ? message
+                : "Selection action failed";
+          }
+        },
+      });
+      if (streamErrorMessage) {
+        throw new Error(streamErrorMessage);
+      }
+      const nextState = await loadIslandWindowStateFromHistory(sessionId);
+      set({
+        ...nextState,
+        sessionId,
+        chatRequestConfig: previousState.chatRequestConfig,
+        selectionContext: { ...context, activeAction: kind },
+        statusStage: previousState.statusStage,
+        statusCode: previousState.statusCode,
+        statusMeta: previousState.statusMeta,
+        stageHistory: previousState.stageHistory,
+        isBusy: false,
+        suspendRemoteSync: false,
+      });
+      await emitActionCompleted({ sessionId });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Selection action failed";
+      set({
+        statusLabel: previousState.statusLabel,
+        summaryText: previousState.summaryText,
+        lastReplyText: previousState.lastReplyText,
+        lastReplyAt: previousState.lastReplyAt,
+        recentMessages: previousState.recentMessages,
+        pendingApproval: previousState.pendingApproval,
+        selectionContext: previousState.selectionContext,
+        errorMessage: message,
+        chatRequestConfig: previousState.chatRequestConfig,
+        statusStage: previousState.statusStage,
+        statusCode: previousState.statusCode,
+        statusMeta: previousState.statusMeta,
+        stageHistory: previousState.stageHistory,
+        isBusy: false,
+        suspendRemoteSync: false,
+      });
+    }
+  },
 
   sendQuickReply: async (text) => {
     const trimmed = text.trim();

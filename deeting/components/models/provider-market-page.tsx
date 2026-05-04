@@ -2,8 +2,20 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { Store, Zap, Search, Cloud, Monitor, User, ShieldCheck } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronRight,
+  Cloud,
+  Monitor,
+  Search,
+  ServerCog,
+  ShieldCheck,
+  Store,
+  User,
+  Zap,
+} from "lucide-react";
 import { useTranslations } from "next-intl";
+
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Input } from "@/components/ui/shadcn/input";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
@@ -28,143 +40,383 @@ function mapProviderToPreset(provider: ProviderCard): ProviderPresetConfig {
     provider: provider.provider,
     protocol: provider.protocol ?? undefined,
     default_endpoint: provider.base_url || undefined,
-    brand_color: provider.theme_color || "#3b82f6",
+    brand_color: provider.theme_color || "#0a84ff",
     icon_key: provider.icon || "lucide:server",
   };
 }
 
-function ProviderCard({ 
-  provider, 
-  onSelect 
-}: { 
-  provider: ProviderCard; 
-  onSelect: (p: ProviderCard) => void 
+function compactEndpoint(value?: string | null) {
+  if (!value) return "-";
+
+  try {
+    const url = new URL(value);
+    return `${url.host}${url.pathname === "/" ? "" : url.pathname}`;
+  } catch {
+    return value.replace(/^https?:\/\//, "");
+  }
+}
+
+function averageLatency(provider: ProviderCard) {
+  const values = (provider.instances || [])
+    .map((instance) => Number(instance.latency_ms))
+    .filter((value) => Number.isFinite(value) && value > 0);
+
+  if (!values.length) return null;
+  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+}
+
+function enabledInstanceCount(provider: ProviderCard) {
+  return (provider.instances || []).filter((instance) => instance.is_enabled).length;
+}
+
+function ProviderGlyph({ provider, className }: { provider: ProviderCard; className?: string }) {
+  return (
+    <div
+      className={cn(
+        "flex size-9 shrink-0 items-center justify-center rounded-[10px] border border-[var(--hairline)] bg-[var(--panel-bg)] shadow-[var(--elev-inset-hi)]",
+        className
+      )}
+    >
+      <ProviderIcon
+        src={provider.icon}
+        className="size-5"
+        fallback={<Store className="size-4 text-[var(--ink-4)]" />}
+      />
+    </div>
+  );
+}
+
+function CategoryRail({
+  categories,
+  selectedTab,
+  onSelect,
+}: {
+  categories: Array<{ id: MarketTab; label: string; icon: React.ComponentType<{ className?: string }>; count?: number }>;
+  selectedTab: MarketTab;
+  onSelect: (tab: MarketTab) => void;
 }) {
   const t = useTranslations("providers.market");
-  
-  // 动态生成品牌氛围色
-  const brandColor = provider.theme_color || "#6d5cff";
-  const glowStyle = {
-    "--brand-glow": `${brandColor}15`,
-    "--brand-border": `${brandColor}30`,
-  } as React.CSSProperties;
 
   return (
-    <div 
+    <aside className="w-56 flex-none border-r border-[var(--hairline)] bg-[var(--panel-bg-inset)]/42 px-3 py-4">
+      <p className="ws-meta mb-2 px-2 text-[9px] text-[var(--ink-4)]">{t("workstation.navigator")}</p>
+      <nav className="space-y-1">
+        {categories.map((category) => {
+          const active = selectedTab === category.id;
+          const Icon = category.icon;
+          return (
+            <button
+              key={category.id}
+              type="button"
+              onClick={() => onSelect(category.id)}
+              className={cn(
+                "flex h-8 w-full items-center gap-2 rounded-[9px] px-2.5 text-left text-[13px] transition-colors",
+                active
+                  ? "bg-[var(--panel-bg)] text-[var(--ink)] shadow-[0_1px_0_var(--hairline),0_8px_22px_-18px_rgba(15,23,42,0.42)]"
+                  : "text-[var(--ink-2)] hover:bg-[var(--panel-bg)]/70 hover:text-[var(--ink)]"
+              )}
+            >
+              <Icon className={cn("size-4", active ? "text-[var(--accent-strong)]" : "text-[var(--ink-4)]")} />
+              <span className="min-w-0 flex-1 truncate font-medium">{category.label}</span>
+              {typeof category.count === "number" && (
+                <span className="font-mono text-[10px] tabular-nums text-[var(--ink-4)]">{category.count}</span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+    </aside>
+  );
+}
+
+function ProviderResourceRow({
+  provider,
+  selected,
+  onSelect,
+  onConfigure,
+}: {
+  provider: ProviderCard;
+  selected: boolean;
+  onSelect: (provider: ProviderCard) => void;
+  onConfigure: (provider: ProviderCard) => void;
+}) {
+  const t = useTranslations("providers.market");
+  const latency = averageLatency(provider);
+  const enabledCount = enabledInstanceCount(provider);
+  const instanceCount = provider.instances?.length || 0;
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => onSelect(provider)}
-      style={glowStyle}
-      className="group relative cursor-pointer"
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect(provider);
+        }
+      }}
+      className={cn(
+        "group grid min-h-[68px] w-full grid-cols-[minmax(260px,1fr)_minmax(220px,0.7fr)_auto] items-center gap-4 border-b border-[var(--hairline-subtle)] px-4 text-left transition-colors",
+        selected ? "bg-[color-mix(in_srgb,var(--accent-soft)_58%,white_42%)]" : "hover:bg-[var(--panel-bg-inset)]/58"
+      )}
     >
-      {/* 3D 悬浮层 - 背景 */}
-      <div className="absolute inset-0 rounded-[32px] bg-[var(--panel-bg-inset)] opacity-50 transition-all duration-500 group-hover:scale-[1.02] group-hover:opacity-100 group-hover:shadow-[0_40px_80px_-20px_rgba(0,0,0,0.5)]" />
-      
-      {/* 品牌氛围光晕 */}
-      <div className="absolute -inset-2 rounded-[40px] bg-[radial-gradient(circle_at_center,var(--brand-glow),transparent_70%)] opacity-0 blur-2xl transition-opacity duration-700 group-hover:opacity-100" />
-
-      {/* 核心容器 */}
-      <div className="relative flex h-full flex-col overflow-hidden rounded-[32px] border border-white/[0.03] bg-gradient-to-b from-white/[0.02] to-transparent p-6 transition-all duration-500 group-hover:border-[var(--brand-border)] group-hover:translate-y-[-4px]">
-        
-        {/* 顶部区域：Icon & Meta */}
-        <div className="mb-8 flex items-start justify-between">
-          <div className="relative">
-            <div className="flex size-14 items-center justify-center rounded-2xl border border-white/[0.05] bg-[var(--window-bg)] shadow-inner transition-transform duration-700 group-hover:rotate-[10deg] group-hover:scale-110">
-              <ProviderIcon
-                src={provider.icon}
-                className="size-8"
-                fallback={<Store className="size-7 text-[var(--ink-4)]" />}
-              />
-            </div>
-            {/* Icon 背后的小装饰点 */}
-            <div className="absolute -right-1 -top-1 size-2 rounded-full bg-[var(--brand-glow)] blur-[2px] animate-pulse" />
+      <div className="flex min-w-0 items-center gap-3">
+        <ProviderGlyph provider={provider} />
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2">
+            <h3 className="truncate text-[14px] font-semibold tracking-tight text-[var(--ink)]">{provider.name}</h3>
+            {provider.connected && <CheckCircle2 className="size-3.5 shrink-0 text-[var(--ok)]" />}
           </div>
-
-          <div className="flex flex-col items-end gap-2">
-            <Badge className="ws-meta border-white/[0.05] bg-white/[0.03] px-2 py-0.5 text-[9px] tracking-[0.2em] text-[var(--ink-4)] group-hover:text-[var(--ink-2)]">
-              {provider.provider.toUpperCase()}
-            </Badge>
-            {provider.connected && (
-              <div className="flex items-center gap-1.5 rounded-full bg-[var(--ok-soft)] px-2 py-0.5 border border-[var(--ok-border)]">
-                <div className="size-1 rounded-full bg-[var(--ok)] shadow-[0_0_8px_var(--ok)]" />
-                <span className="text-[9px] font-black text-[var(--ok)] uppercase tracking-tighter">{t("card.connected")}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* 标题 & 描述 */}
-        <div className="mb-6">
-          <h4 className="ws-view-title mb-2 text-xl tracking-tight transition-colors group-hover:text-white">{provider.name}</h4>
-          <p className="ws-body line-clamp-2 text-xs leading-relaxed text-[var(--ink-3)] group-hover:text-[var(--ink-2)]">
+          <p className="mt-0.5 line-clamp-1 text-[12px] leading-4 text-[var(--ink-3)]">
             {provider.description || t("card.noDescription")}
           </p>
         </div>
+      </div>
 
-        {/* 能力标签：采用极简主义的药丸设计 */}
-        <div className="mt-auto flex flex-wrap gap-1.5">
-          {(provider.capabilities || []).slice(0, 3).map((capability) => (
-            <span 
-              key={capability} 
-              className="rounded-md border border-white/[0.03] bg-white/[0.02] px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-widest text-[var(--ink-4)] transition-all group-hover:border-[var(--brand-border)] group-hover:text-[var(--ink-2)]"
-            >
-              {capability}
-            </span>
-          ))}
-          {(provider.capabilities?.length || 0) > 3 && (
-            <span className="font-mono text-[9px] text-[var(--ink-4)] opacity-40">
-              +{provider.capabilities!.length - 3}
-            </span>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <span className="rounded-[7px] bg-[var(--panel-bg-inset)] px-2 py-1 font-mono text-[10px] uppercase text-[var(--ink-3)] ring-1 ring-[var(--hairline-subtle)]">
+          {provider.protocol || provider.provider}
+        </span>
+        <span className="rounded-[7px] bg-[var(--panel-bg-inset)] px-2 py-1 text-[11px] text-[var(--ink-3)] ring-1 ring-[var(--hairline-subtle)]">
+          {t("details.instances")} <span className="font-mono text-[var(--ink-2)]">{enabledCount}/{instanceCount}</span>
+        </span>
+        <span className="rounded-[7px] bg-[var(--panel-bg-inset)] px-2 py-1 text-[11px] text-[var(--ink-3)] ring-1 ring-[var(--hairline-subtle)]">
+          {t("details.latency")} <span className="font-mono text-[var(--ink-2)]">{latency ? `${latency} ms` : "-"}</span>
+        </span>
+      </div>
+
+      <div className="flex items-center justify-end gap-2">
+        <span
+          className={cn(
+            "inline-flex h-7 items-center rounded-full border px-2 text-[11px] font-medium",
+            provider.connected
+              ? "border-[var(--ok-border)] bg-[var(--ok-soft)] text-[var(--ok)]"
+              : "border-[var(--hairline)] bg-[var(--panel-bg)] text-[var(--ink-3)]"
           )}
-        </div>
-
-        {/* 底部交互条 */}
-        <div className="mt-8 flex items-center justify-between border-t border-white/[0.03] pt-4 transition-all group-hover:border-[var(--brand-border)]">
-           <div className="flex items-center gap-3">
-             <div className="ws-dot opacity-40 group-hover:opacity-100" data-tone={provider.connected ? "ok" : "accent"} />
-             <span className="ws-num text-[10px] font-bold tracking-widest text-[var(--ink-4)] group-hover:text-[var(--ink-2)]">
-                {provider.connected ? t("workstation.uplinkStable") : t("workstation.standbyReady")}
-             </span>
-           </div>
-           <div className="flex items-center gap-1 text-[11px] font-black tracking-tighter text-[var(--accent-strong)] opacity-0 transition-all duration-500 translate-x-2 group-hover:opacity-100 group-hover:translate-x-0">
-              {provider.connected ? t("workstation.manageSystem") : t("workstation.initialize")}
-              <Zap className="size-3 fill-current" />
-           </div>
-        </div>
+        >
+          {provider.connected ? t("details.connected") : t("details.notConnected")}
+        </span>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onConfigure(provider);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              event.stopPropagation();
+              onConfigure(provider);
+            }
+          }}
+          className="inline-flex h-7 items-center gap-1.5 rounded-[8px] border border-[var(--hairline)] bg-[var(--panel-bg)] px-2.5 text-[12px] font-semibold text-[var(--ink)] shadow-[var(--elev-inset-hi)] transition-colors hover:border-[var(--hairline-strong)] hover:bg-[var(--window-bg)]"
+        >
+          {provider.connected ? t("card.actionManage") : t("card.actionConnect")}
+          <ChevronRight className="size-3.5 text-[var(--ink-4)]" />
+        </button>
       </div>
     </div>
   );
 }
 
-function ProviderMarketGrid({
+function ProviderList({
   providers,
-  onProviderSelect,
+  selectedSlug,
+  isLoading,
+  query,
+  onSelect,
+  onConfigure,
 }: {
   providers: ProviderCard[];
-  onProviderSelect: (provider: ProviderCard) => void;
+  selectedSlug?: string;
+  isLoading: boolean;
+  query: string;
+  onSelect: (provider: ProviderCard) => void;
+  onConfigure: (provider: ProviderCard) => void;
 }) {
   const t = useTranslations("providers.market");
 
+  if (isLoading) {
+    return (
+      <div className="space-y-0 rounded-[12px] border border-[var(--hairline)] bg-[var(--panel-bg)]">
+        {[1, 2, 3, 4, 5, 6].map((item) => (
+          <div key={item} className="grid min-h-[68px] grid-cols-[minmax(260px,1fr)_minmax(220px,0.7fr)_112px] gap-4 border-b border-[var(--hairline-subtle)] px-4 py-3 last:border-b-0">
+            <div className="flex items-center gap-3">
+              <Skeleton className="size-9 rounded-[10px] bg-[var(--panel-bg-inset)]" />
+              <div className="space-y-2">
+                <Skeleton className="h-3 w-32 bg-[var(--panel-bg-inset)]" />
+                <Skeleton className="h-3 w-52 bg-[var(--panel-bg-inset)]" />
+              </div>
+            </div>
+            <Skeleton className="my-auto h-6 w-52 rounded-[7px] bg-[var(--panel-bg-inset)]" />
+            <Skeleton className="my-auto h-8 w-24 rounded-[9px] bg-[var(--panel-bg-inset)]" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   if (!providers.length) {
     return (
-      <div className="flex flex-col items-center justify-center py-32 text-center">
-        <div className="mb-6 flex size-20 items-center justify-center rounded-[32px] bg-[var(--panel-bg-inset)] text-[var(--ink-4)] shadow-inner">
-          <Store className="size-10 opacity-20" />
+      <div className="flex min-h-[420px] flex-col items-center justify-center rounded-[14px] border border-[var(--hairline)] bg-[var(--panel-bg)] px-8 text-center shadow-[var(--elev-inset-hi)]">
+        <div className="mb-4 flex size-11 items-center justify-center rounded-[12px] border border-[var(--hairline)] bg-[var(--panel-bg-inset)] text-[var(--ink-4)]">
+          <Store className="size-5" />
         </div>
-        <h3 className="ws-view-title mb-2 text-2xl tracking-tighter">{t("grid.emptyTitle")}</h3>
-        <p className="ws-body max-w-[320px] text-sm text-[var(--ink-3)]">{t("grid.emptyNoCategory")}</p>
+        <h3 className="text-[15px] font-semibold text-[var(--ink)]">{t("grid.emptyTitle")}</h3>
+        <p className="mt-2 max-w-[360px] text-[13px] leading-6 text-[var(--ink-3)]">
+          {query ? t("grid.emptyNoMatch", { query }) : t("grid.emptyNoCategory")}
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 gap-8 md:grid-cols-2 2xl:grid-cols-3">
+    <div className="overflow-hidden rounded-[12px] border border-[var(--hairline)] bg-[var(--panel-bg)] shadow-[var(--elev-inset-hi)]">
       {providers.map((provider) => (
-        <ProviderCard 
-          key={provider.slug} 
-          provider={provider} 
-          onSelect={onProviderSelect} 
+        <ProviderResourceRow
+          key={provider.slug}
+          provider={provider}
+          selected={provider.slug === selectedSlug}
+          onSelect={onSelect}
+          onConfigure={onConfigure}
         />
       ))}
     </div>
+  );
+}
+
+function DetailField({ label, value, compact = false }: { label: string; value: React.ReactNode; compact?: boolean }) {
+  return (
+    <div className={cn("rounded-[10px] border border-[var(--hairline-subtle)] bg-[var(--panel-bg-inset)]/44 px-3", compact ? "py-2" : "py-2.5")}>
+      <p className="ws-meta text-[9px] text-[var(--ink-4)]">{label}</p>
+      <div className="mt-1 min-w-0 text-[12px] leading-5 text-[var(--ink-2)]">{value}</div>
+    </div>
+  );
+}
+
+function ProviderInspector({
+  provider,
+  onConfigure,
+}: {
+  provider?: ProviderCard;
+  onConfigure: (provider: ProviderCard) => void;
+}) {
+  const t = useTranslations("providers.market");
+
+  if (!provider) {
+    return (
+      <aside className="w-[336px] flex-none border-l border-[var(--hairline)] bg-[var(--panel-bg)] p-5">
+        <div className="flex h-full flex-col items-center justify-center text-center">
+          <div className="mb-4 flex size-12 items-center justify-center rounded-[14px] border border-[var(--hairline)] bg-[var(--panel-bg-inset)] text-[var(--ink-4)]">
+            <ServerCog className="size-5" />
+          </div>
+          <h3 className="text-[14px] font-semibold text-[var(--ink)]">{t("details.noSelectionTitle")}</h3>
+          <p className="mt-2 text-[12px] leading-5 text-[var(--ink-3)]">{t("details.noSelectionDescription")}</p>
+        </div>
+      </aside>
+    );
+  }
+
+  const latency = averageLatency(provider);
+  const instances = provider.instances || [];
+  const enabledCount = enabledInstanceCount(provider);
+
+  return (
+    <aside className="w-[320px] flex-none overflow-y-auto border-l border-[var(--hairline)] bg-[var(--panel-bg)] custom-scrollbar">
+      <div className="border-b border-[var(--hairline)] p-4">
+        <div className="flex items-start gap-3">
+          <ProviderGlyph provider={provider} className="size-11 rounded-[12px]" />
+          <div className="min-w-0 flex-1">
+            <p className="ws-meta text-[9px] text-[var(--ink-4)]">{provider.provider}</p>
+            <h2 className="mt-1 truncate text-[17px] font-semibold tracking-tight text-[var(--ink)]">{provider.name}</h2>
+          </div>
+        </div>
+
+        <p className="mt-3 line-clamp-2 text-[12px] leading-5 text-[var(--ink-3)]">
+          {provider.description || t("card.noDescription")}
+        </p>
+
+        <button
+          type="button"
+          onClick={() => onConfigure(provider)}
+          className="mt-4 flex h-9 w-full items-center justify-center gap-2 rounded-[10px] bg-[var(--accent-strong)] px-3 text-[13px] font-semibold text-[var(--accent-contrast)] shadow-[0_10px_24px_-18px_var(--accent-strong)] transition-transform active:translate-y-px"
+        >
+          {provider.connected ? t("card.actionManage") : t("card.actionConnect")}
+          <ChevronRight className="size-4" />
+        </button>
+      </div>
+
+      <div className="space-y-3 p-4">
+        <div className="grid grid-cols-2 gap-2">
+          <DetailField
+            label={t("details.status")}
+            compact
+            value={
+              <span className={cn("font-medium", provider.connected ? "text-[var(--ok)]" : "text-[var(--ink-3)]")}>
+                {provider.connected ? t("details.connected") : t("details.notConnected")}
+              </span>
+            }
+          />
+          <DetailField compact label={t("details.latency")} value={<span className="font-mono">{latency ? `${latency} ms` : "-"}</span>} />
+          <DetailField compact label={t("details.instances")} value={<span className="font-mono">{enabledCount}/{instances.length}</span>} />
+          <DetailField compact label={t("details.category")} value={<span className="truncate">{provider.category || "-"}</span>} />
+        </div>
+
+        <DetailField
+          label={t("details.endpoint")}
+          compact
+          value={<span className="block truncate font-mono text-[11px]">{compactEndpoint(provider.base_url || provider.url_template)}</span>}
+        />
+
+        <DetailField
+          label={t("details.protocol")}
+          compact
+          value={<span className="font-mono text-[11px] uppercase">{provider.protocol || provider.provider}</span>}
+        />
+
+        <section className="rounded-[12px] border border-[var(--hairline-subtle)] bg-[var(--panel-bg-inset)]/28 p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="ws-meta text-[9px] text-[var(--ink-4)]">{t("details.capabilities")}</p>
+            <span className="font-mono text-[10px] text-[var(--ink-4)]">{provider.capabilities?.length || 0}</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {(provider.capabilities || []).slice(0, 8).map((capability) => (
+              <Badge
+                key={capability}
+                variant="outline"
+                className="rounded-[7px] border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-2 py-0.5 font-mono text-[9px] uppercase text-[var(--ink-3)]"
+              >
+                {capability}
+              </Badge>
+            ))}
+            {!provider.capabilities?.length && <span className="text-[12px] text-[var(--ink-4)]">-</span>}
+          </div>
+        </section>
+
+        <section className="rounded-[12px] border border-[var(--hairline-subtle)] bg-[var(--panel-bg-inset)]/28 p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="ws-meta text-[9px] text-[var(--ink-4)]">{t("details.instanceHealth")}</p>
+            <span className="font-mono text-[10px] text-[var(--ink-4)]">{instances.length}</span>
+          </div>
+          <div className="overflow-hidden rounded-[10px] border border-[var(--hairline)] bg-[var(--panel-bg)]">
+            {instances.length ? (
+              instances.slice(0, 5).map((instance) => (
+                <div key={instance.id} className="flex items-center justify-between gap-3 border-b border-[var(--hairline-subtle)] px-3 py-2 last:border-b-0">
+                  <div className="min-w-0">
+                    <p className="truncate text-[12px] font-medium text-[var(--ink)]">{instance.name}</p>
+                    <p className="mt-0.5 font-mono text-[10px] text-[var(--ink-4)]">{instance.health_status || "unknown"}</p>
+                  </div>
+                  <span className="font-mono text-[10px] text-[var(--ink-3)]">{instance.latency_ms ? `${instance.latency_ms} ms` : "-"}</span>
+                </div>
+              ))
+            ) : (
+              <div className="px-3 py-5 text-center text-[12px] text-[var(--ink-4)]">{t("details.noInstances")}</div>
+            )}
+          </div>
+        </section>
+      </div>
+    </aside>
   );
 }
 
@@ -172,6 +424,7 @@ export function ProviderMarketPage() {
   const t = useTranslations("providers.market");
   const [selectedTab, setSelectedTab] = React.useState<MarketTab>("all");
   const [query, setQuery] = React.useState("");
+  const [selectedSlug, setSelectedSlug] = React.useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [selectedPreset, setSelectedPreset] = React.useState<ProviderPresetConfig | null>(null);
 
@@ -190,7 +443,28 @@ export function ProviderMarketPage() {
 
   const { providers, stats, isLoading, mutate } = useProviderHub(params);
 
+  React.useEffect(() => {
+    if (!providers.length) {
+      setSelectedSlug(null);
+      return;
+    }
+
+    if (!selectedSlug || !providers.some((provider) => provider.slug === selectedSlug)) {
+      setSelectedSlug(providers[0].slug);
+    }
+  }, [providers, selectedSlug]);
+
+  const selectedProvider = React.useMemo(
+    () => providers.find((provider) => provider.slug === selectedSlug) || providers[0],
+    [providers, selectedSlug]
+  );
+
   const handleProviderSelect = React.useCallback((provider: ProviderCard) => {
+    setSelectedSlug(provider.slug);
+  }, []);
+
+  const handleProviderConfigure = React.useCallback((provider: ProviderCard) => {
+    setSelectedSlug(provider.slug);
     setSelectedPreset(mapProviderToPreset(provider));
     setDrawerOpen(true);
   }, []);
@@ -204,107 +478,82 @@ export function ProviderMarketPage() {
     await mutate();
   }, [mutate]);
 
-  const categories: Array<{ id: MarketTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
-    { id: "all", label: t("tabs.all"), icon: Store },
-    { id: "platform", label: t("tabs.platform"), icon: ShieldCheck },
-    { id: "cloud", label: t("tabs.cloud"), icon: Cloud },
-    { id: "local", label: t("tabs.local"), icon: Monitor },
-    { id: "custom", label: t("tabs.custom"), icon: User },
+  const categories: Array<{ id: MarketTab; label: string; icon: React.ComponentType<{ className?: string }>; count?: number }> = [
+    { id: "all", label: t("tabs.all"), icon: Store, count: stats?.total },
+    { id: "platform", label: t("tabs.platform"), icon: ShieldCheck, count: stats?.by_category?.platform },
+    { id: "cloud", label: t("tabs.cloud"), icon: Cloud, count: stats?.by_category?.["cloud api"] },
+    { id: "local", label: t("tabs.local"), icon: Monitor, count: stats?.by_category?.["local hosted"] },
+    { id: "custom", label: t("tabs.custom"), icon: User, count: stats?.by_category?.custom },
   ];
 
   return (
-    <div className="flex flex-col bg-[var(--window-bg)] overflow-hidden -mx-[var(--shell-canvas-px)] -mt-[var(--shell-canvas-pt)] -mb-[var(--shell-canvas-pb)] h-[calc(100vh-var(--shell-toolbar-h))] relative">
-      {/* Workspace Toolbar */}
-      <div className="flex h-[52px] flex-none items-center justify-between border-b border-[var(--hairline)] bg-[var(--panel-bg-inset)]/40 px-6 backdrop-blur-md relative z-20">
-        <div className="flex items-center gap-5">
-          <div className="flex items-center gap-2.5">
-             <div className="flex size-7 items-center justify-center rounded-lg bg-[var(--accent-soft)] text-[var(--accent-strong)] shadow-sm shadow-[var(--accent-soft)]">
-                <Store className="size-4" />
-             </div>
-             <h1 className="ws-view-title tracking-tight">{t("title")}</h1>
+    <div className="relative -mx-[var(--shell-canvas-px)] -mb-[var(--shell-canvas-pb)] -mt-[var(--shell-canvas-pt)] flex h-[calc(100%+var(--shell-canvas-pt)+var(--shell-canvas-pb))] min-h-0 flex-col overflow-hidden bg-[var(--window-bg)]">
+      <header className="flex h-14 flex-none items-center justify-between border-b border-[var(--hairline)] bg-[var(--panel-bg)]/86 px-5 backdrop-blur-xl">
+        <div className="flex min-w-0 items-center gap-4">
+          <div className="flex size-9 items-center justify-center rounded-[11px] border border-[var(--hairline)] bg-[var(--panel-bg-inset)] text-[var(--accent-strong)] shadow-[var(--elev-inset-hi)]">
+            <ServerCog className="size-4" />
           </div>
-          <div className="h-4 w-px bg-[var(--hairline-strong)]" />
-          <div className="relative w-72 group">
-            <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-[var(--ink-4)] transition-colors group-focus-within:text-[var(--accent-strong)]" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t("searchPlaceholder")}
-              className="h-8 border-[var(--hairline)] bg-[var(--window-bg)]/50 pl-9 text-xs transition-all focus-visible:ring-1 focus-visible:ring-[var(--accent-border)] focus-visible:bg-[var(--window-bg)]"
-            />
+          <div className="min-w-0">
+            <h1 className="truncate text-[18px] font-semibold tracking-tight text-[var(--ink)]">{t("title")}</h1>
+            <p className="mt-0.5 truncate text-[12px] text-[var(--ink-3)]">{t("description")}</p>
           </div>
         </div>
+
         <div className="flex items-center gap-3">
+          <div className="relative w-[320px]">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--ink-4)]" />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t("searchPlaceholder")}
+              className="h-9 rounded-[11px] border-[var(--hairline)] bg-[var(--panel-bg-inset)]/72 pl-9 text-[13px] shadow-none focus-visible:ring-1 focus-visible:ring-[var(--accent-border)]"
+            />
+          </div>
           {stats && (
-            <div className="flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-[var(--panel-bg)] border border-[var(--hairline-strong)] shadow-sm">
-              <Zap className="size-3 text-amber-500 fill-amber-500/20" />
-              <span className="ws-num text-[11px] font-bold tracking-tight">
-                {stats.connected} <span className="mx-0.5 opacity-30">/</span> {stats.total}
+            <div className="flex h-9 items-center gap-2 rounded-[11px] border border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-3 text-[12px] text-[var(--ink-2)] shadow-[var(--elev-inset-hi)]">
+              <Zap className="size-3.5 text-[var(--accent-strong)]" />
+              <span className="font-mono tabular-nums">
+                {stats.connected}<span className="mx-1 text-[var(--ink-4)]">/</span>{stats.total}
               </span>
             </div>
           )}
         </div>
-      </div>
+      </header>
 
-      <div className="flex flex-1 overflow-hidden relative z-10">
-        {/* Secondary Sidebar (Categories) */}
-        <aside className="w-60 flex-none border-r border-[var(--hairline)] bg-[var(--sidebar-bg)]/40 p-4 overflow-y-auto custom-scrollbar backdrop-blur-sm">
-          <nav className="space-y-1.5">
-            <p className="ws-meta px-3 py-2 mb-2 text-[9px] opacity-40">{t("workstation.navigator")}</p>
-            {categories.map((cat) => {
-              const active = selectedTab === cat.id;
-              const Icon = cat.icon;
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedTab(cat.id)}
-                  className={cn(
-                    "ws-rail group flex w-full items-center gap-3.5 rounded-xl px-4 py-2.5 text-left transition-all duration-300",
-                    active 
-                      ? "ws-row-active bg-[var(--accent-soft)]/60 text-[var(--accent-ink)] shadow-[0_8px_20px_-12px_var(--accent-soft)]" 
-                      : "text-[var(--ink-2)] hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)]"
-                  )}
-                  data-active={active}
-                >
-                  <Icon className={cn("size-4 transition-transform duration-300 group-hover:scale-110", active ? "text-[var(--accent-strong)]" : "text-[var(--ink-4)]")} />
-                  <span className={cn("ws-control transition-colors", active ? "font-bold" : "font-medium")}>{cat.label}</span>
-                  {active && (
-                     <div className="ml-auto w-1 h-1 rounded-full bg-[var(--accent-strong)] shadow-[0_0_8px_var(--accent-strong)]" />
-                  )}
-                </button>
-              );
-            })}
-          </nav>
-        </aside>
+      <div className="grid min-h-0 flex-1 grid-cols-[auto_minmax(640px,1fr)_320px] overflow-hidden">
+        <CategoryRail categories={categories} selectedTab={selectedTab} onSelect={setSelectedTab} />
 
-        {/* Content Area */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar bg-[var(--window-bg)] relative">
-          {/* Ambient Background Elements */}
-          <div className="absolute inset-0 pointer-events-none overflow-hidden">
-             <div className="absolute top-[-10%] left-[-5%] w-[600px] h-[600px] rounded-full bg-[radial-gradient(circle,var(--accent-soft)_0%,transparent_70%)] opacity-[0.15] blur-3xl" />
-             <div className="absolute bottom-[-10%] right-[-5%] w-[500px] h-[500px] rounded-full bg-[radial-gradient(circle,var(--accent-soft)_0%,transparent_70%)] opacity-[0.1] blur-3xl" />
-             <div 
-               className="absolute inset-0 opacity-[0.04]" 
-               style={{ 
-                 backgroundImage: 'linear-gradient(var(--hairline-strong) 1px, transparent 1px), linear-gradient(90deg, var(--hairline-strong) 1px, transparent 1px)',
-                 backgroundSize: '40px 40px',
-                 maskImage: 'radial-gradient(circle at center, black, transparent 90%)'
-               }} 
-             />
+        <main className="min-w-0 overflow-y-auto bg-[var(--window-bg)] px-5 py-4 custom-scrollbar">
+          <div className="mb-3 flex h-9 items-center justify-between rounded-[12px] border border-[var(--hairline)] bg-[var(--panel-bg)] px-3 shadow-[var(--elev-inset-hi)]">
+            <div className="flex items-center gap-2 text-[12px] text-[var(--ink-3)]">
+              <Store className="size-3.5 text-[var(--ink-4)]" />
+              <span>{t("details.providers")}</span>
+              <span className="font-mono text-[var(--ink)]">{stats?.total ?? providers.length}</span>
+            </div>
+            <div className="flex items-center gap-4 text-[12px] text-[var(--ink-3)]">
+              <span className="inline-flex items-center gap-1.5">
+                <CheckCircle2 className="size-3.5 text-[var(--ok)]" />
+                {t("details.connected")}
+                <span className="font-mono text-[var(--ink)]">{stats?.connected ?? providers.filter((provider) => provider.connected).length}</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                {t("details.visible")}
+                <span className="font-mono text-[var(--ink)]">{providers.length}</span>
+              </span>
+            </div>
           </div>
 
-          <div className="p-8 relative z-10">
-            {isLoading ? (
-              <div className="grid gap-6 md:grid-cols-2 2xl:grid-cols-3">
-                {[1, 2, 3, 4, 5, 6].map((i) => (
-                  <Skeleton key={i} className="h-56 rounded-[24px] bg-[var(--panel-bg-inset)] opacity-50" />
-                ))}
-              </div>
-            ) : (
-              <ProviderMarketGrid providers={providers} onProviderSelect={handleProviderSelect} />
-            )}
-          </div>
+          <ProviderList
+            providers={providers}
+            selectedSlug={selectedProvider?.slug}
+            isLoading={isLoading}
+            query={query}
+            onSelect={handleProviderSelect}
+            onConfigure={handleProviderConfigure}
+          />
         </main>
+
+        <ProviderInspector provider={selectedProvider} onConfigure={handleProviderConfigure} />
       </div>
 
       <ConnectProviderDrawer

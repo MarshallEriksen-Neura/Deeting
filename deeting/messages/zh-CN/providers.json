@@ -46,6 +46,24 @@
         "initialize": "开始接入",
         "navigator": "服务导航"
       },
+      "details": {
+        "provider": "服务商",
+        "providers": "服务商",
+        "protocol": "协议",
+        "instances": "实例",
+        "latency": "延迟",
+        "status": "状态",
+        "connected": "已连接",
+        "notConnected": "未连接",
+        "visible": "当前可见",
+        "category": "分类",
+        "endpoint": "端点",
+        "capabilities": "能力",
+        "instanceHealth": "实例健康",
+        "noInstances": "尚未连接实例",
+        "noSelectionTitle": "选择一个服务商",
+        "noSelectionDescription": "从列表中选择模型服务商以查看协议、端点、实例和能力。"
+      },
       "error": {
         "loadFailed": "加载模型服务商失败：",
         "unknown": "未知错误"

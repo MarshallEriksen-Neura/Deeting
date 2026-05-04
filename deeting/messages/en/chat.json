@@ -552,6 +552,31 @@
         "needsAttention": "Needs attention",
         "completed": "Completed"
       },
+      "selection": {
+        "title": "Selected text",
+        "dismiss": "Dismiss selection",
+        "charCount": "{count} chars",
+        "truncated": "truncated",
+        "empty": "No selected text was detected. Select text in another app and trigger the shortcut again.",
+        "translateDirection": "Translation direction",
+        "customTarget": "Custom target",
+        "askPlaceholder": "Ask about the selection...",
+        "askSend": "Ask with selection",
+        "askFooter": "Ask selected text",
+        "sources": {
+          "accessibility": "Native selection",
+          "clipboard_fallback": "Clipboard fallback",
+          "unavailable": "No selection"
+        },
+        "actions": {
+          "translate": "Translate",
+          "explain": "Explain",
+          "summarize": "Summarize",
+          "ask": "Ask",
+          "search": "Search",
+          "copy": "Copy"
+        }
+      },
       "toolStatus": {
         "pendingApproval": "Waiting for approval to continue with {name}",
         "running": "Running {name}",

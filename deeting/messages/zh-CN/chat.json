@@ -659,6 +659,31 @@
         "needsAttention": "需要处理",
         "completed": "已完成"
       },
+      "selection": {
+        "title": "已选文本",
+        "dismiss": "关闭选中文本",
+        "charCount": "{count} 字符",
+        "truncated": "已截断",
+        "empty": "没有检测到选中文本。请先在其他应用选中文本，再触发快捷键。",
+        "translateDirection": "翻译方向",
+        "customTarget": "自定义目标语言",
+        "askPlaceholder": "围绕选中文本提问...",
+        "askSend": "带选中文本提问",
+        "askFooter": "询问选中文本",
+        "sources": {
+          "accessibility": "原生选区",
+          "clipboard_fallback": "剪贴板兜底",
+          "unavailable": "未检测到选区"
+        },
+        "actions": {
+          "translate": "翻译",
+          "explain": "解释",
+          "summarize": "总结",
+          "ask": "提问",
+          "search": "搜索",
+          "copy": "复制"
+        }
+      },
       "toolStatus": {
         "pendingApproval": "正在等待你批准 {name}",
         "running": "正在执行 {name}",

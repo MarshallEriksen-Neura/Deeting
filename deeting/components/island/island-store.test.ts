@@ -16,6 +16,7 @@ function resetIslandStore() {
     recentMessages: [],
     pendingApproval: null,
     browserLookup: null,
+    selectionContext: null,
     isBusy: false,
     errorMessage: null,
     statusStage: null,
@@ -91,5 +92,34 @@ describe("useIslandStore hydrateFromChat", () => {
         { role: "assistant", content: "Island reply preview", createdAt: 123 },
       ],
     })
+  })
+
+  it("presents and clears captured selection context", () => {
+    useIslandStore.getState().presentSelectionContext({
+      selectionId: "selection-1",
+      text: "Selected text",
+      source: "accessibility",
+      capturedAt: 123,
+      charCount: 13,
+      truncated: false,
+    })
+
+    expect(useIslandStore.getState()).toMatchObject({
+      mode: "expanded",
+      statusLabel: "Ready",
+      selectionContext: {
+        selectionId: "selection-1",
+        preview: "Selected text",
+        activeAction: null,
+      },
+    })
+
+    useIslandStore.getState().clearSelectionContext("other-selection")
+    expect(useIslandStore.getState().selectionContext?.selectionId).toBe(
+      "selection-1",
+    )
+
+    useIslandStore.getState().clearSelectionContext("selection-1")
+    expect(useIslandStore.getState().selectionContext).toBeNull()
   })
 })

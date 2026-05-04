@@ -18,7 +18,6 @@ import {
 import { useTranslations } from "next-intl"
 
 import { Badge } from "@/components/ui/shadcn/badge"
-import { Card } from "@/components/ui/shadcn/card"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -62,46 +61,41 @@ interface RuntimeServerListSectionProps {
 }
 
 type GroupTone = {
-  bar: string
   icon: string
   iconText: string
   badge: string
   metric: string
-  progress: string
+  dot: string
 }
 
 const GROUP_TONES: Record<"healthy" | "partial" | "attention" | "idle", GroupTone> = {
   healthy: {
-    bar: "from-[var(--ok)] to-[#5BDFA0]",
     icon: "border-[var(--ok-border)] bg-[var(--ok-soft)]",
     iconText: "text-[var(--ok)]",
     badge: "bg-[var(--ok-soft)] text-[var(--ok)] hover:bg-[var(--ok-soft)]",
     metric: "border-[var(--ok-border)] bg-[var(--ok-soft)] text-[var(--ok)]",
-    progress: "from-[var(--ok)] to-[#5BDFA0]",
+    dot: "bg-[var(--ok)]",
   },
   partial: {
-    bar: "from-[var(--info)] to-[#6FB0FF]",
     icon: "border-[var(--info-border)] bg-[var(--info-soft)]",
     iconText: "text-[var(--info)]",
     badge: "bg-[var(--info-soft)] text-[var(--info)] hover:bg-[var(--info-soft)]",
     metric: "border-[var(--info-border)] bg-[var(--info-soft)] text-[var(--info)]",
-    progress: "from-[var(--info)] to-[#6FB0FF]",
+    dot: "bg-[var(--info)]",
   },
   attention: {
-    bar: "from-[var(--warn)] to-[#F1B85A]",
     icon: "border-[var(--warn-border)] bg-[var(--warn-soft)]",
     iconText: "text-[var(--warn)]",
     badge: "bg-[var(--warn-soft)] text-[var(--warn)] hover:bg-[var(--warn-soft)]",
     metric: "border-[var(--warn-border)] bg-[var(--warn-soft)] text-[var(--warn)]",
-    progress: "from-[var(--warn)] to-[#F1B85A]",
+    dot: "bg-[var(--warn)]",
   },
   idle: {
-    bar: "from-[var(--chrome-bg)] to-[var(--panel-bg-inset)]",
     icon: "border-[var(--hairline)] bg-[var(--panel-bg-inset)]",
     iconText: "text-[var(--ink-4)]",
     badge: "bg-[var(--panel-bg-inset)] text-[var(--ink-3)] border-[var(--hairline)]",
     metric: "border-[var(--hairline)] bg-[var(--panel-bg-inset)] text-[var(--ink-3)]",
-    progress: "from-[var(--chrome-bg)] to-[var(--panel-bg-inset)]",
+    dot: "bg-[var(--ink-4)]",
   },
 }
 
@@ -257,15 +251,11 @@ export function RuntimeServerListSection({
           </div>
         </div>
 
-        <div className="ws-bezel">
-          <div className="ws-bezel-inner">
-            <Card className="relative overflow-hidden rounded-[calc(var(--r-18)-6px)] bg-[var(--panel-bg)] border-0 py-0 ring-1 ring-[var(--hairline)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-              <div className={cn("absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r", tone.bar)} />
-
-              <div className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
+        <div className="rounded-[var(--r-14)] border border-[var(--hairline)] bg-[var(--panel-bg)] shadow-[var(--elev-inset-hi)]">
+              <div className="flex flex-col gap-4 p-4 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex min-w-0 items-start gap-4">
-                  <div className={cn("flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-[var(--r-10)] border shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]", tone.icon)}>
-                    <Folder size={20} className={tone.iconText} />
+                  <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--r-10)] border shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]", tone.icon)}>
+                    <Folder size={18} className={tone.iconText} />
                   </div>
                   <div className="min-w-0 flex-1 flex flex-col gap-1.5">
                     <div className="flex flex-wrap items-center gap-2">
@@ -373,19 +363,17 @@ export function RuntimeServerListSection({
                       </AlertDialog>
                     )}
                   </div>
-                  <div className={cn("flex min-w-[100px] flex-col items-end justify-center rounded-[var(--r-10)] border p-3", tone.metric)}>
-                    <div className="text-[10px] uppercase tracking-[0.22em] opacity-70">
+                  <div className={cn("flex min-w-[88px] flex-col items-end justify-center rounded-[var(--r-10)] border px-3 py-2", tone.metric)}>
+                    <div className="text-[9px] uppercase tracking-[0.18em] opacity-70">
                       {t("runtime.server.running")}
                     </div>
-                    <div className="mt-1 font-mono text-[24px] font-semibold tabular-nums tracking-[-0.5px]">
+                    <div className="mt-0.5 font-mono text-[20px] font-semibold tabular-nums tracking-[-0.5px]">
                       {selectedGroup.runningCount}
-                      <span className="ml-1 text-[16px] font-medium opacity-60">/ {selectedGroup.toolCount}</span>
+                      <span className="ml-1 text-[13px] font-medium opacity-60">/ {selectedGroup.toolCount}</span>
                     </div>
                   </div>
                 </div>
               </div>
-            </Card>
-          </div>
         </div>
 
         <div className="space-y-4">
@@ -489,47 +477,33 @@ export function RuntimeServerListSection({
         </div>
       </div>
 
-      <div className="grid w-full min-w-0 grid-cols-1 gap-4 xl:grid-cols-2">
+      <div className="overflow-hidden rounded-[var(--r-14)] border border-[var(--hairline)] bg-[var(--panel-bg)] shadow-[var(--elev-inset-hi)]">
         <AnimatePresence mode="popLayout">
           {filteredGroups.map((group) => {
             const toneKey = getGroupToneKey(group)
             const tone = GROUP_TONES[toneKey]
-            const runningPercent = group.toolCount > 0 ? Math.max(8, Math.round((group.runningCount / group.toolCount) * 100)) : 0
             const statusLabel = group.runningCount > 0 ? t("runtime.server.running") : t("tool.status.stopped")
 
             return (
               <motion.div
                 layout
                 key={group.id}
-                className="group relative transition-all duration-[220ms] ease-[cubic-bezier(0.32,0.72,0,1)]"
+                className="group relative border-b border-[var(--hairline-subtle)] transition-all duration-[220ms] ease-[cubic-bezier(0.32,0.72,0,1)] last:border-b-0"
               >
-                <Card className="relative overflow-hidden rounded-[calc(var(--r-18)-6px)] bg-[var(--panel-bg)] border-0 py-0 ring-1 ring-[var(--hairline)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition-colors hover:bg-[var(--panel-bg-inset)]">
                   <button
                     type="button"
-                    className="relative flex w-full flex-col text-left focus-visible:outline-none"
+                    className="relative grid min-h-[74px] w-full grid-cols-[minmax(260px,1fr)_minmax(260px,0.72fr)_auto] items-center gap-4 px-4 text-left transition-colors hover:bg-[var(--panel-bg-inset)]/58 focus-visible:outline-none"
                     onClick={() => setSelectedGroupId(group.id)}
                   >
-                    <div className={cn("absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r", tone.bar)} />
-
-                    {/* Left status rail */}
-                    <div
-                      className={cn(
-                        "absolute left-0 top-1/2 h-[18px] w-[3px] -translate-y-1/2 rounded-r-full",
-                        toneKey === "healthy" && "bg-[var(--ok)] shadow-[0_0_0_1px_color-mix(in_oklch,var(--ok)_18%,transparent)]",
-                        toneKey === "partial" && "bg-[var(--info)] shadow-[0_0_0_1px_color-mix(in_oklch,var(--info)_18%,transparent)]",
-                        toneKey === "attention" && "bg-[var(--warn)] shadow-[0_0_0_1px_color-mix(in_oklch,var(--warn)_18%,transparent)]",
-                        toneKey === "idle" && "bg-[var(--ink-4)]"
-                      )}
-                    />
-
-                    <div className="flex w-full items-start gap-3 p-4 pl-5">
-                      <div className={cn("flex h-[36px] w-[36px] shrink-0 items-center justify-center rounded-[var(--r-10)] border shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]", tone.icon)}>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--r-10)] border shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]", tone.icon)}>
                         <Folder size={16} className={tone.iconText} />
                       </div>
 
-                      <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+                      <div className="min-w-0 flex-1 flex flex-col gap-1">
                         <div className="flex min-w-0 items-center gap-2">
                           <h3 className="truncate text-[14px] font-semibold tracking-[-0.1px] text-[var(--ink)]">{group.name}</h3>
+                          <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", tone.dot)} />
                           <Badge variant="outline" className={cn("h-[18px] rounded-full px-2 text-[9px] font-semibold uppercase tracking-[0.04em] shadow-none", tone.badge)}>
                             {statusLabel}
                           </Badge>
@@ -537,7 +511,10 @@ export function RuntimeServerListSection({
                         <p className="line-clamp-1 text-[13px] leading-[1.5] text-[var(--ink-2)]">
                           {group.description || t("runtime.server.noDescription")}
                         </p>
-                        <div className="flex flex-wrap gap-1.5 text-[10px] font-mono text-[var(--ink-3)]">
+                      </div>
+                    </div>
+
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] font-mono text-[var(--ink-3)]">
                           <span className="rounded-[var(--r-4)] bg-[var(--panel-bg)] px-1.5 py-0.5 border border-[var(--hairline)] tabular-nums">
                             {group.toolCount} {t("runtime.server.toolCount")}
                           </span>
@@ -546,33 +523,17 @@ export function RuntimeServerListSection({
                               {group.source.pathOrUrl}
                             </span>
                           )}
-                        </div>
                       </div>
 
-                      <div className="flex shrink-0 items-center gap-3">
-                        <div className={cn("flex min-w-[76px] flex-col items-end justify-center rounded-[var(--r-8)] border px-2.5 py-1.5", tone.metric)}>
-                          <div className="text-[9px] uppercase tracking-[0.2em] opacity-70">
-                            {t("runtime.server.running")}
-                          </div>
-                          <div className="mt-0.5 font-mono text-[16px] font-semibold tabular-nums tracking-[-0.5px]">
-                            {group.runningCount}
-                            <span className="ml-[2px] text-[11px] font-medium opacity-60">/ {group.toolCount}</span>
-                          </div>
-                        </div>
-                        <ChevronRight size={16} className="text-[var(--ink-3)] transition-transform group-hover:translate-x-[2px]" />
+                    <div className="flex shrink-0 items-center justify-end gap-3">
+                      <div className={cn("flex min-w-[72px] items-center justify-center rounded-[var(--r-8)] border px-2.5 py-1.5", tone.metric)}>
+                        <span className="font-mono text-[14px] font-semibold tabular-nums tracking-[-0.3px]">
+                          {group.runningCount}<span className="ml-[2px] text-[11px] font-medium opacity-60">/ {group.toolCount}</span>
+                        </span>
                       </div>
-                    </div>
-
-                    <div className="relative w-full px-4 pb-4 space-y-1.5">
-                      <div className="h-[6px] w-full overflow-hidden rounded-full bg-[var(--panel-bg-inset)] ring-1 ring-[var(--hairline)]">
-                        <div
-                          className={cn("h-full rounded-full bg-gradient-to-r transition-all duration-500", tone.progress)}
-                          style={{ width: `${runningPercent}%` }}
-                        />
-                      </div>
+                      <ChevronRight size={16} className="text-[var(--ink-3)] transition-transform group-hover:translate-x-[2px]" />
                     </div>
                   </button>
-                </Card>
               </motion.div>
             )
           })}

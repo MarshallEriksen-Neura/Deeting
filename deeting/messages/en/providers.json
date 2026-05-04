@@ -46,6 +46,24 @@
         "initialize": "INITIALIZE",
         "navigator": "Neural Navigator"
       },
+      "details": {
+        "provider": "Provider",
+        "providers": "Providers",
+        "protocol": "Protocol",
+        "instances": "Instances",
+        "latency": "Latency",
+        "status": "Status",
+        "connected": "Connected",
+        "notConnected": "Not connected",
+        "visible": "Visible",
+        "category": "Category",
+        "endpoint": "Endpoint",
+        "capabilities": "Capabilities",
+        "instanceHealth": "Instance health",
+        "noInstances": "No connected instances",
+        "noSelectionTitle": "Select a provider",
+        "noSelectionDescription": "Choose a model provider from the list to inspect protocol, endpoint, instances, and capabilities."
+      },
       "error": {
         "loadFailed": "Failed to load providers:",
         "unknown": "Unknown error"
