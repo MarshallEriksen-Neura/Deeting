@@ -79,9 +79,17 @@
         "fallback": "正在使用文档开头兜底",
         "empty": "未找到可用知识片段",
         "error": "知识检索部分失败",
+        "selected": "已选 {count} 份",
         "excerpts": "{count} 个片段",
         "overviews": "{count} 份概览",
-        "expanded": "扩展 {count} 个相邻片段"
+        "expanded": "扩展 {count} 个相邻片段",
+        "evidenceLabel": "来源",
+        "evidenceFile": "{fileName}（{count}）",
+        "evidenceMore": "另有 {count} 份",
+        "showDetails": "查看证据",
+        "hideDetails": "收起证据",
+        "evidenceDetail": "{fileName} - 片段 {index}",
+        "score": "分数 {score}"
       },
       "metrics": {
         "total": "总 {value}",
@@ -341,6 +349,13 @@
       "badges": {
         "approved": "已批准"
       },
+      "inlineStatus": {
+        "waiting": "等待审批",
+        "executing": "已批准，继续执行",
+        "rejecting": "正在拒绝",
+        "duplicate": "已在执行",
+        "approved": "已批准"
+      },
       "toast": {
         "approvedPending": "已批准，正在执行 {toolName}",
         "approvedAlwaysPending": "已批准并记住，正在执行 {toolName}",
@@ -383,6 +398,18 @@
           "title": "工具执行失败",
           "description": "工具在产出成功结果前返回了错误。",
           "next": "先查看错误详情；只有输入或环境已修正时再重试。"
+        }
+      },
+      "timeline": {
+        "title": "执行时间线",
+        "tool": "步骤 {index}：{toolName}",
+        "duration": "{duration}ms",
+        "outcome": {
+          "resume_failed": "续写未恢复",
+          "resumed": "续写已恢复",
+          "waiting_approval": "需要下一次审批",
+          "rejected": "审批已拒绝",
+          "tool_failed": "工具失败"
         }
       }
     },
@@ -440,8 +467,13 @@
       "knowledgePickerTitle": "选择知识库文件",
       "knowledgePickerLoading": "正在加载本地文件...",
       "knowledgePickerEmpty": "暂无本地知识库文件",
+      "knowledgePickerNoMatches": "没有匹配当前筛选的文件",
       "knowledgePickerLoadFailed": "加载知识库文件失败，请重试",
+      "knowledgeSearchPlaceholder": "搜索本地文件",
       "knowledgeRefresh": "刷新",
+      "knowledgeRetry": "重试索引",
+      "knowledgeRetryStarted": "已开始重试",
+      "knowledgeRetryFailed": "重试该文件失败",
       "knowledgeRemove": "移除知识文件",
       "knowledgeClear": "清空选择",
       "knowledgeUnavailableHint": "发送前请先移除失败或索引中的文件。",
@@ -453,6 +485,19 @@
         "processing": "索引中",
         "failed": "失败",
         "unknown": "检查中"
+      },
+      "knowledgeFilter": {
+        "ready": "可用",
+        "processing": "索引中",
+        "failed": "失败",
+        "all": "全部"
+      },
+      "contextBar": {
+        "recovery": "已恢复执行",
+        "approvalPending": "等待审批",
+        "approvalExecuting": "工具执行中",
+        "knowledge": "{count} 份知识文件",
+        "pageContext": "页面上下文"
       },
       "attachCurrentPage": "附带当前页面",
       "attachingCurrentPage": "正在附带页面",

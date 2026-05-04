@@ -250,8 +250,8 @@ export const MessageItem = React.memo<MessageItemProps>(
                 streamEnabled={streamEnabled}
                 typingEnabled={typingEnabled}
                 statusStage={isActive ? statusStage : null}
-                statusCode={isActive ? statusCode : null}
-                statusMeta={isActive ? statusMeta : null}
+                statusCode={statusCode}
+                statusMeta={statusMeta}
               />
             )}
             {message.attachments?.length ? (

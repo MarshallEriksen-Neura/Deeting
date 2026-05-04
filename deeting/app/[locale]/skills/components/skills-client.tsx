@@ -267,12 +267,12 @@ export function SkillsClient() {
       <div className="flex-1 overflow-y-auto min-h-0 pr-1 -mr-1">
         <motion.div
           layout
-          className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+          className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-3"
         >
           <AnimatePresence mode="popLayout">
             {isLoadingRuntimeStatuses && skillStatuses.length === 0 ? (
-               Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="h-[180px] rounded-[18px] bg-[var(--panel-bg-inset)] border border-[var(--hairline)] animate-pulse" />
+               Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="h-[260px] rounded-[18px] bg-[var(--panel-bg)] border border-[var(--hairline)] animate-pulse shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]" />
               ))
             ) : filteredSkills.length === 0 ? (
               <div className="col-span-full py-20 flex flex-col items-center justify-center text-center">

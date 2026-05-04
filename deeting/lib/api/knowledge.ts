@@ -906,6 +906,9 @@ export async function shareFile(
 
 const INTERNAL_KNOWLEDGE_BASE = "/api/v1/internal/knowledge"
 
+type InternalKnowledgeIngestResponse = Record<string, unknown>
+type InternalKnowledgeReviewTask = Record<string, unknown>
+
 /**
  * Knowledge Ingestion & Review APIs (Internal)
  */
@@ -914,9 +917,9 @@ export async function ingestDocument(payload: {
   raw_text?: string
   filename?: string
   folder_id?: string
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }) {
-  return request<any>({
+  return request<InternalKnowledgeIngestResponse>({
     url: `${INTERNAL_KNOWLEDGE_BASE}/ingest`,
     method: "POST",
     data: payload,
@@ -928,7 +931,7 @@ export async function fetchReviewTasks(params?: {
   asset_type?: string
   limit?: number
 }) {
-  return request<any[]>({
+  return request<InternalKnowledgeReviewTask[]>({
     url: `${INTERNAL_KNOWLEDGE_BASE}/reviews`,
     method: "GET",
     params,
@@ -936,7 +939,7 @@ export async function fetchReviewTasks(params?: {
 }
 
 export async function getReviewTask(taskId: string) {
-  return request<any>({
+  return request<InternalKnowledgeReviewTask>({
     url: `${INTERNAL_KNOWLEDGE_BASE}/reviews/${taskId}`,
     method: "GET",
   })
@@ -947,10 +950,10 @@ export async function submitReviewResult(
   payload: {
     action: "approve" | "reject" | "refine"
     reason?: string
-    refined_payload?: Record<string, any>
+    refined_payload?: Record<string, unknown>
   }
 ) {
-  return request<any>({
+  return request<InternalKnowledgeReviewTask>({
     url: `${INTERNAL_KNOWLEDGE_BASE}/reviews/${taskId}/submit`,
     method: "POST",
     data: payload,

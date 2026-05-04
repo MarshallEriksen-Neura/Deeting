@@ -60,7 +60,22 @@
       "uninstall": "卸载",
       "noDescription": "暂无描述",
       "permissions": "需要权限",
-      "missingRuntime": "缺少运行配置"
+      "missingRuntime": "缺少运行配置",
+      "reqs": {
+        "summary": "运行条件",
+        "ready": "全部就绪",
+        "ratio": "{filled}/{total}",
+        "bins": "依赖",
+        "env": "环境",
+        "config": "配置",
+        "none": "—"
+      },
+      "meta": {
+        "skillId": "ID",
+        "ecosystem": "生态",
+        "surface": "执行",
+        "adapter": "适配器"
+      }
     },
     "status": {
       "active": "可用",

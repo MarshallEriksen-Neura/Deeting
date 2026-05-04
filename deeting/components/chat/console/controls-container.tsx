@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertCircle, ArrowUp, CircleDashed, Sliders, MessageSquarePlus, Paperclip, X, Square, FileText, Play, Check, Loader2, Globe } from 'lucide-react';
+import { AlertCircle, ArrowUp, CircleDashed, RotateCcw, Search, Sliders, MessageSquarePlus, Paperclip, X, Square, FileText, Play, Check, Loader2, Globe } from 'lucide-react';
 import { useMemo, useRef, useState, useCallback, useEffect, memo } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
@@ -34,7 +34,7 @@ import { buildChatAttachments, UPLOAD_ERROR_CODES, ATTACHMENT_INVALID_ERROR_CODE
 import { createConversation } from '@/lib/api/conversations';
 import { recoverDesktopLocalChatExecution } from '@/lib/api/mcp-desktop';
 import { useChatMessaging } from '@/hooks/chat/use-chat-messaging';
-import { listLocalUserDocuments } from '@/lib/api/knowledge';
+import { listLocalUserDocuments, retryFile } from '@/lib/api/knowledge';
 import { generateWorkflowProposal } from '@/lib/workflow/commands';
 import type { KnowledgeFile } from '@/types/knowledge';
 import { listCustomTaskAgents, type CustomTaskAgentProfile } from '@/lib/api/custom-task-agents';
@@ -47,6 +47,7 @@ import { extractLatestComposerRecoveryPrompt } from '@/lib/chat/recovery';
 import { shouldSuggestWorkflowPlanning } from '@/lib/chat/workflow-planning-suggestion';
 
 type ComposerMode = 'chat' | 'workflow';
+type KnowledgePickerFilter = 'all' | KnowledgeStatusTone;
 
 type KnowledgeStatusTone = 'ready' | 'processing' | 'failed';
 
@@ -111,6 +112,9 @@ function ControlsContainer() {
   const [knowledgeFiles, setKnowledgeFiles] = useState<KnowledgeFile[]>([]);
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
   const [knowledgeLoadError, setKnowledgeLoadError] = useState<string | null>(null);
+  const [knowledgePickerFilter, setKnowledgePickerFilter] = useState<KnowledgePickerFilter>('ready');
+  const [knowledgeSearchQuery, setKnowledgeSearchQuery] = useState('');
+  const [retryingKnowledgeFileIds, setRetryingKnowledgeFileIds] = useState<string[]>([]);
   const [taskAgents, setTaskAgents] = useState<CustomTaskAgentProfile[]>([]);
   const [dismissedRecoveryMessageIds, setDismissedRecoveryMessageIds] = useState<string[]>([]);
   const [composerMode, setComposerMode] = useState<ComposerMode>('chat');
@@ -247,13 +251,27 @@ function ControlsContainer() {
     return new Map(knowledgeFiles.map((file) => [file.id, file]));
   }, [knowledgeFiles]);
   const unavailableSelectedKnowledgeFiles = useMemo(() => {
-    return selectedKnowledgeFileIds
-      .map((fileId) => knowledgeFileMap.get(fileId))
-      .filter(
-        (file): file is KnowledgeFile =>
-          Boolean(file) && resolveKnowledgeStatusTone(file.status) !== 'ready'
-      );
+    const unavailable: KnowledgeFile[] = [];
+    for (const fileId of selectedKnowledgeFileIds) {
+      const file = knowledgeFileMap.get(fileId);
+      if (!file) continue;
+      if (resolveKnowledgeStatusTone(file.status) !== 'ready') {
+        unavailable.push(file);
+      }
+    }
+    return unavailable;
   }, [knowledgeFileMap, selectedKnowledgeFileIds]);
+  const filteredKnowledgeFiles = useMemo(() => {
+    const query = knowledgeSearchQuery.trim().toLowerCase();
+    return knowledgeFiles.filter((file) => {
+      const statusTone = resolveKnowledgeStatusTone(file.status);
+      if (knowledgePickerFilter !== 'all' && statusTone !== knowledgePickerFilter) {
+        return false;
+      }
+      if (!query) return true;
+      return file.name.toLowerCase().includes(query);
+    });
+  }, [knowledgeFiles, knowledgePickerFilter, knowledgeSearchQuery]);
   const hasUnavailableSelectedKnowledge = unavailableSelectedKnowledgeFiles.length > 0;
   const workflowGoal = useMemo(
     () => resolveWorkflowGoal(input, resolvedTaskAgentMention),
@@ -286,6 +304,36 @@ function ControlsContainer() {
   const isApprovalPending = latestAssistantActivity.statusCode === 'approval.required';
   const isApprovalExecuting = latestAssistantActivity.statusCode === 'approval.executing';
   const isApprovalBusy = isApprovalFlowActive && !hasComposerContent;
+  const contextBarItems = useMemo(() => {
+    const items: Array<{ key: string; tone: 'default' | 'warning' | 'danger' | 'active'; label: string }> = [];
+    if (recoveryPrompt) {
+      items.push({ key: 'recovery', tone: 'warning', label: t('controls.contextBar.recovery') });
+    }
+    if (isApprovalPending) {
+      items.push({ key: 'approval-pending', tone: 'warning', label: t('controls.contextBar.approvalPending') });
+    } else if (isApprovalExecuting) {
+      items.push({ key: 'approval-executing', tone: 'active', label: t('controls.contextBar.approvalExecuting') });
+    }
+    if (selectedKnowledgeFileIds.length > 0) {
+      items.push({
+        key: 'knowledge',
+        tone: hasUnavailableSelectedKnowledge ? 'danger' : 'default',
+        label: t('controls.contextBar.knowledge', { count: selectedKnowledgeFileIds.length }),
+      });
+    }
+    if (pageContext) {
+      items.push({ key: 'page-context', tone: 'default', label: t('controls.contextBar.pageContext') });
+    }
+    return items;
+  }, [
+    hasUnavailableSelectedKnowledge,
+    isApprovalExecuting,
+    isApprovalPending,
+    pageContext,
+    recoveryPrompt,
+    selectedKnowledgeFileIds.length,
+    t,
+  ]);
   const canGeneratePlan = useMemo(
     () => Boolean(
       isTauriRuntime &&
@@ -641,6 +689,22 @@ function ControlsContainer() {
     clearSelectedKnowledgeFileIds();
   }, [clearSelectedKnowledgeFileIds]);
 
+  const handleRetryKnowledgeFile = useCallback(async (fileId: string) => {
+    setRetryingKnowledgeFileIds((current) => Array.from(new Set([...current, fileId])));
+    try {
+      const nextFile = await retryFile(fileId);
+      setKnowledgeFiles((current) =>
+        current.map((file) => (file.id === fileId ? nextFile : file))
+      );
+      toast.success(t("controls.knowledgeRetryStarted"));
+    } catch (error) {
+      console.warn("retry_knowledge_file_failed", error);
+      toast.error(t("controls.knowledgeRetryFailed"));
+    } finally {
+      setRetryingKnowledgeFileIds((current) => current.filter((id) => id !== fileId));
+    }
+  }, [t]);
+
   const handleAttachCurrentPageContext = useCallback(async () => {
     if (!isTauriRuntime) return;
 
@@ -809,6 +873,27 @@ function ControlsContainer() {
             onCancel={() => void cancelPendingTakeover()}
           />
         </div>
+        {contextBarItems.length > 0 ? (
+          <div className="mb-2 flex flex-wrap items-center gap-1.5 px-1">
+            {contextBarItems.map((item) => (
+              <span
+                key={item.key}
+                className={cn(
+                  "inline-flex h-6 items-center rounded-full border px-2 text-[11px] font-medium",
+                  item.tone === 'danger'
+                    ? "border-red-200 bg-red-50 text-red-700 dark:border-red-400/25 dark:bg-red-500/10 dark:text-red-200"
+                    : item.tone === 'warning'
+                      ? "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-400/25 dark:bg-amber-500/10 dark:text-amber-200"
+                      : item.tone === 'active'
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-400/25 dark:bg-emerald-500/10 dark:text-emerald-200"
+                        : "border-slate-200 bg-slate-50 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-white/65"
+                )}
+              >
+                {item.label}
+              </span>
+            ))}
+          </div>
+        ) : null}
         <div className="flex items-center rounded-[22px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
           <Input
             value={input}
@@ -1184,6 +1269,35 @@ function ControlsContainer() {
                   </Button>
                 </div>
 
+                <div className="mb-2 space-y-2">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                    <Input
+                      value={knowledgeSearchQuery}
+                      onChange={(event) => setKnowledgeSearchQuery(event.target.value)}
+                      placeholder={t("controls.knowledgeSearchPlaceholder")}
+                      className="h-8 rounded-full pl-8 text-xs"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {(['ready', 'processing', 'failed', 'all'] as KnowledgePickerFilter[]).map((filter) => (
+                      <button
+                        key={filter}
+                        type="button"
+                        className={cn(
+                          "rounded-full border px-2.5 py-1 text-[10px] font-medium transition",
+                          knowledgePickerFilter === filter
+                            ? "border-sky-300 bg-sky-100 text-sky-700 dark:border-sky-400/40 dark:bg-sky-500/20 dark:text-sky-200"
+                            : "border-transparent text-slate-500 hover:bg-[color:var(--ios-shell-subtle)] dark:text-white/55"
+                        )}
+                        onClick={() => setKnowledgePickerFilter(filter)}
+                      >
+                        {t(`controls.knowledgeFilter.${filter}`)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 {knowledgeLoading ? (
                   <div className="flex h-24 items-center justify-center text-sm text-slate-500 dark:text-white/50">
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1197,18 +1311,21 @@ function ControlsContainer() {
                   <div className="rounded-2xl border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] p-3 text-xs text-slate-500 dark:text-white/50">
                     {t("controls.knowledgePickerEmpty")}
                   </div>
+                ) : filteredKnowledgeFiles.length === 0 ? (
+                  <div className="rounded-2xl border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] p-3 text-xs text-slate-500 dark:text-white/50">
+                    {t("controls.knowledgePickerNoMatches")}
+                  </div>
                 ) : (
                   <div className="max-h-64 space-y-1 overflow-y-auto pr-1">
-                    {knowledgeFiles.map((file) => {
+                    {filteredKnowledgeFiles.map((file) => {
                       const isSelected = selectedKnowledgeFileIds.includes(file.id);
                       const statusTone = resolveKnowledgeStatusTone(file.status);
                       const isReady = statusTone === 'ready';
                       const statusLabel = t(`controls.knowledgeStatus.${statusTone}`);
+                      const isRetrying = retryingKnowledgeFileIds.includes(file.id);
                       return (
-                        <button
+                        <div
                           key={file.id}
-                          type="button"
-                          disabled={!isReady && !isSelected}
                           className={cn(
                             "flex w-full items-center justify-between gap-2 rounded-2xl border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed",
                             isSelected
@@ -1219,11 +1336,15 @@ function ControlsContainer() {
                                   ? "border-amber-200/70 bg-amber-50/70 text-amber-800 dark:border-amber-400/25 dark:bg-amber-500/10 dark:text-amber-200"
                                   : "border-red-200/70 bg-red-50/80 text-red-700 dark:border-red-400/25 dark:bg-red-500/10 dark:text-red-200"
                           )}
-                          onClick={() => {
-                            if (isReady || isSelected) handleToggleKnowledgeFile(file.id);
-                          }}
                         >
-                          <span className="min-w-0 flex-1">
+                          <button
+                            type="button"
+                            disabled={!isReady && !isSelected}
+                            className="min-w-0 flex-1 text-left disabled:cursor-not-allowed"
+                            onClick={() => {
+                              if (isReady || isSelected) handleToggleKnowledgeFile(file.id);
+                            }}
+                          >
                             <span className="block truncate text-xs font-medium">{file.name}</span>
                             <span className="block truncate text-[10px] text-slate-500 dark:text-white/45">
                               {formatFileSize(file.size)} · {file.chunks ?? 0} {t("controls.knowledgeChunks")} · {statusLabel}
@@ -1238,17 +1359,29 @@ function ControlsContainer() {
                                 {t("controls.knowledgeProcessingHint")}
                               </span>
                             ) : null}
-                          </span>
-                          <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                          </button>
+                          <span className="flex h-5 shrink-0 items-center justify-center gap-1">
                             {isSelected ? (
                               <Check className="h-4 w-4" />
                             ) : statusTone === 'processing' ? (
                               <CircleDashed className="h-4 w-4" />
                             ) : statusTone === 'failed' ? (
-                              <AlertCircle className="h-4 w-4" />
+                              <button
+                                type="button"
+                                className="inline-flex h-5 w-5 items-center justify-center rounded-full hover:bg-red-100/80 dark:hover:bg-red-500/20"
+                                onClick={() => void handleRetryKnowledgeFile(file.id)}
+                                disabled={isRetrying}
+                                aria-label={t("controls.knowledgeRetry")}
+                              >
+                                {isRetrying ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <RotateCcw className="h-3.5 w-3.5" />
+                                )}
+                              </button>
                             ) : null}
                           </span>
-                        </button>
+                        </div>
                       );
                     })}
                   </div>

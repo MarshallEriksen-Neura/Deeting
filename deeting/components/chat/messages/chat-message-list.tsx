@@ -12,6 +12,25 @@ import type { Message, ChatAssistant } from "@/store/chat-store"
 import { useI18n } from "@/hooks/use-i18n"
 import { deriveAssistantActivityState } from "@/lib/chat/assistant-activity"
 
+function getPersistedKnowledgeContextStatus(message: Message) {
+  const status = message.metaInfo?.knowledge_context_status
+  if (!status || typeof status !== "object" || Array.isArray(status)) {
+    return null
+  }
+  const record = status as Record<string, unknown>
+  if (record.code !== "knowledge.context.loaded") {
+    return null
+  }
+  const meta = record.meta
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) {
+    return null
+  }
+  return {
+    statusCode: record.code,
+    statusMeta: meta as Record<string, unknown>,
+  }
+}
+
 interface ChatMessageListProps {
   messages: Message[]
   agent?: ChatAssistant
@@ -282,6 +301,8 @@ export function ChatMessageList({
           : lastAssistantId
       const isStreamedActive = msg.id === activeStatusMessageId && isTyping
       const isMessageActive = isStreamedActive || embeddedActivity.isActive
+      const persistedKnowledgeStatus =
+        msg.role === "assistant" ? getPersistedKnowledgeContextStatus(msg) : null
       const effectiveStatusStage = isStreamedActive
         ? msg.id === activeStatusMessageId
           ? statusStage
@@ -291,12 +312,12 @@ export function ChatMessageList({
         ? msg.id === activeStatusMessageId
           ? statusCode
           : null
-        : embeddedActivity.statusCode
+        : embeddedActivity.statusCode ?? persistedKnowledgeStatus?.statusCode ?? null
       const effectiveStatusMeta = isStreamedActive
         ? msg.id === activeStatusMessageId
           ? statusMeta
           : null
-        : embeddedActivity.statusMeta
+        : embeddedActivity.statusMeta ?? persistedKnowledgeStatus?.statusMeta ?? null
 
       return (
         <MessageItem

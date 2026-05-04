@@ -79,9 +79,17 @@
         "fallback": "Using document-opening fallback",
         "empty": "No usable knowledge excerpts",
         "error": "Knowledge search partially failed",
+        "selected": "{count} selected",
         "excerpts": "{count} excerpts",
         "overviews": "{count} overviews",
-        "expanded": "{count} expanded"
+        "expanded": "{count} expanded",
+        "evidenceLabel": "Sources",
+        "evidenceFile": "{fileName} ({count})",
+        "evidenceMore": "+{count} more",
+        "showDetails": "Show evidence",
+        "hideDetails": "Hide evidence",
+        "evidenceDetail": "{fileName} - excerpt {index}",
+        "score": "score {score}"
       },
       "metrics": {
         "total": "Total {value}",
@@ -352,8 +360,13 @@
       "knowledgePickerTitle": "Select Knowledge Files",
       "knowledgePickerLoading": "Loading local files...",
       "knowledgePickerEmpty": "No local knowledge files yet",
+      "knowledgePickerNoMatches": "No files match this filter",
       "knowledgePickerLoadFailed": "Failed to load knowledge files. Please retry.",
+      "knowledgeSearchPlaceholder": "Search local files",
       "knowledgeRefresh": "Refresh",
+      "knowledgeRetry": "Retry indexing",
+      "knowledgeRetryStarted": "Retry started",
+      "knowledgeRetryFailed": "Failed to retry this file",
       "knowledgeRemove": "Remove knowledge file",
       "knowledgeClear": "Clear",
       "knowledgeUnavailableHint": "Remove failed or indexing files before sending.",
@@ -365,6 +378,19 @@
         "processing": "Indexing",
         "failed": "Failed",
         "unknown": "Checking"
+      },
+      "knowledgeFilter": {
+        "ready": "Ready",
+        "processing": "Indexing",
+        "failed": "Failed",
+        "all": "All"
+      },
+      "contextBar": {
+        "recovery": "Recovered run",
+        "approvalPending": "Approval waiting",
+        "approvalExecuting": "Tool running",
+        "knowledge": "{count} knowledge file(s)",
+        "pageContext": "Page context"
       },
       "attachCurrentPage": "Attach current page",
       "attachingCurrentPage": "Attaching page",
@@ -625,6 +651,18 @@
           "title": "Tool execution failed",
           "description": "The tool returned an error before producing a successful result.",
           "next": "Review the error details, then retry only if the inputs or environment are corrected."
+        }
+      },
+      "timeline": {
+        "title": "Execution timeline",
+        "tool": "Step {index}: {toolName}",
+        "duration": "{duration}ms",
+        "outcome": {
+          "resume_failed": "Continuation was not restored",
+          "resumed": "Continuation restored",
+          "waiting_approval": "Next approval required",
+          "rejected": "Approval rejected",
+          "tool_failed": "Tool failed"
         }
       }
     },

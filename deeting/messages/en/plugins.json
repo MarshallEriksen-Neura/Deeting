@@ -60,7 +60,22 @@
       "uninstall": "Uninstall",
       "noDescription": "No description",
       "permissions": "Permissions required",
-      "missingRuntime": "Runtime setup required"
+      "missingRuntime": "Runtime setup required",
+      "reqs": {
+        "summary": "Requirements",
+        "ready": "All ready",
+        "ratio": "{filled}/{total}",
+        "bins": "Bins",
+        "env": "Env",
+        "config": "Config",
+        "none": "—"
+      },
+      "meta": {
+        "skillId": "ID",
+        "ecosystem": "Ecosystem",
+        "surface": "Surface",
+        "adapter": "Adapter"
+      }
     },
     "status": {
       "active": "Active",

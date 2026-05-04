@@ -21,8 +21,8 @@ function commandExists(command) {
 
 function resolveLocalProtoc() {
   const candidates = [
-    path.resolve(projectRoot, "..", ".tmp", "protoc", "bin", protocBinary),
-    path.resolve(projectRoot, ".tmp", "protoc", "bin", protocBinary),
+    path.resolve(projectRoot, "..", ".codex-cache", "protoc-33.2", "bin", protocBinary),
+    path.resolve(projectRoot, ".codex-cache", "protoc-33.2", "bin", protocBinary),
   ];
 
   return candidates.find((candidate) => existsSync(candidate));
@@ -34,11 +34,16 @@ function resolveProtoc() {
     return protocFromEnv;
   }
 
+  const localProtoc = resolveLocalProtoc();
+  if (localProtoc) {
+    return localProtoc;
+  }
+
   if (commandExists("protoc")) {
     return "protoc";
   }
 
-  return resolveLocalProtoc() || "";
+  return "";
 }
 
 function resolveTauriCommand() {
@@ -68,7 +73,7 @@ const protocPath = resolveProtoc();
 if (!protocPath) {
   console.error("[tauri-with-protoc] protoc not found. Rust build will fail.");
   console.error(
-    "[tauri-with-protoc] Install protoc or place it at .tmp/protoc/bin and retry."
+    "[tauri-with-protoc] Install protoc or place it at .codex-cache/protoc-33.2/bin and retry."
   );
   process.exit(1);
 }

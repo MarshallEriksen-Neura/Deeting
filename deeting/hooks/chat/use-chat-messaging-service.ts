@@ -346,20 +346,48 @@ export function shouldAppendFinalResponseBlocks({
   responseBlocks: MessageBlock[]
   receivedStructuredBlocks: boolean
 }): boolean {
-  if (responseBlocks.length === 0) return false
+  return filterFinalResponseBlocks({
+    currentBlocks,
+    responseBlocks,
+    receivedStructuredBlocks,
+  }).length > 0
+}
 
-  const responseHasOnlyText = responseBlocks.every((block) => block.type === "text")
-  if (!responseHasOnlyText) {
-    if (!receivedStructuredBlocks) return true
-    const currentBlockKeys = new Set(currentBlocks.map(finalResponseBlockKey))
-    return responseBlocks.some((block) => !currentBlockKeys.has(finalResponseBlockKey(block)))
-  }
+export function filterFinalResponseBlocks({
+  currentBlocks,
+  responseBlocks,
+  receivedStructuredBlocks,
+}: {
+  currentBlocks: MessageBlock[]
+  responseBlocks: MessageBlock[]
+  receivedStructuredBlocks: boolean
+}): MessageBlock[] {
+  if (responseBlocks.length === 0) return []
+
+  let nextBlocks = responseBlocks
 
   const currentText = extractAssistantTextFromBlocks(currentBlocks).trim()
   const responseText = extractAssistantTextFromBlocks(responseBlocks).trim()
-  if (!responseText) return false
+  if (responseText && currentText === responseText) {
+    if (responseBlocks.every((block) => block.type === "text" || block.type === "thought")) {
+      return []
+    }
+    nextBlocks = nextBlocks.filter((block) => block.type !== "text")
+  }
 
-  return currentText !== responseText
+  if (nextBlocks.length === 0) return []
+
+  const responseHasOnlyText = nextBlocks.every((block) => block.type === "text")
+  if (!responseHasOnlyText) {
+    if (!receivedStructuredBlocks) return nextBlocks
+    const currentBlockKeys = new Set(currentBlocks.map(finalResponseBlockKey))
+    return nextBlocks.filter((block) => !currentBlockKeys.has(finalResponseBlockKey(block)))
+  }
+
+  const nextText = extractAssistantTextFromBlocks(nextBlocks).trim()
+  if (!nextText) return []
+
+  return currentText !== nextText ? nextBlocks : []
 }
 
 export function filterIncomingStructuredBlocks({
@@ -796,14 +824,12 @@ export function useChatMessagingService() {
             onBlocks(responseToolBlocks)
           }
 
-          const responseBlocks = extractAssistantResponseBlocks(responseBody)
-          if (
-            shouldAppendFinalResponseBlocks({
-              currentBlocks: getCurrentBlocks(),
-              responseBlocks,
-              receivedStructuredBlocks,
-            })
-          ) {
+          const responseBlocks = filterFinalResponseBlocks({
+            currentBlocks: getCurrentBlocks(),
+            responseBlocks: extractAssistantResponseBlocks(responseBody),
+            receivedStructuredBlocks,
+          })
+          if (responseBlocks.length > 0) {
             onBlocks(responseBlocks)
           }
         },
@@ -1062,6 +1088,14 @@ export function useChatMessagingService() {
         onSessionResolved: (nextSessionId) => setSessionId(nextSessionId),
         onStatusEvent: (status) => {
           setStatus({ ...status, messageId: assistantMessageId })
+          if (status.code === "knowledge.context.loaded" && status.meta) {
+            mergeMessageMeta(assistantMessageId, {
+              knowledge_context_status: {
+                code: status.code,
+                meta: status.meta,
+              },
+            })
+          }
           if (status.code === "upstream.response" && status.meta) {
             mergeMessageMeta(assistantMessageId, { runtime_metrics: status.meta })
           }
@@ -1323,7 +1357,17 @@ export function useChatMessagingService() {
         },
         onTraceId: (traceId) => mergeMessageMeta(assistantMessageId, { trace_id: traceId }),
         onSessionResolved: (nextSessionId) => setSessionId(nextSessionId),
-        onStatusEvent: (status) => setStatus({ ...status, messageId: assistantMessageId }),
+        onStatusEvent: (status) => {
+          setStatus({ ...status, messageId: assistantMessageId })
+          if (status.code === "knowledge.context.loaded" && status.meta) {
+            mergeMessageMeta(assistantMessageId, {
+              knowledge_context_status: {
+                code: status.code,
+                meta: status.meta,
+              },
+            })
+          }
+        },
         getCurrentBlocks: () => {
           const latest = useChatStore.getState().messages.find((message) => message.id === assistantMessageId)
           return Array.isArray(latest?.blocks) ? (latest.blocks as MessageBlock[]) : []

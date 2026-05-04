@@ -1,9 +1,14 @@
 import {
   extractAssistantResponseToolBlocks,
+  filterFinalResponseBlocks,
   filterIncomingStructuredBlocks,
   shouldAppendFinalResponseBlocks,
 } from "@/hooks/chat/use-chat-messaging-service"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
+
+jest.mock("@/hooks/use-i18n", () => ({
+  useI18n: () => (key: string) => key,
+}))
 
 describe("local chat stream dedupe helpers", () => {
   it("drops duplicate terminal text blocks after streamed local text", () => {
@@ -68,6 +73,19 @@ describe("local chat stream dedupe helpers", () => {
         receivedStructuredBlocks: true,
       })
     ).toBe(true)
+  })
+
+  it("drops terminal thought and duplicate text after streamed local text", () => {
+    expect(
+      filterFinalResponseBlocks({
+        currentBlocks: [{ type: "text", content: "final answer" } as MessageBlock],
+        responseBlocks: [
+          { type: "thought", content: "provider reasoning" } as MessageBlock,
+          { type: "text", content: "final answer" } as MessageBlock,
+        ],
+        receivedStructuredBlocks: true,
+      })
+    ).toEqual([])
   })
 
   it("keeps final tool status blocks from completion payload for stream cleanup", () => {
