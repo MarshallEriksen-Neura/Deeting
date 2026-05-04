@@ -25,7 +25,6 @@ import { cn } from "@/lib/utils";
 
 import {
   type DetectedLanguageCode,
-  languageDisplayName,
   languageShortLabel,
   lookupLanguageCode,
   resolveSmartTarget,
@@ -143,11 +142,13 @@ function shortLabelForTarget(target: string, uiLocale: "zh" | "en"): string {
 export function IslandSelectionPanel({
   selection,
   isBusy,
+  onOpenTranslator,
   onRunAction,
   onDismiss,
 }: {
   selection: IslandSelectionContext;
   isBusy: boolean;
+  onOpenTranslator: (targetLanguage: string) => void;
   onRunAction: (
     kind: IslandSelectionActionKind,
     options?: SelectionActionPromptOptions,
@@ -206,23 +207,17 @@ export function IslandSelectionPanel({
   const activeAction = selection.activeAction;
   const isTranslateActive = activeAction === "translate";
 
-  function commitTranslate(target: string) {
+  function openTranslator(target: string) {
     const trimmed = target.trim();
     if (!trimmed) return;
     const next = pushRecentTarget(recentTargets, trimmed);
     setRecentTargets(next);
     persistRecentTargets(next);
-    onRunAction("translate", {
-      translateSource:
-        detectedCode !== "unknown"
-          ? languageDisplayName(detectedCode)
-          : undefined,
-      translateTarget: trimmed,
-    });
+    onOpenTranslator(trimmed);
   }
 
   function handlePickFromPopover(target: string) {
-    commitTranslate(target);
+    openTranslator(target);
     setCustomTargetDraft("");
     setPopoverOpen(false);
   }
@@ -295,7 +290,7 @@ export function IslandSelectionPanel({
             <button
               type="button"
               disabled={isBusy}
-              onClick={() => commitTranslate(smartTarget)}
+              onClick={() => openTranslator(smartTarget)}
               className="inline-flex items-center gap-1.5 pl-3 pr-2 text-[11px] font-semibold focus:outline-none disabled:cursor-not-allowed"
               title={t("island.selection.translateTo", { target: smartTarget })}
               aria-label={t("island.selection.translateTo", {
@@ -338,7 +333,7 @@ export function IslandSelectionPanel({
               <PopoverContent
                 align="start"
                 sideOffset={8}
-                className="w-[320px] p-3"
+                className="z-[2147483200] w-[320px] p-3"
               >
                 {favoriteTargets.length > 0 ? (
                   <div className="mb-3">
@@ -453,8 +448,12 @@ export function IslandSelectionPanel({
                   <button
                     type="button"
                     onClick={() => {
+                      // Close the popover first, then open the sheet on the next frame.
+                      // Without this defer, Radix Popover and Radix Dialog (Sheet) both try
+                      // to manage focus-trap/pointer-events in the same tick and the sheet
+                      // never visibly opens.
                       setPopoverOpen(false);
-                      setConfigSheetOpen(true);
+                      requestAnimationFrame(() => setConfigSheetOpen(true));
                     }}
                     className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-foreground/55 transition-colors hover:bg-foreground/5 hover:text-foreground/85"
                   >

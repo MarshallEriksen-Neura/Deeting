@@ -47,6 +47,14 @@ export const DeferredDesktopWindowSettingsCard = dynamic(
   { ssr: false }
 )
 
+export const DeferredDesktopShortcutSettingsCard = dynamic(
+  () =>
+    import("./desktop-shortcut-settings-card").then(
+      (mod) => mod.DesktopShortcutSettingsCard
+    ),
+  { ssr: false }
+)
+
 export const DeferredDesktopBrowserAgentPanelCard = dynamic(
   () =>
     import("./desktop-browser-agent-panel-card").then(

@@ -97,6 +97,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::assistants::commands::list_assistant_messages,
         crate::modules::assistants::commands::append_assistant_message,
         crate::modules::assistants::commands::preview_local_assistant,
+        crate::modules::assistants::commands::translate_selection_text,
         crate::modules::assistants::commands::delete_assistant_messages,
         crate::modules::conversations::commands::list_local_conversations,
         crate::modules::conversations::commands::create_local_conversation,

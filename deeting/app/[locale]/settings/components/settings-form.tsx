@@ -54,6 +54,7 @@ import {
   DeferredDesktopObjectStorageSettingsCard,
   DeferredDesktopSandboxSettingsCard,
   DeferredDesktopScoutSettingsCard,
+  DeferredDesktopShortcutSettingsCard,
   DeferredDesktopVersionManagementCard,
   DeferredDesktopWindowSettingsCard,
   DeferredSandboxImageRegistriesCard,
@@ -785,6 +786,13 @@ export function SettingsForm({
             </div>
           )}
 
+          {/* Shortcuts section */}
+          {activeSection === "shortcuts" && (
+            <div className="flex flex-col gap-5 md:gap-6">
+              <DeferredDesktopShortcutSettingsCard isTauriRuntime={isTauriRuntime} />
+            </div>
+          )}
+
           {/* Version section */}
           {activeSection === "version" && (
             <div className="flex flex-col gap-5 md:gap-6">
@@ -838,6 +846,7 @@ export function SettingsForm({
           {activeSection !== "agent" &&
             activeSection !== "aiAccess" &&
             activeSection !== "ecosystem" &&
+            activeSection !== "shortcuts" &&
             activeSection !== "window" &&
             activeSection !== "version" &&
             (activeSection !== "browser" || !isBrowserSectionVisible) && (

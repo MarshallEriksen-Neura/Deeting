@@ -384,6 +384,7 @@ export function IslandShell() {
     <IslandProvider
       value={{
         ...storeValues,
+        chatRequestConfig,
         attachBrowserLookup,
         dismissBrowserLookup: clearBrowserLookup,
         dismissSelectionContext: clearSelectionContext,

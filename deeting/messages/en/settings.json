@@ -292,12 +292,9 @@
         }
       }
     },
-    "window": {
-      "title": "Desktop Window Behavior",
-      "description": "Control what happens when you minimize or close the desktop app.",
-      "minimizeLabel": "Minimize button",
-      "minimizeValue": "Normal minimize",
-      "minimizeHelp": "Minimizing the desktop window now keeps the Island hidden and performs a standard window minimize.",
+    "shortcuts": {
+      "title": "Shortcut Manager",
+      "description": "Manage global shortcuts for the Island and selection wake flows.",
       "islandShortcutLabel": "Island show/hide shortcut",
       "islandShortcutHelp": "Toggle the Island window without bringing the main window forward. When hidden, Deeting remains available from the tray.",
       "islandShortcutRequired": "Island show/hide shortcut is required",
@@ -309,6 +306,18 @@
       "shortcutRecording": "Cancel",
       "shortcutWaiting": "Press a shortcut now...",
       "shortcutReset": "Use default",
+      "save": "Save",
+      "saving": "Saving...",
+      "saveSuccess": "Shortcut preferences saved",
+      "saveFailed": "Failed to save shortcut preferences",
+      "footerHint": "Desktop only. These preferences are stored locally on the current device."
+    },
+    "window": {
+      "title": "Desktop Window Behavior",
+      "description": "Control what happens when you minimize or close the desktop app.",
+      "minimizeLabel": "Minimize button",
+      "minimizeValue": "Normal minimize",
+      "minimizeHelp": "Minimizing the desktop window now keeps the Island hidden and performs a standard window minimize.",
       "closeActionLabel": "When closing the main window",
       "closeActionHelp": "Applies to the desktop close button and other close-window actions on this device.",
       "closeAction": {
@@ -617,6 +626,8 @@
       "browserDesc": "Browser debug and bridge",
       "relay": "Network & Services",
       "relayDesc": "Desktop proxy, Scout, and other local-only settings",
+      "shortcuts": "Shortcut Manager",
+      "shortcutsDesc": "Island and selection wake shortcuts",
       "window": "Window",
       "windowDesc": "Desktop close and minimize behavior",
       "version": "Version",

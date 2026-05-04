@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::State;
 
@@ -47,6 +48,62 @@ fn resolve_assistant_model_selection(
         })
         .unwrap_or_else(|| "default".to_string());
     (model, provider_model_id)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranslateSelectionRequest {
+    pub text: String,
+    pub source_language: Option<String>,
+    pub target_language: String,
+    pub model: String,
+    pub provider_model_id: Option<String>,
+    pub temperature: Option<f32>,
+    pub max_tokens: Option<u32>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranslateSelectionResponse {
+    pub text: String,
+    pub source_language: Option<String>,
+    pub target_language: String,
+}
+
+fn build_translate_selection_messages(
+    text: &str,
+    source_language: Option<&str>,
+    target_language: &str,
+) -> Vec<LocalChatInputMessage> {
+    let source = source_language
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("auto-detected source language");
+
+    vec![
+        LocalChatInputMessage {
+            role: "system".to_string(),
+            content: [
+                "You are a precise translation engine.",
+                "Return only the translated text.",
+                "Preserve formatting, names, code, numbers, and technical terms.",
+                "Do not explain the translation unless the source text is ambiguous and impossible to translate.",
+            ]
+            .join(" "),
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
+        },
+        LocalChatInputMessage {
+            role: "user".to_string(),
+            content: format!(
+                "Translate the following text from {source} into {target_language}.\n\n{text}"
+            ),
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
+        },
+    ]
 }
 
 pub(crate) async fn index_local_assistants(app_state: &AppState, assistants: &[LocalAssistant]) {
@@ -437,6 +494,67 @@ pub async fn preview_local_assistant(
         .unwrap_or("")
         .to_string();
     Ok(serde_json::json!({ "content": content }))
+}
+
+#[tauri::command]
+pub async fn translate_selection_text(
+    state: State<'_, AppState>,
+    payload: TranslateSelectionRequest,
+) -> Result<TranslateSelectionResponse, String> {
+    let text = payload.text.trim();
+    if text.is_empty() {
+        return Err("selected text is required".to_string());
+    }
+
+    let target_language = payload.target_language.trim();
+    if target_language.is_empty() {
+        return Err("target language is required".to_string());
+    }
+
+    let provider_model_id = payload
+        .provider_model_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let model_connection =
+        resolve_local_model_connection(state.inner(), payload.model.trim(), provider_model_id)
+            .await?;
+    let messages = build_translate_selection_messages(
+        text,
+        payload.source_language.as_deref(),
+        target_language,
+    );
+    let response = request_provider_chat_completion(
+        state.inner(),
+        &model_connection.provider_model_id,
+        &model_connection.model_id,
+        messages,
+        None,
+        payload.temperature.or(Some(0.1)),
+        payload.max_tokens.or(Some(2048)),
+        crate::modules::ai_upstream::ReasoningRequestConfig::default(),
+        Some("quick_translate"),
+        None,
+    )
+    .await?;
+    let translated = response
+        .get("content")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "translation response was empty".to_string())?
+        .to_string();
+
+    Ok(TranslateSelectionResponse {
+        text: translated,
+        source_language: payload
+            .source_language
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        target_language: target_language.to_string(),
+    })
 }
 
 #[cfg(test)]

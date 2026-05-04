@@ -7,6 +7,7 @@ import {
   Bot,
   Database,
   Globe,
+  Keyboard,
   KeyRound,
   Network,
   Rocket,
@@ -31,6 +32,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "agent", icon: Bot, desktopOnly: true },
   { id: "browser", icon: Globe, desktopOnly: true },
   { id: "relay", icon: Server, desktopOnly: true },
+  { id: "shortcuts", icon: Keyboard, desktopOnly: true },
   { id: "window", icon: AppWindow, desktopOnly: true },
   { id: "version", icon: Rocket, desktopOnly: true },
 ]

@@ -6,6 +6,7 @@ export type SettingsSection =
   | "agent"
   | "browser"
   | "relay"
+  | "shortcuts"
   | "window"
   | "version";
 
@@ -17,6 +18,7 @@ const SETTINGS_SECTIONS = new Set<SettingsSection>([
   "agent",
   "browser",
   "relay",
+  "shortcuts",
   "window",
   "version",
 ]);

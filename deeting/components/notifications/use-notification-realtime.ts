@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef } from "react"
 
 import { buildApiWsUrl, getAuthToken, refreshAccessToken } from "@/lib/http/client"
-import { startLocalMonitorWorker, stopLocalMonitorWorker } from "@/lib/api/monitors"
 import { useNotificationActions } from "@/store/notification-store"
 import { useAuthStore } from "@/store/auth-store"
 import type { NotificationItem, NotificationType } from "@/components/notifications/types"
@@ -46,6 +45,14 @@ interface NotificationMessage {
 
 interface RealtimeOptions {
   enabled?: boolean
+}
+
+export interface LiveTaskProgressPayload extends Record<string, unknown> {
+  task_id?: string
+  status?: string
+  step?: string
+  message?: string
+  percentage?: number
 }
 
 const POLL_RECONNECT_BASE_MS = 1000
@@ -92,9 +99,9 @@ function safeParseMessage(raw: string): NotificationMessage | null {
   }
 }
 
-let taskProgressCallback: ((task: any) => void) | null = null
+let taskProgressCallback: ((task: LiveTaskProgressPayload) => void) | null = null
 
-export function setTaskProgressCallback(callback: (task: any) => void) {
+export function setTaskProgressCallback(callback: (task: LiveTaskProgressPayload) => void) {
   taskProgressCallback = callback
 }
 
@@ -114,6 +121,7 @@ export function useNotificationRealtime(options: RealtimeOptions = {}) {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimerRef = useRef<number | null>(null)
   const pingTimerRef = useRef<number | null>(null)
+  const connectRef = useRef<(() => Promise<void>) | null>(null)
   const reconnectAttemptRef = useRef(0)
   const activeRef = useRef(false)
 
@@ -206,7 +214,7 @@ export function useNotificationRealtime(options: RealtimeOptions = {}) {
 
     reconnectTimerRef.current = window.setTimeout(() => {
       reconnectTimerRef.current = null
-      void connect()
+      void connectRef.current?.()
     }, delay)
     reconnectAttemptRef.current += 1
   }, [enabled, isAuthenticated])
@@ -223,12 +231,6 @@ export function useNotificationRealtime(options: RealtimeOptions = {}) {
     if (!token) {
       scheduleReconnect()
       return
-    }
-
-    if (isDesktopRuntime) {
-      startLocalMonitorWorker({ accessToken: token }).catch((error) => {
-        console.warn("[monitor-worker] start failed", error)
-      })
     }
 
     // The current notification websocket backend only authenticates via bearer/query token.
@@ -306,25 +308,13 @@ export function useNotificationRealtime(options: RealtimeOptions = {}) {
   }, [enabled, isAuthenticated, isDesktopRuntime, scheduleReconnect, setList, setUnreadCount, startPing, stopPing, upsert])
 
   useEffect(() => {
-    if (process.env.NEXT_PUBLIC_IS_TAURI !== "true") {
-      return
+    connectRef.current = connect
+    return () => {
+      if (connectRef.current === connect) {
+        connectRef.current = null
+      }
     }
-    if (!enabled) {
-      void stopLocalMonitorWorker().catch(() => null)
-    }
-  }, [enabled])
-
-  useEffect(() => {
-    if (process.env.NEXT_PUBLIC_IS_TAURI !== "true") {
-      return
-    }
-    if (!enabled) {
-      return
-    }
-    void startLocalMonitorWorker({}).catch((error) => {
-      console.warn("[monitor-worker] start failed", error)
-    })
-  }, [enabled])
+  }, [connect])
 
   useEffect(() => {
     if (!enabled || !isAuthenticated) return undefined

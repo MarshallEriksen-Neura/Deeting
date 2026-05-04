@@ -1,9 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import {
+  ArrowLeftRight,
   ChevronUp,
+  Copy,
+  Languages,
   Maximize2,
   MessageSquareText,
+  SendHorizontal,
   Sparkles,
   User,
 } from "lucide-react";
@@ -12,6 +17,10 @@ import { motion, type Variants } from "framer-motion";
 import { useI18n } from "@/hooks/use-i18n";
 import { cn } from "@/lib/utils";
 import { MarkdownViewer } from "@/components/chat/markdown-viewer";
+import {
+  translateIslandSelection,
+  type IslandChatRequestConfig,
+} from "@/lib/api/island";
 import type { IslandRecentMessage } from "./island-store";
 
 import { IslandApprovalCard } from "./island-approval-card";
@@ -272,6 +281,204 @@ function IslandBrowserLookupCard({
   )
 }
 
+type TranslatorSeed = {
+  selectionId: string;
+  text: string;
+  sourceLanguage?: string;
+  targetLanguage: string;
+};
+
+function IslandTranslatorView({
+  seed,
+  chatRequestConfig,
+  onClose,
+}: {
+  seed: TranslatorSeed | null;
+  chatRequestConfig?: IslandChatRequestConfig | null;
+  onClose: () => void;
+}) {
+  const t = useI18n("chat");
+  const [sourceLanguage, setSourceLanguage] = useState(
+    seed?.sourceLanguage || "Auto",
+  );
+  const [targetLanguage, setTargetLanguage] = useState(
+    seed?.targetLanguage || "English",
+  );
+  const [input, setInput] = useState(seed?.text || "");
+  const [output, setOutput] = useState("");
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSourceLanguage(seed?.sourceLanguage || "Auto");
+    setTargetLanguage(seed?.targetLanguage || "English");
+    setInput(seed?.text || "");
+    setOutput("");
+    setError(null);
+  }, [seed]);
+
+  async function handleTranslate() {
+    const text = input.trim();
+    if (!text) return;
+    if (!chatRequestConfig) {
+      setError(t("island.translator.noModel"));
+      return;
+    }
+    setIsTranslating(true);
+    setError(null);
+    try {
+      const result = await translateIslandSelection({
+        text,
+        sourceLanguage:
+          sourceLanguage.trim().length > 0 &&
+          sourceLanguage.trim().toLowerCase() !== "auto"
+            ? sourceLanguage.trim()
+            : undefined,
+        targetLanguage: targetLanguage.trim() || "English",
+        requestConfig: chatRequestConfig,
+      });
+      setOutput(result.text);
+      setTargetLanguage(result.targetLanguage);
+    } catch (translateError) {
+      setError(
+        translateError instanceof Error
+          ? translateError.message
+          : t("island.translator.failed"),
+      );
+    } finally {
+      setIsTranslating(false);
+    }
+  }
+
+  async function copyOutput() {
+    if (!output.trim()) return;
+    await navigator.clipboard.writeText(output);
+  }
+
+  function swapLanguages() {
+    if (!output.trim()) {
+      setSourceLanguage(targetLanguage);
+      setTargetLanguage(sourceLanguage === "Auto" ? "English" : sourceLanguage);
+      return;
+    }
+    const previousSource = sourceLanguage;
+    setSourceLanguage(targetLanguage);
+    setTargetLanguage(previousSource === "Auto" ? "English" : previousSource);
+    setInput(output);
+    setOutput("");
+    setError(null);
+  }
+
+  return (
+    <div className="rounded-[26px] border border-white/40 bg-white/42 p-3 shadow-[0_18px_42px_-34px_rgba(0,0,0,0.35)] dark:border-white/8 dark:bg-white/4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-island-gold/25 bg-island-gold/10 text-island-gold">
+            <Languages className="h-3.5 w-3.5" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/44">
+              {t("island.translator.title")}
+            </div>
+            <div className="mt-0.5 truncate text-[12px] text-foreground/58">
+              {t("island.translator.subtitle")}
+            </div>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="shrink-0 rounded-full border border-white/40 px-2.5 py-1 text-[11px] text-foreground/55 transition-colors hover:bg-white/55 dark:border-white/10 dark:hover:bg-white/8"
+        >
+          {t("island.translator.close")}
+        </button>
+      </div>
+
+      <div className="mb-2 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+        <input
+          value={sourceLanguage}
+          onChange={(event) => setSourceLanguage(event.target.value)}
+          className="h-8 rounded-full border border-white/38 bg-white/50 px-3 text-center text-[12px] font-semibold text-foreground/76 outline-none focus:border-island-gold/40 dark:border-white/10 dark:bg-white/6"
+          aria-label={t("island.translator.sourceLanguage")}
+        />
+        <button
+          type="button"
+          onClick={swapLanguages}
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-white/38 bg-white/45 text-foreground/52 transition-colors hover:bg-white/65 hover:text-island-gold dark:border-white/10 dark:bg-white/6"
+          aria-label={t("island.translator.swap")}
+          title={t("island.translator.swap")}
+        >
+          <ArrowLeftRight className="h-3.5 w-3.5" />
+        </button>
+        <input
+          value={targetLanguage}
+          onChange={(event) => setTargetLanguage(event.target.value)}
+          className="h-8 rounded-full border border-white/38 bg-white/50 px-3 text-center text-[12px] font-semibold text-foreground/76 outline-none focus:border-island-gold/40 dark:border-white/10 dark:bg-white/6"
+          aria-label={t("island.translator.targetLanguage")}
+        />
+      </div>
+
+      <textarea
+        value={input}
+        onChange={(event) => setInput(event.target.value)}
+        placeholder={t("island.translator.inputPlaceholder")}
+        className="min-h-[118px] w-full resize-none rounded-[20px] border border-foreground/12 bg-white/58 px-3 py-2.5 text-[13px] leading-6 text-foreground/82 outline-none focus:border-island-gold/40 dark:bg-white/6"
+      />
+
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <div className="min-w-0 text-[11px] text-foreground/45">
+          {input.trim().length} {t("island.translator.characters")}
+        </div>
+        <button
+          type="button"
+          disabled={isTranslating || !input.trim()}
+          onClick={handleTranslate}
+          className="inline-flex h-8 items-center gap-1.5 rounded-full bg-island-gold/16 px-3 text-[11px] font-semibold text-island-gold transition-colors hover:bg-island-gold/24 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <SendHorizontal className="h-3.5 w-3.5" />
+          {isTranslating
+            ? t("island.translator.translating")
+            : t("island.translator.translate")}
+        </button>
+      </div>
+
+      <div className="my-3 flex items-center gap-2">
+        <div className="h-px flex-1 bg-foreground/10" />
+        <div className="rounded-full bg-background/72 px-2.5 py-1 text-[10px] font-medium text-foreground/50">
+          {t("island.translator.outputLabel")}
+        </div>
+        <div className="h-px flex-1 bg-foreground/10" />
+      </div>
+
+      <div className="min-h-[150px] rounded-[20px] border border-white/30 bg-white/40 px-3 py-3 text-[13px] leading-6 text-foreground/82 dark:border-white/8 dark:bg-white/5">
+        {error ? (
+          <div className="text-[12px] leading-5 text-amber-700 dark:text-amber-300">
+            {error}
+          </div>
+        ) : output ? (
+          <div className="whitespace-pre-wrap break-words">{output}</div>
+        ) : (
+          <div className="flex min-h-[120px] items-center justify-center text-center text-[12px] text-foreground/42">
+            {t("island.translator.outputPlaceholder")}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-2 flex justify-end">
+        <button
+          type="button"
+          disabled={!output.trim()}
+          onClick={() => void copyOutput()}
+          className="inline-flex h-7 items-center gap-1.5 rounded-full border border-white/38 bg-white/38 px-2.5 text-[10px] font-semibold text-foreground/58 transition-colors hover:bg-white/58 disabled:cursor-not-allowed disabled:opacity-45 dark:border-white/10 dark:bg-white/5"
+        >
+          <Copy className="h-3 w-3" />
+          {t("island.translator.copy")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function IslandExpandedView({
   headerDragRegion = false,
 }: {
@@ -283,6 +490,7 @@ export function IslandExpandedView({
     pendingApproval,
     browserLookup,
     selectionContext,
+    chatRequestConfig,
     isBusy,
     errorMessage,
     statusStage,
@@ -300,6 +508,12 @@ export function IslandExpandedView({
     dismissSelectionContext,
   } = useIslandContext();
   const t = useI18n("chat");
+  const [translatorSeed, setTranslatorSeed] = useState<TranslatorSeed | null>(
+    null,
+  );
+  const translatorOpen =
+    translatorSeed !== null &&
+    selectionContext?.selectionId === translatorSeed.selectionId;
 
   const isActive =
     statusLabel === "Working..." || statusLabel === "Pending approval";
@@ -383,7 +597,13 @@ export function IslandExpandedView({
         className="min-h-0 flex-1 overflow-y-auto island-content-scrollbar"
       >
         <motion.div variants={itemVariants} className="space-y-3 px-3.5 pb-3">
-          {pendingApproval ? (
+          {translatorOpen && !pendingApproval ? (
+            <IslandTranslatorView
+              seed={translatorSeed}
+              chatRequestConfig={chatRequestConfig}
+              onClose={() => setTranslatorSeed(null)}
+            />
+          ) : pendingApproval ? (
             <motion.div variants={itemVariants}>
               <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/40">
                 {t("island.approvalTitle")}
@@ -397,10 +617,21 @@ export function IslandExpandedView({
               />
             </motion.div>
           ) : null}
-          {selectionContext && !pendingApproval ? (
+          {selectionContext && !pendingApproval && !translatorOpen ? (
             <IslandSelectionPanel
               selection={selectionContext}
               isBusy={isBusy}
+              onOpenTranslator={(targetLanguage) => {
+                setTranslatorSeed({
+                  selectionId: selectionContext.selectionId,
+                  text: selectionContext.text,
+                  sourceLanguage:
+                    selectionContext.detectedLanguage.code !== "unknown"
+                      ? selectionContext.detectedLanguage.displayName
+                      : undefined,
+                  targetLanguage,
+                });
+              }}
               onRunAction={(kind, options) => {
                 void runSelectionAction(kind, options);
               }}
@@ -409,7 +640,7 @@ export function IslandExpandedView({
               }}
             />
           ) : null}
-          {browserLookup ? (
+          {!translatorOpen && browserLookup ? (
             <IslandBrowserLookupCard
               lookup={browserLookup}
               onAttach={(lookupId, prompt) => {
@@ -423,7 +654,7 @@ export function IslandExpandedView({
               dismissLabel={t("island.lookup.dismiss")}
             />
           ) : null}
-          {showTimeline ? (
+          {!translatorOpen && showTimeline ? (
             <div className="rounded-[26px] border border-white/40 bg-white/42 p-2.5 shadow-[0_18px_42px_-34px_rgba(0,0,0,0.35)] dark:border-white/8 dark:bg-white/4">
               <IslandStatusTimeline
                 statusLabel={statusLabel}
@@ -435,24 +666,26 @@ export function IslandExpandedView({
               />
             </div>
           ) : null}
-          {latestUserMessage ? (
+          {!translatorOpen && latestUserMessage ? (
             <IslandUserIntentChip
               message={latestUserMessage}
               requestLabel={t("island.requestLabel")}
             />
           ) : null}
-          <IslandAssistantPanel
-            message={latestAssistantMessage}
-            isActive={isActive}
-            compact={isApprovalFocused}
-            responseTitle={t("island.responseTitle")}
-            liveBadge={t("island.badges.live")}
-            latestBadge={t("island.badges.latest")}
-            emptyText={t("island.keepNearby")}
-            approvalEmptyText={t("island.approvalEmpty")}
-          />
+          {!translatorOpen ? (
+            <IslandAssistantPanel
+              message={latestAssistantMessage}
+              isActive={isActive}
+              compact={isApprovalFocused}
+              responseTitle={t("island.responseTitle")}
+              liveBadge={t("island.badges.live")}
+              latestBadge={t("island.badges.latest")}
+              emptyText={t("island.keepNearby")}
+              approvalEmptyText={t("island.approvalEmpty")}
+            />
+          ) : null}
 
-          {!isApprovalFocused ? null : (
+          {!isApprovalFocused || translatorOpen ? null : (
             <div className="rounded-[22px] border border-white/35 bg-white/38 px-3.5 py-3 shadow-[0_12px_24px_-20px_rgba(0,0,0,0.26)] dark:border-white/8 dark:bg-white/4">
               <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/44">
                 <MessageSquareText className="h-3.5 w-3.5 text-island-gold/72" />
@@ -479,12 +712,13 @@ export function IslandExpandedView({
       </motion.div>
 
       {/* Footer Area - Pinned at bottom */}
-      <motion.div
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-        className="shrink-0 px-3.5 pb-3"
-      >
+      {!translatorOpen ? (
+        <motion.div
+          variants={containerVariants}
+          initial="hidden"
+          animate="visible"
+          className="shrink-0 px-3.5 pb-3"
+        >
         <motion.div
           variants={itemVariants}
           className="rounded-[26px] border border-white/40 bg-[linear-gradient(180deg,rgba(255,255,255,0.86),rgba(246,241,235,0.68))] p-2 shadow-[0_22px_48px_-32px_rgba(0,0,0,0.35)] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(44,37,29,0.94),rgba(23,20,18,0.96))]"
@@ -506,7 +740,8 @@ export function IslandExpandedView({
             </button>
           </div>
         </motion.div>
-      </motion.div>
+        </motion.div>
+      ) : null}
     </motion.div>
   );
 }

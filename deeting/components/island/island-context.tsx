@@ -2,6 +2,7 @@
 
 import { createContext, useContext } from "react";
 import type { IslandApproval, IslandMode, IslandRecentMessage } from "./island-store";
+import type { IslandChatRequestConfig } from "@/lib/api/island";
 import type { IslandStatusStep } from "./island-runtime-status";
 import type { IslandBrowserLookupPayload } from "./browser-lookup-types";
 import type {
@@ -20,6 +21,7 @@ export interface IslandContextValue {
   pendingApproval: IslandApproval | null;
   browserLookup: IslandBrowserLookupPayload | null;
   selectionContext: IslandSelectionContext | null;
+  chatRequestConfig?: IslandChatRequestConfig | null;
   isBusy: boolean;
   errorMessage: string | null;
   statusStage: string | null;

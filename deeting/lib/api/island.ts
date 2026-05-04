@@ -5,6 +5,7 @@ import { z } from "zod"
 import { handleModelConfigRequiredError } from "@/lib/model-config-required"
 
 const EXECUTE_LOCAL_TEXT_CONVERSATION_COMMAND = "execute_local_text_conversation"
+const TRANSLATE_SELECTION_TEXT_COMMAND = "translate_selection_text"
 
 async function invokeTauri<T>(
   command: string,
@@ -40,9 +41,16 @@ export const IslandApprovalActionResultSchema = z.object({
   follow_up_texts: z.array(z.string()).default([]),
 })
 
+export const IslandTranslationResultSchema = z.object({
+  text: z.string(),
+  sourceLanguage: z.string().nullable().optional(),
+  targetLanguage: z.string(),
+})
+
 export type IslandToolApproval = z.infer<typeof IslandToolApprovalSchema>
 export type IslandTextConversationReply = z.infer<typeof IslandTextConversationReplySchema>
 export type IslandApprovalActionResult = z.infer<typeof IslandApprovalActionResultSchema>
+export type IslandTranslationResult = z.infer<typeof IslandTranslationResultSchema>
 
 function extractFollowUpTextsFromApprovalResult(result: unknown): string[] {
   if (!result || typeof result !== "object") return []
@@ -76,6 +84,13 @@ export interface IslandChatRequestConfig {
   model_selection_mode?: "pool" | "exact_provider"
   provider_model_id?: string
   useDesktopLocalGateway: boolean
+}
+
+export interface IslandTranslateSelectionRequest {
+  text: string
+  sourceLanguage?: string
+  targetLanguage: string
+  requestConfig: IslandChatRequestConfig
 }
 
 export async function streamIslandTextConversation(
@@ -117,6 +132,24 @@ export async function executeIslandTextConversation(
     return null
   }
   return IslandTextConversationReplySchema.parse(data)
+}
+
+export async function translateIslandSelection({
+  text,
+  sourceLanguage,
+  targetLanguage,
+  requestConfig,
+}: IslandTranslateSelectionRequest): Promise<IslandTranslationResult> {
+  const data = await invokeTauri<unknown>(TRANSLATE_SELECTION_TEXT_COMMAND, {
+    payload: {
+      text,
+      sourceLanguage,
+      targetLanguage,
+      model: requestConfig.model,
+      providerModelId: requestConfig.provider_model_id,
+    },
+  })
+  return IslandTranslationResultSchema.parse(data)
 }
 
 export async function approveIslandTool(

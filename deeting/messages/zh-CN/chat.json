@@ -707,6 +707,23 @@
           "copy": "复制"
         }
       },
+      "translator": {
+        "title": "翻译器",
+        "subtitle": "不进入完整聊天 runtime 的快速翻译",
+        "close": "返回",
+        "sourceLanguage": "源语言",
+        "targetLanguage": "目标语言",
+        "swap": "交换语言",
+        "inputPlaceholder": "输入或粘贴要翻译的文本...",
+        "characters": "字符",
+        "translate": "翻译",
+        "translating": "翻译中...",
+        "outputLabel": "翻译结果",
+        "outputPlaceholder": "翻译结果会显示在这里。",
+        "copy": "复制",
+        "noModel": "当前没有选择本地聊天模型。",
+        "failed": "翻译失败"
+      },
       "toolStatus": {
         "pendingApproval": "正在等待你批准 {name}",
         "running": "正在执行 {name}",

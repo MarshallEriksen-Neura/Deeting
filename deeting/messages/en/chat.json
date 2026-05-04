@@ -600,6 +600,23 @@
           "copy": "Copy"
         }
       },
+      "translator": {
+        "title": "Translator",
+        "subtitle": "Quick translation without entering the full chat runtime",
+        "close": "Back",
+        "sourceLanguage": "Source language",
+        "targetLanguage": "Target language",
+        "swap": "Swap languages",
+        "inputPlaceholder": "Type or paste text to translate...",
+        "characters": "chars",
+        "translate": "Translate",
+        "translating": "Translating...",
+        "outputLabel": "Translated",
+        "outputPlaceholder": "Translation will appear here.",
+        "copy": "Copy",
+        "noModel": "No local chat model is selected.",
+        "failed": "Translation failed"
+      },
       "toolStatus": {
         "pendingApproval": "Waiting for approval to continue with {name}",
         "running": "Running {name}",
@@ -854,4 +871,3 @@
     }
   }
 }
-

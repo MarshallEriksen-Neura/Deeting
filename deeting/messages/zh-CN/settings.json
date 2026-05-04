@@ -580,6 +580,8 @@
       "browserDesc": "浏览器调试与桥接",
       "relay": "网络与本地服务",
       "relayDesc": "桌面代理、Scout 等本地配置",
+      "shortcuts": "快捷键管理",
+      "shortcutsDesc": "灵动岛与划词唤醒快捷键",
       "window": "窗口",
       "windowDesc": "桌面关闭与最小化行为",
       "version": "版本",
@@ -606,12 +608,9 @@
       "desktopScoutUpdated": "桌面 Scout 配置已更新",
       "desktopObjectStorageUpdated": "桌面对象存储配置已更新"
     },
-    "window": {
-      "title": "桌面窗口行为",
-      "description": "控制桌面端在最小化或关闭时的行为。",
-      "minimizeLabel": "最小化按钮",
-      "minimizeValue": "正常最小化",
-      "minimizeHelp": "现在点击最小化只会正常最小化主窗口，不会自动显示灵动岛。",
+    "shortcuts": {
+      "title": "快捷键管理",
+      "description": "管理桌面端灵动岛和划词唤醒的全局快捷键。",
       "islandShortcutLabel": "灵动岛显示/隐藏快捷键",
       "islandShortcutHelp": "不拉起主窗口，直接切换灵动岛窗口。隐藏后 Deeting 仍可从托盘栏恢复。",
       "islandShortcutRequired": "请填写灵动岛显示/隐藏快捷键",
@@ -623,6 +622,18 @@
       "shortcutRecording": "取消",
       "shortcutWaiting": "请按下快捷键...",
       "shortcutReset": "恢复默认",
+      "save": "保存",
+      "saving": "保存中...",
+      "saveSuccess": "快捷键偏好已保存",
+      "saveFailed": "快捷键偏好保存失败",
+      "footerHint": "仅当前桌面设备生效，设置会本地持久化。"
+    },
+    "window": {
+      "title": "桌面窗口行为",
+      "description": "控制桌面端在最小化或关闭时的行为。",
+      "minimizeLabel": "最小化按钮",
+      "minimizeValue": "正常最小化",
+      "minimizeHelp": "现在点击最小化只会正常最小化主窗口，不会自动显示灵动岛。",
       "closeActionLabel": "关闭主窗口时",
       "closeActionHelp": "作用于当前设备上的关闭按钮和其他关闭窗口动作。",
       "closeAction": {

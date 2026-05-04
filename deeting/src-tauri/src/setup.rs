@@ -345,6 +345,22 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     crate::modules::external_sources::sync::start_external_source_sync_worker(sync_state.clone());
 
+    let monitor_worker_state = sync_state.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(err) = monitor_worker_state
+            .monitor
+            .start_worker(crate::modules::monitor::types::MonitorWorkerStartRequest {
+                access_token: None,
+                agent_id: None,
+                poll_interval_seconds: None,
+                pull_limit: None,
+            })
+            .await
+        {
+            log::warn!("local monitor worker startup failed: {}", err);
+        }
+    });
+
     crate::modules::llm_wiki::watcher::start_local_llm_wiki_watcher(sync_state.clone());
 
     let periodic_worker_state = sync_state.clone();

@@ -120,6 +120,7 @@ export function IslandWindowShell() {
       pendingApproval: s.pendingApproval,
       browserLookup: s.browserLookup,
       selectionContext: s.selectionContext,
+      chatRequestConfig: s.chatRequestConfig,
       isBusy: s.isBusy,
       errorMessage: s.errorMessage,
       statusStage: s.statusStage,
