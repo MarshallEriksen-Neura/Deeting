@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertCircle, ArrowUp, CircleDashed, RotateCcw, Search, Sliders, MessageSquarePlus, Paperclip, X, Square, FileText, Play, Check, Loader2, Globe } from 'lucide-react';
+import { AlertCircle, ArrowUp, Bot, CircleDashed, RotateCcw, Search, Sliders, MessageSquarePlus, Paperclip, X, Square, FileText, Play, Check, Loader2, Globe } from 'lucide-react';
 import { useMemo, useRef, useState, useCallback, useEffect, memo } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
@@ -39,7 +39,11 @@ import { generateWorkflowProposal } from '@/lib/workflow/commands';
 import type { KnowledgeFile } from '@/types/knowledge';
 import { listCustomTaskAgents, type CustomTaskAgentProfile } from '@/lib/api/custom-task-agents';
 import { matchesChatModelSelectionValue } from '@/lib/api/models';
-import { resolveLeadingTaskAgentMention } from '@/hooks/chat/task-agent-mention';
+import {
+  buildLeadingTaskAgentMentionInput,
+  getLeadingTaskAgentMentionQuery,
+  resolveLeadingTaskAgentMention,
+} from '@/hooks/chat/task-agent-mention';
 import { useBrowserModeStore } from '@/store/browser-mode-store';
 import { useWorkspaceStore } from '@/store/workspace-store';
 import { deriveAssistantActivityState } from '@/lib/chat/assistant-activity';
@@ -116,6 +120,8 @@ function ControlsContainer() {
   const [knowledgeSearchQuery, setKnowledgeSearchQuery] = useState('');
   const [retryingKnowledgeFileIds, setRetryingKnowledgeFileIds] = useState<string[]>([]);
   const [taskAgents, setTaskAgents] = useState<CustomTaskAgentProfile[]>([]);
+  const [taskAgentMentionActiveIndex, setTaskAgentMentionActiveIndex] = useState(0);
+  const [isTaskAgentMentionPickerDismissed, setIsTaskAgentMentionPickerDismissed] = useState(false);
   const [dismissedRecoveryMessageIds, setDismissedRecoveryMessageIds] = useState<string[]>([]);
   const [composerMode, setComposerMode] = useState<ComposerMode>('chat');
   const [isPlanningWorkflow, setIsPlanningWorkflow] = useState(false);
@@ -239,13 +245,45 @@ function ControlsContainer() {
       models[0],
     [models, config.model]
   );
+  const taskAgentMentionQuery = useMemo(
+    () => (isTauriRuntime ? getLeadingTaskAgentMentionQuery(input) : null),
+    [input, isTauriRuntime]
+  );
+  const mentionableTaskAgents = useMemo(
+    () => taskAgents.filter((agent) => !agent.is_deleted && agent.is_enabled),
+    [taskAgents]
+  );
+  const filteredTaskAgentMentionOptions = useMemo(() => {
+    if (taskAgentMentionQuery === null) return [];
+    const query = taskAgentMentionQuery.trim().toLowerCase();
+    return mentionableTaskAgents
+      .filter((agent) => {
+        if (!query) return true;
+        const searchable = [
+          agent.name,
+          agent.description ?? '',
+          agent.invocation_kind,
+          ...agent.tags,
+        ]
+          .join(' ')
+          .toLowerCase();
+        return searchable.includes(query);
+      })
+      .slice(0, 8);
+  }, [mentionableTaskAgents, taskAgentMentionQuery]);
+  const showTaskAgentMentionPicker = Boolean(
+    isTauriRuntime &&
+    !isTaskAgentMentionPickerDismissed &&
+    taskAgentMentionQuery !== null &&
+    filteredTaskAgentMentionOptions.length > 0
+  );
   const resolvedTaskAgentMention = useMemo(() => {
     if (!isTauriRuntime) return null;
     return resolveLeadingTaskAgentMention(
       input,
-      taskAgents.map((agent) => ({ id: agent.id, name: agent.name })),
+      mentionableTaskAgents.map((agent) => ({ id: agent.id, name: agent.name })),
     );
-  }, [input, isTauriRuntime, taskAgents]);
+  }, [input, isTauriRuntime, mentionableTaskAgents]);
 
   const knowledgeFileMap = useMemo(() => {
     return new Map(knowledgeFiles.map((file) => [file.id, file]));
@@ -417,6 +455,16 @@ function ControlsContainer() {
     setIsParamsOpen(open);
   }, []);
 
+  const handleInputChange = useCallback((value: string) => {
+    setInput(value);
+    setIsTaskAgentMentionPickerDismissed(false);
+  }, [setInput]);
+
+  const handleSelectTaskAgentMention = useCallback((agent: CustomTaskAgentProfile) => {
+    setInput(buildLeadingTaskAgentMentionInput(agent.name, ''));
+    setIsTaskAgentMentionPickerDismissed(true);
+  }, [setInput]);
+
   const loadKnowledgeFiles = useCallback(async () => {
     if (!isTauriRuntime) return;
     setKnowledgeLoading(true);
@@ -459,6 +507,10 @@ function ControlsContainer() {
       cancelled = true;
     };
   }, [isTauriRuntime]);
+
+  useEffect(() => {
+    setTaskAgentMentionActiveIndex(0);
+  }, [taskAgentMentionQuery, filteredTaskAgentMentionOptions.length]);
 
   const handleNewChat = useCallback(async () => {
     resetSession();
@@ -503,14 +555,6 @@ function ControlsContainer() {
 
   const handleGeneratePlan = useCallback(async () => {
     if (!isTauriRuntime || !canGeneratePlan) return;
-    if (!hasResolvedTaskAgent) {
-      toast.error(
-        t("input.taskAgentMissing", {
-          name: resolvedTaskAgentMention?.mention.agentName ?? "",
-        })
-      );
-      return;
-    }
 
     setIsPlanningWorkflow(true);
     try {
@@ -528,12 +572,10 @@ function ControlsContainer() {
     }
   }, [
     canGeneratePlan,
-    hasResolvedTaskAgent,
     isTauriRuntime,
     openWorkflow,
     resolvedTaskAgentMention,
     setInput,
-    t,
     workflowGoal,
   ]);
 
@@ -589,6 +631,35 @@ function ControlsContainer() {
   ]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (showTaskAgentMentionPicker && filteredTaskAgentMentionOptions.length > 0) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const direction = e.key === 'ArrowDown' ? 1 : -1;
+        setTaskAgentMentionActiveIndex((current) => {
+          const next = current + direction;
+          if (next < 0) return filteredTaskAgentMentionOptions.length - 1;
+          if (next >= filteredTaskAgentMentionOptions.length) return 0;
+          return next;
+        });
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setIsTaskAgentMentionPickerDismissed(true);
+        return;
+      }
+      if (e.key === 'Tab' || e.key === 'Enter') {
+        if (e.nativeEvent.isComposing || e.keyCode === 229) {
+          return;
+        }
+        e.preventDefault();
+        const selectedAgent = filteredTaskAgentMentionOptions[taskAgentMentionActiveIndex];
+        if (selectedAgent) {
+          handleSelectTaskAgentMention(selectedAgent);
+        }
+        return;
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       if (e.nativeEvent.isComposing || e.keyCode === 229) {
         return;
@@ -596,7 +667,13 @@ function ControlsContainer() {
       e.preventDefault();
       void handleSend();
     }
-  }, [handleSend]);
+  }, [
+    filteredTaskAgentMentionOptions,
+    handleSend,
+    handleSelectTaskAgentMention,
+    showTaskAgentMentionPicker,
+    taskAgentMentionActiveIndex,
+  ]);
 
   const handleFiles = useCallback(async (files: File[]) => {
     if (!files.length) return;
@@ -894,10 +971,57 @@ function ControlsContainer() {
             ))}
           </div>
         ) : null}
-        <div className="flex items-center rounded-[22px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+        <div className="relative flex items-center rounded-[22px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+          {showTaskAgentMentionPicker ? (
+            <div className="absolute bottom-[calc(100%+8px)] left-0 z-20 w-full max-w-[720px] overflow-hidden rounded-[24px] border border-slate-200/80 bg-white/95 p-2 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.65)] backdrop-blur-2xl dark:border-white/10 dark:bg-[#151515]/95">
+              <div className="px-3 pb-1.5 pt-1 text-[11px] font-semibold text-slate-500 dark:text-white/45">
+                {t("input.taskAgentPickerTitle")}
+              </div>
+              <div className="max-h-72 overflow-y-auto pr-1">
+                {filteredTaskAgentMentionOptions.map((agent, index) => {
+                  const isActive = index === taskAgentMentionActiveIndex;
+                  return (
+                    <button
+                      key={agent.id}
+                      type="button"
+                      className={cn(
+                        "flex min-h-11 w-full items-center gap-3 rounded-[16px] px-3 py-2 text-left transition-colors",
+                        isActive
+                          ? "bg-slate-100 text-slate-900 dark:bg-white/10 dark:text-white"
+                          : "text-slate-700 hover:bg-slate-50 dark:text-white/75 dark:hover:bg-white/[0.06]"
+                      )}
+                      onMouseEnter={() => setTaskAgentMentionActiveIndex(index)}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => handleSelectTaskAgentMention(agent)}
+                    >
+                      <div className={cn(
+                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border",
+                        isActive
+                          ? "border-slate-300 bg-white text-slate-800 dark:border-white/20 dark:bg-white/10 dark:text-white"
+                          : "border-slate-200 bg-slate-50 text-slate-500 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/45"
+                      )}>
+                        <Bot className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-semibold">{agent.name}</span>
+                          <span className="rounded-full border border-slate-200 px-1.5 py-0.5 text-[10px] font-medium uppercase text-slate-400 dark:border-white/10 dark:text-white/35">
+                            {agent.invocation_kind.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                        <div className="truncate text-xs text-slate-500 dark:text-white/40">
+                          {agent.description || agent.task_prompt}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
           <Input
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             className="min-h-[44px] w-full bg-transparent border-0 shadow-none text-slate-800 dark:text-white/80 placeholder:text-slate-500 dark:placeholder:text-white/30 text-[15px] font-normal focus-visible:ring-0 focus-visible:border-transparent"
@@ -1201,14 +1325,6 @@ function ControlsContainer() {
 
       {attachmentError ? (
         <div className="text-center text-xs font-medium text-red-500/90 dark:text-red-400/90">{attachmentError}</div>
-      ) : null}
-
-      {resolvedTaskAgentMention ? (
-        <div className="text-center text-xs font-medium text-slate-500/90 dark:text-muted-foreground">
-          {resolvedTaskAgentMention.agent
-            ? t("input.taskAgentRouted", { name: resolvedTaskAgentMention.agent.name })
-            : t("input.taskAgentMissing", { name: resolvedTaskAgentMention.mention.agentName })}
-        </div>
       ) : null}
 
       {showWorkflowSuggestion ? (

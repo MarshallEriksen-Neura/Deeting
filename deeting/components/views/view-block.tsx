@@ -1,6 +1,6 @@
 "use client"
 
-import { memo } from "react"
+import { createElement, memo, useMemo } from "react"
 import { resolveNativeView } from "./registry"
 import { ViewCard } from "./view-card"
 import { FallbackJsonView } from "./fallback-json-view"
@@ -13,7 +13,7 @@ interface ViewBlockProps {
 }
 
 export function rendersWithoutViewCard(viewType: string) {
-  return viewType === "html.v1"
+  return viewType === "html.v1" || viewType === "image.result" || viewType === "execution.lifecycle"
 }
 
 export const ViewBlock = memo<ViewBlockProps>(function ViewBlock({
@@ -22,16 +22,16 @@ export const ViewBlock = memo<ViewBlockProps>(function ViewBlock({
   title,
   metadata,
 }) {
-  const NativeComponent = resolveNativeView(viewType)
+  const NativeComponent = useMemo(() => resolveNativeView(viewType), [viewType])
 
   if (NativeComponent) {
     if (rendersWithoutViewCard(viewType)) {
-      return <NativeComponent data={payload} title={title} metadata={metadata} />
+      return createElement(NativeComponent, { data: payload, title, metadata })
     }
 
     return (
       <ViewCard title={title} viewType={viewType}>
-        <NativeComponent data={payload} title={title} metadata={metadata} />
+        {createElement(NativeComponent, { data: payload, title, metadata })}
       </ViewCard>
     )
   }
@@ -40,3 +40,4 @@ export const ViewBlock = memo<ViewBlockProps>(function ViewBlock({
 })
 
 export default ViewBlock
+

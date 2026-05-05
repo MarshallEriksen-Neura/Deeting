@@ -35,6 +35,32 @@ function isToolVisualBlock(block: MessageBlock): boolean {
   )
 }
 
+function isUiBlock(block: MessageBlock): block is Extract<MessageBlock, { type: "ui" }> {
+  return block.type === "ui"
+}
+
+function stringifyBlockValue(value: unknown): string {
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return "[unserializable]"
+  }
+}
+
+function getUiBlockSignature(block: MessageBlock): string | null {
+  if (!isUiBlock(block)) return null
+  const callId = typeof block.callId === "string" ? block.callId.trim() : ""
+  const viewType = typeof block.viewType === "string" ? block.viewType.trim() : ""
+  if (!callId || !viewType) return null
+  return [
+    callId,
+    viewType,
+    typeof block.title === "string" ? block.title : "",
+    stringifyBlockValue(block.metadata ?? null),
+    stringifyBlockValue(block.payload ?? null),
+  ].join("::")
+}
+
 function isActiveToolCallStatus(status: ToolCallBlock["status"] | undefined) {
   return status === "running" || status === "requires_approval"
 }
@@ -186,6 +212,26 @@ function upsertExecutionLifecycleBlock(next: InternalMessageBlock[], block: Inte
   return true
 }
 
+function upsertUiBlock(next: InternalMessageBlock[], block: InternalMessageBlock): boolean {
+  if (block.type !== "ui") return false
+  const signature = getUiBlockSignature(block)
+  if (!signature) return false
+
+  const existingIndex = next.findIndex(
+    (candidate) => candidate.type === "ui" && getUiBlockSignature(candidate) === signature,
+  )
+  if (existingIndex < 0) return false
+
+  const existing = next[existingIndex]
+  if (!existing || existing.type !== "ui") return false
+  next[existingIndex] = {
+    ...existing,
+    ...block,
+    id: existing.id || block.id,
+  }
+  return true
+}
+
 function applyToolResultStatuses(blocks: InternalMessageBlock[]): InternalMessageBlock[] {
   const normalized = [...blocks]
   for (const block of normalized) {
@@ -261,6 +307,7 @@ export function canonicalizeMessageBlockOrder(blocks: MessageBlock[]): MessageBl
   const linkedUiIndices = new Set<number>()
   const linkedResultsByCallId = new Map<string, InternalMessageBlock[]>()
   const linkedUiByCallId = new Map<string, InternalMessageBlock[]>()
+  const linkedUiSignaturesByCallId = new Map<string, Set<string>>()
 
   normalized.forEach((block, index) => {
     const callId = typeof block.callId === "string" ? block.callId.trim() : ""
@@ -275,6 +322,15 @@ export function canonicalizeMessageBlockOrder(blocks: MessageBlock[]): MessageBl
     }
 
     if (block.type === "ui") {
+      const signature = getUiBlockSignature(block)
+      if (!signature) return
+      const seenSignatures = linkedUiSignaturesByCallId.get(callId) ?? new Set<string>()
+      if (seenSignatures.has(signature)) {
+        linkedUiIndices.add(index)
+        return
+      }
+      seenSignatures.add(signature)
+      linkedUiSignaturesByCallId.set(callId, seenSignatures)
       linkedUiIndices.add(index)
       const existing = linkedUiByCallId.get(callId) ?? []
       existing.push(block)
@@ -384,6 +440,10 @@ export function appendMessageBlocks(
     }
 
     if (upsertExecutionLifecycleBlock(next, block)) {
+      continue
+    }
+
+    if (upsertUiBlock(next, block)) {
       continue
     }
 

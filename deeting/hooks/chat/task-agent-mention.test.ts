@@ -1,9 +1,36 @@
 import {
+  buildLeadingTaskAgentMentionInput,
+  getLeadingTaskAgentMentionDraft,
+  getLeadingTaskAgentMentionQuery,
   parseLeadingTaskAgentMention,
   resolveLeadingTaskAgentMention,
 } from "./task-agent-mention"
 
 describe("parseLeadingTaskAgentMention", () => {
+  it("builds a draft for the composer picker when only the trigger is present", () => {
+    expect(getLeadingTaskAgentMentionDraft("@")).toEqual({
+      query: "",
+      prompt: "",
+    })
+  })
+
+  it("builds a draft query and keeps the prompt suffix for picker insertion", () => {
+    expect(getLeadingTaskAgentMentionDraft("@达 画一只猫")).toEqual({
+      query: "达",
+      prompt: "画一只猫",
+    })
+  })
+
+  it("keeps the full raw query for picker filtering before selection", () => {
+    expect(getLeadingTaskAgentMentionQuery("@Image A")).toBe("Image A")
+  })
+
+  it("builds mention input while preserving the prompt suffix", () => {
+    expect(buildLeadingTaskAgentMentionInput("达芬奇", "画一只猫")).toBe(
+      "@达芬奇 画一只猫",
+    )
+  })
+
   it("parses a leading task-agent mention and remaining prompt", () => {
     expect(parseLeadingTaskAgentMention("@达芬奇 画一只猫")).toEqual({
       agentName: "达芬奇",

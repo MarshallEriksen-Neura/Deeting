@@ -1,11 +1,15 @@
 "use client"
 
-import { memo, useEffect, useMemo, useState } from "react"
-import { Image as ImageIcon } from "lucide-react"
+import { memo, useCallback, useEffect, useMemo, useState } from "react"
+import { Check, Copy, Download, Image as ImageIcon, X } from "lucide-react"
+import { toast } from "sonner"
 
+import { Button } from "@/ui/shadcn/button"
+import { Dialog, DialogContent, DialogTitle, VisuallyHidden } from "@/ui/shadcn/dialog"
 import { useLazyImage } from "@/hooks/use-lazy-image"
 import { useI18n } from "@/hooks/use-i18n"
 import { prepareDesktopObjectStorageRead } from "@/lib/api/desktop-object-storage"
+import { copyToClipboard } from "@/lib/utils/copy-to-clipboard"
 import { cn } from "@/lib/utils"
 
 export interface ImageResultOutputItem {
@@ -31,76 +35,53 @@ interface ImageResultPanelProps {
   className?: string
 }
 
+type ResolvedImageItem = ImageResultOutputItem & {
+  originalUrl: string
+  resolvedUrl: string
+}
+
+const fileExtensionByContentType: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+}
+
 const LazyImage = memo<{
   src: string
   alt: string
-  contentType?: string | null
-  className?: string
-}>(({ src, alt, contentType, className }) => {
-  const [resolvedSrc, setResolvedSrc] = useState(src)
-
-  useEffect(() => {
-    let cancelled = false
-
-    const resolveSrc = async () => {
-      const trimmed = src.trim()
-      if (!trimmed) {
-        if (!cancelled) setResolvedSrc("")
-        return
-      }
-      if (trimmed.startsWith("local-asset://")) {
-        const sha256 = trimmed.slice("local-asset://".length).replace(/^\/+/, "")
-        if (!sha256) {
-          if (!cancelled) setResolvedSrc("")
-          return
-        }
-        try {
-          const { invoke } = await import("@tauri-apps/api/core")
-          const result = await invoke<{ data_url: string }>("read_local_chat_asset", {
-            payload: {
-              sha256,
-              content_type: contentType ?? "image/png",
-            },
-          })
-          if (!cancelled) setResolvedSrc(result.data_url)
-          return
-        } catch {
-          if (!cancelled) setResolvedSrc("")
-          return
-        }
-      }
-      if (trimmed.startsWith("asset://")) {
-        const objectKey = trimmed.slice("asset://".length).replace(/^\/+/, "")
-        if (!objectKey) {
-          if (!cancelled) setResolvedSrc("")
-          return
-        }
-        try {
-          const ticket = await prepareDesktopObjectStorageRead({
-            object_key: objectKey,
-            expires_seconds: 900,
-          })
-          if (!cancelled) setResolvedSrc(ticket.asset_url)
-          return
-        } catch {
-          if (!cancelled) setResolvedSrc("")
-          return
-        }
-      }
-      if (!cancelled) setResolvedSrc(trimmed)
-    }
-
-    void resolveSrc()
-    return () => {
-      cancelled = true
-    }
-  }, [contentType, src])
-
+  fit?: "natural" | "cover"
+}>(({ src, alt, fit = "natural" }) => {
   const { imageSrc, isLoading, error, imgRef } = useLazyImage({
-    src: resolvedSrc,
-    rootMargin: "50px",
+    src,
+    rootMargin: "80px",
     threshold: 0.01,
   })
+
+  if (fit === "cover") {
+    return (
+      <div className="absolute inset-0">
+        <img
+          ref={imgRef}
+          src={imageSrc ?? undefined}
+          alt={alt}
+          className={cn(
+            "h-full w-full object-cover transition-[opacity,transform] duration-700 ease-[cubic-bezier(0.32,0.72,0,1)]",
+            (isLoading || !imageSrc || error) && "opacity-0 scale-[1.02]"
+          )}
+        />
+        {error ? (
+          <div className="absolute inset-0 flex items-center justify-center text-foreground/30">
+            <ImageIcon className="h-5 w-5" />
+          </div>
+        ) : null}
+        {!error && (isLoading || !imageSrc) ? (
+          <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-foreground/[0.04] via-foreground/[0.07] to-foreground/[0.04]" />
+        ) : null}
+      </div>
+    )
+  }
 
   return (
     <>
@@ -109,19 +90,16 @@ const LazyImage = memo<{
         src={imageSrc ?? undefined}
         alt={alt}
         className={cn(
-          "object-contain w-full h-full transition-opacity",
-          (isLoading || !imageSrc || error) && "opacity-0",
-          className
+          "block h-auto w-full max-h-[70vh] select-none object-contain transition-[opacity,transform] duration-700 ease-[cubic-bezier(0.32,0.72,0,1)]",
+          (isLoading || !imageSrc || error) && "opacity-0 scale-[1.02]"
         )}
       />
-      {error ? (
-        <div className="absolute inset-0 flex items-center justify-center text-slate-400 dark:text-white/30">
-          <ImageIcon className="h-5 w-5" />
-        </div>
+      {(isLoading || !imageSrc) && !error ? (
+        <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-foreground/[0.04] via-foreground/[0.07] to-foreground/[0.04]" />
       ) : null}
-      {!error && (isLoading || !imageSrc) ? (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-100 dark:bg-white/5">
-          <div className="w-5 h-5 border-2 border-slate-300 dark:border-white/20 border-t-transparent rounded-full animate-spin" />
+      {error ? (
+        <div className="absolute inset-0 flex items-center justify-center text-foreground/30">
+          <ImageIcon className="h-5 w-5" />
         </div>
       ) : null}
     </>
@@ -132,13 +110,115 @@ LazyImage.displayName = "LazyImage"
 
 function normalizeOutputs(payload: ImageResultPanelPayload): ImageResultOutputItem[] {
   const outputs = Array.isArray(payload.outputs) ? payload.outputs.filter(Boolean) : []
-  if (outputs.length > 0) {
-    return outputs
-  }
-  if (payload.preview) {
-    return [payload.preview]
-  }
+  if (outputs.length > 0) return outputs
+  if (payload.preview) return [payload.preview]
   return []
+}
+
+function getPreferredUrl(item: ImageResultOutputItem): string {
+  return item.asset_url?.trim() || item.source_url?.trim() || ""
+}
+
+async function resolveImageUrl(item: ImageResultOutputItem): Promise<ResolvedImageItem | null> {
+  const originalUrl = getPreferredUrl(item)
+  if (!originalUrl) return null
+
+  if (originalUrl.startsWith("local-asset://")) {
+    const sha256 = originalUrl.slice("local-asset://".length).replace(/^\/+/, "")
+    if (!sha256) return null
+    try {
+      const { invoke } = await import("@tauri-apps/api/core")
+      const result = await invoke<{ data_url: string }>("read_local_chat_asset", {
+        payload: {
+          sha256,
+          content_type: item.content_type ?? "image/png",
+        },
+      })
+      return { ...item, originalUrl, resolvedUrl: result.data_url }
+    } catch {
+      return null
+    }
+  }
+
+  if (originalUrl.startsWith("asset://")) {
+    const objectKey = originalUrl.slice("asset://".length).replace(/^\/+/, "")
+    if (!objectKey) return null
+    try {
+      const ticket = await prepareDesktopObjectStorageRead({
+        object_key: objectKey,
+        expires_seconds: 900,
+      })
+      return { ...item, originalUrl, resolvedUrl: ticket.asset_url }
+    } catch {
+      return null
+    }
+  }
+
+  return { ...item, originalUrl, resolvedUrl: originalUrl }
+}
+
+function imageFilename(item: ImageResultOutputItem, index: number): string {
+  const contentType = item.content_type?.trim().toLowerCase() || ""
+  const ext = fileExtensionByContentType[contentType] ?? "png"
+  return `deeting-image-${index + 1}.${ext}`
+}
+
+async function downloadImage(item: ResolvedImageItem, index: number) {
+  try {
+    const response = await fetch(item.resolvedUrl)
+    if (!response.ok) {
+      throw new Error(`Download failed: ${response.status}`)
+    }
+    const blob = await response.blob()
+    const blobUrl = URL.createObjectURL(blob)
+    const anchor = document.createElement("a")
+    anchor.href = blobUrl
+    anchor.download = imageFilename(item, index)
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+    return
+  } catch {
+    const anchor = document.createElement("a")
+    anchor.href = item.resolvedUrl
+    anchor.download = imageFilename(item, index)
+    anchor.rel = "noreferrer"
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+  }
+}
+
+async function copyImage(item: ResolvedImageItem): Promise<boolean> {
+  const ClipboardItemCtor = typeof ClipboardItem === "undefined" ? null : ClipboardItem
+  if (navigator.clipboard?.write && ClipboardItemCtor) {
+    try {
+      const response = await fetch(item.resolvedUrl)
+      if (!response.ok) throw new Error(`Copy failed: ${response.status}`)
+      const sourceBlob = await response.blob()
+      const contentType = item.content_type?.trim() || sourceBlob.type || "image/png"
+      const blob =
+        sourceBlob.type === contentType ? sourceBlob : sourceBlob.slice(0, sourceBlob.size, contentType)
+      await navigator.clipboard.write([new ClipboardItemCtor({ [contentType]: blob })])
+      return true
+    } catch {
+      // Some desktop WebViews do not expose image clipboard writes.
+    }
+  }
+  return copyToClipboard(item.resolvedUrl)
+}
+
+function gridClassFor(count: number) {
+  if (count <= 1) return "grid-cols-1"
+  if (count === 2) return "grid-cols-1 sm:grid-cols-2"
+  if (count <= 4) return "grid-cols-2"
+  return "grid-cols-2 lg:grid-cols-3"
+}
+
+function tileClassFor(count: number) {
+  if (count === 2) return "aspect-square sm:aspect-[4/3]"
+  return "aspect-square"
 }
 
 export const ImageResultPanel = memo<ImageResultPanelProps>(function ImageResultPanel({
@@ -147,77 +227,338 @@ export const ImageResultPanel = memo<ImageResultPanelProps>(function ImageResult
 }) {
   const t = useI18n("chat")
   const outputs = useMemo(() => normalizeOutputs(payload), [payload])
-  const [selectedIndex, setSelectedIndex] = useState(0)
+  const [items, setItems] = useState<Array<ResolvedImageItem | null>>([])
+  const [isResolving, setIsResolving] = useState(false)
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null)
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
+  const [busyAction, setBusyAction] = useState<string | null>(null)
 
-  const safeIndex = Math.min(selectedIndex, Math.max(outputs.length - 1, 0))
-  const selected = outputs[safeIndex] ?? payload.preview ?? null
-  const selectedUrl = selected?.asset_url ?? selected?.source_url ?? ""
-  const prompt = payload.prompt?.trim() || ""
-  const model = payload.model?.trim() || ""
+  useEffect(() => {
+    let cancelled = false
+    setIsResolving(outputs.length > 0)
+    setItems(outputs.length > 0 ? Array(outputs.length).fill(null) : [])
+
+    void Promise.all(outputs.map(resolveImageUrl)).then((resolved) => {
+      if (cancelled) return
+      setItems(resolved)
+      setIsResolving(false)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [outputs])
+
+  const openPreview = useCallback((index: number) => {
+    setPreviewIndex(index)
+  }, [])
+
+  const closePreview = useCallback(() => {
+    setPreviewIndex(null)
+  }, [])
+
+  const handleDownload = useCallback(
+    async (item: ResolvedImageItem, index: number) => {
+      const actionKey = `download-${index}`
+      setBusyAction(actionKey)
+      try {
+        await downloadImage(item, index)
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : t("views.generatedFile.exportFailed"))
+      } finally {
+        setBusyAction(null)
+      }
+    },
+    [t]
+  )
+
+  const handleCopy = useCallback(
+    async (item: ResolvedImageItem, index: number) => {
+      const actionKey = `copy-${index}`
+      setBusyAction(actionKey)
+      try {
+        const ok = await copyImage(item)
+        if (!ok) {
+          toast.error("复制失败")
+          return
+        }
+        setCopiedIndex(index)
+        window.setTimeout(() => setCopiedIndex((current) => (current === index ? null : current)), 1500)
+      } catch {
+        toast.error("复制失败")
+      } finally {
+        setBusyAction(null)
+      }
+    },
+    []
+  )
+
+  if (outputs.length === 0) {
+    return (
+      <div className={cn("flex min-h-48 items-center justify-center rounded-xl bg-muted/40 text-muted-foreground", className)}>
+        <span className="text-sm">{t("imageHistory.previewEmpty")}</span>
+      </div>
+    )
+  }
+
+  const previewItem = previewIndex !== null ? items[previewIndex] : null
+  const isSingle = outputs.length === 1
+
+  if (isSingle) {
+    const resolved = items[0]
+    const src = resolved?.resolvedUrl ?? ""
+    const hasFinishedResolution = !isResolving
+    const showSkeleton = isResolving && !resolved
+    const showError = hasFinishedResolution && !resolved
+
+    return (
+      <div className={cn("w-full", className)}>
+        <div className="group relative isolate w-full max-w-[34rem]">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -inset-x-6 -inset-y-3 -z-10 rounded-[2.25rem] bg-[radial-gradient(circle_at_30%_20%,rgba(99,102,241,0.10),transparent_55%),radial-gradient(circle_at_75%_80%,rgba(236,72,153,0.08),transparent_60%)] opacity-70 blur-2xl transition-opacity duration-700 group-hover:opacity-100"
+          />
+          <div className="relative rounded-[1.625rem] bg-gradient-to-b from-foreground/[0.05] to-transparent p-1 ring-1 ring-foreground/[0.06] backdrop-blur-sm dark:from-foreground/[0.04] dark:ring-foreground/[0.08]">
+            <div className="relative overflow-hidden rounded-[1.25rem] bg-gradient-to-br from-background via-background to-foreground/[0.02] shadow-[inset_0_1px_0_rgba(255,255,255,0.6),inset_0_-1px_0_rgba(0,0,0,0.04)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_-1px_0_rgba(0,0,0,0.3)]">
+              {src ? (
+                <button
+                  type="button"
+                  className="relative block w-full cursor-zoom-in"
+                  onClick={() => openPreview(0)}
+                  aria-label={t("imageHistory.previewTitle")}
+                >
+                  <LazyImage src={src} alt={t("input.image.alt")} fit="natural" />
+                  <span className="pointer-events-none absolute inset-0 bg-foreground/0 transition-colors duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:bg-foreground/[0.04]" />
+                </button>
+              ) : null}
+
+              {showSkeleton ? (
+                <div className="aspect-[4/3] w-full animate-pulse bg-gradient-to-br from-foreground/[0.04] via-foreground/[0.07] to-foreground/[0.04]" />
+              ) : null}
+
+              {showError ? (
+                <div className="flex aspect-[4/3] w-full items-center justify-center text-foreground/30">
+                  <ImageIcon className="h-6 w-6" />
+                </div>
+              ) : null}
+
+              {resolved ? (
+                <div className="pointer-events-none absolute right-3 top-3 flex items-center gap-1.5 opacity-0 translate-y-1 transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:pointer-events-auto group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="icon-sm"
+                    className="h-9 w-9 rounded-full border border-white/40 bg-white/80 text-foreground shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)] backdrop-blur-md transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:scale-105 hover:bg-white active:scale-95 dark:border-white/10 dark:bg-zinc-900/80 dark:hover:bg-zinc-900"
+                    aria-label={t("views.generatedFile.download")}
+                    title={t("views.generatedFile.download")}
+                    disabled={busyAction === `download-0`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void handleDownload(resolved, 0)
+                    }}
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="icon-sm"
+                    className="h-9 w-9 rounded-full border border-white/40 bg-white/80 text-foreground shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)] backdrop-blur-md transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:scale-105 hover:bg-white active:scale-95 dark:border-white/10 dark:bg-zinc-900/80 dark:hover:bg-zinc-900"
+                    aria-label={copiedIndex === 0 ? t("actions.copied") : t("actions.copy")}
+                    title={copiedIndex === 0 ? t("actions.copied") : t("actions.copy")}
+                    disabled={busyAction === `copy-0`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void handleCopy(resolved, 0)
+                    }}
+                  >
+                    {copiedIndex === 0 ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <Dialog open={previewIndex !== null} onOpenChange={(open) => (!open ? closePreview() : undefined)}>
+          <DialogContent className="[&>button]:hidden max-h-[96dvh] max-w-[96vw] overflow-hidden border-none bg-transparent p-0 shadow-none">
+            <VisuallyHidden>
+              <DialogTitle>{t("imageHistory.previewTitle")}</DialogTitle>
+            </VisuallyHidden>
+            {previewItem ? (
+              <div className="relative flex h-[92dvh] w-[92vw] items-center justify-center">
+                <img
+                  src={previewItem.resolvedUrl}
+                  alt={t("input.image.alt")}
+                  className="max-h-full max-w-full select-none rounded-lg object-contain shadow-2xl"
+                />
+                <div className="absolute right-3 top-3 flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="icon-sm"
+                    className="h-9 w-9 rounded-full border border-white/20 bg-zinc-950/70 text-white shadow-sm backdrop-blur-md hover:bg-zinc-900"
+                    aria-label={t("views.generatedFile.download")}
+                    onClick={() => void handleDownload(previewItem, previewIndex ?? 0)}
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="icon-sm"
+                    className="h-9 w-9 rounded-full border border-white/20 bg-zinc-950/70 text-white shadow-sm backdrop-blur-md hover:bg-zinc-900"
+                    aria-label={t("actions.copy")}
+                    onClick={() => void handleCopy(previewItem, previewIndex ?? 0)}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="icon-sm"
+                    className="h-9 w-9 rounded-full border border-white/20 bg-zinc-950/70 text-white shadow-sm backdrop-blur-md hover:bg-zinc-900"
+                    aria-label="Close"
+                    onClick={closePreview}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </DialogContent>
+        </Dialog>
+      </div>
+    )
+  }
 
   return (
-    <div className={cn("space-y-4", className)}>
-      <div className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-slate-100 dark:bg-white/5">
-        {selectedUrl ? (
-          <LazyImage
-            src={selectedUrl}
-            contentType={selected?.content_type}
-            alt={prompt || model || "generated image"}
-            className="w-full h-full"
-          />
-        ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 dark:text-white/30 gap-2">
-            <ImageIcon className="h-6 w-6" />
-            <span className="text-xs">{t("imageHistory.previewEmpty")}</span>
-          </div>
-        )}
+    <div className={cn("w-full", className)}>
+      <div className={cn("grid w-full gap-2.5", gridClassFor(outputs.length))}>
+        {outputs.map((output, index) => {
+          const resolved = items[index]
+          const src = resolved?.resolvedUrl ?? ""
+          const hasFinishedResolution = !isResolving
+          const showSkeleton = isResolving && !resolved
+          const showError = hasFinishedResolution && !resolved
+
+          return (
+            <div
+              key={`${getPreferredUrl(output)}-${index}`}
+              className={cn(
+                "group relative overflow-hidden rounded-[1.125rem] bg-gradient-to-br from-foreground/[0.03] to-foreground/[0.01] ring-1 ring-foreground/[0.06] transition-shadow duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] hover:ring-foreground/[0.12]",
+                tileClassFor(outputs.length)
+              )}
+            >
+              {src ? (
+                <button
+                  type="button"
+                  className="absolute inset-0 cursor-zoom-in"
+                  onClick={() => openPreview(index)}
+                  aria-label={t("imageHistory.previewTitle")}
+                >
+                  <LazyImage src={src} alt={t("input.image.alt")} fit="cover" />
+                  <span className="pointer-events-none absolute inset-0 bg-foreground/0 transition-colors duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:bg-foreground/[0.04]" />
+                </button>
+              ) : null}
+
+              {showSkeleton ? (
+                <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-foreground/[0.04] via-foreground/[0.07] to-foreground/[0.04]" />
+              ) : null}
+
+              {showError ? (
+                <div className="absolute inset-0 flex items-center justify-center text-foreground/30">
+                  <ImageIcon className="h-5 w-5" />
+                </div>
+              ) : null}
+
+              {resolved ? (
+                <div className="pointer-events-none absolute right-2 top-2 flex items-center gap-1.5 opacity-0 translate-y-1 transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:pointer-events-auto group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="icon-sm"
+                    className="h-8 w-8 rounded-full border border-white/40 bg-white/85 text-foreground shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)] backdrop-blur-md transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:scale-105 hover:bg-white active:scale-95 dark:border-white/10 dark:bg-zinc-900/80 dark:hover:bg-zinc-900"
+                    aria-label={t("views.generatedFile.download")}
+                    title={t("views.generatedFile.download")}
+                    disabled={busyAction === `download-${index}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void handleDownload(resolved, index)
+                    }}
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="icon-sm"
+                    className="h-8 w-8 rounded-full border border-white/40 bg-white/85 text-foreground shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)] backdrop-blur-md transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:scale-105 hover:bg-white active:scale-95 dark:border-white/10 dark:bg-zinc-900/80 dark:hover:bg-zinc-900"
+                    aria-label={copiedIndex === index ? t("actions.copied") : t("actions.copy")}
+                    title={copiedIndex === index ? t("actions.copied") : t("actions.copy")}
+                    disabled={busyAction === `copy-${index}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void handleCopy(resolved, index)
+                    }}
+                  >
+                    {copiedIndex === index ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          )
+        })}
       </div>
 
-      {outputs.length > 1 ? (
-        <div className="grid grid-cols-4 gap-2">
-          {outputs.map((item, index) => {
-            const url = item.asset_url ?? item.source_url ?? ""
-            const active = index === safeIndex
-            return (
-              <button
-                key={`${url}-${index}`}
-                type="button"
-                onClick={() => setSelectedIndex(index)}
-                className={cn(
-                  "relative aspect-square overflow-hidden rounded-xl border bg-slate-100 dark:bg-white/5",
-                  active
-                    ? "border-primary ring-1 ring-primary/30"
-                    : "border-slate-200/70 dark:border-white/10"
-                )}
-              >
-                {url ? (
-                  <LazyImage
-                    src={url}
-                    contentType={item.content_type}
-                    alt={`${prompt || model || "generated image"} ${index + 1}`}
-                    className="w-full h-full"
-                  />
-                ) : (
-                  <div className="absolute inset-0 flex items-center justify-center text-slate-400 dark:text-white/30">
-                    <ImageIcon className="h-4 w-4" />
-                  </div>
-                )}
-              </button>
-            )
-          })}
-        </div>
-      ) : null}
-
-      {prompt ? (
-        <div className="space-y-2">
-          <p className="text-xs text-slate-500 dark:text-white/40">{t("imageHistory.promptLabel")}</p>
-          <div className="rounded-2xl border border-slate-200/70 dark:border-white/10 bg-slate-50/80 dark:bg-white/[0.03] p-3 text-sm text-slate-700 dark:text-white/70 whitespace-pre-wrap break-words">
-            {prompt}
-          </div>
-        </div>
-      ) : null}
-
-      {model ? <div className="text-[10px] text-slate-400 dark:text-white/30">{model}</div> : null}
+      <Dialog open={previewIndex !== null} onOpenChange={(open) => (!open ? closePreview() : undefined)}>
+        <DialogContent className="[&>button]:hidden max-h-[96dvh] max-w-[96vw] overflow-hidden border-none bg-transparent p-0 shadow-none">
+          <VisuallyHidden>
+            <DialogTitle>{t("imageHistory.previewTitle")}</DialogTitle>
+          </VisuallyHidden>
+          {previewItem ? (
+            <div className="relative flex h-[92dvh] w-[92vw] items-center justify-center">
+              <img
+                src={previewItem.resolvedUrl}
+                alt={t("input.image.alt")}
+                className="max-h-full max-w-full select-none rounded-lg object-contain shadow-2xl"
+              />
+              <div className="absolute right-3 top-3 flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon-sm"
+                  className="h-9 w-9 rounded-full border border-white/20 bg-zinc-950/70 text-white shadow-sm backdrop-blur-md hover:bg-zinc-900"
+                  aria-label={t("views.generatedFile.download")}
+                  onClick={() => void handleDownload(previewItem, previewIndex ?? 0)}
+                >
+                  <Download className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon-sm"
+                  className="h-9 w-9 rounded-full border border-white/20 bg-zinc-950/70 text-white shadow-sm backdrop-blur-md hover:bg-zinc-900"
+                  aria-label={t("actions.copy")}
+                  onClick={() => void handleCopy(previewItem, previewIndex ?? 0)}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon-sm"
+                  className="h-9 w-9 rounded-full border border-white/20 bg-zinc-950/70 text-white shadow-sm backdrop-blur-md hover:bg-zinc-900"
+                  aria-label="Close"
+                  onClick={closePreview}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 })

@@ -139,14 +139,16 @@ function areStoreValuesEqual(left: unknown, right: unknown): boolean {
 }
 
 function normalizeChatMessages(messages: Message[]): Message[] {
-  return messages.map((message) =>
-    message.role === "assistant"
-      ? {
-          ...message,
-          content: "",
-        }
-      : message
-  )
+  return messages.map((message) => {
+    if (message.role !== "assistant") return message
+    return {
+      ...message,
+      content: "",
+      ...(Array.isArray(message.blocks)
+        ? { blocks: replaceMessageBlocks(message.id, message.blocks) }
+        : {}),
+    }
+  })
 }
 
 function withAssistantShadowContent(message: Message, blocks: MessageBlock[]): Message {
@@ -932,5 +934,4 @@ export const useChatInput = () =>
     setPageContext: state.setPageContext,
     clearPageContext: state.clearPageContext,
   }))
-
 

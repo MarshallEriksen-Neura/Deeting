@@ -683,6 +683,70 @@ describe("useChatStore session state", () => {
     })
   })
 
+  it("appendMessageBlocks should dedupe identical linked ui image results by callId and payload", () => {
+    useChatStore.setState({
+      messages: [
+        {
+          id: "assistant-image-1",
+          role: "assistant",
+          content: "",
+          createdAt: 1,
+          blocks: [
+            {
+              id: "call-image-1",
+              type: "tool_call",
+              callId: "call-image-1",
+              toolName: "custom_task_agent/达芬奇",
+              status: "success",
+            } as MessageBlock,
+            {
+              id: "ui-image-1",
+              type: "ui",
+              callId: "call-image-1",
+              viewType: "image.result",
+              title: "达芬奇 Image Result",
+              payload: {
+                preview: { asset_url: "https://example.com/cat.png", output_index: 0 },
+                outputs: [{ asset_url: "https://example.com/cat.png", output_index: 0 }],
+                prompt: "画一只带翅膀的猫咪",
+                model: "gpt-image-2",
+              },
+            } as MessageBlock,
+          ],
+        },
+      ],
+    })
+
+    useChatStore.getState().appendMessageBlocks("assistant-image-1", [
+      {
+        id: "ui-image-2",
+        type: "ui",
+        callId: "call-image-1",
+        viewType: "image.result",
+        title: "达芬奇 Image Result",
+        payload: {
+          preview: { asset_url: "https://example.com/cat.png", output_index: 0 },
+          outputs: [{ asset_url: "https://example.com/cat.png", output_index: 0 }],
+          prompt: "画一只带翅膀的猫咪",
+          model: "gpt-image-2",
+        },
+      } as MessageBlock,
+    ])
+
+    const message = useChatStore.getState().messages[0]
+    const imageBlocks =
+      message?.blocks?.filter(
+        (block) => block.type === "ui" && block.viewType === "image.result"
+      ) ?? []
+
+    expect(imageBlocks).toHaveLength(1)
+    expect(imageBlocks[0]).toMatchObject({
+      id: "ui-image-1",
+      callId: "call-image-1",
+      viewType: "image.result",
+    })
+  })
+
   it("upsertMessageToolResult should replace the matching tool result by callId", () => {
     useChatStore.setState({
       messages: [

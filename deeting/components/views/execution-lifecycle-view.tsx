@@ -1,26 +1,24 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Button } from "@/ui/shadcn/button"
 import { Badge } from "@/ui/shadcn/badge"
+import { Button } from "@/ui/shadcn/button"
 import { getConversationExecutionTree } from "@/lib/api/conversations"
 import {
   asActionList,
   asExecutionLifecyclePayload,
   buildExecutionLifecyclePayloadFromPersistedTree,
-  type ExecutionLifecyclePayload,
   getExecutionLifecycleAvailableActions,
-  getExecutionLifecycleChildren,
-  getExecutionLifecycleError,
   getExecutionLifecycleKind,
+  getExecutionLifecyclePrimaryOutput,
   getExecutionLifecycleStatus,
-  getExecutionLifecycleSelection,
   getExecutionLifecycleSummary,
-  getExecutionLifecycleTarget,
   toText,
+  type ExecutionLifecyclePayload,
 } from "@/lib/execution-tree/types"
 import { useExecutionActionDispatcher } from "@/lib/execution-tree/actions"
 import { cn } from "@/lib/utils"
+import type { NativeViewProps } from "./registry"
 
 const toneClassByStatus: Record<string, string> = {
   selected: "bg-slate-100 text-slate-700 border-slate-200",
@@ -32,19 +30,14 @@ const toneClassByStatus: Record<string, string> = {
   integrated: "bg-emerald-50 text-emerald-700 border-emerald-200",
 }
 
-export default function ExecutionLifecycleView({
-  data,
-}: {
-  data: unknown
-  title?: string
-  metadata?: Record<string, unknown>
-}) {
+export default function ExecutionLifecycleView({ data }: NativeViewProps) {
   const basePayload = asExecutionLifecyclePayload(data)
   const rootExecutionId = toText(basePayload.root_execution_id)
   const [hydratedPayload, setHydratedPayload] = useState<{
     rootExecutionId: string
     payload: ExecutionLifecyclePayload
   } | null>(null)
+
   const payload =
     hydratedPayload?.rootExecutionId === rootExecutionId ? hydratedPayload.payload : basePayload
 
@@ -53,6 +46,7 @@ export default function ExecutionLifecycleView({
       process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
       typeof window !== "undefined" &&
       ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
+
     if (!isTauriRuntime || !rootExecutionId || basePayload.persisted_snapshot === true) return
 
     let cancelled = false
@@ -78,20 +72,16 @@ export default function ExecutionLifecycleView({
 
   const status = getExecutionLifecycleStatus(payload) ?? "unknown"
   const terminalStatus = toText(payload.terminal_status)
-  const target = getExecutionLifecycleTarget(payload)
-  const selection = getExecutionLifecycleSelection(payload)
-  const targetName = toText(target?.name) ?? "Unknown target"
-  const reasonText = toText(selection?.reason_text)
-  const summary = getExecutionLifecycleSummary(payload)
-  const error = getExecutionLifecycleError(payload)
-  const workflowRunId = toText(target?.workflow_run_id)
-  const workerRef = toText(target?.worker_ref)
-  const invocationKind = toText(target?.invocation_kind)
   const executionKind = getExecutionLifecycleKind(payload)
-  const score = typeof selection?.score === "number" ? selection.score : null
+  const summary = getExecutionLifecycleSummary(payload)
+  const error = toText(payload.error)
   const availableActions = asActionList(getExecutionLifecycleAvailableActions(payload))
-  const children = getExecutionLifecycleChildren(payload)
+  const hasResult = Boolean(getExecutionLifecyclePrimaryOutput(payload))
   const { dispatchAction } = useExecutionActionDispatcher(payload)
+
+  const showWorkflowOpen = availableActions.some((action) => toText(action?.kind) === "open")
+  const showResultOpen =
+    hasResult || availableActions.some((action) => toText(action?.kind) === "view_result")
 
   return (
     <div className="space-y-3 text-sm">
@@ -117,29 +107,6 @@ export default function ExecutionLifecycleView({
         ) : null}
       </div>
 
-      <div className="space-y-1">
-        <div className="font-medium text-foreground">{targetName}</div>
-        {reasonText ? <div className="text-muted-foreground">Reason: {reasonText}</div> : null}
-        {typeof score === "number" ? (
-          <div className="text-muted-foreground">Selection score: {score}</div>
-        ) : null}
-        {workflowRunId ? (
-          <div>
-            {availableActions.some((action) => toText(action?.kind) === "open") ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="mt-2 h-7 px-2 text-xs"
-                onClick={() => void dispatchAction({ kind: "open" })}
-              >
-                Open workflow
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-
       {summary ? (
         <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-foreground">
           {summary}
@@ -152,126 +119,32 @@ export default function ExecutionLifecycleView({
         </div>
       ) : null}
 
-      {children.length > 0 ? (
-        <div className="space-y-2">
-          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Child Executions
-          </div>
-          <div className="space-y-2">
-            {children.map((child, index) => {
-              const title = toText(child?.title) ?? `Step ${index + 1}`
-              const stepStatus = toText(child?.status) ?? "unknown"
-              const phaseId = toText(child?.phase_id)
-              const stepType = toText(child?.step_type)
-              const childWorkerRef = toText(child?.worker_ref)
-              const childSummary = toText(child?.summary)
-              const childError = toText(child?.error)
-              const childActions = asActionList(child?.available_actions)
-              return (
-                <div
-                  key={`${phaseId ?? title}-${index}`}
-                  className="rounded-md border border-border/60 bg-background px-3 py-2"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="font-medium text-foreground">{title}</div>
-                    <div className="flex items-center gap-2">
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "border capitalize",
-                          toneClassByStatus[stepStatus] ?? "border-zinc-200 text-zinc-600"
-                        )}
-                      >
-                        {stepStatus}
-                      </Badge>
-                          {childActions.some(
-                            (action) => toText(action?.kind) === "view_result"
-                          ) ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-7 px-2 text-xs"
-                              onClick={() => void dispatchAction({ kind: "view_result" }, child)}
-                            >
-                              View result
-                            </Button>
-                          ) : null}
-                      {workflowRunId && phaseId ? (
-                        <>
-                          {childActions.some(
-                            (action) => toText(action?.kind) === "open"
-                          ) ? (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 px-2 text-xs"
-                              onClick={() => void dispatchAction({ kind: "open" }, child)}
-                            >
-                              Open
-                            </Button>
-                          ) : null}
-                          {childActions.some(
-                            (action) => toText(action?.kind) === "rerun"
-                          ) ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-7 px-2 text-xs"
-                              onClick={() => void dispatchAction({ kind: "rerun" }, child)}
-                            >
-                              Rerun
-                            </Button>
-                          ) : null}
-                          {childActions.some(
-                            (action) => toText(action?.kind) === "view_context"
-                          ) ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-7 px-2 text-xs"
-                              onClick={() => void dispatchAction({ kind: "view_context" }, child)}
-                            >
-                              View context
-                            </Button>
-                          ) : null}
-                        </>
-                      ) : null}
-                    </div>
-                  </div>
-                  {phaseId ? (
-                    <div className="mt-1 text-xs text-muted-foreground">Phase: {phaseId}</div>
-                  ) : null}
-                  {stepType ? (
-                    <div className="mt-1 text-xs text-muted-foreground">Type: {stepType}</div>
-                  ) : null}
-                  {childWorkerRef ? (
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      Worker: {childWorkerRef}
-                    </div>
-                  ) : null}
-                  {childSummary ? (
-                    <div className="mt-2 text-xs text-foreground">{childSummary}</div>
-                  ) : null}
-                  {childError ? (
-                    <div className="mt-2 text-xs text-red-700">{childError}</div>
-                  ) : null}
-                </div>
-              )
-            })}
-          </div>
+      {(showWorkflowOpen || showResultOpen) ? (
+        <div className="flex flex-wrap gap-2">
+          {showWorkflowOpen ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => void dispatchAction({ kind: "open" })}
+            >
+              Open workflow
+            </Button>
+          ) : null}
+          {showResultOpen ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => void dispatchAction({ kind: "view_result" })}
+            >
+              View result
+            </Button>
+          ) : null}
         </div>
       ) : null}
-
-      <div className="grid gap-1 text-xs text-muted-foreground">
-        {invocationKind ? <div>Invocation kind: {invocationKind}</div> : null}
-        {workerRef ? <div>Worker ref: {workerRef}</div> : null}
-        {workflowRunId ? <div>Workflow run: {workflowRunId}</div> : null}
-        {toText(payload.execution_id) ? <div>Execution id: {payload.execution_id}</div> : null}
-      </div>
     </div>
   )
 }

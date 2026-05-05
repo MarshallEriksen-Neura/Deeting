@@ -3,9 +3,61 @@ export type ParsedTaskAgentMention = {
   prompt: string
 }
 
+export type LeadingTaskAgentMentionDraft = {
+  query: string
+  prompt: string
+}
+
 export type MentionableTaskAgent = {
   id: string
   name: string
+}
+
+export function getLeadingTaskAgentMentionDraft(
+  input: string,
+): LeadingTaskAgentMentionDraft | null {
+  const trimmed = input.trimStart()
+  if (!trimmed.startsWith("@")) return null
+
+  const body = trimmed.slice(1).trimStart()
+  if (!body) {
+    return {
+      query: "",
+      prompt: "",
+    }
+  }
+
+  const separatorIndex = body.search(/\s/)
+  if (separatorIndex < 0) {
+    return {
+      query: body,
+      prompt: "",
+    }
+  }
+
+  return {
+    query: body.slice(0, separatorIndex).trim(),
+    prompt: body.slice(separatorIndex).trimStart(),
+  }
+}
+
+export function getLeadingTaskAgentMentionQuery(
+  input: string,
+): string | null {
+  const trimmed = input.trimStart()
+  if (!trimmed.startsWith("@")) return null
+  return trimmed.slice(1).trimStart()
+}
+
+export function buildLeadingTaskAgentMentionInput(
+  agentName: string,
+  prompt: string,
+): string {
+  const trimmedAgentName = agentName.trim()
+  const trimmedPrompt = prompt.trimStart()
+  return trimmedPrompt
+    ? `@${trimmedAgentName} ${trimmedPrompt}`
+    : `@${trimmedAgentName} `
 }
 
 export function parseLeadingTaskAgentMention(

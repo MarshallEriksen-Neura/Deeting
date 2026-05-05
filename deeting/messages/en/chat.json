@@ -226,8 +226,8 @@
         "errorRead": "Failed to read attachment. Please try again.",
         "errorUpload": "Attachment upload failed. Please check your network and try again."
       },
-      "taskAgentRouted": "@{name} will handle this request",
-      "taskAgentMissing": "No local task agent named @{name}"
+      "taskAgentPickerTitle": "Task agents",
+      "taskAgentRouted": "@{name} will handle this request"
     },
     "history": {
       "title": "History",
