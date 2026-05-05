@@ -8,9 +8,10 @@ use crate::modules::mcp::store::McpStore;
 
 use super::types::{
     normalize_sync_interval_minutes, CreateExternalSourceRequest,
-    CreateManualExternalRawRecordRequest, ExternalRawRecord, ExternalSourceConnectorType,
-    ExternalSourceRecord, ExternalSourceStatus, ExternalSourceSyncMode, NewExternalRawRecord,
-    UpdateExternalSourceRequest,
+    CreateManualExternalRawRecordRequest, ExternalExperienceCandidate, ExternalRawRecord,
+    ExternalRawRecordForTranslation, ExternalSourceConnectorType, ExternalSourceRecord,
+    ExternalSourceStatus, ExternalSourceSyncMode, NewExternalExperienceCandidate,
+    NewExternalRawRecord, UpdateExternalSourceRequest,
 };
 
 fn now_rfc3339() -> Result<String, McpError> {
@@ -179,6 +180,76 @@ fn row_to_external_raw_record(
     })
 }
 
+fn row_to_external_experience_candidate(
+    row: &sqlx::sqlite::SqliteRow,
+) -> Result<ExternalExperienceCandidate, McpError> {
+    Ok(ExternalExperienceCandidate {
+        id: row
+            .try_get("id")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        source_id: row
+            .try_get("source_id")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        raw_record_id: row
+            .try_get("raw_record_id")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        candidate_kind: row
+            .try_get("candidate_kind")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        title: row
+            .try_get("title")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        summary: row
+            .try_get("summary")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        canonical_payload_json: row
+            .try_get("canonical_payload_json")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        provenance_json: row
+            .try_get("provenance_json")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        confidence: row
+            .try_get("confidence")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        validation_status: row
+            .try_get("validation_status")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        review_status: row
+            .try_get("review_status")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        rejected_reason: row
+            .try_get("rejected_reason")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        accepted_target: row
+            .try_get("accepted_target")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        accepted_ref: row
+            .try_get("accepted_ref")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        adoption_status: row
+            .try_get("adoption_status")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        adopted_memory_id: row
+            .try_get("adopted_memory_id")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        adoption_error: row
+            .try_get("adoption_error")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        created_at: row
+            .try_get("created_at")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        updated_at: row
+            .try_get("updated_at")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        accepted_at: row
+            .try_get("accepted_at")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+        adopted_at: row
+            .try_get("adopted_at")
+            .map_err(|err| McpError::Storage(err.to_string()))?,
+    })
+}
+
 pub(crate) fn build_content_hash(raw_payload_json: &str) -> String {
     let mut hasher = Sha1::new();
     hasher.update(raw_payload_json.as_bytes());
@@ -205,6 +276,29 @@ pub(crate) fn manual_payload_to_json(payload_text: &str) -> Value {
     match serde_json::from_str::<Value>(payload_text) {
         Ok(value) => value,
         Err(_) => serde_json::json!({ "text": payload_text }),
+    }
+}
+
+fn manual_payload_to_json_with_metadata(
+    payload_text: &str,
+    payload: &CreateManualExternalRawRecordRequest,
+) -> Value {
+    let mut value = manual_payload_to_json(payload_text);
+    let metadata = serde_json::json!({
+        "filename": normalize_optional_text(payload.filename.as_deref()),
+        "content_type": normalize_optional_text(payload.content_type.as_deref()),
+        "source_label": normalize_optional_text(payload.source_label.as_deref()),
+        "import_mode": normalize_optional_text(payload.import_mode.as_deref()),
+    });
+    match &mut value {
+        Value::Object(map) => {
+            map.insert("_manual_import".to_string(), metadata);
+            value
+        }
+        _ => serde_json::json!({
+            "text": payload_text,
+            "_manual_import": metadata,
+        }),
     }
 }
 
@@ -597,6 +691,88 @@ impl McpStore {
             .collect()
     }
 
+    pub(crate) async fn list_pending_external_raw_records_for_translation(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ExternalRawRecordForTranslation>, McpError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT
+              r.id,
+              r.source_id,
+              r.source_asset_id,
+              r.source_version,
+              r.asset_family,
+              r.observed_at_unix_ms,
+              r.freshness_hint,
+              r.content_hash,
+              r.raw_payload_json,
+              r.translation_status,
+              r.translated_at_unix_ms,
+              r.translation_error,
+              s.connector_type,
+              s.display_name AS source_display_name
+            FROM external_raw_records r
+            INNER JOIN external_sources s ON s.id = r.source_id
+            WHERE r.translation_status = 'pending'
+            ORDER BY r.observed_at_unix_ms ASC
+            LIMIT ?
+            "#,
+        )
+        .bind(limit.max(1).min(50) as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        rows.into_iter()
+            .map(|row| {
+                let connector_type: String = row
+                    .try_get("connector_type")
+                    .map_err(|err| McpError::Storage(err.to_string()))?;
+                let source_display_name: String = row
+                    .try_get("source_display_name")
+                    .map_err(|err| McpError::Storage(err.to_string()))?;
+                Ok(ExternalRawRecordForTranslation {
+                    record: row_to_external_raw_record(&row)?,
+                    connector_type: connector_type.parse().map_err(McpError::validation)?,
+                    source_display_name,
+                })
+            })
+            .collect()
+    }
+
+    pub(crate) async fn update_external_raw_record_translation_state(
+        &self,
+        record_id: &str,
+        status: &str,
+        error: Option<&str>,
+    ) -> Result<(), McpError> {
+        let normalized_record_id = normalize_required_text(record_id, "record_id")?;
+        let normalized_status = normalize_required_text(status, "translation_status")?;
+        let translated_at_unix_ms = if normalized_status == "translated" {
+            Some((time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000) as i64)
+        } else {
+            None
+        };
+        sqlx::query(
+            r#"
+            UPDATE external_raw_records
+            SET translation_status = ?,
+                translated_at_unix_ms = ?,
+                translation_error = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(&normalized_status)
+        .bind(translated_at_unix_ms)
+        .bind(normalize_optional_text(error))
+        .bind(&normalized_record_id)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        Ok(())
+    }
+
     pub(crate) async fn upsert_external_raw_record(
         &self,
         payload: NewExternalRawRecord,
@@ -691,7 +867,7 @@ impl McpStore {
         let asset_family = normalize_required_text(&payload.asset_family, "asset_family")?;
         let source_asset_id = normalize_required_text(&payload.source_asset_id, "source_asset_id")?;
         let payload_text = normalize_required_text(&payload.payload_text, "payload_text")?;
-        let payload_value = manual_payload_to_json(&payload_text);
+        let payload_value = manual_payload_to_json_with_metadata(&payload_text, &payload);
         let raw_payload_json = payload_to_json_string(&payload_value)?;
         let content_hash = build_content_hash(&raw_payload_json);
         let source_version = normalize_optional_text(payload.source_version.as_deref());
@@ -717,6 +893,386 @@ impl McpStore {
             translation_status: "pending".to_string(),
         })
         .await
+    }
+
+    pub(crate) async fn upsert_external_experience_candidate(
+        &self,
+        payload: NewExternalExperienceCandidate,
+    ) -> Result<ExternalExperienceCandidate, McpError> {
+        let id = Uuid::new_v4().to_string();
+        let now = now_rfc3339()?;
+        sqlx::query(
+            r#"
+            INSERT INTO external_experience_candidates (
+              id,
+              source_id,
+              raw_record_id,
+              candidate_kind,
+              title,
+              summary,
+              canonical_payload_json,
+              provenance_json,
+              confidence,
+              validation_status,
+              review_status,
+              rejected_reason,
+              accepted_target,
+              accepted_ref,
+              adoption_status,
+              adopted_memory_id,
+              adoption_error,
+              created_at,
+              updated_at,
+              accepted_at,
+              adopted_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, 'not_adopted', NULL, NULL, ?, ?, NULL, NULL)
+            ON CONFLICT(raw_record_id) DO UPDATE SET
+              candidate_kind = excluded.candidate_kind,
+              title = excluded.title,
+              summary = excluded.summary,
+              canonical_payload_json = excluded.canonical_payload_json,
+              provenance_json = excluded.provenance_json,
+              confidence = excluded.confidence,
+              validation_status = excluded.validation_status,
+              review_status = CASE
+                WHEN external_experience_candidates.review_status = 'accepted'
+                THEN external_experience_candidates.review_status
+                ELSE excluded.review_status
+              END,
+              rejected_reason = CASE
+                WHEN external_experience_candidates.review_status = 'accepted'
+                THEN external_experience_candidates.rejected_reason
+                ELSE NULL
+              END,
+              adoption_status = CASE
+                WHEN external_experience_candidates.adoption_status = 'adopted'
+                THEN external_experience_candidates.adoption_status
+                ELSE 'not_adopted'
+              END,
+              adopted_memory_id = CASE
+                WHEN external_experience_candidates.adoption_status = 'adopted'
+                THEN external_experience_candidates.adopted_memory_id
+                ELSE NULL
+              END,
+              adoption_error = NULL,
+              updated_at = excluded.updated_at
+            "#,
+        )
+        .bind(&id)
+        .bind(&payload.source_id)
+        .bind(&payload.raw_record_id)
+        .bind(&payload.candidate_kind)
+        .bind(&payload.title)
+        .bind(&payload.summary)
+        .bind(&payload.canonical_payload_json)
+        .bind(&payload.provenance_json)
+        .bind(payload.confidence)
+        .bind(&payload.validation_status)
+        .bind(&payload.review_status)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        self.get_external_experience_candidate_by_raw_record_id(&payload.raw_record_id)
+            .await?
+            .ok_or_else(|| {
+                McpError::NotFound("external experience candidate missing after upsert".to_string())
+            })
+    }
+
+    pub async fn list_external_experience_candidates(
+        &self,
+        source_id: Option<&str>,
+        raw_record_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<ExternalExperienceCandidate>, McpError> {
+        let source_id = normalize_optional_text(source_id);
+        let raw_record_id = normalize_optional_text(raw_record_id);
+        let rows = sqlx::query(
+            r#"
+            SELECT
+              id,
+              source_id,
+              raw_record_id,
+              candidate_kind,
+              title,
+              summary,
+              canonical_payload_json,
+              provenance_json,
+              confidence,
+              validation_status,
+              review_status,
+              rejected_reason,
+              accepted_target,
+              accepted_ref,
+              adoption_status,
+              adopted_memory_id,
+              adoption_error,
+              created_at,
+              updated_at,
+              accepted_at,
+              adopted_at
+            FROM external_experience_candidates
+            WHERE (? IS NULL OR source_id = ?)
+              AND (? IS NULL OR raw_record_id = ?)
+            ORDER BY updated_at DESC
+            LIMIT ?
+            "#,
+        )
+        .bind(source_id.as_deref())
+        .bind(source_id.as_deref())
+        .bind(raw_record_id.as_deref())
+        .bind(raw_record_id.as_deref())
+        .bind(limit.max(1).min(100) as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        rows.into_iter()
+            .map(|row| row_to_external_experience_candidate(&row))
+            .collect()
+    }
+
+    pub async fn get_external_experience_candidate(
+        &self,
+        candidate_id: &str,
+    ) -> Result<Option<ExternalExperienceCandidate>, McpError> {
+        let normalized_candidate_id = candidate_id.trim();
+        if normalized_candidate_id.is_empty() {
+            return Ok(None);
+        }
+        let row = sqlx::query(
+            r#"
+            SELECT
+              id,
+              source_id,
+              raw_record_id,
+              candidate_kind,
+              title,
+              summary,
+              canonical_payload_json,
+              provenance_json,
+              confidence,
+              validation_status,
+              review_status,
+              rejected_reason,
+              accepted_target,
+              accepted_ref,
+              adoption_status,
+              adopted_memory_id,
+              adoption_error,
+              created_at,
+              updated_at,
+              accepted_at,
+              adopted_at
+            FROM external_experience_candidates
+            WHERE id = ?
+            LIMIT 1
+            "#,
+        )
+        .bind(normalized_candidate_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        row.map(|value| row_to_external_experience_candidate(&value))
+            .transpose()
+    }
+
+    async fn get_external_experience_candidate_by_raw_record_id(
+        &self,
+        raw_record_id: &str,
+    ) -> Result<Option<ExternalExperienceCandidate>, McpError> {
+        let normalized_raw_record_id = raw_record_id.trim();
+        if normalized_raw_record_id.is_empty() {
+            return Ok(None);
+        }
+        let row = sqlx::query(
+            r#"
+            SELECT
+              id,
+              source_id,
+              raw_record_id,
+              candidate_kind,
+              title,
+              summary,
+              canonical_payload_json,
+              provenance_json,
+              confidence,
+              validation_status,
+              review_status,
+              rejected_reason,
+              accepted_target,
+              accepted_ref,
+              adoption_status,
+              adopted_memory_id,
+              adoption_error,
+              created_at,
+              updated_at,
+              accepted_at,
+              adopted_at
+            FROM external_experience_candidates
+            WHERE raw_record_id = ?
+            LIMIT 1
+            "#,
+        )
+        .bind(normalized_raw_record_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        row.map(|value| row_to_external_experience_candidate(&value))
+            .transpose()
+    }
+
+    pub async fn review_external_experience_candidate(
+        &self,
+        candidate_id: &str,
+        review_status: &str,
+        rejected_reason: Option<&str>,
+    ) -> Result<ExternalExperienceCandidate, McpError> {
+        let normalized_candidate_id = normalize_required_text(candidate_id, "candidate_id")?;
+        let normalized_review_status = normalize_required_text(review_status, "review_status")?;
+        match normalized_review_status.as_str() {
+            "pending" | "approved" | "rejected" => {}
+            _ => {
+                return Err(McpError::validation(
+                    "review_status must be pending, approved, or rejected".to_string(),
+                ));
+            }
+        }
+        let now = now_rfc3339()?;
+        sqlx::query(
+            r#"
+            UPDATE external_experience_candidates
+            SET review_status = ?,
+                rejected_reason = ?,
+                updated_at = ?
+            WHERE id = ?
+              AND review_status != 'accepted'
+            "#,
+        )
+        .bind(&normalized_review_status)
+        .bind(if normalized_review_status == "rejected" {
+            normalize_optional_text(rejected_reason)
+        } else {
+            None
+        })
+        .bind(&now)
+        .bind(&normalized_candidate_id)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        self.get_external_experience_candidate(&normalized_candidate_id)
+            .await?
+            .ok_or_else(|| {
+                McpError::NotFound("external experience candidate not found".to_string())
+            })
+    }
+
+    pub async fn mark_external_experience_candidate_accepted(
+        &self,
+        candidate_id: &str,
+        target: &str,
+        accepted_ref: &str,
+    ) -> Result<ExternalExperienceCandidate, McpError> {
+        let normalized_candidate_id = normalize_required_text(candidate_id, "candidate_id")?;
+        let normalized_target = normalize_required_text(target, "target")?;
+        let normalized_ref = normalize_required_text(accepted_ref, "accepted_ref")?;
+        let now = now_rfc3339()?;
+        sqlx::query(
+            r#"
+            UPDATE external_experience_candidates
+            SET review_status = 'accepted',
+                accepted_target = ?,
+                accepted_ref = ?,
+                accepted_at = ?,
+                updated_at = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(&normalized_target)
+        .bind(&normalized_ref)
+        .bind(&now)
+        .bind(&now)
+        .bind(&normalized_candidate_id)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        self.get_external_experience_candidate(&normalized_candidate_id)
+            .await?
+            .ok_or_else(|| {
+                McpError::NotFound("external experience candidate not found".to_string())
+            })
+    }
+
+    pub async fn mark_external_experience_candidate_adopted(
+        &self,
+        candidate_id: &str,
+        memory_id: &str,
+        adoption_error: Option<&str>,
+    ) -> Result<ExternalExperienceCandidate, McpError> {
+        let normalized_candidate_id = normalize_required_text(candidate_id, "candidate_id")?;
+        let normalized_memory_id = normalize_required_text(memory_id, "memory_id")?;
+        let now = now_rfc3339()?;
+        sqlx::query(
+            r#"
+            UPDATE external_experience_candidates
+            SET adoption_status = 'adopted',
+                adopted_memory_id = ?,
+                adoption_error = ?,
+                adopted_at = ?,
+                updated_at = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(&normalized_memory_id)
+        .bind(normalize_optional_text(adoption_error))
+        .bind(&now)
+        .bind(&now)
+        .bind(&normalized_candidate_id)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        self.get_external_experience_candidate(&normalized_candidate_id)
+            .await?
+            .ok_or_else(|| {
+                McpError::NotFound("external experience candidate not found".to_string())
+            })
+    }
+
+    pub async fn mark_external_experience_candidate_adoption_failed(
+        &self,
+        candidate_id: &str,
+        error: &str,
+    ) -> Result<ExternalExperienceCandidate, McpError> {
+        let normalized_candidate_id = normalize_required_text(candidate_id, "candidate_id")?;
+        let normalized_error = normalize_required_text(error, "adoption_error")?;
+        let now = now_rfc3339()?;
+        sqlx::query(
+            r#"
+            UPDATE external_experience_candidates
+            SET adoption_status = 'failed',
+                adoption_error = ?,
+                updated_at = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(&normalized_error)
+        .bind(&now)
+        .bind(&normalized_candidate_id)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        self.get_external_experience_candidate(&normalized_candidate_id)
+            .await?
+            .ok_or_else(|| {
+                McpError::NotFound("external experience candidate not found".to_string())
+            })
     }
 }
 

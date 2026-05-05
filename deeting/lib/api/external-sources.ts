@@ -60,6 +60,30 @@ export const ExternalRawRecordSchema = z.object({
   translation_error: z.string().nullable().optional(),
 })
 
+export const ExternalExperienceCandidateSchema = z.object({
+  id: z.string(),
+  source_id: z.string(),
+  raw_record_id: z.string(),
+  candidate_kind: z.string(),
+  title: z.string(),
+  summary: z.string(),
+  canonical_payload_json: z.string(),
+  provenance_json: z.string(),
+  confidence: z.number(),
+  validation_status: z.string(),
+  review_status: z.string(),
+  rejected_reason: z.string().nullable().optional(),
+  accepted_target: z.string().nullable().optional(),
+  accepted_ref: z.string().nullable().optional(),
+  adoption_status: z.string(),
+  adopted_memory_id: z.string().nullable().optional(),
+  adoption_error: z.string().nullable().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  accepted_at: z.string().nullable().optional(),
+  adopted_at: z.string().nullable().optional(),
+})
+
 export const ExternalSourceConnectionTestResultSchema = z.object({
   ok: z.boolean(),
   status: z.number().int().nullable().optional(),
@@ -104,6 +128,26 @@ export const CreateManualExternalRecordPayloadSchema = z.object({
   source_version: z.string().optional(),
   payload_text: z.string().min(1),
   freshness_hint: z.number().optional(),
+  filename: z.string().optional(),
+  content_type: z.string().optional(),
+  source_label: z.string().optional(),
+  import_mode: z.string().optional(),
+})
+
+export const ExternalSourceTranslationRunResultSchema = z.object({
+  translated_count: z.number().int(),
+  failed_count: z.number().int(),
+})
+
+export const AcceptExternalExperienceCandidateResultSchema = z.object({
+  candidate: ExternalExperienceCandidateSchema,
+  accepted_ref: z.string(),
+})
+
+export const AdoptExternalExperienceCandidateResultSchema = z.object({
+  candidate: ExternalExperienceCandidateSchema,
+  memory_id: z.string(),
+  memory_action: z.string(),
 })
 
 export type ExternalSourceConnectorType = z.infer<
@@ -114,6 +158,9 @@ export type ExternalSourceSyncMode = z.infer<typeof ExternalSourceSyncModeSchema
 export type ExternalSourceStatus = z.infer<typeof ExternalSourceStatusSchema>
 export type ExternalSourceRecord = z.infer<typeof ExternalSourceRecordSchema>
 export type ExternalRawRecord = z.infer<typeof ExternalRawRecordSchema>
+export type ExternalExperienceCandidate = z.infer<
+  typeof ExternalExperienceCandidateSchema
+>
 export type ExternalSourceConnectionTestResult = z.infer<
   typeof ExternalSourceConnectionTestResultSchema
 >
@@ -128,6 +175,15 @@ export type UpdateExternalSourcePayload = z.infer<
 >
 export type CreateManualExternalRecordPayload = z.infer<
   typeof CreateManualExternalRecordPayloadSchema
+>
+export type ExternalSourceTranslationRunResult = z.infer<
+  typeof ExternalSourceTranslationRunResultSchema
+>
+export type AcceptExternalExperienceCandidateResult = z.infer<
+  typeof AcceptExternalExperienceCandidateResultSchema
+>
+export type AdoptExternalExperienceCandidateResult = z.infer<
+  typeof AdoptExternalExperienceCandidateResultSchema
 >
 
 export async function listExternalSources(): Promise<ExternalSourceRecord[]> {
@@ -242,4 +298,91 @@ export async function createManualExternalRecord(
     }
   )
   return ExternalRawRecordSchema.parse(data)
+}
+
+export async function translateExternalRecordsOnce(
+  limit = 20
+): Promise<ExternalSourceTranslationRunResult> {
+  if (!isTauriRuntime()) return { translated_count: 0, failed_count: 0 }
+  const data = await invokeTauri<ExternalSourceTranslationRunResult>(
+    "translate_local_external_records_once",
+    { limit }
+  )
+  return ExternalSourceTranslationRunResultSchema.parse(data)
+}
+
+export async function listExternalExperienceCandidates(payload?: {
+  sourceId?: string
+  rawRecordId?: string
+  limit?: number
+}): Promise<ExternalExperienceCandidate[]> {
+  if (!isTauriRuntime()) return []
+  const requestPayload = {
+    source_id: payload?.sourceId,
+    raw_record_id: payload?.rawRecordId,
+    limit: payload?.limit,
+  }
+  const data = await invokeTauri<ExternalExperienceCandidate[]>(
+    "list_local_external_experience_candidates",
+    { payload: requestPayload }
+  )
+  return z.array(ExternalExperienceCandidateSchema).parse(data)
+}
+
+export async function reviewExternalExperienceCandidate(
+  candidateId: string,
+  reviewStatus: "pending" | "approved" | "rejected",
+  rejectedReason?: string
+): Promise<ExternalExperienceCandidate> {
+  if (!isTauriRuntime()) {
+    throw new Error("external sources are only available in Tauri runtime")
+  }
+  const data = await invokeTauri<ExternalExperienceCandidate>(
+    "review_local_external_experience_candidate",
+    {
+      candidateId,
+      candidate_id: candidateId,
+      payload: {
+        review_status: reviewStatus,
+        rejected_reason: rejectedReason,
+      },
+    }
+  )
+  return ExternalExperienceCandidateSchema.parse(data)
+}
+
+export async function acceptExternalExperienceCandidate(
+  candidateId: string,
+  target = "llm_wiki"
+): Promise<AcceptExternalExperienceCandidateResult> {
+  if (!isTauriRuntime()) {
+    throw new Error("external sources are only available in Tauri runtime")
+  }
+  const data = await invokeTauri<AcceptExternalExperienceCandidateResult>(
+    "accept_local_external_experience_candidate",
+    {
+      candidateId,
+      candidate_id: candidateId,
+      payload: { target },
+    }
+  )
+  return AcceptExternalExperienceCandidateResultSchema.parse(data)
+}
+
+export async function adoptExternalExperienceCandidate(
+  candidateId: string,
+  target = "memory"
+): Promise<AdoptExternalExperienceCandidateResult> {
+  if (!isTauriRuntime()) {
+    throw new Error("external sources are only available in Tauri runtime")
+  }
+  const data = await invokeTauri<AdoptExternalExperienceCandidateResult>(
+    "adopt_local_external_experience_candidate",
+    {
+      candidateId,
+      candidate_id: candidateId,
+      payload: { target },
+    }
+  )
+  return AdoptExternalExperienceCandidateResultSchema.parse(data)
 }

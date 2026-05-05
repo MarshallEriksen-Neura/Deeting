@@ -485,6 +485,8 @@
       "manualRecord": {
         "title": "Import raw external record",
         "description": "Use manual import when the ecosystem has no dedicated connector yet.",
+        "fileLabel": "Markdown, text, or JSON file",
+        "fileHelp": "Optional. Selecting a file fills the payload and source asset ID.",
         "assetFamilyLabel": "Asset family",
         "assetIdLabel": "Source asset ID",
         "assetVersionLabel": "Source version",
@@ -511,6 +513,17 @@
         "contentHash": "Content hash",
         "payload": "Payload"
       },
+      "candidates": {
+        "title": "Experience candidates",
+        "count": "{count} candidates",
+        "empty": "No translated candidates for this record yet.",
+        "approve": "Approve",
+        "reject": "Reject",
+        "acceptToWiki": "Accept to LLM Wiki",
+        "adoptForAgent": "Adopt for agent",
+        "acceptedRef": "Accepted: {ref}",
+        "adoptedMemory": "Adopted memory: {id}"
+      },
       "toast": {
         "loadFailed": "Failed to load external sources.",
         "created": "External source connector created.",
@@ -522,6 +535,11 @@
         "synced": "Sync finished. Fetched {fetched} targets and stored {stored} raw records.",
         "syncFailed": "Sync failed.",
         "manualImported": "Raw record imported.",
+        "candidateApproved": "Experience candidate approved.",
+        "candidateRejected": "Experience candidate rejected.",
+        "candidateAccepted": "Experience candidate accepted into LLM Wiki.",
+        "candidateAdopted": "Experience candidate adopted for agent memory.",
+        "candidateActionFailed": "Candidate action failed.",
         "deleted": "Connector deleted.",
         "deleteFailed": "Failed to delete connector."
       }

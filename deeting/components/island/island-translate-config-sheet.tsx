@@ -10,10 +10,15 @@ import {
   Star,
   Trash2,
   X,
+  Zap,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
+import {
+  RadioGroup,
+  RadioGroupItem,
+} from "@/components/ui/shadcn/radio-group";
 import {
   Sheet,
   SheetContent,
@@ -21,16 +26,21 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/shadcn/sheet";
+import { Switch } from "@/components/ui/shadcn/switch";
 import { useI18n } from "@/hooks/use-i18n";
 import { cn } from "@/lib/utils";
 
 import { lookupLanguageCode } from "./detect-text-language";
 import {
+  type ClipboardSeedMode,
+  type IslandTranslatorAutomationPrefs,
   FAVORITE_TARGETS_STORAGE_KEY,
   RECENT_TARGETS_STORAGE_KEY,
   clearStoredRecentTargets,
   persistFavoriteTargets,
+  persistTranslatorAutomation,
   readFavoriteTargets,
+  readTranslatorAutomation,
 } from "./island-translator-preferences";
 
 export {
@@ -53,6 +63,8 @@ const SUGGESTED_LANGUAGES = [
   "Italian",
 ] as const;
 
+const SEED_MODES: ReadonlyArray<ClipboardSeedMode> = ["ask", "auto", "off"];
+
 export interface IslandTranslateConfigSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -68,12 +80,29 @@ export function IslandTranslateConfigSheet({
   const t = useI18n("chat");
   const [favorites, setFavorites] = React.useState<string[]>([]);
   const [draft, setDraft] = React.useState("");
+  const [automation, setAutomation] =
+    React.useState<IslandTranslatorAutomationPrefs>(() =>
+      readTranslatorAutomation(),
+    );
 
   React.useEffect(() => {
     if (!open) return;
     setFavorites(readFavoriteTargets());
+    setAutomation(readTranslatorAutomation());
     setDraft("");
   }, [open]);
+
+  const updateAutomation = React.useCallback(
+    (patch: Partial<IslandTranslatorAutomationPrefs>) => {
+      setAutomation((prev) => {
+        const next = { ...prev, ...patch };
+        persistTranslatorAutomation(next);
+        onChange?.();
+        return next;
+      });
+    },
+    [onChange],
+  );
 
   const commit = React.useCallback(
     (next: string[]) => {
@@ -284,6 +313,91 @@ export function IslandTranslateConfigSheet({
                   </div>
                 </div>
               ) : null}
+            </Section>
+
+            {/* Smart automation */}
+            <Section
+              icon={Zap}
+              title={t("island.selection.configSheet.automationSection")}
+              hint={t("island.selection.configSheet.automationHint")}
+            >
+              <div className="flex items-start justify-between gap-3 rounded-md border border-border/60 bg-card px-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-medium text-foreground">
+                    {t(
+                      "island.selection.configSheet.autoTranslateOnPaste.title",
+                    )}
+                  </div>
+                  <div className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                    {t(
+                      "island.selection.configSheet.autoTranslateOnPaste.hint",
+                    )}
+                  </div>
+                </div>
+                <Switch
+                  checked={automation.autoTranslateOnPaste}
+                  onCheckedChange={(checked) =>
+                    updateAutomation({ autoTranslateOnPaste: checked })
+                  }
+                  aria-label={t(
+                    "island.selection.configSheet.autoTranslateOnPaste.title",
+                  )}
+                  className="mt-0.5 shrink-0"
+                />
+              </div>
+
+              <div className="rounded-md border border-border/60 bg-card px-3 py-2.5">
+                <div className="text-xs font-medium text-foreground">
+                  {t("island.selection.configSheet.clipboardSeed.title")}
+                </div>
+                <div className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                  {t("island.selection.configSheet.clipboardSeed.hint")}
+                </div>
+                <RadioGroup
+                  value={automation.clipboardSeedMode}
+                  onValueChange={(value) =>
+                    updateAutomation({
+                      clipboardSeedMode: value as ClipboardSeedMode,
+                    })
+                  }
+                  className="mt-2.5 grid gap-1.5"
+                >
+                  {SEED_MODES.map((mode) => {
+                    const id = `clipboard-seed-${mode}`;
+                    const isActive = automation.clipboardSeedMode === mode;
+                    return (
+                      <label
+                        key={mode}
+                        htmlFor={id}
+                        className={cn(
+                          "flex cursor-pointer items-start gap-2 rounded-md border px-2.5 py-2 transition-colors",
+                          isActive
+                            ? "border-primary/50 bg-primary/[0.04]"
+                            : "border-border/50 hover:bg-muted/50",
+                        )}
+                      >
+                        <RadioGroupItem
+                          value={mode}
+                          id={id}
+                          className="mt-0.5"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[11px] font-medium text-foreground">
+                            {t(
+                              `island.selection.configSheet.clipboardSeed.modes.${mode}.label`,
+                            )}
+                          </div>
+                          <div className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+                            {t(
+                              `island.selection.configSheet.clipboardSeed.modes.${mode}.hint`,
+                            )}
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </RadioGroup>
+              </div>
             </Section>
 
             {/* Recent history controls */}

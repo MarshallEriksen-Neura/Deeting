@@ -16,13 +16,19 @@ import {
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/hooks/use-i18n"
 import {
+  acceptExternalExperienceCandidate,
+  adoptExternalExperienceCandidate,
   createManualExternalRecord,
   deleteExternalSource,
+  listExternalExperienceCandidates,
   listExternalSourceRecords,
+  reviewExternalExperienceCandidate,
   syncExternalSource,
   testExternalSource,
+  translateExternalRecordsOnce,
   updateExternalSource,
   type CreateManualExternalRecordPayload,
+  type ExternalExperienceCandidate,
   type ExternalRawRecord,
   type ExternalSourceRecord,
 } from "@/lib/api/external-sources"
@@ -109,7 +115,9 @@ export function ExternalSourceCard({
   const [isEnabled, setIsEnabled] = useState(source.is_enabled)
   const [apiKey, setApiKey] = useState("")
   const [records, setRecords] = useState<ExternalRawRecord[]>([])
+  const [candidates, setCandidates] = useState<ExternalExperienceCandidate[]>([])
   const [isLoadingRecords, setIsLoadingRecords] = useState(false)
+  const [isCandidateActionRunning, setIsCandidateActionRunning] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
@@ -147,14 +155,34 @@ export function ExternalSourceCard({
           setIsLoadingRecords(false)
         }
       })
+    listExternalExperienceCandidates({ sourceId: source.id, limit: RECORD_DRAWER_LIMIT })
+      .then((next) => {
+        if (!cancelled) {
+          setCandidates(next)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCandidates([])
+        }
+      })
     return () => {
       cancelled = true
     }
   }, [source.id])
 
   async function refreshRecords() {
-    const next = await listExternalSourceRecords(source.id, RECORD_DRAWER_LIMIT)
-    setRecords(next)
+    const [nextRecords, nextCandidates] = await Promise.all([
+      listExternalSourceRecords(source.id, RECORD_DRAWER_LIMIT),
+      listExternalExperienceCandidates({ sourceId: source.id, limit: RECORD_DRAWER_LIMIT }),
+    ])
+    setRecords(nextRecords)
+    setCandidates(nextCandidates)
+  }
+
+  async function refreshTranslationAndRecords() {
+    await translateExternalRecordsOnce(20)
+    await refreshRecords()
   }
 
   async function handleSave() {
@@ -223,7 +251,7 @@ export function ExternalSourceCard({
       const result = await syncExternalSource(source.id)
       const refreshed = await updateExternalSource(source.id, {})
       onChanged(refreshed)
-      await refreshRecords()
+      await refreshTranslationAndRecords()
       setLastActionMessage(
         t("ecosystem.toast.synced", {
           fetched: result.fetched_count,
@@ -264,16 +292,71 @@ export function ExternalSourceCard({
 
   async function handleManualImport(payload: CreateManualExternalRecordPayload) {
     await createManualExternalRecord(source.id, payload)
-    await refreshRecords()
+    await refreshTranslationAndRecords()
     const refreshed = await updateExternalSource(source.id, {})
     onChanged(refreshed)
     toast.success(t("ecosystem.toast.manualImported"))
+  }
+
+  async function handleCandidateReview(
+    candidate: ExternalExperienceCandidate,
+    reviewStatus: "approved" | "rejected"
+  ) {
+    setIsCandidateActionRunning(true)
+    try {
+      await reviewExternalExperienceCandidate(candidate.id, reviewStatus)
+      await refreshRecords()
+      toast.success(
+        reviewStatus === "approved"
+          ? t("ecosystem.toast.candidateApproved")
+          : t("ecosystem.toast.candidateRejected")
+      )
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : t("ecosystem.toast.candidateActionFailed")
+      )
+    } finally {
+      setIsCandidateActionRunning(false)
+    }
+  }
+
+  async function handleCandidateAccept(candidate: ExternalExperienceCandidate) {
+    setIsCandidateActionRunning(true)
+    try {
+      await acceptExternalExperienceCandidate(candidate.id, "llm_wiki")
+      await refreshRecords()
+      toast.success(t("ecosystem.toast.candidateAccepted"))
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : t("ecosystem.toast.candidateActionFailed")
+      )
+    } finally {
+      setIsCandidateActionRunning(false)
+    }
+  }
+
+  async function handleCandidateAdopt(candidate: ExternalExperienceCandidate) {
+    setIsCandidateActionRunning(true)
+    try {
+      await adoptExternalExperienceCandidate(candidate.id, "memory")
+      await refreshRecords()
+      toast.success(t("ecosystem.toast.candidateAdopted"))
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : t("ecosystem.toast.candidateActionFailed")
+      )
+    } finally {
+      setIsCandidateActionRunning(false)
+    }
   }
 
   const needsRemoteFields = source.connector_type !== "manual_import"
   const needsCredential = source.auth_mode === "api_key"
   const isBusy = isSaving || isTesting || isSyncing || isDeleting
   const activeRecord = selectedRecord ?? records[0] ?? null
+  const activeRecordCandidates = activeRecord
+    ? candidates.filter((candidate) => candidate.raw_record_id === activeRecord.id)
+    : []
 
   return (
     <>
@@ -798,6 +881,110 @@ export function ExternalSourceCard({
                       <pre className="max-h-[52vh] overflow-auto rounded-2xl border border-border/40 bg-muted/10 p-4 text-xs leading-5 text-muted-foreground">
                         {activeRecord.raw_payload_json}
                       </pre>
+                    </div>
+                    <div>
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                          {t("ecosystem.candidates.title")}
+                        </p>
+                        <Badge variant="outline">
+                          {t("ecosystem.candidates.count", {
+                            count: activeRecordCandidates.length,
+                          })}
+                        </Badge>
+                      </div>
+                      {activeRecordCandidates.length === 0 ? (
+                        <p className="rounded-xl border border-dashed border-border/50 px-4 py-3 text-xs text-muted-foreground">
+                          {t("ecosystem.candidates.empty")}
+                        </p>
+                      ) : (
+                        <div className="space-y-3">
+                          {activeRecordCandidates.map((candidate) => (
+                            <div
+                              key={candidate.id}
+                              className="rounded-2xl border border-border/40 bg-muted/10 p-4"
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <h4 className="truncate text-sm font-semibold text-foreground">
+                                    {candidate.title}
+                                  </h4>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    {candidate.candidate_kind} - {candidate.validation_status}
+                                  </p>
+                                </div>
+                                <Badge variant="outline">{candidate.review_status}</Badge>
+                              </div>
+                              <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                                {candidate.summary}
+                              </p>
+                              <div className="mt-4 flex flex-wrap gap-2">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={isCandidateActionRunning || candidate.review_status === "accepted"}
+                                  onClick={() => handleCandidateReview(candidate, "approved")}
+                                >
+                                  {t("ecosystem.candidates.approve")}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={isCandidateActionRunning || candidate.review_status === "accepted"}
+                                  onClick={() => handleCandidateReview(candidate, "rejected")}
+                                >
+                                  {t("ecosystem.candidates.reject")}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  disabled={
+                                    isCandidateActionRunning ||
+                                    candidate.review_status === "rejected" ||
+                                    candidate.review_status === "accepted"
+                                  }
+                                  onClick={() => handleCandidateAccept(candidate)}
+                                >
+                                  {t("ecosystem.candidates.acceptToWiki")}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={
+                                    isCandidateActionRunning ||
+                                    candidate.review_status !== "accepted" ||
+                                    candidate.adoption_status === "adopted"
+                                  }
+                                  onClick={() => handleCandidateAdopt(candidate)}
+                                >
+                                  {t("ecosystem.candidates.adoptForAgent")}
+                                </Button>
+                              </div>
+                              {candidate.accepted_ref ? (
+                                <p className="mt-3 break-all text-xs text-muted-foreground">
+                                  {t("ecosystem.candidates.acceptedRef", {
+                                    ref: candidate.accepted_ref,
+                                  })}
+                                </p>
+                              ) : null}
+                              {candidate.adopted_memory_id ? (
+                                <p className="mt-2 break-all text-xs text-muted-foreground">
+                                  {t("ecosystem.candidates.adoptedMemory", {
+                                    id: candidate.adopted_memory_id,
+                                  })}
+                                </p>
+                              ) : candidate.adoption_error ? (
+                                <p className="mt-2 break-all text-xs text-rose-600 dark:text-rose-400">
+                                  {candidate.adoption_error}
+                                </p>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ) : (

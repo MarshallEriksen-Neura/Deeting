@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use mcp_storage::helpers::now_rfc3339;
 
@@ -43,6 +43,15 @@ use super::types::{
 };
 
 const LLM_WIKI_MAINTAINER_SOURCE_KIND: &str = "llm_wiki_maintainer";
+
+pub struct ExternalExperienceLlmWikiCandidate {
+    pub candidate_id: String,
+    pub candidate_kind: String,
+    pub title: String,
+    pub summary: String,
+    pub canonical_payload_json: String,
+    pub provenance_json: String,
+}
 
 pub async fn get_local_llm_wiki_state(store: &McpStore) -> Result<LocalLlmWikiState, String> {
     let Some(binding) = load_binding(store).await.map_err(|err| err.to_string())? else {
@@ -328,6 +337,33 @@ pub async fn ingest_local_llm_wiki_selection(
     })
 }
 
+pub async fn accept_external_experience_candidate_to_llm_wiki(
+    app_state: &AppState,
+    candidate: ExternalExperienceLlmWikiCandidate,
+) -> Result<String, String> {
+    let binding = load_binding(app_state.mcp.store.as_ref())
+        .await
+        .map_err(|err| err.to_string())?
+        .ok_or_else(|| "llm wiki binding has not been configured yet".to_string())?;
+    let vault_root = normalize_vault_root(&binding.vault_root)?;
+    let workspace_path = resolve_workspace_path(&vault_root, &binding.workspace_relative_path);
+    let relative_path = build_external_candidate_relative_path(&candidate);
+    let target_path = workspace_path.join(&relative_path);
+    let markdown = build_external_candidate_markdown(&candidate);
+
+    tokio::task::spawn_blocking({
+        let target_path = target_path.clone();
+        move || write_external_candidate_source_file(&target_path, &markdown)
+    })
+    .await
+    .map_err(|err| format!("external candidate write task failed: {}", err))??;
+
+    let (indexed_files, removed_files, _) =
+        reconcile_corpus(app_state, &vault_root, &workspace_path).await?;
+    handle_corpus_reconcile_completed(app_state, indexed_files, removed_files).await?;
+    Ok(relative_path.to_string_lossy().replace('\\', "/"))
+}
+
 pub async fn run_local_llm_wiki_lint(
     app_state: &AppState,
 ) -> Result<LocalLlmWikiLintReport, String> {
@@ -500,6 +536,72 @@ fn bootstrap_workspace_files(
         created_files,
         skipped_files,
     })
+}
+
+fn build_external_candidate_relative_path(
+    candidate: &ExternalExperienceLlmWikiCandidate,
+) -> PathBuf {
+    let title_slug = slugify(&candidate.title);
+    let id_slug = slugify(&candidate.candidate_id);
+    let filename = if title_slug.is_empty() {
+        format!("{}.md", id_slug)
+    } else {
+        format!("{}-{}.md", title_slug, id_slug)
+    };
+    PathBuf::from("wiki")
+        .join("sources")
+        .join("external")
+        .join(filename)
+}
+
+fn build_external_candidate_markdown(candidate: &ExternalExperienceLlmWikiCandidate) -> String {
+    let canonical_payload = pretty_json_or_raw(&candidate.canonical_payload_json);
+    let provenance = pretty_json_or_raw(&candidate.provenance_json);
+    format!(
+        "---\nsource: external_experience_candidate\ncandidate_id: {}\ncandidate_kind: {}\n---\n\n# {}\n\n{}\n\n## Canonical Payload\n\n```json\n{}\n```\n\n## Provenance\n\n```json\n{}\n```\n",
+        escape_yaml_scalar(&candidate.candidate_id),
+        escape_yaml_scalar(&candidate.candidate_kind),
+        candidate.title.trim(),
+        candidate.summary.trim(),
+        canonical_payload,
+        provenance
+    )
+}
+
+fn write_external_candidate_source_file(path: &Path, content: &str) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("{} has no parent directory", path.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|err| format!("failed to create {}: {}", parent.display(), err))?;
+    fs::write(path, content.as_bytes())
+        .map_err(|err| format!("failed to write {}: {}", path.display(), err))
+}
+
+fn pretty_json_or_raw(value: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(value)
+        .and_then(|parsed| serde_json::to_string_pretty(&parsed))
+        .unwrap_or_else(|_| value.to_string())
+}
+
+fn escape_yaml_scalar(value: &str) -> String {
+    value.replace('"', "\\\"")
+}
+
+fn slugify(value: &str) -> String {
+    let lowered = value.to_ascii_lowercase();
+    let mut slug = String::new();
+    let mut last_dash = false;
+    for ch in lowered.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch);
+            last_dash = false;
+        } else if !last_dash {
+            slug.push('-');
+            last_dash = true;
+        }
+    }
+    slug.trim_matches('-').to_string()
 }
 
 #[cfg(test)]

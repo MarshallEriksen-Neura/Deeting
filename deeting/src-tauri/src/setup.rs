@@ -344,6 +344,9 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     });
 
     crate::modules::external_sources::sync::start_external_source_sync_worker(sync_state.clone());
+    crate::modules::external_sources::translation::start_external_source_translation_worker(
+        sync_state.clone(),
+    );
 
     let monitor_worker_state = sync_state.clone();
     tauri::async_runtime::spawn(async move {

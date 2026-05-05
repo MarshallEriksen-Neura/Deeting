@@ -33,6 +33,22 @@ export function ManualExternalRecordDialog({
   const [sourceAssetId, setSourceAssetId] = useState("")
   const [sourceVersion, setSourceVersion] = useState("")
   const [payloadText, setPayloadText] = useState("")
+  const [filename, setFilename] = useState("")
+  const [contentType, setContentType] = useState("")
+
+  async function handleFileSelected(file: File | undefined) {
+    if (!file) return
+    const text = await file.text()
+    setPayloadText(text)
+    setFilename(file.name)
+    setContentType(file.type || "text/plain")
+    if (!sourceAssetId.trim()) {
+      setSourceAssetId(file.name.replace(/\.[^.]+$/, ""))
+    }
+    if (assetFamily === "manual_note") {
+      setAssetFamily(file.name.toLowerCase().endsWith(".md") ? "manual_markdown" : "manual_note")
+    }
+  }
 
   async function handleSubmit() {
     setIsSubmitting(true)
@@ -42,11 +58,16 @@ export function ManualExternalRecordDialog({
         source_asset_id: sourceAssetId.trim(),
         source_version: sourceVersion.trim() || undefined,
         payload_text: payloadText,
+        filename: filename || undefined,
+        content_type: contentType || undefined,
+        import_mode: filename ? "file_upload" : "paste",
       })
       setOpen(false)
       setSourceAssetId("")
       setSourceVersion("")
       setPayloadText("")
+      setFilename("")
+      setContentType("")
     } finally {
       setIsSubmitting(false)
     }
@@ -63,6 +84,19 @@ export function ManualExternalRecordDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
+          <div className="space-y-2">
+            <Label>{t("ecosystem.manualRecord.fileLabel")}</Label>
+            <Input
+              type="file"
+              accept=".md,.txt,.json,text/markdown,text/plain,application/json"
+              onChange={(event) => {
+                void handleFileSelected(event.target.files?.[0])
+              }}
+            />
+            <p className="text-xs text-muted-foreground">
+              {filename || t("ecosystem.manualRecord.fileHelp")}
+            </p>
+          </div>
           <div className="space-y-2">
             <Label>{t("ecosystem.manualRecord.assetFamilyLabel")}</Label>
             <Input

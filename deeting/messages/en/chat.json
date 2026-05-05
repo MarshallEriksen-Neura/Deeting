@@ -582,6 +582,30 @@
           "moveUp": "Move up",
           "moveDown": "Move down",
           "suggestionsLabel": "Suggestions",
+          "automationSection": "Smart automation",
+          "automationHint": "Let the translator react when you paste, copy, or make a new selection — so you never have to copy-paste twice.",
+          "autoTranslateOnPaste": {
+            "title": "Translate on paste",
+            "hint": "Translate immediately after you paste — no extra click."
+          },
+          "clipboardSeed": {
+            "title": "Read clipboard on open",
+            "hint": "Read once when the translator opens. The text stays on your device — nothing is uploaded.",
+            "modes": {
+              "ask": {
+                "label": "Ask first",
+                "hint": "Show a prompt and let you confirm before translating."
+              },
+              "auto": {
+                "label": "Auto-fill and translate",
+                "hint": "Skip the prompt and translate immediately."
+              },
+              "off": {
+                "label": "Disabled",
+                "hint": "The translator never reads your clipboard."
+              }
+            }
+          },
           "historySection": "Recent history",
           "historyHint": "Recent targets are tracked automatically (up to 3) so the next translate stays one click away.",
           "clearHistory": "Clear recent history",

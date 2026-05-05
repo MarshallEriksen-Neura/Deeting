@@ -183,6 +183,38 @@ pub struct ExternalRawRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExternalExperienceCandidate {
+    pub id: String,
+    pub source_id: String,
+    pub raw_record_id: String,
+    pub candidate_kind: String,
+    pub title: String,
+    pub summary: String,
+    pub canonical_payload_json: String,
+    pub provenance_json: String,
+    pub confidence: f64,
+    pub validation_status: String,
+    pub review_status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rejected_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accepted_target: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accepted_ref: Option<String>,
+    pub adoption_status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adopted_memory_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adoption_error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accepted_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adopted_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CreateExternalSourceRequest {
     pub display_name: String,
     pub connector_type: ExternalSourceConnectorType,
@@ -249,6 +281,14 @@ pub struct CreateManualExternalRawRecordRequest {
     pub payload_text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub freshness_hint: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub import_mode: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -263,6 +303,75 @@ pub(crate) struct NewExternalRawRecord {
     pub content_hash: String,
     pub raw_payload_json: String,
     pub translation_status: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ExternalRawRecordForTranslation {
+    pub record: ExternalRawRecord,
+    pub connector_type: ExternalSourceConnectorType,
+    pub source_display_name: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct NewExternalExperienceCandidate {
+    pub source_id: String,
+    pub raw_record_id: String,
+    pub candidate_kind: String,
+    pub title: String,
+    pub summary: String,
+    pub canonical_payload_json: String,
+    pub provenance_json: String,
+    pub confidence: f64,
+    pub validation_status: String,
+    pub review_status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct ListExternalExperienceCandidatesRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_record_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReviewExternalExperienceCandidateRequest {
+    pub review_status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rejected_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct AcceptExternalExperienceCandidateRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AcceptExternalExperienceCandidateResult {
+    pub candidate: ExternalExperienceCandidate,
+    pub accepted_ref: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct AdoptExternalExperienceCandidateRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AdoptExternalExperienceCandidateResult {
+    pub candidate: ExternalExperienceCandidate,
+    pub memory_id: String,
+    pub memory_action: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExternalSourceTranslationRunResult {
+    pub translated_count: usize,
+    pub failed_count: usize,
 }
 
 pub(crate) fn normalize_sync_interval_minutes(value: Option<i64>) -> i64 {

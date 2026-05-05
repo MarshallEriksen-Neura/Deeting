@@ -689,6 +689,30 @@
           "moveUp": "上移",
           "moveDown": "下移",
           "suggestionsLabel": "建议",
+          "automationSection": "智能联动",
+          "automationHint": "让翻译器在你粘贴、复制或选中文字时主动响应，不再需要手动复制粘贴。",
+          "autoTranslateOnPaste": {
+            "title": "粘贴后自动翻译",
+            "hint": "在输入框里粘贴文本后立刻翻译，不用再点按钮。"
+          },
+          "clipboardSeed": {
+            "title": "打开翻译器时读取剪贴板",
+            "hint": "只在你打开翻译器的瞬间读一次，结果留在本地，不会上传。",
+            "modes": {
+              "ask": {
+                "label": "询问后再使用",
+                "hint": "弹出一条提示，由你决定是否翻译这段。"
+              },
+              "auto": {
+                "label": "自动填入并翻译",
+                "hint": "无需确认，立即翻译你刚才复制的内容。"
+              },
+              "off": {
+                "label": "完全关闭",
+                "hint": "翻译器永远不会读取你的剪贴板。"
+              }
+            }
+          },
           "historySection": "翻译历史",
           "historyHint": "最近用过的目标语言会自动记录（最多 3 个），方便下次一键翻译。",
           "clearHistory": "清除翻译历史",
