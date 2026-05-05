@@ -983,6 +983,44 @@ html:not(.dark) [data-tauri-drag-region] {
   pointer-events: none;
 }
 
+/* Counter-rotating second layer — particles "chasing" the first arc.
+   Inherits the conic-gradient from .island-active-glow; only the rotation
+   direction, blur radius and opacity differ so we get a softer halo that
+   weaves through the primary arc instead of stacking on top of it. */
+.island-active-glow.layer-2 {
+  animation: island-glow-rotate 5s linear infinite reverse;
+  opacity: 0.38;
+  filter: blur(6px);
+}
+
+/* Outer breathing aura — must live OUTSIDE the overflow:hidden shell so the
+   bloom can extend past the island border. Renders as a soft golden mist
+   that pulses while isBusy is true. */
+@keyframes island-aura-breathe {
+  0%, 100% {
+    opacity: 0.22;
+    transform: scale(0.985);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(1.04);
+  }
+}
+
+.island-aura-bloom {
+  position: absolute;
+  inset: -18px;
+  background: radial-gradient(
+    ellipse at center,
+    var(--island-gold-stroke-soft),
+    transparent 70%
+  );
+  filter: blur(14px);
+  animation: island-aura-breathe 2.4s ease-in-out infinite;
+  pointer-events: none;
+  z-index: -1;
+}
+
 @keyframes island-approval-pulse {
   0% {
     opacity: 0;

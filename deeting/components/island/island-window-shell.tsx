@@ -524,6 +524,17 @@ export function IslandWindowShell() {
                   transition={{ duration: 0.4 }}
                 />
               )}
+              {store.isBusy && (
+                <motion.div
+                  key="glow-layer-2"
+                  className="island-active-glow layer-2"
+                  aria-hidden="true"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 0.38 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.5 }}
+                />
+              )}
             </AnimatePresence>
             <AnimatePresence>
               {approvalFlash ? (

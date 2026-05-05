@@ -410,6 +410,21 @@ export function IslandShell() {
           mode === "expanded" ? "w-[592px]" : "w-[372px]",
         )}
       >
+        {/* Outer breathing aura — sits outside the overflow:hidden shell so
+            it can bloom past the island border. */}
+        <AnimatePresence>
+          {storeValues.isBusy && (
+            <motion.div
+              key="aura-bloom"
+              className="island-aura-bloom"
+              aria-hidden="true"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.6 }}
+            />
+          )}
+        </AnimatePresence>
         <motion.div
           layout
           transition={{ type: "spring", damping: 26, stiffness: 260 }}
@@ -448,6 +463,17 @@ export function IslandShell() {
                 animate={{ opacity: 0.7 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.4 }}
+              />
+            )}
+            {storeValues.isBusy && (
+              <motion.div
+                key="glow-layer-2"
+                className="island-active-glow layer-2"
+                aria-hidden="true"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 0.38 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.5 }}
               />
             )}
           </AnimatePresence>

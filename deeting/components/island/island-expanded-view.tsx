@@ -41,7 +41,6 @@ import { resolveIslandStatusLabelKey } from "./island-labels";
 import { IslandQuickReply } from "./island-quick-reply";
 import { IslandSelectionPanel } from "./island-selection-panel";
 import { IslandSeedLogo } from "./island-seed-logo";
-import { IslandStatusTimeline } from "./island-status-timeline";
 import { IslandTranslatorLanguagePicker } from "./island-translator-language-picker";
 import {
   persistRecentTargets,
@@ -1154,10 +1153,6 @@ export function IslandExpandedView({
     chatRequestConfig,
     isBusy,
     errorMessage,
-    statusStage,
-    statusCode,
-    statusMeta,
-    stageHistory,
     collapse,
     startNewConversation,
     sendQuickReply,
@@ -1241,9 +1236,6 @@ export function IslandExpandedView({
   );
   const isApprovalFocused = Boolean(pendingApproval);
   const statusLabelKey = resolveIslandStatusLabelKey(statusLabel);
-  const showTimeline = Boolean(
-    statusStage || statusCode || stageHistory.length > 0 || pendingApproval,
-  );
   const sendFooterReply =
     selectionContext?.activeAction === "ask"
       ? (text: string) => runSelectionAction("ask", { question: text })
@@ -1405,18 +1397,6 @@ export function IslandExpandedView({
               attachLabel={t("island.lookup.attach")}
               dismissLabel={t("island.lookup.dismiss")}
             />
-          ) : null}
-          {!showTranslatorCard && showTimeline ? (
-            <div className="rounded-[26px] border border-white/40 bg-white/42 p-2.5 shadow-[0_18px_42px_-34px_rgba(0,0,0,0.35)] dark:border-white/8 dark:bg-white/4">
-              <IslandStatusTimeline
-                statusLabel={statusLabel}
-                statusStage={statusStage}
-                statusCode={statusCode}
-                statusMeta={statusMeta}
-                stageHistory={stageHistory}
-                isBusy={isBusy}
-              />
-            </div>
           ) : null}
           {!showTranslatorCard && latestUserMessage ? (
             <IslandUserIntentChip
