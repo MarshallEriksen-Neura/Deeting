@@ -786,6 +786,15 @@ where
     }
 
     if let Some(execution) = delegated_execution.as_ref() {
+        if should_return_delegated_result_directly(
+            request.explicit_task_agent_id.as_deref(),
+            execution,
+        ) {
+            return Ok(build_direct_delegated_execution_outcome(&request, execution.clone()));
+        }
+    }
+
+    if let Some(execution) = delegated_execution.as_ref() {
         request.messages.extend(execution.feedback_messages.clone());
     }
 
@@ -849,6 +858,65 @@ where
         execution_graph,
         response_json,
     })
+}
+
+fn should_return_delegated_result_directly(
+    explicit_task_agent_id: Option<&str>,
+    execution: &DelegatedExecutionSession,
+) -> bool {
+    let Some(explicit_task_agent_id) = explicit_task_agent_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return false;
+    };
+    if explicit_task_agent_id != execution.record.target.id.as_str() {
+        return false;
+    }
+    if execution.record.status == DelegatedExecutionStatus::Running {
+        return false;
+    }
+
+    matches!(
+        execution.record.target.invocation_kind.as_deref(),
+        Some("image_generation" | "text_to_speech")
+    )
+}
+
+fn build_direct_delegated_execution_outcome(
+    request: &LocalExecutionRequest,
+    execution: DelegatedExecutionSession,
+) -> LocalExecutionOutcome {
+    let tool_trace_blocks = execution.trace_blocks.clone();
+    let execution_graph = project_execution_graph_snapshot(GraphProjectionInput {
+        session_id: request.session_id.clone(),
+        route: request.execution_policy.route.as_str().to_string(),
+        plane: request.execution_policy.plane.as_str().to_string(),
+        trace_id: request.trace_id.clone(),
+        request_id: request.request_id.clone(),
+        root_execution_id: request.root_execution_id.clone(),
+        response_content: None,
+        tool_trace_blocks: tool_trace_blocks.clone(),
+        delegated_execution_tree: Some(
+            execution
+                .record
+                .status_meta_with_status(DelegatedExecutionStatus::Integrated),
+        ),
+    })
+    .to_value();
+    let response_json = json!({
+        "content": "",
+        "tool_trace_blocks": tool_trace_blocks,
+        "tool_trace_streamed": true,
+        "execution_graph": execution_graph.clone(),
+        "delegated_direct_return": true,
+    });
+
+    LocalExecutionOutcome {
+        delegated_execution: Some(execution),
+        execution_graph,
+        response_json,
+    }
 }
 
 #[cfg(test)]
@@ -1155,5 +1223,64 @@ mod tests {
             status_meta.get("workflow_run_id").and_then(Value::as_str),
             Some("run-123")
         );
+    }
+
+    #[test]
+    fn direct_delegated_return_only_applies_to_explicit_media_agents() {
+        let mut session = DelegatedExecutionSession {
+            record: DelegatedExecutionRecord {
+                execution_id: "exec-media".to_string(),
+                kind: DelegatedExecutionKind::CustomTaskAgent,
+                status: DelegatedExecutionStatus::Succeeded,
+                target: DelegatedExecutionTarget {
+                    id: "agent-media".to_string(),
+                    name: "Voice Agent".to_string(),
+                    invocation_kind: Some("text_to_speech".to_string()),
+                    worker_ref: None,
+                    workflow_run_id: None,
+                },
+                selection: DelegatedExecutionSelection {
+                    explicit: true,
+                    score: Some(100),
+                    reason_codes: vec!["explicit_task_agent".to_string()],
+                    reason_text: Some("explicit".to_string()),
+                    candidate_count: 1,
+                    selected_from_top_k: 1,
+                    callable_coverage_score: Some(1.0),
+                    modality_fit_score: Some(1.0),
+                    profile_prior_score: Some(0.0),
+                },
+                packet_receipt: None,
+                available_actions: Vec::new(),
+                children: Vec::new(),
+                summary: Some("audio ready".to_string()),
+                primary_output: Some(json!({ "audios": ["local-asset://audio-1"] })),
+                error: None,
+                started_at_ms: 1,
+                completed_at_ms: Some(2),
+            },
+            feedback_messages: Vec::new(),
+            trace_blocks: vec![json!({
+                "type": "ui",
+                "viewType": "audio.result",
+                "payload": { "asset": { "url": "local-asset://audio-1" } }
+            })],
+        };
+
+        assert!(should_return_delegated_result_directly(
+            Some("agent-media"),
+            &session
+        ));
+        assert!(!should_return_delegated_result_directly(None, &session));
+        assert!(!should_return_delegated_result_directly(
+            Some("agent-other"),
+            &session
+        ));
+
+        session.record.target.invocation_kind = Some("chat".to_string());
+        assert!(!should_return_delegated_result_directly(
+            Some("agent-media"),
+            &session
+        ));
     }
 }

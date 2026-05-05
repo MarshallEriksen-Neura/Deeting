@@ -61,8 +61,9 @@ pub(crate) use inflight::{
     collect_waiting_approval_tokens_from_graph, derive_pending_approvals_from_graph,
     list_canonical_pending_local_approval_snapshots, load_suspended_chat_tool_execution_for_resume,
     materialize_pending_local_approval_from_runtime_context,
-    persist_suspended_execution_graph_runtime, serialize_delegated_workflow_runtime_context,
-    serialize_inflight_runtime_context, InFlightExecutionStage,
+    persist_suspended_execution_graph_runtime, serialize_delegated_runtime_context,
+    serialize_delegated_workflow_runtime_context, serialize_inflight_runtime_context,
+    InFlightExecutionStage,
 };
 use recovery::extract_resume_response_text;
 #[cfg(test)]

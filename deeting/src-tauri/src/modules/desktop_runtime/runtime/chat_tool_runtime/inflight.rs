@@ -640,10 +640,11 @@ pub(crate) fn serialize_inflight_runtime_context(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn serialize_delegated_workflow_runtime_context(
+pub(crate) fn serialize_delegated_runtime_context(
     current_node: Option<String>,
     current_call_id: Option<String>,
-    workflow_run_id: String,
+    delegated_kind: &str,
+    delegated_run_id: String,
     target_id: Option<&str>,
     target_name: Option<&str>,
     last_status: Option<&str>,
@@ -655,10 +656,10 @@ pub(crate) fn serialize_delegated_workflow_runtime_context(
     execution_graph_execution_id: Option<&str>,
     last_error: Option<&str>,
 ) -> serde_json::Value {
-    let normalized_workflow_run_id = workflow_run_id.trim().to_string();
-    let delegation = (!normalized_workflow_run_id.is_empty()).then(|| PersistedDelegationWait {
-        kind: "workflow".to_string(),
-        delegated_run_id: normalized_workflow_run_id.clone(),
+    let normalized_delegated_run_id = delegated_run_id.trim().to_string();
+    let delegation = (!normalized_delegated_run_id.is_empty()).then(|| PersistedDelegationWait {
+        kind: delegated_kind.trim().to_string(),
+        delegated_run_id: normalized_delegated_run_id,
         delegated_target_id: target_id
             .map(str::trim)
             .filter(|value| !value.is_empty())
@@ -684,6 +685,40 @@ pub(crate) fn serialize_delegated_workflow_runtime_context(
         delegation,
         recoverable,
         Vec::new(),
+        chat_runtime,
+        session_id,
+        trace_id,
+        request_id,
+        execution_graph_execution_id,
+        last_error,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn serialize_delegated_workflow_runtime_context(
+    current_node: Option<String>,
+    current_call_id: Option<String>,
+    workflow_run_id: String,
+    target_id: Option<&str>,
+    target_name: Option<&str>,
+    last_status: Option<&str>,
+    recoverable: bool,
+    chat_runtime: Option<PersistedChatToolRuntimeContext>,
+    session_id: &str,
+    trace_id: &str,
+    request_id: Option<&str>,
+    execution_graph_execution_id: Option<&str>,
+    last_error: Option<&str>,
+) -> serde_json::Value {
+    serialize_delegated_runtime_context(
+        current_node,
+        current_call_id,
+        "workflow",
+        workflow_run_id,
+        target_id,
+        target_name,
+        last_status,
+        recoverable,
         chat_runtime,
         session_id,
         trace_id,

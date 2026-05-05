@@ -34,13 +34,30 @@ pub(crate) fn parse_structured_message_content(raw: &str) -> Option<Value> {
     }
 }
 
+fn normalize_chat_content_shape(value: Value) -> Value {
+    match value {
+        Value::Array(items) if is_structured_chat_content(&Value::Array(items.clone())) => {
+            Value::Array(items)
+        }
+        Value::Object(object) if is_structured_chat_content(&Value::Object(object.clone())) => {
+            Value::Array(vec![Value::Object(object)])
+        }
+        Value::Array(_) | Value::Object(_) => {
+            serde_json::to_string(&value).map(Value::String).unwrap_or(value)
+        }
+        other => other,
+    }
+}
+
 pub(crate) fn normalize_message_content_value(role: &str, value: Option<&Value>) -> Value {
     match value {
         Some(Value::String(text)) if role.trim().eq_ignore_ascii_case("user") => {
-            parse_structured_message_content(text).unwrap_or_else(|| Value::String(text.clone()))
+            parse_structured_message_content(text)
+                .map(normalize_chat_content_shape)
+                .unwrap_or_else(|| Value::String(text.clone()))
         }
         Some(Value::String(text)) => Value::String(text.clone()),
-        Some(other) => other.clone(),
+        Some(other) => normalize_chat_content_shape(other.clone()),
         None => Value::Null,
     }
 }
@@ -71,5 +88,26 @@ mod tests {
         let normalized = normalize_message_content_value("tool", Some(&json!(raw)));
 
         assert_eq!(normalized, json!(raw));
+    }
+
+    #[test]
+    fn normalize_message_content_value_wraps_single_structured_object_for_chat() {
+        let normalized = normalize_message_content_value(
+            "assistant",
+            Some(&json!({
+                "type": "image_url",
+                "image_url": { "url": "https://example.com/a.png" }
+            })),
+        );
+
+        assert_eq!(
+            normalized,
+            json!([
+                {
+                    "type": "image_url",
+                    "image_url": { "url": "https://example.com/a.png" }
+                }
+            ])
+        );
     }
 }

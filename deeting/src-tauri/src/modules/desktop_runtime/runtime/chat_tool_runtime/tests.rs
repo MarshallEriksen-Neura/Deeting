@@ -1490,6 +1490,45 @@ fn serialize_delegated_workflow_runtime_context_writes_delegation_envelope() {
 }
 
 #[test]
+fn serialize_delegated_runtime_context_supports_custom_task_agent_runs() {
+    let value = serialize_delegated_runtime_context(
+        Some("custom_task_agent_run:run-1".to_string()),
+        None,
+        "custom_task_agent",
+        "run-1".to_string(),
+        Some("agent-1"),
+        Some("达芬奇"),
+        Some("running"),
+        true,
+        None,
+        "session-1",
+        "trace-1",
+        Some("request-1"),
+        Some("graph-1"),
+        None,
+    );
+
+    let parsed = persistable_inflight_context_from_value(&value)
+        .expect("parse custom task agent delegated context");
+    let delegation = parsed.delegation.expect("delegation envelope");
+
+    assert_eq!(parsed.schema_version, 2);
+    assert_eq!(
+        parsed.stage,
+        InFlightExecutionStage::DelegatedWorkflowRunning
+    );
+    assert_eq!(
+        parsed.current_node.as_deref(),
+        Some("custom_task_agent_run:run-1")
+    );
+    assert_eq!(delegation.kind, "custom_task_agent");
+    assert_eq!(delegation.delegated_run_id, "run-1");
+    assert_eq!(delegation.delegated_target_id.as_deref(), Some("agent-1"));
+    assert_eq!(delegation.delegated_target_name.as_deref(), Some("达芬奇"));
+    assert_eq!(delegation.last_status.as_deref(), Some("running"));
+}
+
+#[test]
 fn mark_delegated_wait_event_consumed_is_idempotent() {
     let value = serialize_delegated_workflow_runtime_context(
         Some("workflow:run-1".to_string()),

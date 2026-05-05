@@ -9,7 +9,7 @@ import {
   findExecutionTreeByRootId,
   extractWorkflowRunIdFromExecutionTree,
 } from "@/lib/chat/execution-tree"
-import { getExecutionLifecycleStatus } from "@/lib/execution-tree/types"
+import { getExecutionLifecycleStatus, getExecutionLifecycleTarget } from "@/lib/execution-tree/types"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
 
 describe("execution-tree helpers", () => {
@@ -217,5 +217,22 @@ describe("execution-tree helpers", () => {
         },
       })
     ).toBe("blocked")
+  })
+
+  it("reads target metadata from legacy root execution fields", () => {
+    expect(
+      getExecutionLifecycleTarget({
+        execution_kind: "custom_task_agent",
+        target_id: "agent-1",
+        target_name: "达芬奇",
+        invocation_kind: "image_generation",
+        worker_ref: "custom_task_agent_run:run-1",
+      })
+    ).toMatchObject({
+      id: "agent-1",
+      name: "达芬奇",
+      invocation_kind: "image_generation",
+      worker_ref: "custom_task_agent_run:run-1",
+    })
   })
 })

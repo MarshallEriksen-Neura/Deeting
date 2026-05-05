@@ -52,6 +52,18 @@ function getErrorMessage(error: unknown): string {
   return ""
 }
 
+function sortModelsByActiveStatus(models: ProviderModel[]): ProviderModel[] {
+  return models
+    .map((model, index) => ({ model, index }))
+    .sort((a, b) => {
+      if (a.model.is_active !== b.model.is_active) {
+        return a.model.is_active ? -1 : 1
+      }
+      return a.index - b.index
+    })
+    .map(({ model }) => model)
+}
+
 export function ModelsManager({ instanceId }: ModelsManagerProps) {
   const t = useTranslations("models")
   
@@ -255,7 +267,7 @@ export function ModelsManager({ instanceId }: ModelsManagerProps) {
     if (filters.price_tier !== null) {
       result = result.filter((m) => getPriceTier(m.pricing.input) === filters.price_tier)
     }
-    return result
+    return sortModelsByActiveStatus(result)
   }, [normalizedModels, filters])
 
   const selectedModel = React.useMemo(

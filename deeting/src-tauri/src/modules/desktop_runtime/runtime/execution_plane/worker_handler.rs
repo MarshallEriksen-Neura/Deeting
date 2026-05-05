@@ -19,7 +19,7 @@ use crate::modules::custom_task_agents::types::{
 use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUNDS_CONFIG_KEY};
 use crate::modules::desktop_runtime::runtime::chat_tool_runtime::{
     build_persisted_chat_runtime_context_from_execution_request,
-    resume_delegated_runtime_after_custom_task_agent_run,
+    resume_delegated_runtime_after_custom_task_agent_run, serialize_delegated_runtime_context,
     serialize_delegated_workflow_runtime_context,
 };
 use crate::modules::desktop_runtime::runtime::control_plane::LocalExecutionPlane;
@@ -475,6 +475,95 @@ where
     .await
     .map_err(|err| err.to_string())?;
 
+    if request.explicit_task_agent_id.as_deref() == Some(selection.profile.id.as_str()) {
+        let result = preview_custom_task_agent_with_parent_model(
+            &request.app_handle,
+            &request.app_state,
+            &selection.profile,
+            CustomTaskAgentPreviewRequest {
+                message: latest_input.raw_text.clone(),
+                image_urls: latest_input.image_urls.clone(),
+                temperature: request.temperature,
+                max_tokens: request.max_tokens,
+                max_rounds: Some(max_rounds),
+                worker_task_packet: Some(task_packet.as_value()),
+            },
+            Some(&request.model_connection),
+        )
+        .await;
+
+        let session = match result {
+            Ok(result) => {
+                let render_blocks = build_custom_task_agent_render_blocks(
+                    &request.app_handle,
+                    &request.app_state,
+                    &selection.profile,
+                    &result,
+                    Some(query.as_str()),
+                )
+                .await;
+                let session = build_custom_task_agent_delegated_execution_session(
+                    execution_id.clone(),
+                    selection.profile.clone(),
+                    execution_selection,
+                    packet_receipt,
+                    Ok(result),
+                    render_blocks,
+                );
+                if let Err(err) = complete_custom_task_agent_run(
+                    request.app_state.mcp.store.as_ref(),
+                    child_run_id.as_str(),
+                    &session.record.delegated_result(),
+                )
+                .await
+                {
+                    log::warn!(
+                        "complete_custom_task_agent_run failed run_id={} err={}",
+                        child_run_id,
+                        err
+                    );
+                }
+                session
+            }
+            Err(err) => {
+                let session = build_custom_task_agent_delegated_execution_session(
+                    execution_id.clone(),
+                    selection.profile.clone(),
+                    execution_selection,
+                    packet_receipt,
+                    Err(err.clone()),
+                    Vec::new(),
+                );
+                if let Err(store_err) = fail_custom_task_agent_run(
+                    request.app_state.mcp.store.as_ref(),
+                    child_run_id.as_str(),
+                    err.to_string().as_str(),
+                )
+                .await
+                {
+                    log::warn!(
+                        "fail_custom_task_agent_run failed run_id={} err={}",
+                        child_run_id,
+                        store_err
+                    );
+                }
+                session
+            }
+        };
+
+        return Ok(Some(session));
+    }
+
+    persist_custom_task_agent_delegated_runtime_context(
+        request,
+        execution_id.as_str(),
+        child_run_id.as_str(),
+        &selection.profile,
+        query.as_str(),
+        max_rounds,
+    )
+    .await;
+
     let app_handle = request.app_handle.clone();
     let app_state = request.app_state.clone();
     let profile = selection.profile.clone();
@@ -656,6 +745,57 @@ where
     };
 
     Ok(Some(execution))
+}
+
+async fn persist_custom_task_agent_delegated_runtime_context(
+    request: &LocalExecutionRequest,
+    execution_id: &str,
+    child_run_id: &str,
+    profile: &CustomTaskAgentProfile,
+    query: &str,
+    max_rounds: u32,
+) {
+    let trace_id = request
+        .trace_id
+        .clone()
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let chat_runtime = build_persisted_chat_runtime_context_from_execution_request(
+        request,
+        Some(query.to_string()),
+        trace_id.clone(),
+        max_rounds as usize,
+    );
+    let context = serialize_delegated_runtime_context(
+        Some(format!("custom_task_agent_run:{child_run_id}")),
+        None,
+        DelegatedExecutionKind::CustomTaskAgent.as_str(),
+        child_run_id.to_string(),
+        Some(profile.id.as_str()),
+        Some(profile.name.as_str()),
+        Some(CustomTaskAgentRunStatus::Running.as_str()),
+        true,
+        Some(chat_runtime),
+        request.session_id.as_str(),
+        trace_id.as_str(),
+        request.request_id.as_deref(),
+        Some(execution_id),
+        None,
+    );
+
+    if let Err(err) = persist_execution_graph_runtime_context(
+        request.app_state.mcp.store.as_ref(),
+        execution_id,
+        &context,
+    )
+    .await
+    {
+        log::warn!(
+            "persist custom task agent delegated runtime context failed execution_id={} run_id={} err={}",
+            execution_id,
+            child_run_id,
+            err
+        );
+    }
 }
 
 async fn resolve_worker_task_agent_max_rounds(app_state: &AppState) -> u32 {

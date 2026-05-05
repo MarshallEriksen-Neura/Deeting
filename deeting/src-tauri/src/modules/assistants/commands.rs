@@ -526,11 +526,8 @@ pub async fn translate_selection_text(
     let model_connection =
         resolve_local_model_connection(state.inner(), payload.model.trim(), provider_model_id)
             .await?;
-    let messages = build_quick_translate_messages(
-        text,
-        payload.source_language.as_deref(),
-        target_language,
-    );
+    let messages =
+        build_quick_translate_messages(text, payload.source_language.as_deref(), target_language);
     let response = request_provider_chat_completion(
         state.inner(),
         &model_connection.provider_model_id,
@@ -595,8 +592,7 @@ mod tests {
 
     #[test]
     fn build_quick_translate_messages_uses_explicit_source_language() {
-        let messages =
-            build_quick_translate_messages("Hello", Some("English"), "Chinese");
+        let messages = build_quick_translate_messages("Hello", Some("English"), "Chinese");
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, "system");
         assert_eq!(messages[1].role, "user");

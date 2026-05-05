@@ -66,6 +66,11 @@ export type ExecutionLifecyclePayload = {
   execution_status?: string
   terminal_status?: string
   persisted_snapshot?: boolean
+  target_id?: string | null
+  target_name?: string | null
+  invocation_kind?: string | null
+  worker_ref?: string | null
+  workflow_run_id?: string | null
   target?: ExecutionTreeTarget
   selection?: {
     explicit?: boolean
@@ -123,7 +128,7 @@ export function getExecutionLifecycleDelegatedResult(
     authoritative: payload.terminal_status === "succeeded",
     status: payload.terminal_status ?? payload.execution_status,
     execution_id: payload.execution_id,
-    target: payload.target,
+    target: getLegacyExecutionLifecycleTarget(payload),
     selection: payload.selection,
     available_actions: Array.isArray(payload.available_actions) ? payload.available_actions : [],
     summary: payload.summary ?? undefined,
@@ -133,8 +138,19 @@ export function getExecutionLifecycleDelegatedResult(
   }
 }
 
+function getLegacyExecutionLifecycleTarget(payload: ExecutionLifecyclePayload): ExecutionTreeTarget {
+  return {
+    ...(payload.target ?? {}),
+    id: payload.target?.id ?? payload.target_id ?? undefined,
+    name: payload.target?.name ?? payload.target_name ?? undefined,
+    invocation_kind: payload.target?.invocation_kind ?? payload.invocation_kind ?? undefined,
+    worker_ref: payload.target?.worker_ref ?? payload.worker_ref ?? undefined,
+    workflow_run_id: payload.target?.workflow_run_id ?? payload.workflow_run_id ?? undefined,
+  }
+}
+
 export function getExecutionLifecycleTarget(payload: ExecutionLifecyclePayload): ExecutionTreeTarget {
-  return getExecutionLifecycleDelegatedResult(payload)?.target ?? payload.target ?? {}
+  return getExecutionLifecycleDelegatedResult(payload)?.target ?? getLegacyExecutionLifecycleTarget(payload)
 }
 
 export function getExecutionLifecycleKind(payload: ExecutionLifecyclePayload): string | null {

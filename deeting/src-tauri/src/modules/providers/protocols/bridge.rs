@@ -1095,6 +1095,29 @@ mod tests {
     }
 
     #[test]
+    fn build_canonical_request_wraps_structured_object_content_for_chat_messages() {
+        let request = build_canonical_request_from_value(
+            &json!({
+                "model": "gpt-4o-mini",
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "content": {
+                            "type": "image_url",
+                            "image_url": { "url": "https://example.com/image.png" }
+                        }
+                    }
+                ]
+            }),
+            "chat",
+            "openai_chat",
+        );
+
+        assert!(request.messages[0].content.is_array());
+        assert_eq!(request.messages[0].content[0]["type"], json!("image_url"));
+    }
+
+    #[test]
     fn build_chat_request_data_from_canonical_request_preserves_normalized_message_content() {
         let request = build_canonical_chat_request_from_local_messages(
             "gpt-4o-mini",
