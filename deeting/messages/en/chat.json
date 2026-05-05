@@ -638,7 +638,18 @@
         "phaseTranslating": "Translating",
         "phaseCompleted": "Completed",
         "phaseFailed": "Failed",
-        "languagePair": "{source} → {target}"
+        "languagePair": "{source} → {target}",
+        "dropHint": "Drop to translate",
+        "clipboardSeed": {
+          "title": "Use what you just copied?",
+          "use": "Translate this",
+          "dismiss": "Dismiss"
+        },
+        "bridgedSelection": {
+          "title": "New selection detected",
+          "use": "Replace and translate",
+          "dismiss": "Dismiss"
+        }
       },
       "toolStatus": {
         "pendingApproval": "Waiting for approval to continue with {name}",

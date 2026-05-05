@@ -745,7 +745,18 @@
         "phaseTranslating": "翻译中",
         "phaseCompleted": "已完成",
         "phaseFailed": "失败",
-        "languagePair": "{source} → {target}"
+        "languagePair": "{source} → {target}",
+        "dropHint": "松开即可翻译这段文本",
+        "clipboardSeed": {
+          "title": "剪贴板里有内容",
+          "use": "翻译这段",
+          "dismiss": "忽略"
+        },
+        "bridgedSelection": {
+          "title": "检测到新选区",
+          "use": "替换并翻译",
+          "dismiss": "忽略"
+        }
       },
       "toolStatus": {
         "pendingApproval": "正在等待你批准 {name}",
