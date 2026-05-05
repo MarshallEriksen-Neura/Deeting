@@ -23,9 +23,11 @@ import { MarkdownViewer } from "@/components/chat/markdown-viewer";
 import {
   ISLAND_TTS_AGENT_NOT_CONFIGURED,
   ISLAND_TTS_AUDIO_EMPTY,
+  listIslandTextToSpeechAgents,
   quickTranslateIsland,
   speakIslandText,
   type IslandChatRequestConfig,
+  type IslandTextToSpeechAgent,
 } from "@/lib/api/island";
 import AudioResultPanel, {
   type AudioResultPayload,
@@ -41,8 +43,10 @@ import { IslandStatusTimeline } from "./island-status-timeline";
 import { IslandTranslatorLanguagePicker } from "./island-translator-language-picker";
 import {
   persistRecentTargets,
+  persistVoiceAgentId,
   pushRecentTarget,
   readFavoriteTargets,
+  readStoredVoiceAgentId,
   readStoredRecentTargets,
 } from "./island-translator-preferences";
 import { detectTextLanguage } from "./detect-text-language";
@@ -397,6 +401,12 @@ function IslandTranslatorView({
   const [speechPayload, setSpeechPayload] =
     useState<AudioResultPayload | null>(null);
   const [speechError, setSpeechError] = useState<string | null>(null);
+  const [voiceAgents, setVoiceAgents] = useState<IslandTextToSpeechAgent[]>([]);
+  const [voiceAgentsLoaded, setVoiceAgentsLoaded] = useState(false);
+  const [voiceAgentsError, setVoiceAgentsError] = useState<string | null>(null);
+  const [selectedVoiceAgentId, setSelectedVoiceAgentId] = useState<
+    string | null
+  >(() => readStoredVoiceAgentId());
 
   // Storage-backed picker data; keep in sync with selection panel.
   const [recent, setRecent] = useState<string[]>(() => readStoredRecentTargets());
@@ -406,6 +416,19 @@ function IslandTranslatorView({
     setRecent(readStoredRecentTargets());
     setFavorites(readFavoriteTargets());
   }, []);
+
+  const refreshVoiceAgents = useCallback(async () => {
+    try {
+      const agents = await listIslandTextToSpeechAgents();
+      setVoiceAgents(agents);
+      setVoiceAgentsLoaded(true);
+      setVoiceAgentsError(null);
+    } catch {
+      setVoiceAgents([]);
+      setVoiceAgentsLoaded(true);
+      setVoiceAgentsError(t("island.translator.voiceAgentLoadFailed"));
+    }
+  }, [t]);
 
   const resetSpeech = useCallback(() => {
     setSpeechPhase("idle");
@@ -419,10 +442,17 @@ function IslandTranslatorView({
     if (typeof window === "undefined") return;
     function onFocus() {
       refreshPreferences();
+      void refreshVoiceAgents();
     }
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [refreshPreferences]);
+  }, [refreshPreferences, refreshVoiceAgents]);
+
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    void refreshVoiceAgents();
+  }, [refreshVoiceAgents]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Detection hint reflects the current input, not the seed, so manual entry
   // shows what we think the user just typed.
@@ -433,6 +463,19 @@ function IslandTranslatorView({
     if (detection.code === "unknown") return null;
     return detection;
   }, [input]);
+
+  const selectedVoiceAgent = useMemo(() => {
+    const selectedId = selectedVoiceAgentId?.trim();
+    if (selectedId) {
+      const selected = voiceAgents.find((agent) => agent.id === selectedId);
+      if (selected) return selected;
+    }
+    return (
+      voiceAgents.find((agent) => agent.discoverable) ??
+      voiceAgents[0] ??
+      null
+    );
+  }, [selectedVoiceAgentId, voiceAgents]);
 
   // Tracking refs for mode resets and auto-run dedupe.
   const lastModeFingerprintRef = useRef<string | null>(null);
@@ -539,14 +582,26 @@ function IslandTranslatorView({
   async function handleSpeakOutput() {
     const text = output.trim();
     if (!text) return;
+    if (voiceAgentsLoaded && voiceAgents.length === 0) {
+      setSpeechError(t("island.translator.noVoiceAgent"));
+      setSpeechPhase("failed");
+      return;
+    }
     setSpeechPhase("speaking");
     setSpeechPayload(null);
     setSpeechError(null);
     try {
-      const result = await speakIslandText({ text });
+      const result = await speakIslandText({
+        text,
+        agentId: selectedVoiceAgent?.id ?? selectedVoiceAgentId,
+      });
+      setSelectedVoiceAgentId(result.agentId);
+      persistVoiceAgentId(result.agentId);
       setSpeechPayload(result.payload as AudioResultPayload);
       setSpeechPhase("completed");
     } catch (speakError) {
+      const agentName =
+        selectedVoiceAgent?.name ?? t("island.translator.voiceAgentUnavailable");
       const message =
         speakError instanceof Error &&
         speakError.message === ISLAND_TTS_AGENT_NOT_CONFIGURED
@@ -555,7 +610,10 @@ function IslandTranslatorView({
               speakError.message === ISLAND_TTS_AUDIO_EMPTY
             ? t("island.translator.speakFailed")
             : speakError instanceof Error
-              ? speakError.message
+              ? t("island.translator.speakFailedWithAgent", {
+                  name: agentName,
+                  error: speakError.message,
+                })
               : t("island.translator.speakFailed");
       setSpeechError(message);
       setSpeechPhase("failed");
@@ -594,6 +652,8 @@ function IslandTranslatorView({
   const isTranslating = phase === "translating";
   const isSpeaking = speechPhase === "speaking";
   const inputCharCount = input.trim().length;
+  const voiceSelectValue = selectedVoiceAgent?.id ?? "";
+  const voiceSelectDisabled = isSpeaking || voiceAgents.length === 0;
 
   return (
     <div className="rounded-[26px] border border-white/40 bg-white/42 p-3 shadow-[0_18px_42px_-34px_rgba(0,0,0,0.35)] dark:border-white/8 dark:bg-white/4">
@@ -684,7 +744,12 @@ function IslandTranslatorView({
         </div>
         <button
           type="button"
-          disabled={!output.trim() || isTranslating || isSpeaking}
+          disabled={
+            !output.trim() ||
+            isTranslating ||
+            isSpeaking ||
+            (voiceAgentsLoaded && voiceAgents.length === 0)
+          }
           onClick={() => void handleSpeakOutput()}
           className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-island-gold/28 bg-island-gold/10 px-2.5 text-[10px] font-semibold text-island-gold transition-colors hover:bg-island-gold/18 disabled:cursor-not-allowed disabled:opacity-45"
         >
@@ -698,6 +763,46 @@ function IslandTranslatorView({
             : t("island.translator.speak")}
         </button>
         <div className="h-px flex-1 bg-foreground/10" />
+      </div>
+
+      <div className="mb-2 flex items-center justify-between gap-2 rounded-[16px] border border-white/32 bg-white/34 px-2.5 py-2 dark:border-white/8 dark:bg-white/4">
+        <div className="min-w-0">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/40">
+            {t("island.translator.voiceAgent")}
+          </div>
+          <div className="mt-0.5 truncate text-[11px] text-foreground/58">
+            {voiceAgentsError ??
+              selectedVoiceAgent?.name ??
+              (voiceAgentsLoaded
+                ? t("island.translator.voiceAgentUnavailable")
+                : t("island.translator.voiceAgentLoading"))}
+          </div>
+        </div>
+        <select
+          value={voiceSelectValue}
+          disabled={voiceSelectDisabled}
+          onChange={(event) => {
+            const next = event.target.value.trim() || null;
+            setSelectedVoiceAgentId(next);
+            persistVoiceAgentId(next);
+            resetSpeech();
+          }}
+          aria-label={t("island.translator.voiceAgent")}
+          className="h-8 max-w-[48%] shrink-0 rounded-full border border-white/40 bg-white/58 px-2 text-[11px] font-medium text-foreground/70 outline-none transition-colors hover:border-island-gold/32 focus:border-island-gold/45 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-white/6"
+        >
+          {voiceAgents.length === 0 ? (
+            <option value="">
+              {voiceAgentsLoaded
+                ? t("island.translator.voiceAgentUnavailable")
+                : t("island.translator.voiceAgentLoading")}
+            </option>
+          ) : null}
+          {voiceAgents.map((agent) => (
+            <option key={agent.id} value={agent.id}>
+              {agent.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="min-h-[150px] rounded-[20px] border border-white/30 bg-white/40 px-3 py-3 text-[13px] leading-6 text-foreground/82 dark:border-white/8 dark:bg-white/5">

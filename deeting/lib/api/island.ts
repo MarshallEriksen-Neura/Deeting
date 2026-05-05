@@ -109,6 +109,7 @@ export interface IslandQuickTranslateRequest {
 
 export interface IslandSpeakTextRequest {
   text: string
+  agentId?: string | null
 }
 
 /** @deprecated Use {@link IslandQuickTranslateRequest}. */
@@ -176,15 +177,29 @@ export async function translateIslandSelection({
 /** Convenience alias used by the dedicated translator mode. */
 export const quickTranslateIsland = translateIslandSelection
 
-function pickIslandTextToSpeechAgent(
+export type IslandTextToSpeechAgent = CustomTaskAgentProfile
+
+function filterIslandTextToSpeechAgents(
   agents: CustomTaskAgentProfile[],
-): CustomTaskAgentProfile | null {
-  const voiceAgents = agents.filter(
+): CustomTaskAgentProfile[] {
+  return agents.filter(
     (agent) =>
       agent.invocation_kind === "text_to_speech" &&
       agent.is_enabled &&
       !agent.is_deleted,
   )
+}
+
+export function pickIslandTextToSpeechAgent(
+  agents: CustomTaskAgentProfile[],
+  preferredAgentId?: string | null,
+): CustomTaskAgentProfile | null {
+  const voiceAgents = filterIslandTextToSpeechAgents(agents)
+  const preferredId = preferredAgentId?.trim()
+  if (preferredId) {
+    const preferred = voiceAgents.find((agent) => agent.id === preferredId)
+    if (preferred) return preferred
+  }
   return (
     voiceAgents.find((agent) => agent.discoverable) ??
     voiceAgents[0] ??
@@ -192,15 +207,20 @@ function pickIslandTextToSpeechAgent(
   )
 }
 
+export async function listIslandTextToSpeechAgents(): Promise<IslandTextToSpeechAgent[]> {
+  return filterIslandTextToSpeechAgents(await listCustomTaskAgents())
+}
+
 export async function speakIslandText({
   text,
+  agentId,
 }: IslandSpeakTextRequest): Promise<IslandSpeechResult> {
   const trimmed = text.trim()
   if (!trimmed) {
     throw new Error(ISLAND_TTS_AUDIO_EMPTY)
   }
 
-  const agent = pickIslandTextToSpeechAgent(await listCustomTaskAgents())
+  const agent = pickIslandTextToSpeechAgent(await listCustomTaskAgents(), agentId)
   if (!agent) {
     throw new Error(ISLAND_TTS_AGENT_NOT_CONFIGURED)
   }

@@ -11,6 +11,7 @@
 export const RECENT_TARGETS_STORAGE_KEY = "island-selection-recent-targets";
 export const FAVORITE_TARGETS_STORAGE_KEY =
   "island-selection-favorite-targets";
+export const VOICE_AGENT_STORAGE_KEY = "island-translator-voice-agent-id";
 export const MAX_RECENT_TARGETS = 3;
 
 export function readStoredRecentTargets(): string[] {
@@ -95,5 +96,30 @@ export function clearStoredRecentTargets(): void {
     window.localStorage.removeItem(RECENT_TARGETS_STORAGE_KEY);
   } catch {
     /* swallow */
+  }
+}
+
+export function readStoredVoiceAgentId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const value = window.localStorage.getItem(VOICE_AGENT_STORAGE_KEY)?.trim();
+    return value || null;
+  } catch {
+    /* swallow malformed storage */
+  }
+  return null;
+}
+
+export function persistVoiceAgentId(agentId: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    const value = agentId?.trim();
+    if (value) {
+      window.localStorage.setItem(VOICE_AGENT_STORAGE_KEY, value);
+    } else {
+      window.localStorage.removeItem(VOICE_AGENT_STORAGE_KEY);
+    }
+  } catch {
+    /* swallow quota errors */
   }
 }
