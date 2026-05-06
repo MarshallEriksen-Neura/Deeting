@@ -44,6 +44,7 @@ use mcp_core::types::LocalChatInputMessage;
 use mcp_session::conversation::{
     CreateConversationMessageRequest, LocalConversationHistoryMessage,
 };
+use mcp_transport::gateway::GeneratedArtifactContext;
 #[cfg(test)]
 use std::collections::HashMap;
 
@@ -89,6 +90,7 @@ pub struct LocalOrchestratorInput {
     pub provider_model_id: Option<String>,
     pub explicit_task_agent_id: Option<String>,
     pub root_execution_id: Option<String>,
+    pub generated_artifact_context: Option<GeneratedArtifactContext>,
     pub session_id: String,
     pub capability_id: Option<String>,
     pub regenerate: bool,

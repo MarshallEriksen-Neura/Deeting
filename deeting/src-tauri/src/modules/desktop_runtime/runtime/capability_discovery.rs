@@ -1158,6 +1158,9 @@ fn capability_structured_match_score(
         if let Some(schema) = metadata.get("input_schema") {
             append_schema_terms(&mut text, schema);
         }
+        if let Some(terms) = metadata.get("discovery_terms") {
+            append_value_terms(&mut text, terms);
+        }
         if let Some(scope) = metadata.get("permission_scope") {
             append_value_terms(&mut text, scope);
         }
@@ -1221,6 +1224,10 @@ fn capability_profile_feature_score(
                 score -= 18.0;
                 reasons.push("penalty:monitor_domain".to_string());
             }
+            if signals.browser_like {
+                score += 26.0;
+                reasons.push("feature:browser_bridge".to_string());
+            }
             if !availability.is_direct_callable() {
                 score -= 10.0;
                 reasons.push("penalty:not_direct_callable".to_string());
@@ -1230,6 +1237,10 @@ fn capability_profile_feature_score(
             if signals.web_like {
                 score += 28.0;
                 reasons.push("feature:web_fetch".to_string());
+            }
+            if signals.browser_like {
+                score += 30.0;
+                reasons.push("feature:browser_tab".to_string());
             }
             if signals.shell_like {
                 score -= 8.0;
@@ -1284,6 +1295,7 @@ struct CapabilitySignals {
     web_like: bool,
     memory_like: bool,
     monitor_like: bool,
+    browser_like: bool,
     delegation_like: bool,
 }
 
@@ -1350,6 +1362,29 @@ fn capability_signals(
             &["memory", "knowledge", "remember", "memo", "knowledge base"],
         ),
         monitor_like: contains_any(&text, &["monitor", "cron", "watch", "alert"]),
+        browser_like: contains_any(
+            &text,
+            &[
+                "浏览器",
+                "browser",
+                "chrome",
+                "tab",
+                "tabs",
+                "标签页",
+                "当前页",
+                "当前页面",
+                "当前标签页",
+                "已打开",
+                "打开的浏览器",
+                "active page",
+                "current page",
+                "active tab",
+                "current tab",
+                "attach existing browser tab",
+                "browser agent bridge",
+                "browser extension lane",
+            ],
+        ),
         delegation_like: contains_any(
             &text,
             &[
@@ -2283,8 +2318,11 @@ impl QueryProfile {
             &normalized,
             &["安装", "install", "skill", "assistant", "启用", "开通"],
         ) && !wants_local_inspection;
+        let wants_browser_attach = wants_local_browser_attach(&normalized);
         let domain = if wants_local_inspection {
             "system"
+        } else if wants_browser_attach {
+            "browser"
         } else if contains_any(&normalized, &["天气", "weather", "降雨", "forecast"]) {
             "weather"
         } else if contains_any(
@@ -2332,6 +2370,8 @@ impl QueryProfile {
             "install_or_enable"
         } else if domain == "delegation" {
             "delegation"
+        } else if domain == "browser" {
+            "browser_attach"
         } else if domain == "web" {
             "web_fetch"
         } else if contains_any(&normalized, &["今天", "今日", "实时", "now", "latest"]) {
@@ -2388,6 +2428,44 @@ fn contains_any(haystack: &str, needles: &[&str]) -> bool {
     needles.iter().any(|needle| haystack.contains(needle))
 }
 
+fn wants_local_browser_attach(normalized: &str) -> bool {
+    contains_any(
+        normalized,
+        &[
+            "当前浏览器",
+            "当前页面",
+            "当前页",
+            "当前标签页",
+            "已打开浏览器",
+            "已打开页面",
+            "打开的浏览器",
+            "浏览器正在打开",
+            "标签页",
+            "active tab",
+            "current tab",
+            "active page",
+            "current page",
+            "existing browser tab",
+            "already-open browser",
+            "attach existing browser tab",
+        ],
+    ) || (contains_any(normalized, &["browser", "chrome", "浏览器"])
+        && contains_any(
+            normalized,
+            &[
+                "current",
+                "active",
+                "existing",
+                "attach",
+                "tab",
+                "tabs",
+                "当前",
+                "已打开",
+                "标签页",
+            ],
+        ))
+}
+
 fn matches_domain(domain: &str, text: &str) -> bool {
     match domain {
         "system" => contains_any(
@@ -2412,7 +2490,47 @@ fn matches_domain(domain: &str, text: &str) -> bool {
         "weather" => contains_any(text, &["天气", "weather", "forecast", "降雨", "预报"]),
         "web" => contains_any(
             text,
-            &["网页", "网站", "url", "html", "web", "抓取", "页面", "标题"],
+            &[
+                "网页",
+                "网站",
+                "url",
+                "html",
+                "web",
+                "抓取",
+                "页面",
+                "标题",
+                "浏览器",
+                "browser",
+                "tab",
+                "tabs",
+                "标签页",
+                "当前页",
+                "当前页面",
+                "当前标签页",
+                "已打开",
+                "打开的浏览器",
+                "attach existing browser tab",
+            ],
+        ),
+        "browser" => contains_any(
+            text,
+            &[
+                "浏览器",
+                "browser",
+                "tab",
+                "tabs",
+                "标签页",
+                "当前页",
+                "当前页面",
+                "当前标签页",
+                "已打开",
+                "打开的浏览器",
+                "active page",
+                "current page",
+                "active tab",
+                "current tab",
+                "attach existing browser tab",
+            ],
         ),
         "finance" => contains_any(text, &["股票", "stock", "quote", "行情"]),
         "memory" => contains_any(
@@ -2464,7 +2582,46 @@ fn matches_intent(intent: &str, text: &str, asset_type: &str, _source_type: &str
         "install_or_enable" => {
             matches!(asset_type, "skill" | "skill_tool" | "tool")
         }
-        "web_fetch" => contains_any(text, &["网页", "web", "html", "抓取", "url", "标题"]),
+        "web_fetch" => contains_any(
+            text,
+            &[
+                "网页",
+                "web",
+                "html",
+                "抓取",
+                "url",
+                "标题",
+                "浏览器",
+                "browser",
+                "tab",
+                "tabs",
+                "标签页",
+                "当前页",
+                "当前页面",
+                "当前标签页",
+                "attach existing browser tab",
+            ],
+        ),
+        "browser_attach" => contains_any(
+            text,
+            &[
+                "浏览器",
+                "browser",
+                "tab",
+                "tabs",
+                "标签页",
+                "当前页",
+                "当前页面",
+                "当前标签页",
+                "已打开",
+                "打开的浏览器",
+                "active page",
+                "current page",
+                "active tab",
+                "current tab",
+                "attach existing browser tab",
+            ],
+        ),
         "delegation" => {
             contains_any(
                 text,

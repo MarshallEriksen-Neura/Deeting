@@ -790,7 +790,10 @@ where
             request.explicit_task_agent_id.as_deref(),
             execution,
         ) {
-            return Ok(build_direct_delegated_execution_outcome(&request, execution.clone()));
+            return Ok(build_direct_delegated_execution_outcome(
+                &request,
+                execution.clone(),
+            ));
         }
     }
 

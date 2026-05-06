@@ -66,6 +66,9 @@ pub fn run() {
                 let _ = window.emit("close-requested", ());
             }
         })
+        .manage(std::sync::Arc::new(
+            crate::modules::terminal::TerminalManager::new(),
+        ))
         .invoke_handler(commands::generate_handler())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -251,6 +251,7 @@ async fn chat_completions_handler(
             .map(str::to_string),
         explicit_task_agent_id: None,
         root_execution_id: None,
+        generated_artifact_context: None,
         session_id: format!("api:{}:{}", key.id, request_id),
         capability_id: None,
         regenerate: false,

@@ -75,6 +75,18 @@ pub fn write_docx_input_schema() -> serde_json::Value {
                     },
                     "required": ["heading"]
                 }
+            },
+            "artifact_id": {
+                "type": "string",
+                "description": "Existing generated artifact id to append a new revision instead of creating a new artifact."
+            },
+            "base_revision_id": {
+                "type": "string",
+                "description": "Expected current revision id for stale-edit protection when artifact_id is provided."
+            },
+            "change_summary": {
+                "type": "string",
+                "description": "Concise description of what changed in this revision."
             }
         },
         "required": ["filename", "title", "sections"]
@@ -82,7 +94,7 @@ pub fn write_docx_input_schema() -> serde_json::Value {
 }
 
 pub fn write_docx_tool_description() -> &'static str {
-    "Generate a Microsoft Word (.docx) document with native Word numbering (levels 1-2), titles, rich-text paragraphs, and simple tables."
+    "Generate or revise a Microsoft Word (.docx) document with native Word numbering (levels 1-2), titles, rich-text paragraphs, and simple tables. Pass artifact_id and base_revision_id to append a revision to an existing generated artifact."
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -235,6 +247,12 @@ pub struct WriteDocxInput {
     pub theme_style: DocxThemeStyle,
     #[serde(default)]
     pub sections: Vec<DocxSection>,
+    #[serde(default)]
+    pub artifact_id: Option<String>,
+    #[serde(default)]
+    pub base_revision_id: Option<String>,
+    #[serde(default)]
+    pub change_summary: Option<String>,
 }
 
 fn default_theme_style() -> DocxThemeStyle {
@@ -967,6 +985,9 @@ mod tests {
                     ]],
                 }],
             }],
+            artifact_id: None,
+            base_revision_id: None,
+            change_summary: None,
         };
 
         let xml = build_document_xml(&input);
@@ -1010,6 +1031,9 @@ mod tests {
                 ],
                 tables: Vec::new(),
             }],
+            artifact_id: None,
+            base_revision_id: None,
+            change_summary: None,
         };
 
         let xml = build_document_xml(&input);

@@ -1,6 +1,17 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct GeneratedArtifactContext {
+    pub artifact_id: String,
+    pub revision_id: Option<String>,
+    pub revision_number: Option<i64>,
+    pub file_id: Option<String>,
+    pub kind: Option<String>,
+    pub name: Option<String>,
+    pub content_type: Option<String>,
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct LocalChatCompletionRequest {
     pub model: String,
@@ -104,6 +115,25 @@ pub fn extract_root_execution_id(metadata: Option<&Value>) -> Option<String> {
     )
 }
 
+pub fn extract_generated_artifact_context(
+    metadata: Option<&Value>,
+) -> Option<GeneratedArtifactContext> {
+    let metadata = metadata?;
+    let artifact = metadata.get("generated_artifact")?;
+    let artifact_id =
+        normalize_optional_string(artifact.get("artifact_id").and_then(Value::as_str))?;
+
+    Some(GeneratedArtifactContext {
+        artifact_id,
+        revision_id: normalize_optional_string(artifact.get("revision_id").and_then(Value::as_str)),
+        revision_number: artifact.get("revision_number").and_then(Value::as_i64),
+        file_id: normalize_optional_string(artifact.get("file_id").and_then(Value::as_str)),
+        kind: normalize_optional_string(artifact.get("kind").and_then(Value::as_str)),
+        name: normalize_optional_string(artifact.get("name").and_then(Value::as_str)),
+        content_type: normalize_optional_string(artifact.get("content_type").and_then(Value::as_str)),
+    })
+}
+
 pub fn build_stream_error_payload(
     error_code: &str,
     message: impl Into<String>,
@@ -164,5 +194,26 @@ mod tests {
             }
         })));
         assert_eq!(root_execution_id.as_deref(), Some("exec-root-1"));
+    }
+
+    #[test]
+    fn extract_generated_artifact_context_reads_request_metadata() {
+        let context = extract_generated_artifact_context(Some(&json!({
+            "generated_artifact": {
+                "artifact_id": "artifact-1",
+                "revision_id": "revision-1",
+                "revision_number": 3,
+                "file_id": "file-1",
+                "kind": "pptx",
+                "name": "deck.pptx",
+                "content_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            }
+        })))
+        .expect("generated artifact context");
+
+        assert_eq!(context.artifact_id, "artifact-1");
+        assert_eq!(context.revision_id.as_deref(), Some("revision-1"));
+        assert_eq!(context.revision_number, Some(3));
+        assert_eq!(context.kind.as_deref(), Some("pptx"));
     }
 }

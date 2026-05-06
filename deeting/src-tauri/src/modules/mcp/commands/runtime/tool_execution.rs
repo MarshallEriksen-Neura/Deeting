@@ -22,6 +22,7 @@ use mcp_storage::types::LocalSkillToolBindingSnapshot;
 use std::{any::Any, future::Future, panic::AssertUnwindSafe, time::Duration};
 
 const DEFAULT_MCP_TOOL_TIMEOUT_SECS: u64 = 180;
+const GENERATED_ARTIFACT_RETAIN_RECENT_BINARY_REVISIONS: usize = 10;
 
 fn normalized_approval_status(value: Option<&str>) -> &str {
     value
@@ -422,6 +423,12 @@ fn resolve_core_tool_name(tool_id: Option<&str>, tool_name: Option<&str>) -> Opt
         ("browser_type", _) | (_, "core.browser_type") => Some("browser_type"),
         ("save_asset", _) | (_, "core.save_asset") => Some("save_asset"),
         ("shell_execute", _) | (_, "core.shell_execute") => Some("shell_execute"),
+        ("inspect_generated_artifact", _) | (_, "core.inspect_generated_artifact") => {
+            Some("inspect_generated_artifact")
+        }
+        ("patch_generated_artifact", _) | (_, "core.patch_generated_artifact") => {
+            Some("patch_generated_artifact")
+        }
         ("write_docx", _) | (_, "core.write_docx") => Some("write_docx"),
         ("write_pptx", _) | (_, "core.write_pptx") => Some("write_pptx"),
         _ => None,
@@ -430,6 +437,189 @@ fn resolve_core_tool_name(tool_id: Option<&str>, tool_name: Option<&str>) -> Opt
 
 fn core_tool_fingerprint(tool_id: &str, arguments: &Value) -> String {
     format!("{tool_id}:{}", arguments)
+}
+
+fn normalize_generated_artifact_arg(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+async fn persist_generated_file_artifact(
+    store: &crate::modules::mcp::store::McpStore,
+    approval_context: &crate::modules::mcp::ToolApprovalContext,
+    artifact_kind: &str,
+    generated: &crate::modules::generated_files::storage::GeneratedFileArtifact,
+    source_json: String,
+    artifact_id: Option<String>,
+    base_revision_id: Option<String>,
+    change_summary: Option<String>,
+) -> Result<crate::modules::generated_files::artifact_types::CreatedGeneratedArtifactRevision, String>
+{
+    if let Some(artifact_id) = artifact_id {
+        store
+            .append_generated_artifact_revision(
+                crate::modules::generated_files::artifact_types::AppendGeneratedArtifactRevision {
+                    artifact_id,
+                    base_revision_id,
+                    file_id: generated.file_id.clone(),
+                    filename: generated.filename.clone(),
+                    content_type: generated.content_type.clone(),
+                    size: generated.size as i64,
+                    source_json,
+                    outline_json: None,
+                    preview_text: Some(generated.preview_text.clone()),
+                    change_summary,
+                    creation_mode: "patched".to_string(),
+                },
+            )
+            .await
+            .map_err(|err| format!("Failed to persist generated file artifact revision: {err}"))
+    } else {
+        store
+            .create_generated_artifact_with_revision(
+                crate::modules::generated_files::artifact_types::CreateGeneratedArtifactRevision {
+                    artifact_kind: artifact_kind.to_string(),
+                    title: generated.filename.clone(),
+                    file_id: generated.file_id.clone(),
+                    filename: generated.filename.clone(),
+                    content_type: generated.content_type.clone(),
+                    size: generated.size as i64,
+                    source_json,
+                    outline_json: None,
+                    preview_text: Some(generated.preview_text.clone()),
+                    change_summary,
+                    creation_mode: "generated".to_string(),
+                    origin_session_id: approval_context.session_id.clone(),
+                    origin_message_id: None,
+                    origin_block_id: approval_context.call_id.clone(),
+                },
+            )
+            .await
+            .map_err(|err| format!("Failed to persist generated file artifact: {err}"))
+    }
+}
+
+async fn prune_old_generated_artifact_revision_binaries(
+    app_handle: &tauri::AppHandle,
+    store: &crate::modules::mcp::store::McpStore,
+    artifact_id: &str,
+) -> usize {
+    let revisions = match store
+        .list_prunable_generated_artifact_revisions(
+            artifact_id,
+            GENERATED_ARTIFACT_RETAIN_RECENT_BINARY_REVISIONS,
+        )
+        .await
+    {
+        Ok(revisions) => revisions,
+        Err(err) => {
+            log::warn!(
+                "generated_artifact_retention:list_failed artifact_id={} err={}",
+                artifact_id,
+                err
+            );
+            return 0;
+        }
+    };
+
+    let mut pruned_count = 0usize;
+    for revision in revisions {
+        match crate::modules::generated_files::storage::delete_generated_file(
+            app_handle,
+            &revision.file_id,
+        ) {
+            Ok(_) => {
+                if let Err(err) = store
+                    .mark_generated_artifact_revision_binary_pruned(&revision.revision_id)
+                    .await
+                {
+                    log::warn!(
+                        "generated_artifact_retention:mark_pruned_failed artifact_id={} revision_id={} err={}",
+                        artifact_id,
+                        revision.revision_id,
+                        err
+                    );
+                    continue;
+                }
+                pruned_count += 1;
+            }
+            Err(err) => {
+                log::warn!(
+                    "generated_artifact_retention:delete_failed artifact_id={} revision_id={} file_id={} err={}",
+                    artifact_id,
+                    revision.revision_id,
+                    revision.file_id,
+                    err
+                );
+            }
+        }
+    }
+    pruned_count
+}
+
+async fn resolve_generated_artifact_revision_for_tool(
+    store: &crate::modules::mcp::store::McpStore,
+    arguments: &Value,
+) -> Result<
+    crate::modules::generated_files::artifact_types::GeneratedArtifactRevisionRecord,
+    String,
+> {
+    let artifact_id = arguments
+        .get("artifact_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let revision_id = arguments
+        .get("revision_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let file_id = arguments
+        .get("file_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
+    let revision = if let Some(revision_id) = revision_id {
+        store
+            .get_generated_artifact_revision(revision_id)
+            .await
+            .map_err(|err| err.to_string())?
+            .ok_or_else(|| "generated artifact revision not found".to_string())?
+    } else if let Some(file_id) = file_id {
+        store
+            .get_generated_artifact_revision_by_file_id(file_id)
+            .await
+            .map_err(|err| err.to_string())?
+            .ok_or_else(|| "generated artifact revision not found for file_id".to_string())?
+    } else if let Some(artifact_id) = artifact_id {
+        let artifact = store
+            .get_generated_artifact(artifact_id)
+            .await
+            .map_err(|err| err.to_string())?
+            .ok_or_else(|| "generated artifact not found".to_string())?;
+        store
+            .get_generated_artifact_revision(&artifact.current_revision_id)
+            .await
+            .map_err(|err| err.to_string())?
+            .ok_or_else(|| "generated artifact current revision not found".to_string())?
+    } else {
+        return Err(
+            "generated artifact tool requires artifact_id, revision_id, or file_id".to_string(),
+        );
+    };
+
+    if let Some(artifact_id) = artifact_id {
+        if revision.artifact_id != artifact_id {
+            return Err(format!(
+                "revision {} does not belong to artifact {}",
+                revision.revision_id, artifact_id
+            ));
+        }
+    }
+    Ok(revision)
 }
 
 fn build_policy_denied_payload(
@@ -1433,6 +1623,157 @@ async fn execute_core_tool_call_with_tool_ref_internal(
                 serde_json::to_value(record).map_err(|err| err.to_string())?,
             ))
         }
+        "inspect_generated_artifact" => {
+            let revision = resolve_generated_artifact_revision_for_tool(store, &arguments).await?;
+            let artifact = store
+                .get_generated_artifact(&revision.artifact_id)
+                .await
+                .map_err(|err| err.to_string())?
+                .ok_or_else(|| "generated artifact not found".to_string())?;
+
+            crate::modules::generated_files::artifact_inspect::build_generated_artifact_inspection(
+                &artifact, &revision,
+            )
+            .map(Some)
+        }
+        "patch_generated_artifact" => {
+            let app_handle = crate::state::global_app_handle()
+                .ok_or_else(|| "global app handle is unavailable".to_string())?;
+
+            if !skip_approval_gate {
+                let risk = assess_policy_risk(PolicyTargetRef::CoreTool {
+                    tool_name: core_tool_name,
+                    arguments: &arguments,
+                });
+                if let Some(queued) = maybe_queue_core_tool_approval(
+                    approval_context,
+                    runtime_state,
+                    store,
+                    pending_tool_calls,
+                    "core.patch_generated_artifact",
+                    "patch_generated_artifact",
+                    &arguments,
+                    "Patch a generated Office artifact and write a new revision on the user's machine.",
+                    &risk,
+                    core_tool_fingerprint("core.patch_generated_artifact", &arguments),
+                )
+                .await?
+                {
+                    return Ok(Some(queued));
+                }
+            }
+
+            let revision = resolve_generated_artifact_revision_for_tool(store, &arguments).await?;
+            let artifact = store
+                .get_generated_artifact(&revision.artifact_id)
+                .await
+                .map_err(|err| err.to_string())?
+                .ok_or_else(|| "generated artifact not found".to_string())?;
+            let operations = arguments
+                .get("operations")
+                .and_then(Value::as_array)
+                .ok_or_else(|| "patch_generated_artifact requires operations array".to_string())?;
+            let change_summary =
+                normalize_generated_artifact_arg(arguments.get("change_summary").and_then(Value::as_str));
+            let base_revision_id = normalize_generated_artifact_arg(
+                arguments.get("base_revision_id").and_then(Value::as_str),
+            )
+            .unwrap_or_else(|| revision.revision_id.clone());
+
+            let mut patched_source =
+                crate::modules::generated_files::artifact_patch::apply_generated_artifact_patch(
+                    &artifact.artifact_kind,
+                    &revision.source_json,
+                    operations,
+                )?;
+            patched_source.set_revision_context(
+                artifact.artifact_id.clone(),
+                base_revision_id.clone(),
+                change_summary.clone(),
+            );
+
+            let (generated, content_type_kind) = match &patched_source {
+                crate::modules::generated_files::artifact_patch::PatchedGeneratedArtifactSource::Docx(input) => {
+                    let generated = crate::modules::generated_files::docx_generator::generate_docx(
+                        &app_handle,
+                        input,
+                    )
+                    .await
+                    .map_err(|err| format!("Failed to generate patched docx: {err}"))?;
+                    (generated, "docx")
+                }
+                crate::modules::generated_files::artifact_patch::PatchedGeneratedArtifactSource::Pptx(input) => {
+                    let generated = crate::modules::generated_files::pptx_generator::generate_pptx(
+                        &app_handle,
+                        input,
+                    )
+                    .await
+                    .map_err(|err| format!("Failed to generate patched pptx: {err}"))?;
+                    (generated, "pptx")
+                }
+            };
+
+            patched_source.clear_revision_context();
+            let source_json = match &patched_source {
+                crate::modules::generated_files::artifact_patch::PatchedGeneratedArtifactSource::Docx(input) => {
+                    serde_json::to_string(input)
+                }
+                crate::modules::generated_files::artifact_patch::PatchedGeneratedArtifactSource::Pptx(input) => {
+                    serde_json::to_string(input)
+                }
+            }
+            .map_err(|err| format!("Failed to serialize patched source: {err}"))?;
+
+            let artifact_revision = persist_generated_file_artifact(
+                store,
+                approval_context,
+                content_type_kind,
+                &generated,
+                source_json,
+                Some(artifact.artifact_id.clone()),
+                Some(base_revision_id),
+                change_summary.clone(),
+            )
+            .await?;
+            let pruned_revision_count = prune_old_generated_artifact_revision_binaries(
+                &app_handle,
+                store,
+                &artifact_revision.artifact_id,
+            )
+            .await;
+
+            Ok(Some(serde_json::json!({
+                "file_id": &generated.file_id,
+                "artifact_id": &artifact_revision.artifact_id,
+                "revision_id": &artifact_revision.revision_id,
+                "revision_number": artifact_revision.revision_number,
+                "filename": &generated.filename,
+                "size": generated.size,
+                "content_type": &generated.content_type,
+                "change_summary": change_summary,
+                "retention": {
+                    "retained_recent_binary_revisions": GENERATED_ARTIFACT_RETAIN_RECENT_BINARY_REVISIONS,
+                    "pruned_revision_count": pruned_revision_count
+                },
+                "message": format!("Successfully patched {} ({} bytes)", generated.filename, generated.size),
+                "render_blocks": [{
+                    "view_type": "generated.file",
+                    "title": &generated.filename,
+                    "payload": {
+                        "file_id": &generated.file_id,
+                        "artifact_id": &artifact_revision.artifact_id,
+                        "revision_id": &artifact_revision.revision_id,
+                        "revision_number": artifact_revision.revision_number,
+                        "name": &generated.filename,
+                        "size": generated.size,
+                        "content_type": &generated.content_type,
+                        "preview_kind": "text",
+                        "preview_text": &generated.preview_text,
+                        "change_summary": change_summary,
+                    }
+                }]
+            })))
+        }
         "write_docx" => {
             let app_handle = crate::state::global_app_handle()
                 .ok_or_else(|| "global app handle is unavailable".to_string())?;
@@ -1468,23 +1809,62 @@ async fn execute_core_tool_call_with_tool_ref_internal(
                 crate::modules::generated_files::docx_generator::generate_docx(&app_handle, &input)
                     .await
                     .map_err(|err| format!("Failed to generate docx: {err}"))?;
+            let artifact_id = normalize_generated_artifact_arg(input.artifact_id.as_deref());
+            let base_revision_id =
+                normalize_generated_artifact_arg(input.base_revision_id.as_deref());
+            let change_summary = normalize_generated_artifact_arg(input.change_summary.as_deref());
+            let mut source_input = input.clone();
+            source_input.artifact_id = None;
+            source_input.base_revision_id = None;
+            source_input.change_summary = None;
+            let source_json = serde_json::to_string(&source_input)
+                .map_err(|err| format!("Failed to serialize write_docx source: {err}"))?;
+            let artifact_revision = persist_generated_file_artifact(
+                store,
+                approval_context,
+                "docx",
+                &generated,
+                source_json,
+                artifact_id,
+                base_revision_id,
+                change_summary.clone(),
+            )
+            .await?;
+            let pruned_revision_count = prune_old_generated_artifact_revision_binaries(
+                &app_handle,
+                store,
+                &artifact_revision.artifact_id,
+            )
+            .await;
 
             Ok(Some(serde_json::json!({
-                "file_id": generated.file_id,
-                "filename": generated.filename,
-                "size": generated.size,
-                "content_type": generated.content_type,
+              "file_id": &generated.file_id,
+              "artifact_id": &artifact_revision.artifact_id,
+              "revision_id": &artifact_revision.revision_id,
+              "revision_number": artifact_revision.revision_number,
+              "filename": &generated.filename,
+              "size": generated.size,
+                "content_type": &generated.content_type,
+                "change_summary": change_summary,
+                "retention": {
+                    "retained_recent_binary_revisions": GENERATED_ARTIFACT_RETAIN_RECENT_BINARY_REVISIONS,
+                    "pruned_revision_count": pruned_revision_count
+                },
                 "message": format!("Successfully generated {} ({} bytes)", generated.filename, generated.size),
                 "render_blocks": [{
                     "view_type": "generated.file",
-                    "title": generated.filename,
+                    "title": &generated.filename,
                     "payload": {
-                        "file_id": generated.file_id,
-                        "name": generated.filename,
-                        "size": generated.size,
-                        "content_type": generated.content_type,
+                      "file_id": &generated.file_id,
+                      "artifact_id": &artifact_revision.artifact_id,
+                      "revision_id": &artifact_revision.revision_id,
+                      "revision_number": artifact_revision.revision_number,
+                      "name": &generated.filename,
+                      "size": generated.size,
+                        "content_type": &generated.content_type,
                         "preview_kind": "text",
-                        "preview_text": generated.preview_text,
+                        "preview_text": &generated.preview_text,
+                        "change_summary": change_summary,
                     }
                 }]
             })))
@@ -1524,23 +1904,62 @@ async fn execute_core_tool_call_with_tool_ref_internal(
                 crate::modules::generated_files::pptx_generator::generate_pptx(&app_handle, &input)
                     .await
                     .map_err(|err| format!("Failed to generate pptx: {err}"))?;
+            let artifact_id = normalize_generated_artifact_arg(input.artifact_id.as_deref());
+            let base_revision_id =
+                normalize_generated_artifact_arg(input.base_revision_id.as_deref());
+            let change_summary = normalize_generated_artifact_arg(input.change_summary.as_deref());
+            let mut source_input = input.clone();
+            source_input.artifact_id = None;
+            source_input.base_revision_id = None;
+            source_input.change_summary = None;
+            let source_json = serde_json::to_string(&source_input)
+                .map_err(|err| format!("Failed to serialize write_pptx source: {err}"))?;
+            let artifact_revision = persist_generated_file_artifact(
+                store,
+                approval_context,
+                "pptx",
+                &generated,
+                source_json,
+                artifact_id,
+                base_revision_id,
+                change_summary.clone(),
+            )
+            .await?;
+            let pruned_revision_count = prune_old_generated_artifact_revision_binaries(
+                &app_handle,
+                store,
+                &artifact_revision.artifact_id,
+            )
+            .await;
 
             Ok(Some(serde_json::json!({
-                "file_id": generated.file_id,
-                "filename": generated.filename,
+              "file_id": &generated.file_id,
+              "artifact_id": &artifact_revision.artifact_id,
+              "revision_id": &artifact_revision.revision_id,
+              "revision_number": artifact_revision.revision_number,
+              "filename": &generated.filename,
                 "size": generated.size,
-                "content_type": generated.content_type,
+                "content_type": &generated.content_type,
+                "change_summary": change_summary,
+                "retention": {
+                    "retained_recent_binary_revisions": GENERATED_ARTIFACT_RETAIN_RECENT_BINARY_REVISIONS,
+                    "pruned_revision_count": pruned_revision_count
+                },
                 "message": format!("Successfully generated {} ({} bytes)", generated.filename, generated.size),
                 "render_blocks": [{
                     "view_type": "generated.file",
-                    "title": generated.filename,
+                    "title": &generated.filename,
                     "payload": {
-                        "file_id": generated.file_id,
-                        "name": generated.filename,
-                        "size": generated.size,
-                        "content_type": generated.content_type,
+                      "file_id": &generated.file_id,
+                      "artifact_id": &artifact_revision.artifact_id,
+                      "revision_id": &artifact_revision.revision_id,
+                      "revision_number": artifact_revision.revision_number,
+                      "name": &generated.filename,
+                      "size": generated.size,
+                        "content_type": &generated.content_type,
                         "preview_kind": "text",
-                        "preview_text": generated.preview_text,
+                        "preview_text": &generated.preview_text,
+                        "change_summary": change_summary,
                     }
                 }]
             })))

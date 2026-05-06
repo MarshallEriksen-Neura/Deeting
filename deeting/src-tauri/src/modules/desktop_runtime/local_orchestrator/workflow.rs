@@ -18,6 +18,7 @@ use crate::modules::desktop_runtime::runtime::{
 use crate::modules::mcp::store::LocalSkillInstallDetail;
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
+use mcp_transport::gateway::GeneratedArtifactContext;
 
 use super::retrieval::{
     ContextRetrievalPrefetchStep, PrefetchedRetrievals, SelectedKnowledgeInjectionStep,
@@ -753,6 +754,7 @@ pub(super) fn build_desktop_local_chat_engine(
         Box::new(ContextRetrievalPrefetchStep),
         Box::new(SemanticMemoryInjectionStep),
         Box::new(SelectedKnowledgeInjectionStep),
+        Box::new(GeneratedArtifactContextInjectionStep),
         Box::new(RouteSelectionStep),
         Box::new(SkillRecipeInjectionStep),
         Box::new(PromptVariantSelectionStep),
@@ -790,6 +792,7 @@ pub(super) struct LocalWorkflowContext {
     pub(super) status_code: Option<String>,
     pub(super) status_meta: Option<Value>,
     pub(super) selected_knowledge_file_ids: Vec<String>,
+    pub(super) generated_artifact_context: Option<GeneratedArtifactContext>,
     pub(super) latest_user_query: Option<String>,
     pub(super) task_fingerprint: Option<TaskFingerprint>,
     pub(super) request_query_embedding: Option<Vec<f32>>,
@@ -836,6 +839,7 @@ impl LocalWorkflowContext {
             status_code: None,
             status_meta: None,
             selected_knowledge_file_ids: input.selected_knowledge_file_ids.clone(),
+            generated_artifact_context: input.generated_artifact_context.clone(),
             latest_user_query,
             task_fingerprint: None,
             request_query_embedding: None,
@@ -1393,6 +1397,73 @@ impl LocalWorkflowStep<LocalWorkflowContext> for PromptVariantSelectionStep {
 
 struct SkillRecipeInjectionStep;
 
+struct GeneratedArtifactContextInjectionStep;
+
+impl LocalWorkflowStep<LocalWorkflowContext> for GeneratedArtifactContextInjectionStep {
+    fn name(&self) -> &'static str {
+        "generated_artifact_context_injection"
+    }
+
+    fn depends_on(&self) -> &'static [&'static str] {
+        &["selected_knowledge_injection"]
+    }
+
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a mut LocalWorkflowContext,
+    ) -> BoxFuture<'a, Result<LocalStepResult, String>> {
+        Box::pin(async move {
+            let Some(context) = ctx.generated_artifact_context.clone() else {
+                return Ok(StepResult::skipped());
+            };
+
+            Ok(StepResult::success()
+                .with_system_message(render_generated_artifact_context_prompt(&context))
+                .with_patch(status_patch(
+                    "remember",
+                    Some("generated_artifact_context_injection"),
+                    "success",
+                    "generated_artifact.context.loaded",
+                    Some(json!({
+                        "artifact_id": context.artifact_id,
+                        "revision_id": context.revision_id,
+                        "revision_number": context.revision_number,
+                        "file_id": context.file_id,
+                        "kind": context.kind,
+                    })),
+                )))
+        })
+    }
+}
+
+fn render_generated_artifact_context_prompt(context: &GeneratedArtifactContext) -> String {
+    let mut lines = vec![
+        "## Active Generated Artifact".to_string(),
+        "The user selected an existing desktop-local generated Office artifact for this turn. Treat follow-up requests as edits to this artifact unless the user explicitly asks for a new file.".to_string(),
+        format!("- artifact_id: {}", context.artifact_id),
+    ];
+    if let Some(revision_id) = context.revision_id.as_deref() {
+        lines.push(format!("- revision_id: {revision_id}"));
+    }
+    if let Some(revision_number) = context.revision_number {
+        lines.push(format!("- revision_number: {revision_number}"));
+    }
+    if let Some(file_id) = context.file_id.as_deref() {
+        lines.push(format!("- file_id: {file_id}"));
+    }
+    if let Some(kind) = context.kind.as_deref() {
+        lines.push(format!("- kind: {kind}"));
+    }
+    if let Some(name) = context.name.as_deref() {
+        lines.push(format!("- name: {name}"));
+    }
+    if let Some(content_type) = context.content_type.as_deref() {
+        lines.push(format!("- content_type: {content_type}"));
+    }
+    lines.push("Use inspect_generated_artifact with artifact_id/revision_id/file_id before modifying when you need the current structure. For focused edits, prefer patch_generated_artifact with artifact_id, base_revision_id, operations, and a concise change_summary. Use write_docx/write_pptx with artifact_id only when the change requires rewriting the full source. Preserve existing content; do not regenerate from scratch or drop existing sections/slides unless requested.".to_string());
+    lines.join("\n")
+}
+
 struct RouteSelectionStep;
 
 impl LocalWorkflowStep<LocalWorkflowContext> for RouteSelectionStep {
@@ -1401,7 +1472,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for RouteSelectionStep {
     }
 
     fn depends_on(&self) -> &'static [&'static str] {
-        &["selected_knowledge_injection"]
+        &["generated_artifact_context_injection"]
     }
 
     fn execute<'a>(

@@ -60,6 +60,7 @@ impl CoreToolContract {
             "input_schema": self.input_schema,
             "output_schema": self.output_schema,
             "permission_scope": self.permission_scope,
+            "discovery_terms": self.discovery_terms(),
             "read_only": self.read_only,
             "mutating": self.mutating,
             "risk_level": self.risk_level,
@@ -68,6 +69,64 @@ impl CoreToolContract {
             "runtime_state": "ready",
             "search_index_state": "not_required",
         })
+    }
+
+    fn discovery_terms(&self) -> Value {
+        if !self.name.starts_with("browser_") {
+            return json!([]);
+        }
+
+        let mut terms = vec![
+            "desktop local browser",
+            "desktop-local Chrome extension",
+            "local browser agent bridge",
+            "browser extension lane",
+            "current browser tab",
+            "active browser tab",
+            "existing browser tab",
+            "already-open browser page",
+            "attach existing browser tab",
+            "read current browser page",
+            "inspect current tab content",
+            "读取当前浏览器",
+            "读取当前页面",
+            "查看当前标签页",
+            "已打开浏览器",
+            "已打开页面",
+            "附着现有标签页",
+        ];
+
+        match self.name {
+            "browser_agent_status" => terms.extend([
+                "check browser extension connection",
+                "browser bridge reachable",
+                "active extension session",
+            ]),
+            "browser_get_active_page" => terms.extend([
+                "get active page",
+                "get current tab id",
+                "attach to current tab",
+                "current page url title",
+                "当前活动页面",
+            ]),
+            "browser_tabs" => terms.extend([
+                "list open tabs",
+                "switch active tab",
+                "select existing tab",
+                "open tab list",
+                "列出浏览器标签页",
+            ]),
+            "browser_get_page_snapshot" | "browser_extract" => terms.extend([
+                "read page content",
+                "extract current page text",
+                "visible text links buttons",
+                "browser page snapshot",
+                "读取页面内容",
+            ]),
+            _ => {}
+        }
+
+        json!(terms)
     }
 }
 
@@ -689,7 +748,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
         },
         CoreToolContract {
             name: "browser_agent_status",
-            description: "Inspect the desktop-local browser agent bridge configuration and current reachability. This is the runtime truth for whether the browser extension lane is configured and reachable from the desktop app.",
+            description: "Inspect the desktop-local Chrome/browser agent bridge configuration, active extension session, current tab reachability, and whether the local browser extension lane can attach to already-open browser pages.",
             input_schema: json!({
                 "type": "object",
                 "properties": {}
@@ -717,7 +776,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
         },
         CoreToolContract {
             name: "browser_open_tab",
-            description: "Ask the connected browser agent extension to open a new browser tab for an http or https URL. This uses the desktop-local browser bridge and requires an active extension session.",
+            description: "Ask the connected desktop-local Chrome/browser agent extension to open a new browser tab for an http or https URL. Use this local browser bridge when the user wants a real browser tab instead of a remote browser session.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -741,7 +800,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
         },
         CoreToolContract {
             name: "browser_get_page_snapshot",
-            description: "Ask the connected browser agent extension to return a structured page snapshot for a tab id. Use this after browser_open_tab or after another browser navigation step.",
+            description: "Ask the connected desktop-local Chrome/browser agent extension to read the content of an existing browser tab by tab id and return a structured page snapshot. Use this after browser_get_active_page, browser_tabs, browser_open_tab, or browser navigation when the user asks to inspect the current page, current tab, visible text, links, buttons, posts, or page content.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -813,7 +872,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
         ),
         browser_expanded_tool_contract(
             "browser_get_active_page",
-            "Return the active browser page known by the desktop browser bridge.",
+            "Return the active/current browser page known by the desktop-local Chrome/browser bridge. Use this to attach to an already-open browser tab, inspect the user's current tab, read the current page URL/title, or get the tab id before calling browser_get_page_snapshot or other tab-scoped browser tools.",
             true,
             false,
             "LOW",
@@ -829,7 +888,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
         ),
         browser_expanded_tool_contract(
             "browser_tabs",
-            "List, switch, create, or close browser tabs through the local browser agent bridge.",
+            "List open browser tabs, switch to an existing tab, create a tab, or close tabs through the desktop-local Chrome/browser agent bridge. Use this for attach existing browser tab, current browser tabs, already-open pages, active tab selection, and choosing a tab id before reading page content.",
             false,
             true,
             "HIGH",
@@ -1213,6 +1272,8 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
             example_arguments: json!({"tab_id": 42, "target": {"selector": "input[name='q']"}, "text": "browser agent"}),
         },
         build_shell_execute_core_tool_contract(),
+        inspect_generated_artifact_contract(),
+        patch_generated_artifact_contract(),
         write_docx_contract(),
         write_pptx_contract(),
     ]
@@ -1267,6 +1328,8 @@ fn core_tool_execution_surface(tool_name: &str) -> &'static str {
         "browser_type" => "host",
         "save_asset" => "sandbox",
         "shell_execute" => "sandbox",
+        "inspect_generated_artifact" => "host",
+        "patch_generated_artifact" => "host",
         "write_docx" => "sandbox",
         "write_pptx" => "sandbox",
         _ => "host",
@@ -1275,8 +1338,155 @@ fn core_tool_execution_surface(tool_name: &str) -> &'static str {
 
 fn core_tool_risk_runtime_state(tool_name: &str) -> &'static str {
     match tool_name {
-        "write_docx" | "write_pptx" => "ready",
+        "inspect_generated_artifact" | "patch_generated_artifact" | "write_docx" | "write_pptx" => {
+            "ready"
+        }
         _ => "ready",
+    }
+}
+
+fn inspect_generated_artifact_contract() -> CoreToolContract {
+    CoreToolContract {
+        name: "inspect_generated_artifact",
+        description: "Inspect a desktop-local generated DOCX/PPTX artifact and return metadata plus an editable outline for the requested or current revision. Use this before patching or revising an active generated Office artifact; it never returns raw binary file data.",
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "artifact_id": {
+                    "type": "string",
+                    "description": "Stable generated artifact id from a generated.file card or request metadata."
+                },
+                "file_id": {
+                    "type": "string",
+                    "description": "Legacy generated file id. Used only when artifact_id is unavailable."
+                },
+                "revision_id": {
+                    "type": "string",
+                    "description": "Optional revision id. Defaults to the artifact current revision."
+                }
+            }
+        }),
+        output_schema: json!({
+            "type": "object",
+            "properties": {
+                "artifact_id": {"type": "string"},
+                "kind": {"type": "string", "enum": ["docx", "pptx"]},
+                "title": {"type": "string"},
+                "status": {"type": "string"},
+                "current_revision": {"type": "object"},
+                "revision": {"type": "object"},
+                "file": {"type": "object"},
+                "outline": {},
+                "preview_text": {"type": ["string", "null"]},
+                "supported_operations": {"type": "array", "items": {"type": "string"}},
+                "source_available": {"type": "boolean"}
+            },
+            "required": ["artifact_id", "kind", "title", "current_revision", "revision", "file", "outline", "supported_operations"]
+        }),
+        permission_scope: &["local_state_read"],
+        read_only: true,
+        mutating: false,
+        risk_level: "LOW",
+        example_arguments: json!({"artifact_id": "generated-artifact-id"}),
+    }
+}
+
+fn patch_generated_artifact_contract() -> CoreToolContract {
+    CoreToolContract {
+        name: "patch_generated_artifact",
+        description: "Apply structured edits to an existing desktop-local generated DOCX/PPTX artifact and append a new revision. Use this for focused follow-up edits instead of regenerating the whole Office file from scratch.",
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "artifact_id": {
+                    "type": "string",
+                    "description": "Stable generated artifact id. Preferred lookup key."
+                },
+                "revision_id": {
+                    "type": "string",
+                    "description": "Revision to patch. Defaults to the artifact current revision."
+                },
+                "file_id": {
+                    "type": "string",
+                    "description": "Legacy generated file id. Used only when artifact_id/revision_id are unavailable."
+                },
+                "base_revision_id": {
+                    "type": "string",
+                    "description": "Expected current revision id for stale edit protection. Defaults to the revision being patched."
+                },
+                "change_summary": {
+                    "type": "string",
+                    "description": "Concise user-facing summary for the new revision."
+                },
+                "operations": {
+                    "type": "array",
+                    "minItems": 1,
+                    "description": "Ordered patch operations. Indexes are one-based; insert_*_after accepts 0 to insert at the beginning.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "op": {
+                                "type": "string",
+                                "enum": [
+                                    "rename_file",
+                                    "update_theme_style",
+                                    "replace_title",
+                                    "replace_section",
+                                    "insert_section_after",
+                                    "append_section",
+                                    "delete_section",
+                                    "replace_section_heading",
+                                    "replace_paragraphs",
+                                    "replace_bullets",
+                                    "replace_tables",
+                                    "replace_slide",
+                                    "insert_slide_after",
+                                    "append_slide",
+                                    "delete_slide",
+                                    "replace_slide_title",
+                                    "replace_slide_subtitle",
+                                    "replace_slide_bullets",
+                                    "replace_two_column_bullets",
+                                    "reorder_slides"
+                                ]
+                            }
+                        },
+                        "required": ["op"],
+                        "additionalProperties": true
+                    }
+                }
+            },
+            "required": ["operations"]
+        }),
+        output_schema: json!({
+            "type": "object",
+            "properties": {
+                "file_id": {"type": "string"},
+                "artifact_id": {"type": "string"},
+                "revision_id": {"type": "string"},
+                "revision_number": {"type": "integer"},
+                "filename": {"type": "string"},
+                "size": {"type": "integer"},
+                "content_type": {"type": "string"},
+                "change_summary": {"type": ["string", "null"]},
+                "retention": {"type": "object"},
+                "message": {"type": "string"},
+                "render_blocks": {"type": "array"}
+            },
+            "required": ["file_id", "artifact_id", "revision_id", "revision_number", "filename", "size", "content_type", "message"]
+        }),
+        permission_scope: &["file_write", "local_state_read", "local_state_write"],
+        read_only: false,
+        mutating: true,
+        risk_level: "LOW",
+        example_arguments: json!({
+            "artifact_id": "generated-artifact-id",
+            "base_revision_id": "current-revision-id",
+            "change_summary": "Updated slide 3 title",
+            "operations": [
+                {"op": "replace_slide_title", "slide_index": 3, "title": "Updated title"}
+            ]
+        }),
     }
 }
 
@@ -1289,13 +1499,16 @@ fn write_docx_contract() -> CoreToolContract {
             "type": "object",
             "properties": {
                 "file_id": {"type": "string"},
+                "artifact_id": {"type": "string"},
+                "revision_id": {"type": "string"},
+                "revision_number": {"type": "integer"},
                 "filename": {"type": "string"},
                 "size": {"type": "integer"},
                 "content_type": {"type": "string"},
                 "message": {"type": "string"},
                 "render_blocks": {"type": "array"}
             },
-            "required": ["file_id", "filename", "size", "content_type", "message"]
+            "required": ["file_id", "artifact_id", "revision_id", "revision_number", "filename", "size", "content_type", "message"]
         }),
         permission_scope: &["file_write", "local_state_write"],
         read_only: false,
@@ -1336,13 +1549,16 @@ fn write_pptx_contract() -> CoreToolContract {
             "type": "object",
             "properties": {
                 "file_id": {"type": "string"},
+                "artifact_id": {"type": "string"},
+                "revision_id": {"type": "string"},
+                "revision_number": {"type": "integer"},
                 "filename": {"type": "string"},
                 "size": {"type": "integer"},
                 "content_type": {"type": "string"},
                 "message": {"type": "string"},
                 "render_blocks": {"type": "array"}
             },
-            "required": ["file_id", "filename", "size", "content_type", "message"]
+            "required": ["file_id", "artifact_id", "revision_id", "revision_number", "filename", "size", "content_type", "message"]
         }),
         permission_scope: &["file_write", "local_state_write"],
         read_only: false,

@@ -1,7 +1,7 @@
 "use client"
 
 import { memo } from "react"
-import { Download, FileText, FolderOpen, Presentation, Table, File, Eye, ExternalLink } from "lucide-react"
+import { Download, FileText, FolderOpen, Presentation, Table, File, Eye, ExternalLink, PencilLine } from "lucide-react"
 import { toast } from "sonner"
 import { MarkdownViewer } from "@/components/chat/markdown-viewer"
 import { Button } from "@/ui/shadcn/button"
@@ -16,6 +16,9 @@ type PreviewKind = "text" | "markdown" | "html" | "none"
 
 interface GeneratedFilePayload {
   file_id?: string
+  artifact_id?: string
+  revision_id?: string
+  revision_number?: number
   name?: string
   path?: string
   size?: number
@@ -24,6 +27,7 @@ interface GeneratedFilePayload {
   download_url?: string
   preview_kind?: string
   preview_text?: string
+  change_summary?: string
   truncated?: boolean
 }
 
@@ -43,6 +47,7 @@ const GeneratedFileView = memo<NativeViewProps>(function GeneratedFileView({ dat
   const t = useI18n("chat")
   const payload = toPayload(data)
   const setActiveArtifact = useArtifactStore(state => state.setActiveArtifact)
+  const setEditingArtifact = useArtifactStore(state => state.setEditingArtifact)
 
   if (!payload) {
     return <div className="text-xs text-muted-foreground py-2">{t("views.invalidPayload")}</div>
@@ -50,6 +55,9 @@ const GeneratedFileView = memo<NativeViewProps>(function GeneratedFileView({ dat
 
   const name = payload.name?.trim() || payload.path?.trim() || t("views.generatedFile.untitled")
   const fileId = payload.file_id?.trim() || ""
+  const artifactId = payload.artifact_id?.trim() || ""
+  const revisionId = payload.revision_id?.trim() || undefined
+  const revisionNumber = Number.isFinite(payload.revision_number) ? Number(payload.revision_number) : undefined
   const downloadUrl = payload.download_url?.trim() || ""
   const contentType = payload.content_type?.trim() || payload.mime_type?.trim() || t("views.generatedFile.unknown")
   const sizeLabel =
@@ -78,13 +86,38 @@ const GeneratedFileView = memo<NativeViewProps>(function GeneratedFileView({ dat
     return { label: 'File', color: 'text-zinc-600 dark:text-zinc-400', icon: File, bg: 'bg-zinc-50 dark:bg-zinc-900/20' }
   })()
 
+  const artifactKind = (() => {
+    const ext = name.split('.').pop()?.toLowerCase() || ''
+    const mime = contentType.toLowerCase()
+    if (ext === 'docx' || ext === 'doc' || mime.includes('word') || mime.includes('wordprocessingml')) return 'docx'
+    if (ext === 'pptx' || ext === 'ppt' || mime.includes('presentation') || mime.includes('presentationml')) return 'pptx'
+    if (ext === 'xlsx' || ext === 'xls' || ext === 'csv' || mime.includes('sheet') || mime.includes('csv')) return 'xlsx'
+    if (ext === 'pdf' || mime.includes('pdf')) return 'pdf'
+    return 'file'
+  })()
+
   const handlePreview = () => {
     setActiveArtifact({
       id: fileId || name,
       name,
-      type: fileType.label.toLowerCase(),
+      type: artifactKind,
       payload: payload,
     })
+  }
+
+  const handleContinueEditing = () => {
+    if (!artifactId) return
+    setEditingArtifact({
+      artifactId,
+      revisionId,
+      revisionNumber,
+      fileId: fileId || undefined,
+      type: artifactKind,
+      name,
+      contentType,
+      size: payload.size,
+    })
+    toast.success(t("views.generatedFile.editingSelected", { name }))
   }
 
   const handleDownload = async () => {
@@ -193,6 +226,12 @@ const GeneratedFileView = memo<NativeViewProps>(function GeneratedFileView({ dat
           <div className="truncate text-sm font-semibold tracking-tight text-foreground">{name}</div>
           <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
             <span className="font-medium">{fileType.label}</span>
+            {revisionNumber ? (
+              <>
+                <span className="h-0.5 w-0.5 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+                <span>{t("views.generatedFile.revision", { number: revisionNumber })}</span>
+              </>
+            ) : null}
             <span className="h-0.5 w-0.5 rounded-full bg-zinc-300 dark:bg-zinc-700" />
             <span>{sizeLabel}</span>
           </div>
@@ -211,6 +250,18 @@ const GeneratedFileView = memo<NativeViewProps>(function GeneratedFileView({ dat
           </Button>
           {(downloadUrl || fileId) && (
             <>
+              {artifactId && (
+                <Button
+                  onClick={handleContinueEditing}
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 rounded-full px-3 text-xs"
+                  title={t("views.generatedFile.continueEditing")}
+                >
+                  <PencilLine size={14} className="mr-1.5 text-zinc-500" />
+                  {t("views.generatedFile.continueEditing")}
+                </Button>
+              )}
               <Button
                 onClick={handleOpen}
                 size="sm"

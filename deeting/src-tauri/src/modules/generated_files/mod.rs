@@ -2,6 +2,10 @@ use std::path::PathBuf;
 
 use tauri::{AppHandle, Manager, Runtime};
 
+pub mod artifact_inspect;
+pub mod artifact_patch;
+pub mod artifact_store;
+pub mod artifact_types;
 pub mod docx_generator;
 pub mod download;
 pub mod pptx_generator;

@@ -302,6 +302,7 @@ pub async fn execute_text_chat_raw(
         provider_model_id,
         explicit_task_agent_id: None,
         root_execution_id: None,
+        generated_artifact_context: None,
         session_id: session_id.trim().to_string(),
         capability_id: None,
         regenerate: false,

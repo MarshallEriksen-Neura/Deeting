@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { CheckCheck, ChevronDown } from "lucide-react";
+import { CheckCheck, ChevronDown, SquareTerminal } from "lucide-react";
 import { motion } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN, enUS } from "date-fns/locale";
@@ -9,6 +9,7 @@ import { useLocale } from "next-intl";
 
 import { useI18n } from "@/hooks/use-i18n";
 import { cn } from "@/lib/utils";
+import { useTerminalPanelStore } from "@/store/terminal-panel-store";
 import { useWorkflowStore } from "@/store/workflow-store";
 
 import { resolveIslandStatusLabelKey } from "./island-labels";
@@ -67,9 +68,11 @@ function scrollToWorkflowLiveCard(runId: string) {
 export function IslandCollapsedView({
   dragRegion = false,
   compact = false,
+  showTerminalToggle = false,
 }: {
   dragRegion?: boolean;
   compact?: boolean;
+  showTerminalToggle?: boolean;
 } = {}) {
   const {
     statusLabel,
@@ -85,6 +88,8 @@ export function IslandCollapsedView({
   } = useIslandContext();
   const t = useI18n("chat");
   const workflowProgress = useWorkflowProgress();
+  const isTerminalOpen = useTerminalPanelStore((s) => s.isOpen);
+  const toggleTerminal = useTerminalPanelStore((s) => s.toggle);
 
   const isActive =
     statusLabel === "Working..." || statusLabel === "Pending approval";
@@ -217,8 +222,29 @@ export function IslandCollapsedView({
         </div>
       )}
 
-      <div className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/52 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] dark:bg-white/6">
-        <ChevronDown className="h-3.5 w-3.5 text-island-gold transition-transform" />
+      <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        {showTerminalToggle ? (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              toggleTerminal();
+            }}
+            aria-label={isTerminalOpen ? "Hide terminal" : "Show terminal"}
+            title={isTerminalOpen ? "Hide terminal" : "Show terminal"}
+            className={cn(
+              "flex h-8 w-8 items-center justify-center rounded-full shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] transition-colors",
+              isTerminalOpen
+                ? "bg-island-gold/22 text-island-gold dark:bg-island-gold/26"
+                : "bg-white/52 text-foreground/55 hover:bg-island-gold/14 hover:text-island-gold dark:bg-white/6",
+            )}
+          >
+            <SquareTerminal className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/52 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] dark:bg-white/6">
+          <ChevronDown className="h-3.5 w-3.5 text-island-gold transition-transform" />
+        </div>
       </div>
     </motion.div>
   );

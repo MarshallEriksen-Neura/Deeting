@@ -20,6 +20,7 @@ import {
   isDesktopLocalModel,
   matchesChatModelSelectionValue,
 } from "@/lib/api/models"
+import { useArtifactStore, type ArtifactEditingTarget } from "@/store/artifact-store"
 
 const WEB_SESSION_STORAGE_KEY = "deeting-chat-session:router"
 
@@ -142,20 +143,39 @@ function buildKnowledgeSelectionMetadata(selectedKnowledgeFileIds: string[]) {
   }
 }
 
+function buildGeneratedArtifactMetadata(editingArtifact?: ArtifactEditingTarget | null) {
+  if (!editingArtifact?.artifactId.trim()) return undefined
+
+  return {
+    generated_artifact: {
+      artifact_id: editingArtifact.artifactId,
+      revision_id: editingArtifact.revisionId,
+      revision_number: editingArtifact.revisionNumber,
+      file_id: editingArtifact.fileId,
+      kind: editingArtifact.type,
+      name: editingArtifact.name,
+      content_type: editingArtifact.contentType,
+    },
+  }
+}
+
 function buildRequestMetadata(
   selectedKnowledgeFileIds: string[],
-  rootExecutionId?: string | null
+  rootExecutionId?: string | null,
+  editingArtifact?: ArtifactEditingTarget | null
 ) {
   const knowledge = buildKnowledgeSelectionMetadata(selectedKnowledgeFileIds)
+  const generatedArtifact = buildGeneratedArtifactMetadata(editingArtifact)
   const normalizedRootExecutionId =
     typeof rootExecutionId === "string" && rootExecutionId.trim().length > 0
       ? rootExecutionId.trim()
       : null
 
-  if (!knowledge && !normalizedRootExecutionId) return undefined
+  if (!knowledge && !normalizedRootExecutionId && !generatedArtifact) return undefined
 
   return {
     ...(knowledge ?? {}),
+    ...(generatedArtifact ?? {}),
     ...(normalizedRootExecutionId
       ? {
           execution: {
@@ -952,6 +972,8 @@ export function useChatMessagingService() {
     let effectiveInput = trimmedInput
     let explicitTaskAgentId = explicitTaskAgentIdOverride?.trim() || undefined
     let displayInput = trimmedInput
+    const editingArtifact = useArtifactStore.getState().editingArtifact
+    const generatedArtifactContext = buildGeneratedArtifactMetadata(editingArtifact)?.generated_artifact
     if (isTauriRuntime && !explicitTaskAgentId) {
       const localAgents = await listCustomTaskAgents()
       const resolvedMention = resolveLeadingTaskAgentMention(
@@ -993,6 +1015,17 @@ export function useChatMessagingService() {
                 title: draft.pageContext.title,
                 url: draft.pageContext.url,
                 host: draft.pageContext.host,
+              },
+            }
+          : {}),
+        ...(generatedArtifactContext
+          ? {
+              generated_artifact_context: {
+                artifact_id: generatedArtifactContext.artifact_id,
+                revision_id: generatedArtifactContext.revision_id,
+                revision_number: generatedArtifactContext.revision_number,
+                name: generatedArtifactContext.name,
+                kind: generatedArtifactContext.kind,
               },
             }
           : {}),
@@ -1060,7 +1093,7 @@ export function useChatMessagingService() {
         reasoning_effort: config.reasoningEnabled ? config.reasoningEffort : undefined,
         request_id: createRequestId(),
         session_id: resolvedSessionId ?? undefined,
-        metadata: buildKnowledgeSelectionMetadata(draft.selectedKnowledgeFileIds),
+        metadata: buildRequestMetadata(draft.selectedKnowledgeFileIds, undefined, editingArtifact),
       }
       requestIdRef.current = payload.request_id ?? null
       activeRequestRouteRef.current = "local_gateway"

@@ -33,6 +33,7 @@ pub mod scan;
 pub mod selection_assistant;
 pub mod skill_runtime;
 pub mod skills;
+pub mod terminal;
 pub mod voice;
 pub mod voice_capabilities;
 pub mod workflow;

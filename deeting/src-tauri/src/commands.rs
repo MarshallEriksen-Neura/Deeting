@@ -316,6 +316,11 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::island_window::show_main_hide_island,
         crate::modules::island_window::set_island_size,
         crate::modules::island_window::set_island_position,
-        crate::modules::selection_assistant::commands::capture_active_text_selection
+        crate::modules::selection_assistant::commands::capture_active_text_selection,
+        // Terminal panel (PTY) commands
+        crate::modules::terminal::commands::pty_open,
+        crate::modules::terminal::commands::pty_write,
+        crate::modules::terminal::commands::pty_resize,
+        crate::modules::terminal::commands::pty_close
     ]
 }

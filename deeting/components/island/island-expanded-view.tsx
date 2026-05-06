@@ -14,6 +14,7 @@ import {
   Play,
   SendHorizontal,
   Sparkles,
+  SquareTerminal,
   User,
   X,
 } from "lucide-react";
@@ -34,6 +35,7 @@ import {
 import AudioResultPanel, {
   type AudioResultPayload,
 } from "@/components/audio/audio-result-panel";
+import { useTerminalPanelStore } from "@/store/terminal-panel-store";
 import type { IslandRecentMessage } from "./island-store";
 
 import { IslandApprovalCard } from "./island-approval-card";
@@ -1141,8 +1143,10 @@ function resolveManualTranslatorTarget() {
 
 export function IslandExpandedView({
   headerDragRegion = false,
+  showTerminalToggle = false,
 }: {
   headerDragRegion?: boolean;
+  showTerminalToggle?: boolean;
 } = {}) {
   const {
     statusLabel,
@@ -1165,6 +1169,8 @@ export function IslandExpandedView({
     dismissSelectionContext,
   } = useIslandContext();
   const t = useI18n("chat");
+  const isTerminalOpen = useTerminalPanelStore((s) => s.isOpen);
+  const toggleTerminal = useTerminalPanelStore((s) => s.toggle);
 
   const [translatorMode, setTranslatorMode] =
     useState<IslandTranslatorMode | null>(null);
@@ -1470,6 +1476,22 @@ export function IslandExpandedView({
                 disabled={isBusy}
               />
             </div>
+            {showTerminalToggle ? (
+              <button
+                type="button"
+                onClick={() => toggleTerminal()}
+                aria-label={isTerminalOpen ? "Hide terminal" : "Show terminal"}
+                title={isTerminalOpen ? "Hide terminal" : "Show terminal"}
+                className={cn(
+                  "flex h-10 w-10 shrink-0 items-center justify-center rounded-full shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] transition-colors",
+                  isTerminalOpen
+                    ? "bg-island-gold/22 text-island-gold dark:bg-island-gold/26"
+                    : "bg-white/55 text-foreground/55 hover:bg-island-gold/14 hover:text-island-gold dark:bg-white/6",
+                )}
+              >
+                <SquareTerminal className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={openManualTranslator}

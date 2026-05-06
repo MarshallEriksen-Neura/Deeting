@@ -106,6 +106,18 @@ pub fn write_pptx_input_schema() -> serde_json::Value {
                     },
                     "required": ["layout", "title"]
                 }
+            },
+            "artifact_id": {
+                "type": "string",
+                "description": "Existing generated artifact id to append a new revision instead of creating a new artifact."
+            },
+            "base_revision_id": {
+                "type": "string",
+                "description": "Expected current revision id for stale-edit protection when artifact_id is provided."
+            },
+            "change_summary": {
+                "type": "string",
+                "description": "Concise description of what changed in this revision."
             }
         },
         "required": ["filename", "slides"]
@@ -113,7 +125,7 @@ pub fn write_pptx_input_schema() -> serde_json::Value {
 }
 
 pub fn write_pptx_tool_description() -> &'static str {
-    "Generate a PowerPoint (.pptx) deck with theme styles, cover templates, bullet slides, dual-column layouts, and embedded images."
+    "Generate or revise a PowerPoint (.pptx) deck with theme styles, cover templates, bullet slides, dual-column layouts, and embedded images. Pass artifact_id and base_revision_id to append a revision to an existing generated artifact."
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -145,6 +157,12 @@ pub struct WritePptxInput {
     pub theme_style: String,
     #[serde(default)]
     pub slides: Vec<PptxSlide>,
+    #[serde(default)]
+    pub artifact_id: Option<String>,
+    #[serde(default)]
+    pub base_revision_id: Option<String>,
+    #[serde(default)]
+    pub change_summary: Option<String>,
 }
 
 #[derive(Debug, Clone)]

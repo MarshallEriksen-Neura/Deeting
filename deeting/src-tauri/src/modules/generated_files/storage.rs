@@ -69,3 +69,19 @@ pub fn get_generated_file_path<R: Runtime>(
 
     Err(GeneratedFileError::NotFound(normalized_id.to_string()))
 }
+
+pub fn delete_generated_file<R: Runtime>(
+    app: &AppHandle<R>,
+    file_id: &str,
+) -> Result<bool, GeneratedFileError> {
+    let path = match get_generated_file_path(app, file_id) {
+        Ok(path) => path,
+        Err(GeneratedFileError::NotFound(_)) => return Ok(false),
+        Err(err) => return Err(err),
+    };
+    if !path.exists() {
+        return Ok(false);
+    }
+    std::fs::remove_file(path)?;
+    Ok(true)
+}

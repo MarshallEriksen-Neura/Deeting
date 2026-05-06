@@ -510,7 +510,7 @@ export function IslandShell() {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.15 }}
               >
-                <IslandCollapsedView />
+                <IslandCollapsedView showTerminalToggle />
               </motion.div>
             ) : (
               <motion.div
@@ -520,7 +520,7 @@ export function IslandShell() {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.15 }}
               >
-                <IslandExpandedView />
+                <IslandExpandedView showTerminalToggle />
               </motion.div>
             )}
           </AnimatePresence>

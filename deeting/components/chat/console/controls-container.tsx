@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertCircle, ArrowUp, Bot, CircleDashed, RotateCcw, Search, Sliders, MessageSquarePlus, Paperclip, X, Square, FileText, Play, Check, Loader2, Globe } from 'lucide-react';
+import { AlertCircle, ArrowUp, Bot, CircleDashed, RotateCcw, Search, Sliders, MessageSquarePlus, Paperclip, X, Square, FileText, Play, Check, Loader2, Globe, Presentation } from 'lucide-react';
 import { useMemo, useRef, useState, useCallback, useEffect, memo } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
@@ -46,6 +46,7 @@ import {
 } from '@/hooks/chat/task-agent-mention';
 import { useBrowserModeStore } from '@/store/browser-mode-store';
 import { useWorkspaceStore } from '@/store/workspace-store';
+import { useArtifactStore } from '@/store/artifact-store';
 import { deriveAssistantActivityState } from '@/lib/chat/assistant-activity';
 import { extractLatestComposerRecoveryPrompt } from '@/lib/chat/recovery';
 import { shouldSuggestWorkflowPlanning } from '@/lib/chat/workflow-planning-suggestion';
@@ -189,6 +190,8 @@ function ControlsContainer() {
   const isTauriRuntime = detectTauriRuntime();
   const browserModePage = useBrowserModeStore((state) => state.page)
   const openWorkspaceView = useWorkspaceStore((state) => state.openView)
+  const editingArtifact = useArtifactStore((state) => state.editingArtifact)
+  const clearEditingArtifact = useArtifactStore((state) => state.clearEditingArtifact)
 
   const {
     handleSendMessage,
@@ -362,8 +365,12 @@ function ControlsContainer() {
     if (pageContext) {
       items.push({ key: 'page-context', tone: 'default', label: t('controls.contextBar.pageContext') });
     }
+    if (editingArtifact) {
+      items.push({ key: 'artifact', tone: 'active', label: t('controls.contextBar.artifact') });
+    }
     return items;
   }, [
+    editingArtifact,
     hasUnavailableSelectedKnowledge,
     isApprovalExecuting,
     isApprovalPending,
@@ -1234,6 +1241,38 @@ function ControlsContainer() {
               </div>
             );
           })}
+        </div>
+      ) : null}
+
+      {editingArtifact ? (
+        <div className="flex flex-wrap items-center gap-2 px-1">
+          <div className="group relative flex h-8 max-w-[360px] shrink-0 items-center gap-2 rounded-full border border-violet-200/80 bg-violet-50 px-3 text-xs text-violet-700 dark:border-violet-400/30 dark:bg-violet-500/10 dark:text-violet-200">
+            {editingArtifact.type === 'pptx' ? (
+              <Presentation className="h-3.5 w-3.5 shrink-0" />
+            ) : (
+              <FileText className="h-3.5 w-3.5 shrink-0" />
+            )}
+            <span className="min-w-0 truncate">
+              {t("controls.artifactContextLabel", {
+                name: editingArtifact.name,
+                version: editingArtifact.revisionNumber
+                  ? t("controls.artifactVersion", { number: editingArtifact.revisionNumber })
+                  : "",
+              })}
+            </span>
+            <button
+              type="button"
+              className="inline-flex h-4 w-4 items-center justify-center rounded-full hover:bg-violet-200/60 dark:hover:bg-violet-500/30"
+              onClick={clearEditingArtifact}
+              aria-label={t("controls.artifactContextRemove")}
+              disabled={isLoading}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+          <span className="text-[11px] text-slate-500 dark:text-white/45">
+            {t("controls.artifactContextHint")}
+          </span>
         </div>
       ) : null}
 

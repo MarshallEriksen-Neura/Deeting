@@ -42,9 +42,9 @@ fn normalize_chat_content_shape(value: Value) -> Value {
         Value::Object(object) if is_structured_chat_content(&Value::Object(object.clone())) => {
             Value::Array(vec![Value::Object(object)])
         }
-        Value::Array(_) | Value::Object(_) => {
-            serde_json::to_string(&value).map(Value::String).unwrap_or(value)
-        }
+        Value::Array(_) | Value::Object(_) => serde_json::to_string(&value)
+            .map(Value::String)
+            .unwrap_or(value),
         other => other,
     }
 }

@@ -33,12 +33,12 @@ mod tests {
         },
     };
     use crate::modules::mcp::commands::tool_approval_impl::list_pending_mcp_approvals_with_graph_inner;
+    use crate::modules::mcp::commands::tool_management_impl::{
+        build_remote_transport_log_entries, start_remote_transport_tool, stop_remote_transport_tool,
+    };
     #[cfg(not(target_os = "windows"))]
     use crate::modules::mcp::commands::tool_management_impl::{
         start_mcp_tool_inner, stop_mcp_tool_inner,
-    };
-    use crate::modules::mcp::commands::tool_management_impl::{
-        build_remote_transport_log_entries, start_remote_transport_tool, stop_remote_transport_tool,
     };
     use crate::modules::skill_runtime::resolve_local_tool_env;
     use crate::modules::skills::onboarding::{
@@ -1445,6 +1445,60 @@ for raw_line in sys.stdin:
             .iter()
             .filter_map(|value| value.as_str())
             .any(|reason| reason.starts_with("semantic:")));
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn search_sdk_prefers_local_browser_bridge_for_current_tab_queries() {
+        let query = "查看用户当前本机浏览器正在打开的页面 帖子 标签页 读取当前浏览器内容 attach existing browser tab";
+        let (base_url, server_handle) = start_mock_embedding_server(HashMap::from([(
+            query.to_lowercase(),
+            vec![0.0, 0.0, 0.0],
+        )]))
+        .await;
+        let provider_state = create_test_provider_state("sdk-current-browser-tab", &base_url).await;
+        let memory_state = create_test_memory_state("sdk-current-browser-tab", 3).await;
+        let store = create_test_store("sdk-current-browser-tab").await;
+
+        let result = build_local_sdk_search_result_with_runtime_full(
+            &store,
+            &provider_state.embedding,
+            memory_state.service.as_ref(),
+            query,
+            8,
+        )
+        .await;
+
+        assert_eq!(
+            result["normalized_query"].get("domain"),
+            Some(&serde_json::json!("browser"))
+        );
+        assert_eq!(
+            result["normalized_query"].get("intent"),
+            Some(&serde_json::json!("browser_attach"))
+        );
+
+        let names = result["capabilities"]
+            .as_array()
+            .expect("capabilities")
+            .iter()
+            .filter_map(|item| item.get("name").and_then(|value| value.as_str()))
+            .take(5)
+            .collect::<Vec<_>>();
+
+        assert!(
+            names.contains(&"browser_get_active_page"),
+            "expected browser_get_active_page in top results, got {names:?}"
+        );
+        assert!(
+            names.contains(&"browser_tabs"),
+            "expected browser_tabs in top results, got {names:?}"
+        );
+        assert!(
+            names.iter().any(|name| name.starts_with("browser_")),
+            "expected local browser bridge tool in top results, got {names:?}"
+        );
 
         server_handle.abort();
     }
@@ -4093,7 +4147,8 @@ for raw_line in sys.stdin:
                 "approval_status": "waiting_approval",
                 "created_at_unix_ms": 1,
                 "expires_at_unix_ms": 1234567890123i64
-            })).expect("pending approval")],
+            }))
+            .expect("pending approval")],
             None,
             "session-1",
             "trace-1",
@@ -4105,7 +4160,8 @@ for raw_line in sys.stdin:
             .await
             .expect("persist runtime context");
 
-        let pending_tool_calls = RwLock::new(HashMap::<String, crate::modules::mcp::PendingToolCall>::new());
+        let pending_tool_calls =
+            RwLock::new(HashMap::<String, crate::modules::mcp::PendingToolCall>::new());
         let snapshots = list_pending_mcp_approvals_with_graph_inner(
             Some(&store),
             &pending_tool_calls,
@@ -4115,17 +4171,63 @@ for raw_line in sys.stdin:
 
         assert_eq!(snapshots.len(), 1);
         let snapshot = &snapshots[0];
-        assert_eq!(snapshot.get("approval_token").and_then(|value| value.as_str()), Some("approval-session-1"));
-        assert_eq!(snapshot.get("status").and_then(|value| value.as_str()), Some("REQUIRES_APPROVAL"));
-        assert_eq!(snapshot.get("session_id").and_then(|value| value.as_str()), Some("session-1"));
-        assert_eq!(snapshot.get("call_id").and_then(|value| value.as_str()), Some("call-session-1"));
-        assert_eq!(snapshot.get("execution_token").and_then(|value| value.as_str()), Some("exec-session-1"));
-        assert_eq!(snapshot.get("description").and_then(|value| value.as_str()), Some("Fetch demo content"));
-        assert_eq!(snapshot.get("risk_level").and_then(|value| value.as_str()), Some("MEDIUM"));
-        assert_eq!(snapshot.get("arguments").and_then(|value| value.get("url")).and_then(|value| value.as_str()), Some("https://example.com"));
-        assert_eq!(snapshot.get("execution_graph_execution_id").and_then(|value| value.as_str()), Some("graph-exec-1"));
-        assert_eq!(snapshot.get("execution_graph_gate_node_id").and_then(|value| value.as_str()), Some("approval_gate:call-session-1"));
-        assert_eq!(snapshot.get("execution_graph_tool_node_id").and_then(|value| value.as_str()), Some("tool_call:call-session-1"));
+        assert_eq!(
+            snapshot
+                .get("approval_token")
+                .and_then(|value| value.as_str()),
+            Some("approval-session-1")
+        );
+        assert_eq!(
+            snapshot.get("status").and_then(|value| value.as_str()),
+            Some("REQUIRES_APPROVAL")
+        );
+        assert_eq!(
+            snapshot.get("session_id").and_then(|value| value.as_str()),
+            Some("session-1")
+        );
+        assert_eq!(
+            snapshot.get("call_id").and_then(|value| value.as_str()),
+            Some("call-session-1")
+        );
+        assert_eq!(
+            snapshot
+                .get("execution_token")
+                .and_then(|value| value.as_str()),
+            Some("exec-session-1")
+        );
+        assert_eq!(
+            snapshot.get("description").and_then(|value| value.as_str()),
+            Some("Fetch demo content")
+        );
+        assert_eq!(
+            snapshot.get("risk_level").and_then(|value| value.as_str()),
+            Some("MEDIUM")
+        );
+        assert_eq!(
+            snapshot
+                .get("arguments")
+                .and_then(|value| value.get("url"))
+                .and_then(|value| value.as_str()),
+            Some("https://example.com")
+        );
+        assert_eq!(
+            snapshot
+                .get("execution_graph_execution_id")
+                .and_then(|value| value.as_str()),
+            Some("graph-exec-1")
+        );
+        assert_eq!(
+            snapshot
+                .get("execution_graph_gate_node_id")
+                .and_then(|value| value.as_str()),
+            Some("approval_gate:call-session-1")
+        );
+        assert_eq!(
+            snapshot
+                .get("execution_graph_tool_node_id")
+                .and_then(|value| value.as_str()),
+            Some("tool_call:call-session-1")
+        );
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -4283,11 +4385,12 @@ for raw_line in sys.stdin:
     #[cfg(not(target_os = "windows"))]
     #[tokio::test]
     async fn start_mcp_tool_inner_only_updates_target_stdio_peer_status() {
-        let store =
-            std::sync::Arc::new(create_test_store("start-stdio-mcp-peer-boundary").await);
+        let store = std::sync::Arc::new(create_test_store("start-stdio-mcp-peer-boundary").await);
         let script_path = write_mock_stdio_mcp_server_script("start-stdio-mcp-peer-boundary");
-        let target_tool = upsert_test_stdio_mcp_tool(&store, "mock_stdio", "write_file", &script_path).await;
-        let peer_tool = upsert_test_stdio_mcp_tool(&store, "mock_stdio", "read_file", &script_path).await;
+        let target_tool =
+            upsert_test_stdio_mcp_tool(&store, "mock_stdio", "write_file", &script_path).await;
+        let peer_tool =
+            upsert_test_stdio_mcp_tool(&store, "mock_stdio", "read_file", &script_path).await;
         let app = tauri::test::mock_app();
         let process_manager =
             crate::modules::mcp::process::ProcessManager::new(store.clone(), app.handle().clone());
@@ -4334,11 +4437,12 @@ for raw_line in sys.stdin:
     #[cfg(not(target_os = "windows"))]
     #[tokio::test]
     async fn stop_mcp_tool_inner_only_updates_target_stdio_peer_status() {
-        let store =
-            std::sync::Arc::new(create_test_store("stop-stdio-mcp-peer-boundary").await);
+        let store = std::sync::Arc::new(create_test_store("stop-stdio-mcp-peer-boundary").await);
         let script_path = write_mock_stdio_mcp_server_script("stop-stdio-mcp-peer-boundary");
-        let target_tool = upsert_test_stdio_mcp_tool(&store, "mock_stdio", "write_file", &script_path).await;
-        let peer_tool = upsert_test_stdio_mcp_tool(&store, "mock_stdio", "read_file", &script_path).await;
+        let target_tool =
+            upsert_test_stdio_mcp_tool(&store, "mock_stdio", "write_file", &script_path).await;
+        let peer_tool =
+            upsert_test_stdio_mcp_tool(&store, "mock_stdio", "read_file", &script_path).await;
         let app = tauri::test::mock_app();
         let process_manager =
             crate::modules::mcp::process::ProcessManager::new(store.clone(), app.handle().clone());

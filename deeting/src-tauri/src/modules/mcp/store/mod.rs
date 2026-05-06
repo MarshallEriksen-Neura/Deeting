@@ -12,6 +12,7 @@ use crate::modules::conversations::store::init_conversation_tables;
 use crate::modules::desktop_config::store_init::init_desktop_config_table;
 use crate::modules::desktop_runtime::runtime::execution_graph_store::init_execution_graph_tables;
 use crate::modules::external_sources::store_init::init_external_source_tables;
+use crate::modules::generated_files::artifact_store::init_generated_artifact_tables;
 use crate::modules::llm_wiki::store::init_llm_wiki_tables;
 use crate::modules::mcp::commands::runtime::capability_registry_cache::CapabilityRegistryBaseCache;
 use crate::modules::mcp::error::McpError;
@@ -822,6 +823,7 @@ impl McpStore {
         init_execution_graph_tables(self).await?;
         init_render_runtime_tables(self).await?;
         init_asset_registry_tables(self).await?;
+        init_generated_artifact_tables(self).await?;
 
         self.purge_legacy_skill_mcp_rows().await?;
         Ok(())
