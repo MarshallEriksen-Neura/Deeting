@@ -1,6 +1,7 @@
 import { buildChatAttachments } from "@/lib/chat/attachments"
 import { calculateFileHash } from "@/lib/utils/file"
 import {
+  fetchDesktopObjectStorageConfig,
   prepareDesktopObjectStorageRead,
   prepareDesktopObjectStorageUpload,
 } from "@/lib/api/desktop-object-storage"
@@ -10,11 +11,14 @@ jest.mock("@/lib/utils/file", () => ({
 }))
 
 jest.mock("@/lib/api/desktop-object-storage", () => ({
+  fetchDesktopObjectStorageConfig: jest.fn(),
   prepareDesktopObjectStorageUpload: jest.fn(),
   prepareDesktopObjectStorageRead: jest.fn(),
 }))
 
 const mockCalculateFileHash = calculateFileHash as jest.MockedFunction<typeof calculateFileHash>
+const mockFetchDesktopObjectStorageConfig =
+  fetchDesktopObjectStorageConfig as jest.MockedFunction<typeof fetchDesktopObjectStorageConfig>
 const mockPrepareUpload = prepareDesktopObjectStorageUpload as jest.MockedFunction<
   typeof prepareDesktopObjectStorageUpload
 >
@@ -31,10 +35,27 @@ describe("chat attachments", () => {
     windowWithTauri.__TAURI__ = {}
     global.fetch = jest.fn().mockResolvedValue({ ok: true }) as typeof fetch
     mockCalculateFileHash.mockResolvedValue("abc123")
+    mockFetchDesktopObjectStorageConfig.mockResolvedValue({
+      id: "00000000-0000-0000-0000-000000000001",
+      user_id: "00000000-0000-0000-0000-000000000002",
+      provider: "cloudflare_r2_s3",
+      bucket: "bucket",
+      region: null,
+      endpoint: "https://storage.example.com",
+      public_base_url: null,
+      path_prefix: "desktop/uploads",
+      is_path_style: true,
+      access_key_id: "access-key",
+      has_secret: true,
+      is_enabled: true,
+      created_at: "2026-03-10T00:00:00Z",
+      updated_at: "2026-03-10T00:00:00Z",
+    })
   })
 
   afterEach(() => {
     mockCalculateFileHash.mockReset()
+    mockFetchDesktopObjectStorageConfig.mockReset()
     mockPrepareUpload.mockReset()
     mockPrepareRead.mockReset()
     process.env.NEXT_PUBLIC_IS_TAURI = originalTauriFlag
@@ -73,5 +94,16 @@ describe("chat attachments", () => {
       url: "https://download.example.com/object?sig=1",
       sha256: "abc123",
     })
+  })
+
+  it("does not silently downgrade to local image attachments when desktop object storage is enabled", async () => {
+    mockPrepareUpload.mockRejectedValue(new Error("object storage unavailable"))
+
+    const file = new File([new Uint8Array([1, 2, 3])], "demo.png", { type: "image/png" })
+    const result = await buildChatAttachments([file])
+
+    expect(result.attachments).toEqual([])
+    expect(result.rejected).toBe(1)
+    expect(result.errors).toContain("upload_init_failed")
   })
 })

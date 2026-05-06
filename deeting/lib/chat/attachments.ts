@@ -1,5 +1,6 @@
 import type { ChatAttachment } from "@/lib/chat/message-content"
 import {
+  fetchDesktopObjectStorageConfig,
   prepareDesktopObjectStorageRead,
   prepareDesktopObjectStorageUpload,
 } from "@/lib/api/desktop-object-storage"
@@ -303,9 +304,14 @@ const buildAttachment = async (
 ): Promise<ChatAttachment> => {
   if (file.type.startsWith("image/")) {
     if (isTauriRuntime()) {
+      const desktopObjectStorageConfig = await fetchDesktopObjectStorageConfig().catch(() => null)
       try {
         return await buildDesktopObjectStorageImageAttachment(file)
-      } catch {}
+      } catch {
+        if (desktopObjectStorageConfig?.is_enabled) {
+          throw new Error("upload_init_failed")
+        }
+      }
       return buildLocalImageAttachment(file)
     }
     return buildImageAttachment(file)
