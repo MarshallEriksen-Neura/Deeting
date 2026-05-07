@@ -27,12 +27,17 @@ interface ChatTerminalSplitViewProps {
   children: React.ReactNode;
 }
 
+// react-resizable-panels v4 treats bare numeric props as PIXELS, not percentages.
+// String values without an explicit unit (or ending with "%") are percentages.
+// We want percentage-based sizing so the splitter scales with window width.
 /** Default width (% of group) when the terminal is freshly opened. */
-const TERMINAL_DEFAULT_SIZE = 40;
+const TERMINAL_DEFAULT_SIZE = "40%";
 /** Smallest terminal width before further drag triggers auto-collapse. */
-const TERMINAL_MIN_SIZE = 25;
+const TERMINAL_MIN_SIZE = "25%";
 /** Largest terminal width — keeps chat usable even when terminal is wide. */
-const TERMINAL_MAX_SIZE = 60;
+const TERMINAL_MAX_SIZE = "60%";
+/** Smallest chat-main width — prevents the chat column from being squeezed. */
+const CHAT_MAIN_MIN_SIZE = "40%";
 
 /**
  * Wraps the main chat interaction layer in a horizontal splitter. The left
@@ -56,6 +61,7 @@ export function ChatTerminalSplitView({
   children,
 }: ChatTerminalSplitViewProps) {
   const isOpen = useTerminalPanelStore((state) => state.isOpen);
+  const open = useTerminalPanelStore((state) => state.open);
   const close = useTerminalPanelStore((state) => state.close);
 
   // `usePanelRef` is the v4 convenience hook — returns a typed RefObject
@@ -89,12 +95,18 @@ export function ChatTerminalSplitView({
     ) => {
       if (!prevPanelSize) return;
       const wasOpen = prevPanelSize.asPercentage > 0;
+      const wasCollapsed = prevPanelSize.asPercentage === 0;
       const nowCollapsed = panelSize.asPercentage === 0;
+      const nowOpen = panelSize.asPercentage > 0;
+      if (wasCollapsed && nowOpen) {
+        open();
+        return;
+      }
       if (wasOpen && nowCollapsed) {
         close();
       }
     },
-    [close],
+    [close, open],
   );
 
   return (
@@ -102,7 +114,7 @@ export function ChatTerminalSplitView({
       direction="horizontal"
       className="relative z-10 h-full w-full"
     >
-      <ResizablePanel id="chat-main" defaultSize={100} minSize={40}>
+      <ResizablePanel id="chat-main" defaultSize="100%" minSize={CHAT_MAIN_MIN_SIZE}>
         <div className="grid h-full w-full grid-rows-[auto_minmax(0,1fr)_auto]">
           {/* Heads-Up Display (Top Center) */}
           <div
@@ -147,8 +159,8 @@ export function ChatTerminalSplitView({
         panelRef={terminalPanelRef}
         id="chat-terminal"
         collapsible
-        collapsedSize={0}
-        defaultSize={0}
+        collapsedSize="0%"
+        defaultSize="0%"
         minSize={TERMINAL_MIN_SIZE}
         maxSize={TERMINAL_MAX_SIZE}
         onResize={handlePanelResize}

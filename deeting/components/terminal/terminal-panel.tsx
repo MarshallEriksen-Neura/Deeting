@@ -49,9 +49,10 @@ interface ContextMenuState {
  * which is the strongest possible "they got it" signal).
  */
 export function TerminalPanel({ isCollapsed }: TerminalPanelProps) {
-  const containerRef = React.useRef<HTMLDivElement>(null);
+  const [containerElement, setContainerElement] =
+    React.useState<HTMLDivElement | null>(null);
   const { getSelection, getLastCommand } = useTerminalSession({
-    containerRef,
+    containerElement,
     isCollapsed,
   });
   const setPendingSelection = useTerminalPanelStore(
@@ -134,7 +135,7 @@ export function TerminalPanel({ isCollapsed }: TerminalPanelProps) {
         className="min-h-0 flex-1 overflow-hidden"
         onContextMenu={handleContextMenu}
       >
-        <div ref={containerRef} className="h-full w-full" />
+        <div ref={setContainerElement} className="h-full w-full" />
       </div>
       {menu ? (
         <TerminalContextMenu

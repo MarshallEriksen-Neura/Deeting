@@ -134,6 +134,9 @@ export async function injectOsc133ShellIntegration(
   sessionId: string,
 ) {
   const platform = await resolveTerminalPlatform();
+  if (platform === "windows") {
+    return;
+  }
   await invoke("pty_write", {
     sessionId,
     data: buildOsc133ShellIntegrationInput(platform),

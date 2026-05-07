@@ -29,6 +29,45 @@ const READ_CHUNK_SIZE: usize = 8 * 1024;
 const TERMINAL_OUTPUT_EVENT: &str = "terminal:output";
 const TERMINAL_EXIT_EVENT: &str = "terminal:exit";
 
+#[cfg(target_os = "windows")]
+const POWERSHELL_OSC_133_INIT_SCRIPT: &str = r#"
+$global:__DEETING_OSC133_COMMAND_ACTIVE = $false
+if (-not $global:__DEETING_OSC133_ORIGINAL_PROMPT) {
+  $global:__DEETING_OSC133_ORIGINAL_PROMPT = (Get-Command prompt -CommandType Function).ScriptBlock
+}
+function global:__deeting_osc133_emit([string]$Payload) {
+  [Console]::Write("$([char]27)]133;$Payload$([char]7)")
+}
+function global:prompt {
+  $deetingSucceeded = $?
+  $deetingNativeExitCode = $global:LASTEXITCODE
+  $deetingExitCode = if ($deetingSucceeded) { 0 } elseif ($deetingNativeExitCode -is [int] -and $deetingNativeExitCode -ne 0) { $deetingNativeExitCode } else { 1 }
+  if ($global:__DEETING_OSC133_COMMAND_ACTIVE) {
+    __deeting_osc133_emit "D;$deetingExitCode"
+    $global:__DEETING_OSC133_COMMAND_ACTIVE = $false
+  }
+  $deetingCwd = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Get-Location).Path))
+  __deeting_osc133_emit "A;cwd_base64=$deetingCwd"
+  & $global:__DEETING_OSC133_ORIGINAL_PROMPT
+}
+try {
+  Import-Module PSReadLine -ErrorAction SilentlyContinue
+  if (Get-Module PSReadLine) {
+    Set-PSReadLineKeyHandler -Key Enter -BriefDescription DeetingOsc133AcceptLine -ScriptBlock {
+      $line = ""
+      $cursor = 0
+      [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
+      if ($line.Trim().Length -gt 0) {
+        $global:__DEETING_OSC133_COMMAND_ACTIVE = $true
+        $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($line))
+        [Console]::Write("$([char]27)]133;C;command_base64=$encoded$([char]7)")
+      }
+      [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
+    }
+  }
+} catch {}
+"#;
+
 #[derive(Debug, Error)]
 pub enum PtySessionError {
     #[error("a terminal session is already open")]
@@ -245,11 +284,16 @@ fn build_shell_command() -> CommandBuilder {
     // Prefer pwsh.exe (PowerShell 7+) when available — better UTF-8 handling
     // out of the box. Fall back to powershell.exe (always installed on
     // modern Windows). cmd.exe is intentionally not used: poor TUI support.
-    if find_executable_on_path("pwsh.exe").is_some() {
+    let mut cmd = if find_executable_on_path("pwsh.exe").is_some() {
         CommandBuilder::new("pwsh.exe")
     } else {
         CommandBuilder::new("powershell.exe")
-    }
+    };
+    cmd.arg("-NoLogo");
+    cmd.arg("-NoExit");
+    cmd.arg("-Command");
+    cmd.arg(POWERSHELL_OSC_133_INIT_SCRIPT);
+    cmd
 }
 
 #[cfg(target_os = "windows")]

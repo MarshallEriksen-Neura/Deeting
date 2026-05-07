@@ -24,7 +24,7 @@ import {
 import "@xterm/xterm/css/xterm.css";
 
 interface UseTerminalSessionOptions {
-  containerRef: React.RefObject<HTMLDivElement | null>;
+  containerElement: HTMLDivElement | null;
   isCollapsed: boolean;
 }
 
@@ -82,8 +82,6 @@ const NON_TAURI_BANNER = [
   "",
 ];
 
-const STARTUP_BANNER = ["\x1b[2;90m# Starting shell session…\x1b[0m"];
-
 /**
  * Mounts and manages an xterm.js Terminal bound to a Tauri PTY.
  *
@@ -91,9 +89,9 @@ const STARTUP_BANNER = ["\x1b[2;90m# Starting shell session…\x1b[0m"];
  * - **Lazy mount**: xterm + PTY are created on the **first** time the panel
  *   is non-collapsed. Users who never open the terminal pay zero cost.
  * - **Persistent across toggles**: once mounted, the terminal and PTY
- *   survive collapse/expand cycles AND chat-route switches (because the
- *   chat layout doesn't unmount). Cleanup only fires when the hook itself
- *   unmounts (i.e. app close / hard reload).
+ *   survive collapse/expand cycles. If the route unmounts, only the xterm
+ *   view is disposed; the Tauri PTY remains app-local and a later mount
+ *   reattaches through `pty_open`.
  * - **Resize gated by collapse**: while collapsed, the FitAddon is frozen
  *   and `pty_resize` is not called — the parent panel's 0-width
  *   collapsedSize must never propagate into a `cols=0`/`rows=0` update.
@@ -107,7 +105,7 @@ const STARTUP_BANNER = ["\x1b[2;90m# Starting shell session…\x1b[0m"];
  * the hook's lifetime, so this is invariant.
  */
 export function useTerminalSession({
-  containerRef,
+  containerElement,
   isCollapsed,
 }: UseTerminalSessionOptions): UseTerminalSessionResult {
   const terminalRef = React.useRef<Terminal | null>(null);
@@ -118,22 +116,50 @@ export function useTerminalSession({
   const publishContextRafRef = React.useRef<number | null>(null);
   const commandTrackerRef =
     React.useRef<TerminalCommandBoundaryTracker | null>(null);
+  const [containerSize, setContainerSize] = React.useState({
+    width: 0,
+    height: 0,
+  });
+  const hasVisibleContainer = containerSize.width > 0 && containerSize.height > 0;
+
+  React.useEffect(() => {
+    if (!containerElement) {
+      setContainerSize({ width: 0, height: 0 });
+      return;
+    }
+
+    const readContainerSize = () => {
+      setContainerSize({
+        width: containerElement.clientWidth,
+        height: containerElement.clientHeight,
+      });
+    };
+
+    readContainerSize();
+    const observer = new ResizeObserver(readContainerSize);
+    observer.observe(containerElement);
+    return () => observer.disconnect();
+  }, [containerElement]);
 
   // Latch: flip true on first expand and stay true forever. Drives the
   // mount effect's dep so xterm/PTY mount once and only once.
   const [shouldMount, setShouldMount] = React.useState(false);
   React.useEffect(() => {
-    if (!isCollapsed && !shouldMount) {
+    if ((!isCollapsed || hasVisibleContainer) && !shouldMount) {
       setShouldMount(true);
     }
-  }, [isCollapsed, shouldMount]);
+  }, [
+    hasVisibleContainer,
+    isCollapsed,
+    shouldMount,
+  ]);
 
   // Mount effect — runs exactly once when shouldMount flips to true.
   // Cleanup runs only when the hook itself unmounts.
   React.useEffect(() => {
     if (!shouldMount) return;
     if (terminalRef.current) return;
-    const container = containerRef.current;
+    const container = containerElement;
     if (!container) return;
 
     const term = new Terminal({
@@ -213,8 +239,6 @@ export function useTerminalSession({
         return;
       }
 
-      STARTUP_BANNER.forEach((line) => term.writeln(line));
-
       try {
         const [{ invoke }, { listen }] = await Promise.all([
           import("@tauri-apps/api/core"),
@@ -265,10 +289,6 @@ export function useTerminalSession({
         });
 
         if (cancelled) {
-          // Cleanup raced ahead of pty_open returning — close the orphan.
-          await invoke("pty_close", { sessionId: response.sessionId }).catch(
-            () => {},
-          );
           unlistenOutput?.();
           unlistenExit?.();
           return;
@@ -284,9 +304,7 @@ export function useTerminalSession({
               ? "posix"
               : "unknown";
         publishTerminalContext();
-        await injectOsc133ShellIntegration(invoke, response.sessionId).catch(
-          () => {},
-        );
+        await injectOsc133ShellIntegration(invoke, response.sessionId).catch(() => {});
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         term.writeln(`\r\n\x1b[31m[Failed to start shell: ${msg}]\x1b[0m`);
@@ -317,15 +335,8 @@ export function useTerminalSession({
       onDataDisposable.dispose();
       unlistenOutput?.();
       unlistenExit?.();
-      const sessionId = sessionIdRef.current;
       sessionIdRef.current = null;
       isReadyRef.current = false;
-      if (sessionId && isTauriRuntime()) {
-        // Fire-and-forget: cleanup is synchronous from React's POV.
-        import("@tauri-apps/api/core").then(({ invoke }) => {
-          invoke("pty_close", { sessionId }).catch(() => {});
-        });
-      }
       commandTrackerRef.current?.dispose();
       commandTrackerRef.current = null;
       if (publishContextRafRef.current !== null) {
@@ -337,16 +348,16 @@ export function useTerminalSession({
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [shouldMount, containerRef]);
+  }, [containerElement, shouldMount]);
 
   // Resize observer + focus management. Re-subscribes whenever the panel
   // toggles collapsed state. Skipped while collapsed so the 0-width
   // parent never reaches FitAddon or pty_resize.
   React.useEffect(() => {
-    if (isCollapsed) return;
+    if (isCollapsed && !hasVisibleContainer) return;
     const term = terminalRef.current;
     const fit = fitAddonRef.current;
-    const container = containerRef.current;
+    const container = containerElement;
     if (!term || !fit || !container) return;
 
     let raf = 0;
@@ -385,7 +396,13 @@ export function useTerminalSession({
       cancelAnimationFrame(raf);
       observer.disconnect();
     };
-  }, [containerRef, isCollapsed]);
+  }, [
+    containerElement,
+    containerSize.height,
+    containerSize.width,
+    hasVisibleContainer,
+    isCollapsed,
+  ]);
 
   // Stable accessor for the menu / panel layer to read the user's current
   // selection without leaking the Terminal instance itself.

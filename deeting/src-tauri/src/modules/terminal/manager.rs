@@ -33,11 +33,12 @@ impl TerminalManager {
         self.sessions.lock().map(|guard| guard.len()).unwrap_or(0)
     }
 
-    /// Spawn a new shell session.
+    /// Spawn a shell session or return the existing one.
     ///
-    /// Errors with [`PtySessionError::AlreadyOpen`] if any session already
-    /// exists — v1 is single-session by contract. The frontend is expected
-    /// to call [`Self::close`] before reopening.
+    /// The terminal panel is route-local, but the shell is app-local. If the
+    /// user leaves the chat route and comes back, the new frontend xterm view
+    /// should attach to the existing PTY instead of failing with
+    /// [`PtySessionError::AlreadyOpen`] or killing the user's shell state.
     pub fn open(
         &self,
         config: PtySessionConfig,
@@ -47,8 +48,8 @@ impl TerminalManager {
             .sessions
             .lock()
             .map_err(|_| PtySessionError::PoisonedLock)?;
-        if !guard.is_empty() {
-            return Err(PtySessionError::AlreadyOpen);
+        if let Some(existing_id) = guard.keys().next().cloned() {
+            return Ok(existing_id);
         }
         let id = Uuid::new_v4().to_string();
         let session = Arc::new(PtySession::spawn(id.clone(), config, app)?);
