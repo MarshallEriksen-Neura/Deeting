@@ -314,6 +314,7 @@ pub async fn execute_text_chat_raw(
         max_tokens: None,
         reasoning_enabled: None,
         reasoning_effort: None,
+        terminal_context: None,
         request_id: None,
         stream: false,
         status_stream: false,

@@ -30,10 +30,7 @@ impl TerminalManager {
 
     /// Number of currently active sessions. Primarily for tests.
     pub fn session_count(&self) -> usize {
-        self.sessions
-            .lock()
-            .map(|guard| guard.len())
-            .unwrap_or(0)
+        self.sessions.lock().map(|guard| guard.len()).unwrap_or(0)
     }
 
     /// Spawn a new shell session.

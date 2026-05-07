@@ -39,6 +39,7 @@ mod inflight;
 mod recovery;
 mod replay;
 mod suspended;
+mod terminal_context;
 #[cfg(test)]
 mod tests;
 mod tool_meta;
@@ -80,6 +81,7 @@ use replay::finalize_tool_round;
 #[cfg(test)]
 use replay::{build_structured_tool_replay_messages, serialize_tool_replay_content};
 pub(crate) use suspended::SuspendedChatToolExecution;
+use terminal_context::{execute_terminal_context_tool, is_terminal_context_tool};
 use tool_meta::{
     apply_approved_tool_result_to_execution_graph, attach_graph_metadata_to_pending_tool_meta,
     build_effective_tool_call_meta, build_state_effective_tool_call_meta,
@@ -277,6 +279,7 @@ struct LocalChatToolRuntimeState {
     captured_reasoning: Option<String>,
     runtime_metrics: RuntimeMetricsAccumulator,
     last_capability_snapshot: Option<serde_json::Value>,
+    terminal_context: Option<serde_json::Value>,
     last_response: Option<serde_json::Value>,
     realtime_emitter: LocalRealtimeToolTraceEmitter,
 }
@@ -327,6 +330,7 @@ pub(crate) async fn run_local_chat_complete_with_tools(
     max_tokens: Option<u32>,
     reasoning_enabled: Option<bool>,
     reasoning_effort: Option<String>,
+    terminal_context: Option<serde_json::Value>,
     event_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
     trace_id: Option<&str>,
     request_id: Option<&str>,
@@ -387,6 +391,7 @@ pub(crate) async fn run_local_chat_complete_with_tools(
         captured_reasoning: None,
         runtime_metrics: RuntimeMetricsAccumulator::default(),
         last_capability_snapshot: execution_policy.capability_snapshot.clone(),
+        terminal_context,
         last_response: None,
         realtime_emitter: LocalRealtimeToolTraceEmitter::new(
             event_tx,
@@ -506,6 +511,7 @@ async fn continue_local_chat_complete_with_tools(
             captured_reasoning: state.captured_reasoning.clone(),
             runtime_metrics: state.runtime_metrics.clone(),
             last_capability_snapshot: state.last_capability_snapshot.clone(),
+            terminal_context: state.terminal_context.clone(),
             last_response: state.last_response.clone(),
             realtime_emitter: LocalRealtimeToolTraceEmitter::new(
                 None,
@@ -1300,6 +1306,7 @@ async fn process_chat_tool_calls(
                 active_skill_context: state.active_skill_context.clone(),
                 runtime_metrics: state.runtime_metrics.clone(),
                 last_capability_snapshot: state.last_capability_snapshot.clone(),
+                terminal_context: state.terminal_context.clone(),
                 last_response: state.last_response.clone(),
                 diting_think_consumed: state.diting_think_consumed,
                 captured_reasoning: state.captured_reasoning.clone(),
@@ -1317,7 +1324,44 @@ async fn process_chat_tool_calls(
         .ok()
         .flatten();
 
-        if tool_name == "execute_code_plan" {
+        if is_terminal_context_tool(&tool_name) {
+            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
+            match execute_terminal_context_tool(
+                state.terminal_context.as_ref(),
+                &tool_name,
+                &call.arguments,
+            ) {
+                Ok(result) => {
+                    synthesized = true;
+                    let meta = serde_json::json!({
+                        "id": call_id.as_str(),
+                        "name": tool_name,
+                        "status": "success",
+                        "result": result,
+                    });
+                    let mut streamed_blocks = Vec::new();
+                    append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                    realtime_emitter.emit_blocks(streamed_blocks);
+                    tool_call_meta.push(meta);
+                    results.push(format!(
+                        "Terminal context result:\n{}",
+                        serde_json::to_string_pretty(&result).unwrap_or_else(|_| "{}".to_string())
+                    ));
+                }
+                Err(err) => {
+                    synthesized = true;
+                    push_local_tool_call_error_meta(
+                        &mut tool_call_meta,
+                        &mut results,
+                        realtime_emitter,
+                        Some(call_id.as_str()),
+                        &tool_name,
+                        "TERMINAL_CONTEXT_FAILED",
+                        err,
+                    );
+                }
+            }
+        } else if tool_name == "execute_code_plan" {
             realtime_emitter.emit_execution_section_once("Code Execution");
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
             let execution_gate_advisory = Box::pin(consult_task_policy_advisory(

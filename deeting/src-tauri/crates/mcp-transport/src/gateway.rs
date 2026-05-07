@@ -130,7 +130,9 @@ pub fn extract_generated_artifact_context(
         file_id: normalize_optional_string(artifact.get("file_id").and_then(Value::as_str)),
         kind: normalize_optional_string(artifact.get("kind").and_then(Value::as_str)),
         name: normalize_optional_string(artifact.get("name").and_then(Value::as_str)),
-        content_type: normalize_optional_string(artifact.get("content_type").and_then(Value::as_str)),
+        content_type: normalize_optional_string(
+            artifact.get("content_type").and_then(Value::as_str),
+        ),
     })
 }
 

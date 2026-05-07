@@ -379,9 +379,8 @@ impl McpStore {
             Some(value) => value,
             None => return Ok(Vec::new()),
         };
-        let retained_non_current_count = retain_recent_binary_revisions
-            .max(1)
-            .saturating_sub(1) as i64;
+        let retained_non_current_count =
+            retain_recent_binary_revisions.max(1).saturating_sub(1) as i64;
         let rows = sqlx::query(&format!(
             r#"
             SELECT {GENERATED_ARTIFACT_REVISION_SELECT_COLUMNS}

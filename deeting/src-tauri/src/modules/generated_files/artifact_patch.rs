@@ -93,9 +93,10 @@ fn apply_docx_operation(input: &mut WriteDocxInput, operation: &Value) -> Result
             input.filename = required_string(operation, "filename")?;
         }
         "update_theme_style" => {
-            input.theme_style = crate::modules::generated_files::docx_generator::DocxThemeStyle::from_str(
-                &required_string(operation, "theme_style")?,
-            )?;
+            input.theme_style =
+                crate::modules::generated_files::docx_generator::DocxThemeStyle::from_str(
+                    &required_string(operation, "theme_style")?,
+                )?;
         }
         "replace_title" => {
             input.title = required_string(operation, "title")?;
@@ -123,7 +124,8 @@ fn apply_docx_operation(input: &mut WriteDocxInput, operation: &Value) -> Result
         }
         "replace_paragraphs" => {
             let index = one_based_index(operation, "section_index", input.sections.len())?;
-            input.sections[index].paragraphs = parse_field::<Vec<DocxRichText>>(operation, "paragraphs")?;
+            input.sections[index].paragraphs =
+                parse_field::<Vec<DocxRichText>>(operation, "paragraphs")?;
         }
         "replace_bullets" => {
             let index = one_based_index(operation, "section_index", input.sections.len())?;
@@ -170,7 +172,8 @@ fn apply_pptx_operation(input: &mut WritePptxInput, operation: &Value) -> Result
         }
         "replace_slide_subtitle" => {
             let index = one_based_index(operation, "slide_index", input.slides.len())?;
-            input.slides[index].subtitle = optional_string(operation, "subtitle").unwrap_or_default();
+            input.slides[index].subtitle =
+                optional_string(operation, "subtitle").unwrap_or_default();
         }
         "replace_slide_bullets" => {
             let index = one_based_index(operation, "slide_index", input.slides.len())?;

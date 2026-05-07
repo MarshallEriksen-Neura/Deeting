@@ -15,6 +15,4 @@ pub mod manager;
 pub mod session;
 
 pub use manager::TerminalManager;
-pub use session::{
-    PtyExitPayload, PtyOutputPayload, PtySessionConfig, PtySessionError,
-};
+pub use session::{PtyExitPayload, PtyOutputPayload, PtySessionConfig, PtySessionError};

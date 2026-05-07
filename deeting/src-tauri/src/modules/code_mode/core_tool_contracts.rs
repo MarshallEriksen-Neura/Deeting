@@ -1271,12 +1271,132 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
             risk_level: "LOW",
             example_arguments: json!({"tab_id": 42, "target": {"selector": "input[name='q']"}, "text": "browser agent"}),
         },
+        terminal_context_peek_contract(),
+        terminal_context_read_contract(),
+        terminal_context_pack_contract(),
         build_shell_execute_core_tool_contract(),
         inspect_generated_artifact_contract(),
         patch_generated_artifact_contract(),
         write_docx_contract(),
         write_pptx_contract(),
     ]
+}
+
+fn terminal_context_peek_contract() -> CoreToolContract {
+    CoreToolContract {
+        name: "terminal_context_peek",
+        description: "Read a lightweight index of the terminal context attached to this chat request. Use this first when the user's question may depend on the current terminal state, recent commands, active process, cwd, or selected terminal output. This tool is read-only and returns summaries only; call terminal_context_read when you need the output for a specific command block.",
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "budget": {
+                    "type": "string",
+                    "enum": ["tiny", "small", "medium"],
+                    "description": "Optional overview size hint. V1 always returns a compact index."
+                }
+            }
+        }),
+        output_schema: json!({
+            "type": "object",
+            "properties": {
+                "available": {"type": "boolean"},
+                "session_id": {"type": ["string", "null"]},
+                "shell": {"type": ["string", "null"]},
+                "cwd": {"type": ["string", "null"]},
+                "active_process": {},
+                "commands": {"type": "array"}
+            },
+            "required": ["available", "commands"]
+        }),
+        permission_scope: &["terminal_context", "local_runtime"],
+        read_only: true,
+        mutating: false,
+        risk_level: "LOW",
+        example_arguments: json!({"budget": "tiny"}),
+    }
+}
+
+fn terminal_context_read_contract() -> CoreToolContract {
+    CoreToolContract {
+        name: "terminal_context_read",
+        description: "Read terminal output from a specific target in the request-attached terminal context. Call terminal_context_peek first to choose a target. Targets include selection, last_command, last_failed_command, active_process, or a concrete command id such as cmd_3. This is read-only and bounded by max_bytes.",
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "target": {
+                    "type": "string",
+                    "description": "selection, last_command, last_failed_command, active_process, or a command id returned by terminal_context_peek."
+                },
+                "range": {
+                    "type": "string",
+                    "enum": ["tail", "head", "full"],
+                    "description": "Which part of the selected output to return. Prefer tail for command failures."
+                },
+                "max_bytes": {
+                    "type": "integer",
+                    "minimum": 256,
+                    "maximum": 24000,
+                    "description": "Maximum bytes to return."
+                }
+            },
+            "required": ["target"]
+        }),
+        output_schema: json!({
+            "type": "object",
+            "properties": {
+                "target": {"type": "string"},
+                "range": {"type": "string"},
+                "command": {"type": ["string", "null"]},
+                "state": {"type": ["string", "null"]},
+                "exit_code": {"type": ["integer", "null"]},
+                "content": {"type": "string"},
+                "truncated": {"type": "boolean"}
+            },
+            "required": ["target", "content", "truncated"]
+        }),
+        permission_scope: &["terminal_context", "local_runtime"],
+        read_only: true,
+        mutating: false,
+        risk_level: "LOW",
+        example_arguments: json!({"target": "last_failed_command", "range": "tail", "max_bytes": 8000}),
+    }
+}
+
+fn terminal_context_pack_contract() -> CoreToolContract {
+    CoreToolContract {
+        name: "terminal_context_pack",
+        description: "Build a compact terminal context pack for answering the current user question or handing context to another agent. It selects terminal selection first, then the most relevant failed/running/recent command. Use when you need a single bounded context bundle instead of manually reading multiple command blocks.",
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "goal": {
+                    "type": "string",
+                    "description": "What you are trying to answer or hand off."
+                },
+                "max_bytes": {
+                    "type": "integer",
+                    "minimum": 512,
+                    "maximum": 32000,
+                    "description": "Maximum bytes for selected context output."
+                }
+            }
+        }),
+        output_schema: json!({
+            "type": "object",
+            "properties": {
+                "goal": {"type": "string"},
+                "terminal": {"type": "object"},
+                "selected_context": {"type": "array"},
+                "index": {"type": "object"}
+            },
+            "required": ["goal", "terminal", "selected_context", "index"]
+        }),
+        permission_scope: &["terminal_context", "local_runtime"],
+        read_only: true,
+        mutating: false,
+        risk_level: "LOW",
+        example_arguments: json!({"goal": "diagnose the user's current terminal issue", "max_bytes": 12000}),
+    }
 }
 
 fn build_shell_execute_core_tool_contract() -> CoreToolContract {

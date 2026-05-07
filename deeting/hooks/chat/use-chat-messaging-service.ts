@@ -42,6 +42,7 @@ import {
   type PendingTakeoverRequestedAction,
 } from "@/store/chat-store"
 import { useChatRuntimeStore } from "@/store/chat-runtime-store"
+import { useTerminalPanelStore } from "@/store/terminal-panel-store"
 import { useWorkspaceStore } from "@/store/workspace-store"
 import type { HtmlRuntimeRefreshSpec, MessageBlock } from "@/lib/chat/message-protocol"
 import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks"
@@ -166,16 +167,18 @@ function buildRequestMetadata(
 ) {
   const knowledge = buildKnowledgeSelectionMetadata(selectedKnowledgeFileIds)
   const generatedArtifact = buildGeneratedArtifactMetadata(editingArtifact)
+  const terminalContext = buildTerminalContextMetadata()
   const normalizedRootExecutionId =
     typeof rootExecutionId === "string" && rootExecutionId.trim().length > 0
       ? rootExecutionId.trim()
       : null
 
-  if (!knowledge && !normalizedRootExecutionId && !generatedArtifact) return undefined
+  if (!knowledge && !normalizedRootExecutionId && !generatedArtifact && !terminalContext) return undefined
 
   return {
     ...(knowledge ?? {}),
     ...(generatedArtifact ?? {}),
+    ...(terminalContext ?? {}),
     ...(normalizedRootExecutionId
       ? {
           execution: {
@@ -183,6 +186,14 @@ function buildRequestMetadata(
           },
         }
       : {}),
+  }
+}
+
+function buildTerminalContextMetadata() {
+  const snapshot = useTerminalPanelStore.getState().terminalContext
+  if (!snapshot?.available) return undefined
+  return {
+    terminal_context: snapshot,
   }
 }
 

@@ -803,6 +803,11 @@ fn map_request_to_orchestrator_input(
         extract_selected_knowledge_file_ids(payload.metadata.as_ref());
     let root_execution_id = extract_root_execution_id(payload.metadata.as_ref());
     let generated_artifact_context = extract_generated_artifact_context(payload.metadata.as_ref());
+    let terminal_context = payload
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get("terminal_context"))
+        .cloned();
     let session_id = normalize_optional_string(payload.session_id.as_deref())
         .ok_or_else(|| "session_id is required for desktop local chat".to_string())?;
     let stream = payload.stream.unwrap_or(true);
@@ -835,6 +840,7 @@ fn map_request_to_orchestrator_input(
         max_tokens: payload.max_tokens,
         reasoning_enabled: payload.reasoning_enabled,
         reasoning_effort: normalize_optional_string(payload.reasoning_effort.as_deref()),
+        terminal_context,
         request_id: normalize_optional_string(payload.request_id.as_deref()),
         stream,
         status_stream,

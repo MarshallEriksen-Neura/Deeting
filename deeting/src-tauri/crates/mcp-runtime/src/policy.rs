@@ -137,6 +137,9 @@ pub fn resident_capability_control_tool_names() -> Vec<String> {
         SEARCH_SDK_TOOL_NAME,
         ACTIVATE_SKILL_TOOL_NAME,
         READ_SKILL_RESOURCE_TOOL_NAME,
+        "terminal_context_peek",
+        "terminal_context_read",
+        "terminal_context_pack",
     ]
     .into_iter()
     .map(str::to_string)
@@ -231,6 +234,9 @@ pub fn full_execution_tool_names() -> Vec<String> {
         CONSULT_EXPERT_NETWORK_TOOL_NAME,
         ATTACH_CAPABILITY_TOOL_NAME,
         DETACH_CAPABILITY_TOOL_NAME,
+        "terminal_context_peek",
+        "terminal_context_read",
+        "terminal_context_pack",
         SYS_SUBMIT_ONBOARDING_REQUEST_TOOL_NAME,
         REFRESH_SKILL_INDEX_TOOL_NAME,
     ]
@@ -338,6 +344,9 @@ mod tests {
                 "search_sdk".to_string(),
                 "tavily-extract".to_string(),
                 "tavily-search".to_string(),
+                "terminal_context_pack".to_string(),
+                "terminal_context_peek".to_string(),
+                "terminal_context_read".to_string(),
             ]
         );
     }
@@ -415,6 +424,9 @@ mod tests {
                 SEARCH_SDK_TOOL_NAME.to_string(),
                 ACTIVATE_SKILL_TOOL_NAME.to_string(),
                 READ_SKILL_RESOURCE_TOOL_NAME.to_string(),
+                "terminal_context_peek".to_string(),
+                "terminal_context_read".to_string(),
+                "terminal_context_pack".to_string(),
             ]
         );
     }
@@ -432,6 +444,9 @@ mod tests {
                 ACTIVATE_SKILL_TOOL_NAME.to_string(),
                 READ_SKILL_RESOURCE_TOOL_NAME.to_string(),
                 SEARCH_SDK_TOOL_NAME.to_string(),
+                "terminal_context_pack".to_string(),
+                "terminal_context_peek".to_string(),
+                "terminal_context_read".to_string(),
             ]
         );
     }

@@ -1,11 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { SquareTerminal } from "lucide-react";
+import { Sparkles, SquareTerminal, X } from "lucide-react";
 
 import { useTerminalPanelStore } from "@/store/terminal-panel-store";
 
+import type { TerminalCommandSnapshot } from "./terminal-command-boundaries";
 import { TerminalContextMenu } from "./terminal-context-menu";
+import { buildTerminalBridgeText } from "./terminal-shell-integration";
 import { useTerminalSession } from "./use-terminal-session";
 
 interface TerminalPanelProps {
@@ -23,6 +25,7 @@ interface ContextMenuState {
   /** Selection captured at right-click time (frozen — xterm clears the
    *  selection as soon as the user clicks elsewhere, including on the menu). */
   selectionText: string;
+  lastCommand: TerminalCommandSnapshot | null;
 }
 
 /**
@@ -38,13 +41,24 @@ interface ContextMenuState {
  *
  * Right-click → "Send selection to chat AI" is the one curated bridge. Copy /
  * Paste deliberately stay on Ctrl+C / Ctrl+V (xterm handles those natively).
+ *
+ * First-open hint: the bridge isn't discoverable from looking at xterm, so
+ * the very first time the panel becomes visible we surface a one-shot banner
+ * pointing at it. `hasSeenHint` is persisted in the store, so the banner
+ * never reappears once dismissed (or after the user's first successful send,
+ * which is the strongest possible "they got it" signal).
  */
 export function TerminalPanel({ isCollapsed }: TerminalPanelProps) {
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const { getSelection } = useTerminalSession({ containerRef, isCollapsed });
+  const { getSelection, getLastCommand } = useTerminalSession({
+    containerRef,
+    isCollapsed,
+  });
   const setPendingSelection = useTerminalPanelStore(
     (state) => state.setPendingSelection,
   );
+  const hasSeenHint = useTerminalPanelStore((state) => state.hasSeenHint);
+  const markHintSeen = useTerminalPanelStore((state) => state.markHintSeen);
 
   const [menu, setMenu] = React.useState<ContextMenuState | null>(null);
 
@@ -61,9 +75,10 @@ export function TerminalPanel({ isCollapsed }: TerminalPanelProps) {
         x: event.clientX,
         y: event.clientY,
         selectionText,
+        lastCommand: getLastCommand(),
       });
     },
-    [getSelection],
+    [getSelection, getLastCommand],
   );
 
   const handleSendToChat = React.useCallback(() => {
@@ -73,9 +88,25 @@ export function TerminalPanel({ isCollapsed }: TerminalPanelProps) {
     // Markdown-fenced quote so the AI sees "this is terminal output", and
     // so multi-line selections don't collapse into a single paragraph.
     setPendingSelection(["```", text, "```"].join("\n"));
-  }, [menu, setPendingSelection]);
+    // First successful send teaches the user the gesture; no need to keep
+    // the banner around afterwards.
+    if (!hasSeenHint) markHintSeen();
+  }, [menu, setPendingSelection, hasSeenHint, markHintSeen]);
+
+  const sendTerminalBridgeText = React.useCallback(
+    (intent: "command" | "output" | "diagnose-error") => {
+      if (!menu?.lastCommand) return;
+      setPendingSelection(buildTerminalBridgeText(menu.lastCommand, intent));
+      if (!hasSeenHint) markHintSeen();
+    },
+    [menu, setPendingSelection, hasSeenHint, markHintSeen],
+  );
 
   const handleDismiss = React.useCallback(() => setMenu(null), []);
+
+  // Show the discoverability hint only when the panel is actually visible —
+  // otherwise users would never even see it before it's "shown."
+  const showHint = !isCollapsed && !hasSeenHint;
 
   return (
     <div className="flex h-full w-full flex-col bg-zinc-950 text-zinc-100">
@@ -83,6 +114,22 @@ export function TerminalPanel({ isCollapsed }: TerminalPanelProps) {
         <SquareTerminal className="h-3.5 w-3.5" />
         <span>Terminal</span>
       </div>
+      {showHint ? (
+        <div className="flex shrink-0 items-center gap-2 border-b border-zinc-800/80 bg-zinc-900/60 px-3 py-1.5 text-[11px] text-zinc-300">
+          <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+          <span className="flex-1 leading-snug">
+            Tip: select text and right-click to send it to chat AI.
+          </span>
+          <button
+            type="button"
+            onClick={markHintSeen}
+            aria-label="Dismiss tip"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      ) : null}
       <div
         className="min-h-0 flex-1 overflow-hidden"
         onContextMenu={handleContextMenu}
@@ -94,7 +141,16 @@ export function TerminalPanel({ isCollapsed }: TerminalPanelProps) {
           x={menu.x}
           y={menu.y}
           hasSelection={menu.selectionText.trim().length > 0}
+          hasLastCommand={Boolean(menu.lastCommand?.command)}
+          hasLastCommandOutput={Boolean(menu.lastCommand?.output)}
+          hasLastCommandFailure={
+            typeof menu.lastCommand?.exitCode === "number" &&
+            menu.lastCommand.exitCode !== 0
+          }
           onSendToChat={handleSendToChat}
+          onSendLastCommand={() => sendTerminalBridgeText("command")}
+          onSendLastCommandOutput={() => sendTerminalBridgeText("output")}
+          onSendLastError={() => sendTerminalBridgeText("diagnose-error")}
           onDismiss={handleDismiss}
         />
       ) : null}

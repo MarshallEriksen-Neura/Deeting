@@ -1939,3 +1939,42 @@ html:not(.dark) [data-tauri-drag-region] {
 .animate-collapsible-up {
   animation: collapsible-up 0.2s ease-out;
 }
+
+
+/* ─── 17. Terminal → Chat bridge (business) ───────────────────────────────── */
+
+/*
+ * Brief "the bridge fired" pulse on the chat input wrapper, used by
+ * `usePendingTerminalSelection` to confirm the right-click → send flow when
+ * the input is scrolled out of view or the user is mid-thought.
+ *
+ * Animates `outline` (not box-shadow) so the wrapper's existing inset shadow
+ * is preserved during the flash. Outline follows border-radius in modern
+ * browsers and doesn't take layout space.
+ */
+@keyframes terminal-bridge-flash {
+  0% {
+    outline-color: color-mix(in srgb, var(--primary) 0%, transparent);
+    outline-width: 0;
+  }
+  35% {
+    outline-color: color-mix(in srgb, var(--primary) 40%, transparent);
+    outline-width: 4px;
+  }
+  100% {
+    outline-color: color-mix(in srgb, var(--primary) 0%, transparent);
+    outline-width: 0;
+  }
+}
+
+.terminal-bridge-flash {
+  outline-style: solid;
+  outline-offset: 0;
+  animation: terminal-bridge-flash 700ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-bridge-flash {
+    animation: none;
+  }
+}

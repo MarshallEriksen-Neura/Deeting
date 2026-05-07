@@ -5,8 +5,21 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { toast } from "sonner";
 
 import { isTauriRuntime } from "@/lib/runtime/tauri";
+import { useTerminalPanelStore } from "@/store/terminal-panel-store";
+
+import {
+  installOsc133CommandBoundaries,
+  type TerminalCommandBoundaryTracker,
+  type TerminalCommandSnapshot,
+} from "./terminal-command-boundaries";
+import {
+  buildTerminalBridgeText,
+  injectOsc133ShellIntegration,
+  resolveTerminalPlatform,
+} from "./terminal-shell-integration";
 
 import "@xterm/xterm/css/xterm.css";
 
@@ -18,6 +31,8 @@ interface UseTerminalSessionOptions {
 interface UseTerminalSessionResult {
   /** Reads the current xterm selection, or "" if nothing is selected. */
   getSelection: () => string;
+  /** Reads the latest OSC 133-delimited command, or null if unavailable. */
+  getLastCommand: () => TerminalCommandSnapshot | null;
 }
 
 interface PtyOpenResponse {
@@ -99,6 +114,10 @@ export function useTerminalSession({
   const fitAddonRef = React.useRef<FitAddon | null>(null);
   const sessionIdRef = React.useRef<string | null>(null);
   const isReadyRef = React.useRef<boolean>(false);
+  const shellRef = React.useRef<"powershell" | "posix" | "unknown">("unknown");
+  const publishContextRafRef = React.useRef<number | null>(null);
+  const commandTrackerRef =
+    React.useRef<TerminalCommandBoundaryTracker | null>(null);
 
   // Latch: flip true on first expand and stay true forever. Drives the
   // mount effect's dep so xterm/PTY mount once and only once.
@@ -126,6 +145,7 @@ export function useTerminalSession({
       lineHeight: 1.3,
       scrollback: 5000,
       allowProposedApi: true,
+      overviewRuler: { width: 6 },
       theme: TERMINAL_THEME,
     });
 
@@ -146,6 +166,42 @@ export function useTerminalSession({
 
     terminalRef.current = term;
     fitAddonRef.current = fit;
+    const publishTerminalContext = () => {
+      const tracker = commandTrackerRef.current;
+      if (!tracker) return;
+      useTerminalPanelStore.getState().setTerminalContext(
+        tracker.getContextSnapshot({
+          sessionId: sessionIdRef.current,
+          shell: shellRef.current,
+          selectionText: term.hasSelection() ? term.getSelection() : "",
+        }),
+      );
+    };
+    const schedulePublishTerminalContext = () => {
+      if (publishContextRafRef.current !== null) return;
+      publishContextRafRef.current = requestAnimationFrame(() => {
+        publishContextRafRef.current = null;
+        publishTerminalContext();
+      });
+    };
+    commandTrackerRef.current = installOsc133CommandBoundaries(term, {
+      onCommandFailed: (snapshot) => {
+        schedulePublishTerminalContext();
+        toast.error("Terminal command failed", {
+          description: "Send error to AI for diagnosis",
+          action: {
+            label: "Send",
+            onClick: () => {
+              useTerminalPanelStore
+                .getState()
+                .setPendingSelection(
+                  buildTerminalBridgeText(snapshot, "diagnose-error"),
+                );
+            },
+          },
+        });
+      },
+    });
 
     let unlistenOutput: (() => void) | null = null;
     let unlistenExit: (() => void) | null = null;
@@ -176,7 +232,7 @@ export function useTerminalSession({
             if (expected !== null && event.payload.sessionId !== expected) {
               return;
             }
-            term.write(event.payload.data);
+            term.write(event.payload.data, schedulePublishTerminalContext);
           },
         );
         unlistenExit = await listen<PtyExitPayload>(
@@ -187,6 +243,7 @@ export function useTerminalSession({
               return;
             }
             isReadyRef.current = false;
+            schedulePublishTerminalContext();
             term.writeln(
               "\r\n\x1b[33m[Process exited. Reload the panel to restart.]\x1b[0m",
             );
@@ -219,6 +276,17 @@ export function useTerminalSession({
 
         sessionIdRef.current = response.sessionId;
         isReadyRef.current = true;
+        const platform = await resolveTerminalPlatform().catch(() => null);
+        shellRef.current =
+          platform === "windows"
+            ? "powershell"
+            : platform === "posix"
+              ? "posix"
+              : "unknown";
+        publishTerminalContext();
+        await injectOsc133ShellIntegration(invoke, response.sessionId).catch(
+          () => {},
+        );
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         term.writeln(`\r\n\x1b[31m[Failed to start shell: ${msg}]\x1b[0m`);
@@ -258,6 +326,13 @@ export function useTerminalSession({
           invoke("pty_close", { sessionId }).catch(() => {});
         });
       }
+      commandTrackerRef.current?.dispose();
+      commandTrackerRef.current = null;
+      if (publishContextRafRef.current !== null) {
+        cancelAnimationFrame(publishContextRafRef.current);
+        publishContextRafRef.current = null;
+      }
+      useTerminalPanelStore.getState().setTerminalContext(null);
       term.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
@@ -323,5 +398,9 @@ export function useTerminalSession({
     [],
   );
 
-  return { getSelection };
+  const getLastCommand = React.useCallback<
+    UseTerminalSessionResult["getLastCommand"]
+  >(() => commandTrackerRef.current?.getLastCommand() ?? null, []);
+
+  return { getSelection, getLastCommand };
 }

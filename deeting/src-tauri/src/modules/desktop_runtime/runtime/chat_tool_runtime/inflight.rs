@@ -24,6 +24,7 @@ pub(crate) fn build_persisted_chat_runtime_context_from_execution_request(
         active_skill_context: None,
         runtime_metrics: Default::default(),
         last_capability_snapshot: request.execution_policy.capability_snapshot.clone(),
+        terminal_context: request.terminal_context.clone(),
         last_response: None,
     }
 }
@@ -50,6 +51,8 @@ pub(crate) struct PersistedChatToolRuntimeContext {
     pub(super) active_skill_context: Option<ActiveSkillContextState>,
     pub(super) runtime_metrics: RuntimeMetricsAccumulator,
     pub(super) last_capability_snapshot: Option<serde_json::Value>,
+    #[serde(default)]
+    pub(super) terminal_context: Option<serde_json::Value>,
     pub(super) last_response: Option<serde_json::Value>,
 }
 
@@ -153,6 +156,7 @@ pub(super) fn runtime_state_from_persisted_context(
         active_skill_context: context.active_skill_context,
         runtime_metrics: context.runtime_metrics,
         last_capability_snapshot: context.last_capability_snapshot,
+        terminal_context: context.terminal_context,
         last_response: context.last_response,
         diting_think_consumed: false,
         captured_reasoning: None,
@@ -854,6 +858,7 @@ pub(super) async fn persist_running_tool_execution_runtime(
                 active_skill_context: state.active_skill_context.clone(),
                 runtime_metrics: state.runtime_metrics.clone(),
                 last_capability_snapshot: state.last_capability_snapshot.clone(),
+                terminal_context: state.terminal_context.clone(),
                 last_response: state.last_response.clone(),
             }),
             state.session_id.as_str(),
@@ -1023,6 +1028,7 @@ pub(crate) async fn persist_suspended_execution_graph_runtime(
                 active_skill_context: suspended.active_skill_context.clone(),
                 runtime_metrics: suspended.runtime_metrics.clone(),
                 last_capability_snapshot: suspended.last_capability_snapshot.clone(),
+                terminal_context: suspended.terminal_context.clone(),
                 last_response: suspended.last_response.clone(),
             }),
             suspended.session_id.as_str(),
@@ -1127,6 +1133,7 @@ pub(crate) async fn load_suspended_chat_tool_execution_for_resume(
                         active_skill_context: None,
                         runtime_metrics: RuntimeMetricsAccumulator::default(),
                         last_capability_snapshot: None,
+                        terminal_context: None,
                         last_response: None,
                     }
                 })
@@ -1150,6 +1157,7 @@ pub(crate) async fn load_suspended_chat_tool_execution_for_resume(
             active_skill_context: state.active_skill_context.clone(),
             runtime_metrics: state.runtime_metrics.clone(),
             last_capability_snapshot: state.last_capability_snapshot.clone(),
+            terminal_context: state.terminal_context.clone(),
             last_response: state.last_response.clone(),
             pending_approvals: persisted_pending_approvals,
             execution_graph,

@@ -263,6 +263,7 @@ async fn chat_completions_handler(
         max_tokens: payload.max_tokens,
         reasoning_enabled: None,
         reasoning_effort: None,
+        terminal_context: None,
         request_id: Some(request_id),
         stream: false,
         status_stream: false,

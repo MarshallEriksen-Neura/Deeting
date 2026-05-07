@@ -562,10 +562,8 @@ async fn prune_old_generated_artifact_revision_binaries(
 async fn resolve_generated_artifact_revision_for_tool(
     store: &crate::modules::mcp::store::McpStore,
     arguments: &Value,
-) -> Result<
-    crate::modules::generated_files::artifact_types::GeneratedArtifactRevisionRecord,
-    String,
-> {
+) -> Result<crate::modules::generated_files::artifact_types::GeneratedArtifactRevisionRecord, String>
+{
     let artifact_id = arguments
         .get("artifact_id")
         .and_then(Value::as_str)
@@ -1673,8 +1671,9 @@ async fn execute_core_tool_call_with_tool_ref_internal(
                 .get("operations")
                 .and_then(Value::as_array)
                 .ok_or_else(|| "patch_generated_artifact requires operations array".to_string())?;
-            let change_summary =
-                normalize_generated_artifact_arg(arguments.get("change_summary").and_then(Value::as_str));
+            let change_summary = normalize_generated_artifact_arg(
+                arguments.get("change_summary").and_then(Value::as_str),
+            );
             let base_revision_id = normalize_generated_artifact_arg(
                 arguments.get("base_revision_id").and_then(Value::as_str),
             )

@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '@/store/chat-store';
 import { useChatRuntimeStore } from '@/store/chat-runtime-store';
-import { useTerminalPanelStore } from '@/store/terminal-panel-store';
+import { usePendingTerminalSelection } from '@/hooks/chat/use-pending-terminal-selection';
 import { useI18n } from '@/hooks/use-i18n';
 import { useOpenWorkflow } from '@/hooks/use-open-workflow';
 import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
@@ -474,41 +474,12 @@ function ControlsContainer() {
     setIsTaskAgentMentionPickerDismissed(true);
   }, [setInput]);
 
-  // Bridge: when the terminal panel publishes a "send selection to chat AI"
-  // intent, append the quoted block to whatever the user is composing and
-  // hand focus back to the input. Reading `input` via `getState()` avoids
-  // re-running this effect on every keystroke; we only ever react to the
-  // pendingSelection transition itself.
-  const pendingSelection = useTerminalPanelStore((state) => state.pendingSelection);
-  const consumePendingSelection = useTerminalPanelStore(
-    (state) => state.consumePendingSelection,
-  );
-  useEffect(() => {
-    if (pendingSelection === null) return;
-    const text = pendingSelection;
-    consumePendingSelection();
-    const currentInput = useChatStore.getState().input;
-    const next =
-      currentInput.trim().length > 0
-        ? `${currentInput}\n\n${text}`
-        : text;
-    setInput(next);
-    // RAF so the controlled input has flushed the new value before focus —
-    // otherwise the cursor lands at the start instead of the end on some
-    // browsers.
-    const handle = requestAnimationFrame(() => {
-      const node = inputRef.current;
-      if (!node) return;
-      node.focus();
-      const end = node.value.length;
-      try {
-        node.setSelectionRange(end, end);
-      } catch {
-        // Some input types reject setSelectionRange — safe to ignore.
-      }
-    });
-    return () => cancelAnimationFrame(handle);
-  }, [pendingSelection, consumePendingSelection, setInput]);
+  // Bridge: the terminal panel writes selections into a shared store; this
+  // hook drains them into the chat input and exposes a brief flash flag we
+  // pulse on the input wrapper for visual confirmation.
+  const { isFlashing: isBridgeFlashing } = usePendingTerminalSelection({
+    inputRef,
+  });
 
   const loadKnowledgeFiles = useCallback(async () => {
     if (!isTauriRuntime) return;
@@ -1016,7 +987,12 @@ function ControlsContainer() {
             ))}
           </div>
         ) : null}
-        <div className="relative flex items-center rounded-[22px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+        <div
+          className={cn(
+            "relative flex items-center rounded-[22px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]",
+            isBridgeFlashing && "terminal-bridge-flash",
+          )}
+        >
           {showTaskAgentMentionPicker ? (
             <div className="absolute bottom-[calc(100%+8px)] left-0 z-20 w-full max-w-[720px] overflow-hidden rounded-[24px] border border-slate-200/80 bg-white/95 p-2 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.65)] backdrop-blur-2xl dark:border-white/10 dark:bg-[#151515]/95">
               <div className="px-3 pb-1.5 pt-1 text-[11px] font-semibold text-slate-500 dark:text-white/45">
