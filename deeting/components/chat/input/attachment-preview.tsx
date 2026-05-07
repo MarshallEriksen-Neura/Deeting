@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 import { useI18n } from "@/hooks/use-i18n"
 import { useLazyImage } from "@/hooks/use-lazy-image"
 import { formatFileSize } from "@/lib/utils/file"
+import { ImageLightbox } from "@/ui/common/image-lightbox"
 import type { ChatAttachment } from "@/lib/chat/message-content"
 
 interface AttachmentPreviewProps {
@@ -46,29 +47,34 @@ const ImageAttachmentItem = React.memo<AttachmentItemProps>(
     if (isUserVariant) {
       return (
         <div className="group relative h-16 w-16 shrink-0">
-          <div className="h-full w-full overflow-hidden rounded-lg border border-slate-200/80 dark:border-white/10 bg-slate-100 dark:bg-slate-800 transition-colors group-hover:border-slate-300 dark:group-hover:border-white/20">
-            {error ? (
-              <div className="flex h-full w-full items-center justify-center">
-                <svg className="h-4 w-4 text-slate-300 dark:text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <circle cx="8.5" cy="8.5" r="1.5" />
-                  <path d="m21 15-5-5L5 21" />
-                </svg>
-              </div>
-            ) : isLoading || !imageSrc ? (
-              <div className="h-full w-full animate-pulse bg-slate-200 dark:bg-slate-700" />
-            ) : (
-              <Image
-                ref={imgRef}
-                src={imageSrc}
-                alt={attachment.name ?? t("input.image.alt")}
-                width={64}
-                height={64}
-                className="h-full w-full object-cover"
-                unoptimized
-              />
-            )}
-          </div>
+          <ImageLightbox
+            src={attachment.url}
+            alt={attachment.name ?? t("input.image.alt")}
+          >
+            <div className="h-full w-full cursor-zoom-in overflow-hidden rounded-lg border border-slate-200/80 bg-slate-100 transition-colors group-hover:border-slate-300 dark:border-white/10 dark:bg-slate-800 dark:group-hover:border-white/20">
+              {error ? (
+                <div className="flex h-full w-full items-center justify-center">
+                  <svg className="h-4 w-4 text-slate-300 dark:text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <path d="m21 15-5-5L5 21" />
+                  </svg>
+                </div>
+              ) : isLoading || !imageSrc ? (
+                <div className="h-full w-full animate-pulse bg-slate-200 dark:bg-slate-700" />
+              ) : (
+                <Image
+                  ref={imgRef}
+                  src={imageSrc}
+                  alt={attachment.name ?? t("input.image.alt")}
+                  width={64}
+                  height={64}
+                  className="h-full w-full object-cover"
+                  unoptimized
+                />
+              )}
+            </div>
+          </ImageLightbox>
           {onRemove && (
             <button
               type="button"
@@ -91,25 +97,30 @@ const ImageAttachmentItem = React.memo<AttachmentItemProps>(
 
     return (
       <div className="group relative overflow-hidden rounded-xl shadow-sm border border-slate-200/70 dark:border-white/10 bg-white dark:bg-background/60">
-        <div className="relative h-28 w-full bg-slate-100 dark:bg-slate-800">
-          {error ? (
-            <div className="flex h-full w-full items-center justify-center text-xs text-slate-400 dark:text-slate-500">
-              {t("input.image.errorLoad")}
-            </div>
-          ) : isLoading || !imageSrc ? (
-            <div className="h-full w-full animate-pulse bg-slate-200 dark:bg-slate-700" />
-          ) : (
-            <Image
-              ref={imgRef}
-              src={imageSrc}
-              alt={attachment.name ?? t("input.image.alt")}
-              width={240}
-              height={240}
-              className="h-full w-full object-cover"
-              unoptimized
-            />
-          )}
-        </div>
+        <ImageLightbox
+          src={attachment.url}
+          alt={attachment.name ?? t("input.image.alt")}
+        >
+          <div className="relative h-28 w-full cursor-zoom-in bg-slate-100 dark:bg-slate-800">
+            {error ? (
+              <div className="flex h-full w-full items-center justify-center text-xs text-slate-400 dark:text-slate-500">
+                {t("input.image.errorLoad")}
+              </div>
+            ) : isLoading || !imageSrc ? (
+              <div className="h-full w-full animate-pulse bg-slate-200 dark:bg-slate-700" />
+            ) : (
+              <Image
+                ref={imgRef}
+                src={imageSrc}
+                alt={attachment.name ?? t("input.image.alt")}
+                width={240}
+                height={240}
+                className="h-full w-full object-cover"
+                unoptimized
+              />
+            )}
+          </div>
+        </ImageLightbox>
         <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-black/60 px-2 py-1.5 text-[10px] text-white backdrop-blur-sm">
           <span className="truncate">
             {attachment.name ?? t("input.image.alt")}

@@ -39,75 +39,93 @@ function resolveInterval(length: number) {
 export function useTypewriter(targetText: string, enabled: boolean) {
   const [displayed, setDisplayed] = useState(enabled ? "" : targetText)
   const indexRef = useRef(0)
+  const displayedRef = useRef(displayed)
   const targetRef = useRef(targetText)
   const enabledRef = useRef(enabled)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const clearTimer = () => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current)
-      timerRef.current = null
-    }
-  }
-
-  const tick = () => {
-    if (!enabledRef.current) {
-      clearTimer()
-      return
-    }
-    const target = targetRef.current
-    const currentIndex = indexRef.current
-    if (currentIndex >= target.length) {
-      clearTimer()
-      return
-    }
-    const nextChar = target[currentIndex]
-    const interval = resolveInterval(target.length)
-    const delay = interval + extraDelayForChar(nextChar)
-    timerRef.current = setTimeout(() => {
-      indexRef.current = currentIndex + 1
-      setDisplayed(target.slice(0, indexRef.current))
-      tick()
-    }, delay)
-  }
-
-  const start = () => {
-    if (timerRef.current) return
-    tick()
-  }
+  const runIdRef = useRef(0)
 
   useEffect(() => {
+    const runId = runIdRef.current + 1
+    runIdRef.current = runId
     targetRef.current = targetText
     enabledRef.current = enabled
 
+    const clearTimer = () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current)
+        timerRef.current = null
+      }
+    }
+
+    const setDisplayedText = (nextDisplayed: string) => {
+      if (displayedRef.current === nextDisplayed) return
+      displayedRef.current = nextDisplayed
+      setDisplayed(nextDisplayed)
+    }
+
+    const tick = () => {
+      if (runId !== runIdRef.current) {
+        return
+      }
+      if (!enabledRef.current) {
+        clearTimer()
+        return
+      }
+      const target = targetRef.current
+      const currentIndex = indexRef.current
+      if (currentIndex >= target.length) {
+        clearTimer()
+        return
+      }
+      const nextChar = target[currentIndex]
+      const interval = resolveInterval(target.length)
+      const delay = interval + extraDelayForChar(nextChar)
+      timerRef.current = setTimeout(() => {
+        if (runId !== runIdRef.current) {
+          return
+        }
+        indexRef.current = currentIndex + 1
+        setDisplayedText(target.slice(0, indexRef.current))
+        tick()
+      }, delay)
+    }
+
+    clearTimer()
+
     if (!enabled) {
-      clearTimer()
       indexRef.current = targetText.length
-      setDisplayed(targetText)
+      setDisplayedText(targetText)
       return
     }
 
     if (!targetText) {
-      clearTimer()
       indexRef.current = 0
-      setDisplayed("")
+      setDisplayedText("")
       return
     }
 
-    if (targetText.length < indexRef.current) {
+    const displayedPrefix = displayedRef.current
+    if (
+      targetText.length < indexRef.current ||
+      (displayedPrefix && !targetText.startsWith(displayedPrefix))
+    ) {
       indexRef.current = 0
-      setDisplayed("")
+      setDisplayedText("")
     }
 
-    start()
+    tick()
 
     return () => {
+      if (runIdRef.current === runId) {
+        runIdRef.current += 1
+      }
       clearTimer()
     }
   }, [targetText, enabled])
 
   return {
     displayed,
-    isAnimating: enabledRef.current && displayed.length < targetRef.current.length,
+    isAnimating: enabled && displayed.length < targetText.length,
   }
 }

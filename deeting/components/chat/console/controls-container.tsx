@@ -13,6 +13,7 @@ import { useOpenWorkflow } from '@/hooks/use-open-workflow';
 import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
 import { Button } from '@/ui/shadcn/button';
 import { GlassButton } from '@/ui/common/glass-button';
+import { ImageLightbox } from '@/ui/common/image-lightbox';
 import { Input } from '@/ui/shadcn/input';
 import { Switch } from '@/ui/shadcn/switch';
 import { BrowserModeConfirmationBar } from '@/components/chat/browser-mode/browser-mode-confirmation-bar';
@@ -1229,16 +1230,21 @@ function ControlsContainer() {
                 key={attachment.id}
                 className="group relative h-16 w-16 shrink-0"
               >
-                <div className="h-full w-full overflow-hidden rounded-lg border border-slate-200/80 dark:border-white/10 bg-slate-100 dark:bg-slate-800 transition-colors group-hover:border-slate-300 dark:group-hover:border-white/20">
-                  <Image
-                    src={attachment.url}
-                    alt={attachment.name ?? t("input.image.alt")}
-                    width={64}
-                    height={64}
-                    className="h-full w-full object-cover"
-                    unoptimized
-                  />
-                </div>
+                <ImageLightbox
+                  src={attachment.url}
+                  alt={attachment.name ?? t("input.image.alt")}
+                >
+                  <div className="h-full w-full cursor-zoom-in overflow-hidden rounded-lg border border-slate-200/80 bg-slate-100 transition-colors group-hover:border-slate-300 dark:border-white/10 dark:bg-slate-800 dark:group-hover:border-white/20">
+                    <Image
+                      src={attachment.url}
+                      alt={attachment.name ?? t("input.image.alt")}
+                      width={64}
+                      height={64}
+                      className="h-full w-full object-cover"
+                      unoptimized
+                    />
+                  </div>
+                </ImageLightbox>
                 <button
                   type="button"
                   className={cn(
@@ -1247,7 +1253,11 @@ function ControlsContainer() {
                     "opacity-0 transition-opacity group-hover:opacity-100",
                     "shadow-sm"
                   )}
-                  onClick={() => removeAttachment(attachment.id)}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    removeAttachment(attachment.id);
+                  }}
                   aria-label={t("input.attachment.remove")}
                   disabled={isLoading}
                 >
