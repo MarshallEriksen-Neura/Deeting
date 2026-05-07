@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { RefreshCw, ThumbsUp, ThumbsDown, Copy, Check, Bot } from "lucide-react"
+import { RefreshCw, ThumbsUp, ThumbsDown, Copy, Check, Bot, BookMarked } from "lucide-react"
 import { Button } from "@/ui/shadcn/button"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/hooks/use-i18n"
@@ -15,9 +15,11 @@ interface MessageActionsProps {
   onDislike?: (messageId: string) => void
   onCopy?: (messageId: string) => void
   onCompare?: (messageId: string) => void
+  onSaveToWiki?: (messageId: string) => void
   liked?: boolean
   disliked?: boolean
   canCompare?: boolean
+  canSaveToWiki?: boolean
   disabled?: boolean
   className?: string
 }
@@ -30,6 +32,7 @@ interface MessageActionsProps {
  * - 点赞：对回答表示满意
  * - 踩：对回答表示不满意
  * - 复制：复制回答内容到剪贴板
+ * - 沉淀到 Wiki：将回答转成可预览的 LLM Wiki 候选页
  *
  * 使用 React.memo 优化性能
  */
@@ -42,9 +45,11 @@ export const MessageActions = React.memo<MessageActionsProps>(
     onDislike,
     onCopy,
     onCompare,
+    onSaveToWiki,
     liked = false,
     disliked = false,
     canCompare = false,
+    canSaveToWiki = false,
     disabled = false,
     className,
   }) => {
@@ -70,7 +75,6 @@ export const MessageActions = React.memo<MessageActionsProps>(
       if (success) {
         setCopied(true)
         onCopy?.(messageId)
-        // 2秒后恢复复制按钮状态
         setTimeout(() => setCopied(false), 2000)
       }
     }, [content, messageId, onCopy])
@@ -79,9 +83,12 @@ export const MessageActions = React.memo<MessageActionsProps>(
       onCompare?.(messageId)
     }, [messageId, onCompare])
 
+    const handleSaveToWiki = React.useCallback(() => {
+      onSaveToWiki?.(messageId)
+    }, [messageId, onSaveToWiki])
+
     return (
       <div className={cn("flex items-center gap-1 mt-1 ml-1", className)}>
-        {/* 重新生成按钮 */}
         <Button
           variant="ghost"
           size="icon-sm"
@@ -108,7 +115,18 @@ export const MessageActions = React.memo<MessageActionsProps>(
           </Button>
         ) : null}
 
-        {/* 点赞按钮 */}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={handleSaveToWiki}
+          disabled={disabled || !canSaveToWiki}
+          className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-muted/50"
+          title={t("actions.saveToWiki")}
+        >
+          <BookMarked size={14} />
+          <span className="sr-only">{t("actions.saveToWiki")}</span>
+        </Button>
+
         <Button
           variant="ghost"
           size="icon-sm"
@@ -126,7 +144,6 @@ export const MessageActions = React.memo<MessageActionsProps>(
           <span className="sr-only">{t("actions.like")}</span>
         </Button>
 
-        {/* 踩按钮 */}
         <Button
           variant="ghost"
           size="icon-sm"
@@ -144,7 +161,6 @@ export const MessageActions = React.memo<MessageActionsProps>(
           <span className="sr-only">{t("actions.dislike")}</span>
         </Button>
 
-        {/* 复制按钮 */}
         <Button
           variant="ghost"
           size="icon-sm"
@@ -171,12 +187,14 @@ export const MessageActions = React.memo<MessageActionsProps>(
       prevProps.liked === nextProps.liked &&
       prevProps.disliked === nextProps.disliked &&
       prevProps.canCompare === nextProps.canCompare &&
+      prevProps.canSaveToWiki === nextProps.canSaveToWiki &&
       prevProps.disabled === nextProps.disabled &&
       prevProps.onRegenerate === nextProps.onRegenerate &&
       prevProps.onLike === nextProps.onLike &&
       prevProps.onDislike === nextProps.onDislike &&
       prevProps.onCopy === nextProps.onCopy &&
-      prevProps.onCompare === nextProps.onCompare
+      prevProps.onCompare === nextProps.onCompare &&
+      prevProps.onSaveToWiki === nextProps.onSaveToWiki
     )
   }
 )

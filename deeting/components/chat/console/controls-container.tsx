@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '@/store/chat-store';
 import { useChatRuntimeStore } from '@/store/chat-runtime-store';
+import { useTerminalPanelStore } from '@/store/terminal-panel-store';
 import { useI18n } from '@/hooks/use-i18n';
 import { useOpenWorkflow } from '@/hooks/use-open-workflow';
 import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
@@ -128,6 +129,7 @@ function ControlsContainer() {
   const [isPlanningWorkflow, setIsPlanningWorkflow] = useState(false);
   const [isAttachingPageContext, setIsAttachingPageContext] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const t = useI18n('chat');
   const openWorkflow = useOpenWorkflow();
   const {
@@ -471,6 +473,42 @@ function ControlsContainer() {
     setInput(buildLeadingTaskAgentMentionInput(agent.name, ''));
     setIsTaskAgentMentionPickerDismissed(true);
   }, [setInput]);
+
+  // Bridge: when the terminal panel publishes a "send selection to chat AI"
+  // intent, append the quoted block to whatever the user is composing and
+  // hand focus back to the input. Reading `input` via `getState()` avoids
+  // re-running this effect on every keystroke; we only ever react to the
+  // pendingSelection transition itself.
+  const pendingSelection = useTerminalPanelStore((state) => state.pendingSelection);
+  const consumePendingSelection = useTerminalPanelStore(
+    (state) => state.consumePendingSelection,
+  );
+  useEffect(() => {
+    if (pendingSelection === null) return;
+    const text = pendingSelection;
+    consumePendingSelection();
+    const currentInput = useChatStore.getState().input;
+    const next =
+      currentInput.trim().length > 0
+        ? `${currentInput}\n\n${text}`
+        : text;
+    setInput(next);
+    // RAF so the controlled input has flushed the new value before focus —
+    // otherwise the cursor lands at the start instead of the end on some
+    // browsers.
+    const handle = requestAnimationFrame(() => {
+      const node = inputRef.current;
+      if (!node) return;
+      node.focus();
+      const end = node.value.length;
+      try {
+        node.setSelectionRange(end, end);
+      } catch {
+        // Some input types reject setSelectionRange — safe to ignore.
+      }
+    });
+    return () => cancelAnimationFrame(handle);
+  }, [pendingSelection, consumePendingSelection, setInput]);
 
   const loadKnowledgeFiles = useCallback(async () => {
     if (!isTauriRuntime) return;
@@ -1027,6 +1065,7 @@ function ControlsContainer() {
             </div>
           ) : null}
           <Input
+            ref={inputRef}
             value={input}
             onChange={(e) => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}

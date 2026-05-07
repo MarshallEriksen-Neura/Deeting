@@ -9,18 +9,15 @@ import {
   ChevronRight,
   ChevronDown,
   ChevronUp,
-  Loader2,
   CheckCircle2,
   XCircle,
   Upload,
   AlertTriangle,
-  Filter,
   Clock,
   Sparkles,
   RefreshCw,
   Settings,
   BrainCircuit,
-  FolderOpen,
   Archive,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -28,7 +25,6 @@ import { GlassButton } from "@/components/ui/common/glass-button"
 import { Input } from "@/components/ui/shadcn/input"
 import { Textarea } from "@/components/ui/shadcn/textarea"
 import type {
-  LocalLlmWikiState,
   LocalLlmWikiCorpusSearchHit,
   LocalLlmWikiAutomationSuggestion,
   IngestLocalLlmWikiSelectionResult,
@@ -66,7 +62,6 @@ interface ListPanelProps {
   dismissAutomationSuggestion: (suggestionId: string) => Promise<void>
   dismissBatchAutomationSuggestions: (actionKind: string, suggestionIds: string[]) => Promise<void>
   // Maintenance
-  state: LocalLlmWikiState | null
   ingestSelectionInput: string
   isIngestingSelection: boolean
   lastIngestResult: IngestLocalLlmWikiSelectionResult | null
@@ -107,7 +102,6 @@ export function ListPanel({
   executeAutomationSuggestion,
   dismissAutomationSuggestion,
   dismissBatchAutomationSuggestions,
-  state,
   ingestSelectionInput,
   isIngestingSelection,
   lastIngestResult,
@@ -188,7 +182,6 @@ export function ListPanel({
         {activeTab === "maintenance" && (
           <MaintenanceTabContent
             t={t}
-            state={state}
             ingestSelectionInput={ingestSelectionInput}
             isIngestingSelection={isIngestingSelection}
             lastIngestResult={lastIngestResult}
@@ -536,7 +529,6 @@ function SuggestionsTabContent({
                     <div className="divide-y divide-[var(--hairline)]/20">
                       {group.map((s) => {
                         const isActive = selectedSuggestionId === s.id
-                        const isProcessingThis = executingSuggestionId === s.id || dismissingSuggestionId === s.id
                         return (
                           <button
                             key={s.id}
@@ -662,7 +654,6 @@ function SuggestionsTabContent({
 
 function MaintenanceTabContent({
   t,
-  state,
   ingestSelectionInput,
   isIngestingSelection,
   lastIngestResult,
@@ -673,7 +664,6 @@ function MaintenanceTabContent({
   runLint,
 }: {
   t: Translation
-  state: LocalLlmWikiState | null
   ingestSelectionInput: string
   isIngestingSelection: boolean
   lastIngestResult: IngestLocalLlmWikiSelectionResult | null

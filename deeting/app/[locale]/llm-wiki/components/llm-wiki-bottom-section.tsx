@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils"
 import { GlassCard, GlassCardContent } from "@/components/ui/common/glass-card"
 import { GlassButton } from "@/components/ui/common/glass-button"
 import { Switch } from "@/components/ui/shadcn/switch"
-import type { LocalLlmWikiState, LocalLlmWikiAutomationSuggestion } from "@/lib/api/llm-wiki"
+import type { LocalLlmWikiState } from "@/lib/api/llm-wiki"
 
 type Translation = (key: string, values?: Record<string, string | number>) => string
 
@@ -32,6 +32,8 @@ const QUICK_SETTING_KEYS = [
   "enableScheduleSuggestions",
 ] as const
 
+type QuickSettingKey = typeof QUICK_SETTING_KEYS[number]
+
 interface BottomSectionProps {
   t: Translation
   state: LocalLlmWikiState | null
@@ -40,7 +42,7 @@ interface BottomSectionProps {
   syncMaintainerAgent: () => Promise<void>
   copyAgentPrompt: () => Promise<void>
   openTaskAgentHandoff: () => void
-  setAutomationSetting: (key: any, value: boolean) => Promise<void>
+  setAutomationSetting: (key: QuickSettingKey, value: boolean) => Promise<void>
 }
 
 export function BottomSection({

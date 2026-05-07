@@ -880,7 +880,8 @@
       "like": "点赞",
       "dislike": "踩",
       "copy": "复制",
-      "copied": "已复制"
+      "copied": "已复制",
+      "saveToWiki": "沉淀到 Wiki"
     },
     "compare": {
       "current": "当前",
@@ -933,6 +934,45 @@
         "fileSize": "大小",
         "noPreview": "暂无预览",
         "truncated": "内容已截断，超过 12000 字"
+      }
+    },
+    "wikiCrystallization": {
+      "title": "沉淀回答到 LLM Wiki",
+      "description": "写入托管工作区前，先预览会生成的 Wiki 页面。",
+      "loading": "正在准备 Wiki 预览...",
+      "empty": "这条回答没有可沉淀的文本。",
+      "source": {
+        "assistantAnswer": "助手回答"
+      },
+      "fields": {
+        "title": "标题",
+        "path": "目标路径",
+        "memoryImpact": "Memory 影响：{value}",
+        "sources": "来源",
+        "markdownPreview": "Markdown 预览"
+      },
+      "memoryImpact": {
+        "none": "无"
+      },
+      "changeKind": {
+        "create": "新建",
+        "update": "更新"
+      },
+      "actions": {
+        "cancel": "取消",
+        "retry": "重试预览",
+        "commit": "创建 Wiki 页面",
+        "committing": "正在创建..."
+      },
+      "receipt": {
+        "saved": "已沉淀到 Wiki",
+        "sources": "{count} 个来源"
+      },
+      "toast": {
+        "desktopOnly": "LLM Wiki 写入只在桌面运行时可用。",
+        "previewFailed": "准备 LLM Wiki 预览失败。",
+        "commitFailed": "写入 LLM Wiki 页面失败。",
+        "committed": "已沉淀到 LLM Wiki：{path}"
       }
     }
   }

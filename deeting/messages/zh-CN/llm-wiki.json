@@ -8,7 +8,7 @@
     "hero": {
       "eyebrow": "本地知识工作区",
       "title": "把你的 Obsidian vault 变成一个可持续维护的 LLM Wiki。",
-      "description": "Deeting 在本地读取你的 vault，在其中创建一个受控工作区，并通过检索、委托维护和长期知识沉淀持续更新它。",
+      "description": "LLM Wiki 现在是维护控制台：用于查看从聊天回答、本地知识文件和已审核外部经验中沉淀出的 Wiki 产物。日常创建入口在这些工作场景里；这个页面负责呈现队列、语料、lint 和维护助手状态。",
       "readScope": "本地读取整个 vault",
       "writeScope": "默认只写入受控工作区",
       "agentFlow": "把维护任务委托给 task agent",
@@ -161,6 +161,39 @@
         "title": "最近生命周期动作",
         "description": "最近的维护、自动化和结晶动作记录。",
         "empty": "当前还没有生命周期动作记录。"
+      },
+      "console": {
+        "title": "这里是维护控制台，不是主要捕获入口",
+        "description": "新的 Wiki 条目来自有价值的聊天回答、本地知识文件详情和已审核的外部候选。这个控制台用于检查队列、最近产物、lint 发现和维护提醒。",
+        "queue": "队列 / 待处理",
+        "failed": "失败写入",
+        "suggestions": "待处理建议",
+        "dailySources": {
+          "title": "新的 Wiki 页面从哪里来",
+          "chat": {
+            "title": "聊天回答",
+            "description": "在已完成的回答上使用“沉淀到 Wiki”，先预览标题、路径、证据、Markdown 和 Memory 影响，再确认写入。"
+          },
+          "knowledge": {
+            "title": "本地知识文件",
+            "description": "打开已完成索引的文件详情，在来源准备好后创建 Wiki 来源摘要。"
+          }
+        },
+        "recentArtifacts": {
+          "title": "最近产物",
+          "sourcePage": "来源页",
+          "rawCopy": "Raw 来源副本",
+          "empty": "当前会话还没有可显示的最近产物。先从聊天或本地知识创建一个，再回到这里检查维护状态。"
+        },
+        "lint": {
+          "title": "Lint 状态",
+          "summary": "最近一次 lint 于 {generatedAt} 产出 {count} 条发现。",
+          "empty": "运行 lint 后可检查过期摘要、弱链接、重复标题和孤儿页面。"
+        },
+        "audit": {
+          "title": "最近自动化活动",
+          "empty": "当前还没有自动化活动记录。"
+        }
       }
     },
     "workspace": {

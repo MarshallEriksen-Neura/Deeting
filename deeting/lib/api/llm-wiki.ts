@@ -158,6 +158,47 @@ export const SearchLocalLlmWikiCorpusResultSchema = z.object({
   hits: z.array(LocalLlmWikiCorpusSearchHitSchema).default([]),
 })
 
+export const LocalLlmWikiCandidateSourceReferenceSchema = z.object({
+  sourceType: z.string(),
+  sourceId: z.string().nullish(),
+  title: z.string().nullish(),
+  path: z.string().nullish(),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+})
+
+export const LocalLlmWikiCandidateChangedFileSchema = z.object({
+  relativePath: z.string(),
+  changeKind: z.string(),
+})
+
+export const LocalLlmWikiCandidateValidationFlagSchema = z.object({
+  code: z.string(),
+  severity: z.string(),
+  message: z.string(),
+})
+
+export const LocalLlmWikiCandidatePreviewSchema = z.object({
+  sourceKind: z.string(),
+  suggestedTitle: z.string(),
+  targetRelativePath: z.string(),
+  sourceReferences: z
+    .array(LocalLlmWikiCandidateSourceReferenceSchema)
+    .default([]),
+  proposedMarkdown: z.string(),
+  changedFiles: z.array(LocalLlmWikiCandidateChangedFileSchema).default([]),
+  validationFlags: z
+    .array(LocalLlmWikiCandidateValidationFlagSchema)
+    .default([]),
+  memoryImpact: z.string(),
+  canCommit: z.boolean(),
+})
+
+export const CommitLocalLlmWikiCandidateResultSchema = z.object({
+  targetRelativePath: z.string(),
+  changedFiles: z.array(LocalLlmWikiCandidateChangedFileSchema).default([]),
+  state: LocalLlmWikiStateSchema,
+})
+
 export const LocalLlmWikiAutomationExecutionResultSchema = z.object({
   state: LocalLlmWikiStateSchema,
   workflowRunId: z.string().nullable().optional(),
@@ -241,6 +282,21 @@ export type LocalLlmWikiCorpusSearchHit = z.infer<
 export type SearchLocalLlmWikiCorpusResult = z.infer<
   typeof SearchLocalLlmWikiCorpusResultSchema
 >
+export type LocalLlmWikiCandidateSourceReference = z.infer<
+  typeof LocalLlmWikiCandidateSourceReferenceSchema
+>
+export type LocalLlmWikiCandidateChangedFile = z.infer<
+  typeof LocalLlmWikiCandidateChangedFileSchema
+>
+export type LocalLlmWikiCandidateValidationFlag = z.infer<
+  typeof LocalLlmWikiCandidateValidationFlagSchema
+>
+export type LocalLlmWikiCandidatePreview = z.infer<
+  typeof LocalLlmWikiCandidatePreviewSchema
+>
+export type CommitLocalLlmWikiCandidateResult = z.infer<
+  typeof CommitLocalLlmWikiCandidateResultSchema
+>
 export type LocalLlmWikiAutomationExecutionResult = z.infer<
   typeof LocalLlmWikiAutomationExecutionResultSchema
 >
@@ -262,6 +318,20 @@ export interface SaveLocalLlmWikiBindingPayload {
 export interface SearchLocalLlmWikiCorpusPayload {
   query: string
   limit?: number
+}
+
+export interface PreviewLocalLlmWikiCandidatePayload {
+  sourceKind: string
+  title: string
+  content: string
+  summary?: string
+  targetRelativePath?: string
+  sourceReferences?: LocalLlmWikiCandidateSourceReference[]
+  metadata?: Record<string, unknown>
+}
+
+export interface CommitLocalLlmWikiCandidatePayload {
+  preview: LocalLlmWikiCandidatePreview
 }
 
 export interface UpdateLocalLlmWikiAutomationSettingsPayload {
@@ -369,6 +439,36 @@ export async function searchLocalLlmWikiCorpus(
     payload,
   })
   return SearchLocalLlmWikiCorpusResultSchema.parse(data)
+}
+
+export async function previewLocalLlmWikiCandidate(
+  payload: PreviewLocalLlmWikiCandidatePayload,
+): Promise<LocalLlmWikiCandidatePreview> {
+  const data = await invokeTauri<unknown>(
+    "preview_local_llm_wiki_candidate_command",
+    {
+      payload: {
+        sourceKind: payload.sourceKind,
+        title: payload.title,
+        content: payload.content,
+        summary: payload.summary ?? null,
+        targetRelativePath: payload.targetRelativePath ?? null,
+        sourceReferences: payload.sourceReferences ?? [],
+        metadata: payload.metadata ?? null,
+      },
+    },
+  )
+  return LocalLlmWikiCandidatePreviewSchema.parse(data)
+}
+
+export async function commitLocalLlmWikiCandidate(
+  payload: CommitLocalLlmWikiCandidatePayload,
+): Promise<CommitLocalLlmWikiCandidateResult> {
+  const data = await invokeTauri<unknown>(
+    "commit_local_llm_wiki_candidate_command",
+    { payload },
+  )
+  return CommitLocalLlmWikiCandidateResultSchema.parse(data)
 }
 
 export async function updateLocalLlmWikiAutomationSettings(

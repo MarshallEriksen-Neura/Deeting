@@ -6,6 +6,8 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 
+import { isTauriRuntime } from "@/lib/runtime/tauri";
+
 import "@xterm/xterm/css/xterm.css";
 
 interface UseTerminalSessionOptions {
@@ -13,11 +15,28 @@ interface UseTerminalSessionOptions {
   isCollapsed: boolean;
 }
 
-/**
- * Theme tuned for a dark "panel-on-app" look. Tracked separately from app
- * theme tokens for now; in v1.5 we may derive these from CSS variables so
- * the terminal follows light/dark mode automatically.
- */
+interface UseTerminalSessionResult {
+  /** Reads the current xterm selection, or "" if nothing is selected. */
+  getSelection: () => string;
+}
+
+interface PtyOpenResponse {
+  sessionId: string;
+}
+
+interface PtyOutputPayload {
+  sessionId: string;
+  data: string;
+}
+
+interface PtyExitPayload {
+  sessionId: string;
+  exitCode: number | null;
+}
+
+const TERMINAL_OUTPUT_EVENT = "terminal:output";
+const TERMINAL_EXIT_EVENT = "terminal:exit";
+
 const TERMINAL_THEME = {
   background: "#09090b",
   foreground: "#e4e4e7",
@@ -42,47 +61,58 @@ const TERMINAL_THEME = {
   brightWhite: "#fafafa",
 };
 
-/** Pseudo-prompt used by the Phase 2 self-echo loop. */
-const PROMPT = "\x1b[36mdeeting\x1b[0m \x1b[33m›\x1b[0m ";
-
-const PHASE_2_BANNER = [
-  "\x1b[2;90m# Phase 2 self-echo. Real PTY lands in Phase 3-4.\x1b[0m",
-  "\x1b[2;90m# Type to echo locally; Enter flushes the buffer; Ctrl+C resets.\x1b[0m",
+const NON_TAURI_BANNER = [
+  "\x1b[2;90m# Terminal requires the desktop app.\x1b[0m",
+  "\x1b[2;90m# Browser dev mode renders xterm without a real shell.\x1b[0m",
   "",
 ];
 
+const STARTUP_BANNER = ["\x1b[2;90m# Starting shell session…\x1b[0m"];
+
 /**
- * Mounts and manages an xterm.js Terminal instance bound to a container ref.
+ * Mounts and manages an xterm.js Terminal bound to a Tauri PTY.
  *
  * Lifecycle:
- * - **Lazy-mounts** on first non-collapsed render — users who never open
- *   the terminal pay zero cost.
- * - **Stays mounted** across collapse/expand cycles so scrollback, cursor
- *   position, and (in Phase 4+) the upstream PTY session are preserved.
- * - **Disposes** only when the hook unmounts.
+ * - **Lazy mount**: xterm + PTY are created on the **first** time the panel
+ *   is non-collapsed. Users who never open the terminal pay zero cost.
+ * - **Persistent across toggles**: once mounted, the terminal and PTY
+ *   survive collapse/expand cycles AND chat-route switches (because the
+ *   chat layout doesn't unmount). Cleanup only fires when the hook itself
+ *   unmounts (i.e. app close / hard reload).
+ * - **Resize gated by collapse**: while collapsed, the FitAddon is frozen
+ *   and `pty_resize` is not called — the parent panel's 0-width
+ *   collapsedSize must never propagate into a `cols=0`/`rows=0` update.
  *
- * Resize:
- * - While collapsed, the FitAddon is frozen — the parent panel's 0-width
- *   collapsedSize must never propagate into a cols=0 / rows=0 update,
- *   which would corrupt a real PTY in Phase 4.
- * - On the collapsed -> expanded transition, fires a single fit() + focus()
- *   so the terminal catches up to the new size and is ready for input.
+ * Tauri runtime detection: in browser-only dev mode (Next.js without
+ * Tauri shell), we render xterm with a placeholder banner instead of
+ * trying to invoke commands that would fail.
  *
- * Phase 2 implements a self-echo loop inline. Phase 4 replaces the entire
- * `onData` handler with a `pty_write` invocation and subscribes the
- * terminal to a `terminal:output` Tauri event for the read direction.
+ * v1 single-session note: `pty_open` errors if a session already exists
+ * on the backend. The mount effect runs once and keeps the session for
+ * the hook's lifetime, so this is invariant.
  */
 export function useTerminalSession({
   containerRef,
   isCollapsed,
-}: UseTerminalSessionOptions) {
+}: UseTerminalSessionOptions): UseTerminalSessionResult {
   const terminalRef = React.useRef<Terminal | null>(null);
   const fitAddonRef = React.useRef<FitAddon | null>(null);
-  const lineBufferRef = React.useRef<string>("");
+  const sessionIdRef = React.useRef<string | null>(null);
+  const isReadyRef = React.useRef<boolean>(false);
 
-  // Mount xterm lazily on first non-collapsed render.
+  // Latch: flip true on first expand and stay true forever. Drives the
+  // mount effect's dep so xterm/PTY mount once and only once.
+  const [shouldMount, setShouldMount] = React.useState(false);
   React.useEffect(() => {
-    if (isCollapsed) return;
+    if (!isCollapsed && !shouldMount) {
+      setShouldMount(true);
+    }
+  }, [isCollapsed, shouldMount]);
+
+  // Mount effect — runs exactly once when shouldMount flips to true.
+  // Cleanup runs only when the hook itself unmounts.
+  React.useEffect(() => {
+    if (!shouldMount) return;
     if (terminalRef.current) return;
     const container = containerRef.current;
     if (!container) return;
@@ -95,7 +125,6 @@ export function useTerminalSession({
       fontSize: 13,
       lineHeight: 1.3,
       scrollback: 5000,
-      // allowProposedApi is required by the Unicode11Addon.
       allowProposedApi: true,
       theme: TERMINAL_THEME,
     });
@@ -112,68 +141,132 @@ export function useTerminalSession({
     try {
       fit.fit();
     } catch {
-      // FitAddon throws if container measures 0 in a layout race; the
-      // ResizeObserver below recovers on the next tick.
+      // 0-sized container in initial layout race — resize effect recovers.
     }
-
-    PHASE_2_BANNER.forEach((line) => term.writeln(line));
-    term.write(PROMPT);
-
-    // Phase 2 self-echo input handler. Replaced wholesale in Phase 4 with
-    // `invoke('pty_write', { sessionId, data })`.
-    const onDataDisposable = term.onData((data) => {
-      const code = data.charCodeAt(0);
-
-      // Enter — flush line buffer and re-prompt.
-      if (data === "\r") {
-        term.write("\r\n");
-        const line = lineBufferRef.current;
-        lineBufferRef.current = "";
-        if (line.trim().length > 0) {
-          term.writeln(`\x1b[90m(echo)\x1b[0m ${line}`);
-        }
-        term.write(PROMPT);
-        return;
-      }
-
-      // Backspace (DEL = 127). Erase one cell only if buffer is non-empty.
-      if (code === 127) {
-        if (lineBufferRef.current.length > 0) {
-          lineBufferRef.current = lineBufferRef.current.slice(0, -1);
-          term.write("\b \b");
-        }
-        return;
-      }
-
-      // Ctrl+C — abandon current line.
-      if (data === "\x03") {
-        term.write("^C\r\n");
-        lineBufferRef.current = "";
-        term.write(PROMPT);
-        return;
-      }
-
-      // Printable + Tab. Skip other control bytes in self-echo mode.
-      if (code >= 32 || code === 9) {
-        lineBufferRef.current += data;
-        term.write(data);
-      }
-    });
 
     terminalRef.current = term;
     fitAddonRef.current = fit;
 
+    let unlistenOutput: (() => void) | null = null;
+    let unlistenExit: (() => void) | null = null;
+    let cancelled = false;
+
+    const startSession = async () => {
+      if (!isTauriRuntime()) {
+        NON_TAURI_BANNER.forEach((line) => term.writeln(line));
+        return;
+      }
+
+      STARTUP_BANNER.forEach((line) => term.writeln(line));
+
+      try {
+        const [{ invoke }, { listen }] = await Promise.all([
+          import("@tauri-apps/api/core"),
+          import("@tauri-apps/api/event"),
+        ]);
+
+        // Subscribe BEFORE pty_open so the very first byte (e.g. shell
+        // prompt) is captured. Filter is null-tolerant: in v1 we only
+        // ever have one session so accept all events until we know our
+        // own sessionId.
+        unlistenOutput = await listen<PtyOutputPayload>(
+          TERMINAL_OUTPUT_EVENT,
+          (event) => {
+            const expected = sessionIdRef.current;
+            if (expected !== null && event.payload.sessionId !== expected) {
+              return;
+            }
+            term.write(event.payload.data);
+          },
+        );
+        unlistenExit = await listen<PtyExitPayload>(
+          TERMINAL_EXIT_EVENT,
+          (event) => {
+            const expected = sessionIdRef.current;
+            if (expected !== null && event.payload.sessionId !== expected) {
+              return;
+            }
+            isReadyRef.current = false;
+            term.writeln(
+              "\r\n\x1b[33m[Process exited. Reload the panel to restart.]\x1b[0m",
+            );
+          },
+        );
+
+        if (cancelled) {
+          unlistenOutput?.();
+          unlistenExit?.();
+          return;
+        }
+
+        const cols = term.cols > 0 ? term.cols : 80;
+        const rows = term.rows > 0 ? term.rows : 24;
+        const response = await invoke<PtyOpenResponse>("pty_open", {
+          cols,
+          rows,
+          cwd: null,
+        });
+
+        if (cancelled) {
+          // Cleanup raced ahead of pty_open returning — close the orphan.
+          await invoke("pty_close", { sessionId: response.sessionId }).catch(
+            () => {},
+          );
+          unlistenOutput?.();
+          unlistenExit?.();
+          return;
+        }
+
+        sessionIdRef.current = response.sessionId;
+        isReadyRef.current = true;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        term.writeln(`\r\n\x1b[31m[Failed to start shell: ${msg}]\x1b[0m`);
+      }
+    };
+
+    void startSession();
+
+    // onData: forward every keystroke to the PTY. While the session is
+    // not yet ready, drop input — startup banner has already informed
+    // the user; the small (~100ms) delay won't surface practically.
+    const onDataDisposable = term.onData((data) => {
+      if (!isReadyRef.current) return;
+      const sessionId = sessionIdRef.current;
+      if (!sessionId) return;
+      void (async () => {
+        try {
+          const { invoke } = await import("@tauri-apps/api/core");
+          await invoke("pty_write", { sessionId, data });
+        } catch {
+          // Transient; backend may emit terminal:exit if it actually died.
+        }
+      })();
+    });
+
     return () => {
+      cancelled = true;
       onDataDisposable.dispose();
+      unlistenOutput?.();
+      unlistenExit?.();
+      const sessionId = sessionIdRef.current;
+      sessionIdRef.current = null;
+      isReadyRef.current = false;
+      if (sessionId && isTauriRuntime()) {
+        // Fire-and-forget: cleanup is synchronous from React's POV.
+        import("@tauri-apps/api/core").then(({ invoke }) => {
+          invoke("pty_close", { sessionId }).catch(() => {});
+        });
+      }
       term.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
-      lineBufferRef.current = "";
     };
-  }, [containerRef, isCollapsed]);
+  }, [shouldMount, containerRef]);
 
-  // Resize observer + focus management. Skipped while collapsed so the
-  // 0-width parent never reaches FitAddon. On expand, fits + refocuses.
+  // Resize observer + focus management. Re-subscribes whenever the panel
+  // toggles collapsed state. Skipped while collapsed so the 0-width
+  // parent never reaches FitAddon or pty_resize.
   React.useEffect(() => {
     if (isCollapsed) return;
     const term = terminalRef.current;
@@ -188,12 +281,26 @@ export function useTerminalSession({
         try {
           fit.fit();
         } catch {
-          // 0-sized container during transitions — next observer tick recovers.
+          return;
+        }
+        if (isReadyRef.current && sessionIdRef.current && isTauriRuntime()) {
+          const sessionId = sessionIdRef.current;
+          const cols = term.cols;
+          const rows = term.rows;
+          if (cols <= 0 || rows <= 0) return;
+          void (async () => {
+            try {
+              const { invoke } = await import("@tauri-apps/api/core");
+              await invoke("pty_resize", { sessionId, cols, rows });
+            } catch {
+              // Transient; ignore.
+            }
+          })();
         }
       });
     };
 
-    // Catch up on size + grab focus on the collapsed -> expanded transition.
+    // Catch up size + grab focus on the collapsed -> expanded transition.
     triggerFit();
     term.focus();
 
@@ -204,4 +311,17 @@ export function useTerminalSession({
       observer.disconnect();
     };
   }, [containerRef, isCollapsed]);
+
+  // Stable accessor for the menu / panel layer to read the user's current
+  // selection without leaking the Terminal instance itself.
+  const getSelection = React.useCallback<UseTerminalSessionResult["getSelection"]>(
+    () => {
+      const term = terminalRef.current;
+      if (!term) return "";
+      return term.hasSelection() ? term.getSelection() : "";
+    },
+    [],
+  );
+
+  return { getSelection };
 }

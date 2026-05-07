@@ -880,7 +880,8 @@
       "like": "Like",
       "dislike": "Dislike",
       "copy": "Copy",
-      "copied": "Copied"
+      "copied": "Copied",
+      "saveToWiki": "Save to LLM Wiki"
     },
     "compare": {
       "current": "Current",
@@ -933,6 +934,45 @@
         "fileSize": "Size",
         "noPreview": "Inline preview is not available for this file type. Download to inspect.",
         "truncated": "Preview is truncated to the first 12000 characters."
+      }
+    },
+    "wikiCrystallization": {
+      "title": "Save answer to LLM Wiki",
+      "description": "Preview the maintained wiki page before writing it into the managed workspace.",
+      "loading": "Preparing wiki preview...",
+      "empty": "This answer has no text that can be saved.",
+      "source": {
+        "assistantAnswer": "Assistant answer"
+      },
+      "fields": {
+        "title": "Title",
+        "path": "Target path",
+        "memoryImpact": "Memory impact: {value}",
+        "sources": "Sources",
+        "markdownPreview": "Markdown preview"
+      },
+      "memoryImpact": {
+        "none": "none"
+      },
+      "changeKind": {
+        "create": "Create",
+        "update": "Update"
+      },
+      "actions": {
+        "cancel": "Cancel",
+        "retry": "Retry preview",
+        "commit": "Create wiki page",
+        "committing": "Creating..."
+      },
+      "receipt": {
+        "saved": "Saved to Wiki",
+        "sources": "{count} source(s)"
+      },
+      "toast": {
+        "desktopOnly": "LLM Wiki writes are only available in the desktop runtime.",
+        "previewFailed": "Failed to prepare the LLM Wiki preview.",
+        "commitFailed": "Failed to write the LLM Wiki page.",
+        "committed": "Saved to LLM Wiki: {path}"
       }
     }
   }

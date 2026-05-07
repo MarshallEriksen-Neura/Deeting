@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 import { AIResponseBubble } from "./ai-response-bubble"
 import { CompareResponseShell } from "./compare-response-shell"
 import { MessageActions } from "./message-actions"
+import { WikiCrystallizationCard } from "./ai-response-bubble/wiki-crystallization-card"
 import { MarkdownViewer } from "@/components/chat/markdown-viewer"
 import { useChatStore, type Message, type ChatAssistant } from "@/store/chat-store"
 import { useI18n } from "@/hooks/use-i18n"
@@ -116,6 +117,7 @@ export const MessageItem = React.memo<MessageItemProps>(
     )
     const models = useChatStore((state) => state.models)
     const [compareDialogOpen, setCompareDialogOpen] = React.useState(false)
+    const [wikiDialogOpen, setWikiDialogOpen] = React.useState(false)
     const messageMetaInfo = message.metaInfo as Record<string, unknown> | undefined
 
     // 判断是否为最后一条助手消息（用于 reveal 动画）
@@ -167,6 +169,11 @@ export const MessageItem = React.memo<MessageItemProps>(
       !message.fromHistory &&
       !isActive &&
       !compareState
+    const canSaveToWiki =
+      message.role === "assistant" &&
+      !isActive &&
+      assistantCopyContent.trim().length > 0 &&
+      Boolean(message.id)
     const userDisplayContent = React.useMemo(() => {
       if (message.role !== "user") return message.content
       const displayContent =
@@ -270,7 +277,9 @@ export const MessageItem = React.memo<MessageItemProps>(
                   onDislike={onDislike}
                   onCopy={onCopy}
                   onCompare={() => setCompareDialogOpen(true)}
+                  onSaveToWiki={() => setWikiDialogOpen(true)}
                   canCompare={canCompare}
+                  canSaveToWiki={canSaveToWiki}
                   liked={messageMetaInfo?.feedback_score === 1}
                   disliked={messageMetaInfo?.feedback_score === -1}
                   disabled={isActive || compareState?.isFinalizing}
@@ -299,6 +308,13 @@ export const MessageItem = React.memo<MessageItemProps>(
                 onSelect={(modelValue) => onCompareWithModel(message.id, modelValue)}
               />
             ) : null}
+            <WikiCrystallizationCard
+              open={wikiDialogOpen}
+              onOpenChange={setWikiDialogOpen}
+              message={message}
+              content={assistantCopyContent}
+              disabled={isActive || compareState?.isFinalizing}
+            />
           </div>
         ) : (
           <div className="flex min-w-0 max-w-[min(82%,48rem)] flex-col items-end gap-1.5">

@@ -122,6 +122,45 @@
       "unsupportedTypes": "当前运行模式仅支持 {types}，已跳过 {count} 个不支持的文件",
       "uploadSuccess": "成功上传 {count} 个文件",
       "uploadFailed": "{count} 个文件上传失败"
+    },
+    "llmWiki": {
+      "createSourceSummary": "创建 Wiki 源摘要",
+      "unavailable": "文件完成索引并加载片段后可用。",
+      "summary": "基于 {count} 个已加载片段，为 {name} 创建源摘要。",
+      "dialog": {
+        "title": "创建 LLM Wiki 源摘要",
+        "description": "写入托管工作区前，先预览会生成的源页面。",
+        "loading": "正在准备 Wiki 预览..."
+      },
+      "fields": {
+        "title": "标题",
+        "path": "目标路径",
+        "memoryImpact": "Memory 影响：{value}",
+        "sources": "来源",
+        "markdownPreview": "Markdown 预览"
+      },
+      "memoryImpact": {
+        "none": "无"
+      },
+      "changeKind": {
+        "create": "新建",
+        "update": "更新"
+      },
+      "actions": {
+        "cancel": "取消",
+        "retry": "重试预览",
+        "commit": "创建 Wiki 页面",
+        "committing": "正在创建..."
+      },
+      "receipt": {
+        "saved": "已沉淀到 Wiki"
+      },
+      "toast": {
+        "desktopOnly": "LLM Wiki 写入只在桌面运行时可用。",
+        "previewFailed": "准备 LLM Wiki 预览失败。",
+        "commitFailed": "写入 LLM Wiki 页面失败。",
+        "committed": "已沉淀到 LLM Wiki：{path}"
+      }
     }
   }
 }

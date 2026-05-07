@@ -244,6 +244,71 @@ pub struct SearchLocalLlmWikiCorpusResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct LocalLlmWikiCandidateSourceReference {
+    pub source_type: String,
+    pub source_id: Option<String>,
+    pub title: Option<String>,
+    pub path: Option<String>,
+    pub metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewLocalLlmWikiCandidateRequest {
+    pub source_kind: String,
+    pub title: String,
+    pub content: String,
+    pub summary: Option<String>,
+    pub target_relative_path: Option<String>,
+    pub source_references: Vec<LocalLlmWikiCandidateSourceReference>,
+    pub metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalLlmWikiCandidateChangedFile {
+    pub relative_path: String,
+    pub change_kind: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalLlmWikiCandidateValidationFlag {
+    pub code: String,
+    pub severity: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalLlmWikiCandidatePreview {
+    pub source_kind: String,
+    pub suggested_title: String,
+    pub target_relative_path: String,
+    pub source_references: Vec<LocalLlmWikiCandidateSourceReference>,
+    pub proposed_markdown: String,
+    pub changed_files: Vec<LocalLlmWikiCandidateChangedFile>,
+    pub validation_flags: Vec<LocalLlmWikiCandidateValidationFlag>,
+    pub memory_impact: String,
+    pub can_commit: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitLocalLlmWikiCandidateRequest {
+    pub preview: LocalLlmWikiCandidatePreview,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitLocalLlmWikiCandidateResult {
+    pub target_relative_path: String,
+    pub changed_files: Vec<LocalLlmWikiCandidateChangedFile>,
+    pub state: LocalLlmWikiState,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LocalLlmWikiAdoptionBucket {
     pub kind: String,
     pub count: i64,

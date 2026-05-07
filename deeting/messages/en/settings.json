@@ -522,7 +522,21 @@
         "acceptToWiki": "Accept to LLM Wiki",
         "adoptForAgent": "Adopt for agent",
         "acceptedRef": "Accepted: {ref}",
-        "adoptedMemory": "Adopted memory: {id}"
+        "adoptedMemory": "Adopted memory: {id}",
+        "trustChain": {
+          "rawImported": "Raw imported",
+          "rawImportedDetail": "Original record is stored locally.",
+          "translatedCandidate": "Candidate",
+          "translatedCandidateDetail": "Translated with {confidence}% confidence.",
+          "review": "Review",
+          "reviewDetail": "Review status: {status}",
+          "llmWiki": "LLM Wiki",
+          "llmWikiDetail": "Wiki artifact: {ref}",
+          "llmWikiPending": "Accept separately; Memory is not changed.",
+          "memory": "Memory",
+          "memoryDetail": "Memory: {id}",
+          "memoryPending": "Optional guarded promotion after Wiki acceptance."
+        }
       },
       "toast": {
         "loadFailed": "Failed to load external sources.",
@@ -541,7 +555,8 @@
         "candidateAdopted": "Experience candidate adopted for agent memory.",
         "candidateActionFailed": "Candidate action failed.",
         "deleted": "Connector deleted.",
-        "deleteFailed": "Failed to delete connector."
+        "deleteFailed": "Failed to delete connector.",
+        "candidateAcceptedWithRef": "Experience candidate accepted into LLM Wiki: {ref}"
       }
     },
     "aiAccess": {
@@ -674,4 +689,3 @@
     }
   }
 }
-

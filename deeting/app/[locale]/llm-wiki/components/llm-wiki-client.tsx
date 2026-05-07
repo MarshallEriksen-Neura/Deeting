@@ -16,7 +16,7 @@ export function LlmWikiClient() {
   const t = useTranslations("llm-wiki")
   const wiki = useLlmWiki(t)
 
-  const [activeTab, setActiveTab] = React.useState<ListTab>("search")
+  const [activeTab, setActiveTab] = React.useState<ListTab>("maintenance")
   const [selectedSuggestionId, setSelectedSuggestionId] = React.useState<string | null>(null)
   const [showSetup, setShowSetup] = React.useState(false)
 
@@ -107,7 +107,6 @@ export function LlmWikiClient() {
             dismissAutomationSuggestion={wiki.dismissAutomationSuggestion}
             dismissBatchAutomationSuggestions={wiki.dismissBatchAutomationSuggestions}
             // Maintenance
-            state={wiki.state}
             ingestSelectionInput={wiki.ingestSelectionInput}
             isIngestingSelection={wiki.isIngestingSelection}
             lastIngestResult={wiki.lastIngestResult}
@@ -131,7 +130,9 @@ export function LlmWikiClient() {
             batchDismissingActionKind={wiki.batchDismissingActionKind}
             executeAutomationSuggestion={wiki.executeAutomationSuggestion}
             dismissAutomationSuggestion={wiki.dismissAutomationSuggestion}
-            showSetup={showSetup}
+            state={wiki.state}
+            lastIngestResult={wiki.lastIngestResult}
+            lastLintReport={wiki.lastLintReport}
             onOpenSetup={() => setShowSetup(true)}
           />
         </div>

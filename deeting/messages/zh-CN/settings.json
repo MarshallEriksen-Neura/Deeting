@@ -478,7 +478,21 @@
         "acceptToWiki": "接入 LLM Wiki",
         "adoptForAgent": "接入智能体",
         "acceptedRef": "已接入：{ref}",
-        "adoptedMemory": "已接入记忆：{id}"
+        "adoptedMemory": "已接入记忆：{id}",
+        "trustChain": {
+          "rawImported": "原始导入",
+          "rawImportedDetail": "原始记录已本地落库。",
+          "translatedCandidate": "翻译候选",
+          "translatedCandidateDetail": "翻译置信度 {confidence}%。",
+          "review": "人工复核",
+          "reviewDetail": "复核状态：{status}",
+          "llmWiki": "LLM Wiki",
+          "llmWikiDetail": "Wiki 产物：{ref}",
+          "llmWikiPending": "单独接入；不会改 Memory。",
+          "memory": "Memory",
+          "memoryDetail": "Memory：{id}",
+          "memoryPending": "Wiki 接入后才可选择受保护晋升。"
+        }
       },
       "toast": {
         "loadFailed": "加载外部观察源失败。",
@@ -497,7 +511,8 @@
         "candidateAdopted": "经验候选已接入智能体记忆。",
         "candidateActionFailed": "候选操作失败。",
         "deleted": "Connector 已删除。",
-        "deleteFailed": "删除 connector 失败。"
+        "deleteFailed": "删除 connector 失败。",
+        "candidateAcceptedWithRef": "经验候选已接入 LLM Wiki：{ref}"
       }
     },
     "aiAccess": {

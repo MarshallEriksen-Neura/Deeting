@@ -122,6 +122,45 @@
       "unsupportedTypes": "This runtime only supports {types}. Skipped {count} unsupported file(s).",
       "uploadSuccess": "{count} file(s) uploaded successfully",
       "uploadFailed": "{count} file(s) failed to upload"
+    },
+    "llmWiki": {
+      "createSourceSummary": "Create Wiki source summary",
+      "unavailable": "Available after this file is indexed and chunks are loaded.",
+      "summary": "Source summary for {name} using {count} loaded excerpt(s).",
+      "dialog": {
+        "title": "Create LLM Wiki source summary",
+        "description": "Preview the maintained source page before writing it into the managed workspace.",
+        "loading": "Preparing wiki preview..."
+      },
+      "fields": {
+        "title": "Title",
+        "path": "Target path",
+        "memoryImpact": "Memory impact: {value}",
+        "sources": "Sources",
+        "markdownPreview": "Markdown preview"
+      },
+      "memoryImpact": {
+        "none": "none"
+      },
+      "changeKind": {
+        "create": "Create",
+        "update": "Update"
+      },
+      "actions": {
+        "cancel": "Cancel",
+        "retry": "Retry preview",
+        "commit": "Create wiki page",
+        "committing": "Creating..."
+      },
+      "receipt": {
+        "saved": "Saved to Wiki"
+      },
+      "toast": {
+        "desktopOnly": "LLM Wiki writes are only available in the desktop runtime.",
+        "previewFailed": "Failed to prepare the LLM Wiki preview.",
+        "commitFailed": "Failed to write the LLM Wiki page.",
+        "committed": "Saved to LLM Wiki: {path}"
+      }
     }
   }
 }

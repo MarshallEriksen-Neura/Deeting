@@ -5,8 +5,6 @@ import {
   Zap,
   CheckCircle2,
   XCircle,
-  ExternalLink,
-  Copy,
   Settings,
   Clock,
   RefreshCw,
@@ -14,12 +12,19 @@ import {
   Sparkles,
   Search,
   BrainCircuit,
+  MessageSquareText,
+  DatabaseZap,
+  AlertTriangle,
+  FolderOpen,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { GlassButton } from "@/components/ui/common/glass-button"
 import type {
   LocalLlmWikiCorpusSearchHit,
   LocalLlmWikiAutomationSuggestion,
+  LocalLlmWikiState,
+  IngestLocalLlmWikiSelectionResult,
+  LocalLlmWikiLintReport,
 } from "@/lib/api/llm-wiki"
 import type { ListTab } from "./llm-wiki-list-panel"
 
@@ -37,8 +42,10 @@ interface DetailPanelProps {
   batchDismissingActionKind: string | null
   executeAutomationSuggestion: (suggestion: LocalLlmWikiAutomationSuggestion) => Promise<void>
   dismissAutomationSuggestion: (suggestionId: string) => Promise<void>
-  // Maintenance - show setup instead
-  showSetup: boolean
+  // Maintenance
+  state: LocalLlmWikiState | null
+  lastIngestResult: IngestLocalLlmWikiSelectionResult | null
+  lastLintReport: LocalLlmWikiLintReport | null
   onOpenSetup: () => void
 }
 
@@ -52,7 +59,9 @@ export function DetailPanel({
   batchDismissingActionKind,
   executeAutomationSuggestion,
   dismissAutomationSuggestion,
-  showSetup,
+  state,
+  lastIngestResult,
+  lastLintReport,
   onOpenSetup,
 }: DetailPanelProps) {
   return (
@@ -88,7 +97,12 @@ export function DetailPanel({
           />
         )}
         {activeTab === "maintenance" && (
-          <MaintenanceDetail t={t} />
+          <MaintenanceDetail
+            t={t}
+            state={state}
+            lastIngestResult={lastIngestResult}
+            lastLintReport={lastLintReport}
+          />
         )}
       </div>
     </div>
@@ -183,15 +197,15 @@ function resolveSuggestionDescription(t: Translation, suggestion: LocalLlmWikiAu
   return translated === `automation.suggestionCopy.${copyKey}.description` ? suggestion.description : translated
 }
 
-function getActionKindIcon(actionKind: string) {
+function renderActionKindIcon(actionKind: string, className: string) {
   switch (actionKind) {
-    case "reconcile_corpus": return RefreshCw
-    case "create_maintainer_agent": return Settings
-    case "inspect_corpus": return Search
-    case "run_maintenance_review": return Wrench
-    case "crystallize_session_summary": return Sparkles
-    case "promote_to_memory": return BrainCircuit
-    default: return Zap
+    case "reconcile_corpus": return <RefreshCw className={className} />
+    case "create_maintainer_agent": return <Settings className={className} />
+    case "inspect_corpus": return <Search className={className} />
+    case "run_maintenance_review": return <Wrench className={className} />
+    case "crystallize_session_summary": return <Sparkles className={className} />
+    case "promote_to_memory": return <BrainCircuit className={className} />
+    default: return <Zap className={className} />
   }
 }
 
@@ -255,7 +269,6 @@ function SuggestionDetail({
     )
   }
 
-  const ActionIcon = getActionKindIcon(suggestion.actionKind)
   const isAnyProcessing = executingSuggestionId !== null || dismissingSuggestionId !== null || batchDismissingActionKind !== null
 
   // Extract useful metadata for display
@@ -280,7 +293,7 @@ function SuggestionDetail({
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1 rounded-md bg-[var(--accent-soft)]/40 px-2 py-0.5 text-[10px] font-medium text-[var(--accent-strong)]">
-            <ActionIcon className="size-3" />
+            {renderActionKindIcon(suggestion.actionKind, "size-3")}
             {getActionKindLabel(t, suggestion.actionKind)}
           </span>
           <span className="inline-flex items-center gap-1 rounded-md bg-[var(--panel-bg)]/60 px-2 py-0.5 text-[10px] text-[var(--ink)]">
@@ -308,7 +321,7 @@ function SuggestionDetail({
           <p className="text-xs leading-relaxed text-[var(--foreground)]">{resolveSuggestionDescription(t, suggestion)}</p>
         </div>
         <TimelineItem
-          icon={<ActionIcon className="size-3.5" />}
+          icon={renderActionKindIcon(suggestion.actionKind, "size-3.5")}
           color="text-[var(--accent-strong)]"
           bgColor="bg-[var(--accent-soft)]"
           title={getActionKindLabel(t, suggestion.actionKind)}
@@ -367,16 +380,202 @@ function SuggestionDetail({
 
 /* ─── Maintenance Detail ────────────────────────────────────────────── */
 
-function MaintenanceDetail({ t }: { t: Translation }) {
+function MaintenanceDetail({
+  t,
+  state,
+  lastIngestResult,
+  lastLintReport,
+}: {
+  t: Translation
+  state: LocalLlmWikiState | null
+  lastIngestResult: IngestLocalLlmWikiSelectionResult | null
+  lastLintReport: LocalLlmWikiLintReport | null
+}) {
+  const corpus = state?.corpusStatus
+  const pendingSuggestions = state?.automation?.suggestions.filter((s) => s.status === "pending") ?? []
+  const recentAudit = state?.automation?.audit.slice(0, 4) ?? []
+  const lintFindingCount = lastLintReport?.findingCount ?? state?.lastLintReport?.findingCount ?? 0
+  const lintGeneratedAt = lastLintReport?.generatedAt ?? state?.lastLintReport?.generatedAt ?? null
+  const sourcePagesCreated = lastIngestResult?.sourcePagesCreated ?? []
+  const rawFilesCopied = lastIngestResult?.rawFilesCopied ?? []
+  const hasRecentArtifacts = sourcePagesCreated.length > 0 || rawFilesCopied.length > 0
+  const queueCount = corpus?.queuedChangeCount ?? 0
+  const pendingCount = corpus?.pendingNoteCount ?? 0
+  const failedCount = corpus?.failedNoteCount ?? 0
+
   return (
-    <EmptyState
-      icon={<Settings className="size-6" />}
-      title={t("maintenance.description")}
-    />
+    <div className="space-y-5">
+      <div className="rounded-[var(--r-12)] border border-[var(--accent-border)]/30 bg-[var(--accent-soft)]/20 p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--r-10)] bg-[var(--accent-soft)] text-[var(--accent-strong)]">
+            <Wrench className="size-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-[var(--foreground)]">{t("maintenance.console.title")}</p>
+            <p className="mt-1 text-xs leading-relaxed text-[var(--ink)]">{t("maintenance.console.description")}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <MetricTile
+          icon={<Clock className="size-3.5" />}
+          label={t("maintenance.console.queue")}
+          value={queueCount + pendingCount}
+          tone={queueCount + pendingCount > 0 ? "warning" : "neutral"}
+        />
+        <MetricTile
+          icon={<AlertTriangle className="size-3.5" />}
+          label={t("maintenance.console.failed")}
+          value={failedCount}
+          tone={failedCount > 0 ? "danger" : "neutral"}
+        />
+        <MetricTile
+          icon={<Zap className="size-3.5" />}
+          label={t("maintenance.console.suggestions")}
+          value={pendingSuggestions.length}
+          tone={pendingSuggestions.length > 0 ? "warning" : "neutral"}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-[var(--foreground)]">{t("maintenance.console.dailySources.title")}</p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <EntryPoint
+            icon={<MessageSquareText className="size-3.5" />}
+            title={t("maintenance.console.dailySources.chat.title")}
+            description={t("maintenance.console.dailySources.chat.description")}
+          />
+          <EntryPoint
+            icon={<DatabaseZap className="size-3.5" />}
+            title={t("maintenance.console.dailySources.knowledge.title")}
+            description={t("maintenance.console.dailySources.knowledge.description")}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-[var(--foreground)]">{t("maintenance.console.recentArtifacts.title")}</p>
+        {hasRecentArtifacts ? (
+          <div className="space-y-1.5">
+            {sourcePagesCreated.slice(0, 4).map((path) => (
+              <ArtifactRow key={path} icon={<FileText className="size-3" />} path={path} label={t("maintenance.console.recentArtifacts.sourcePage")} />
+            ))}
+            {rawFilesCopied.slice(0, 4).map((path) => (
+              <ArtifactRow key={path} icon={<FolderOpen className="size-3" />} path={path} label={t("maintenance.console.recentArtifacts.rawCopy")} />
+            ))}
+          </div>
+        ) : (
+          <EmptyPanel text={t("maintenance.console.recentArtifacts.empty")} />
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <StatusPanel
+          title={t("maintenance.console.lint.title")}
+          description={
+            lintGeneratedAt
+              ? t("maintenance.console.lint.summary", { count: lintFindingCount, generatedAt: lintGeneratedAt })
+              : t("maintenance.console.lint.empty")
+          }
+          tone={lintFindingCount > 0 ? "warning" : "neutral"}
+        />
+        <StatusPanel
+          title={t("maintenance.console.audit.title")}
+          description={recentAudit[0]?.message ?? t("maintenance.console.audit.empty")}
+          tone={recentAudit.length > 0 ? "accent" : "neutral"}
+        />
+      </div>
+    </div>
   )
 }
 
 /* ─── Shared Sub-components ─────────────────────────────────────────── */
+
+function MetricTile({
+  icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: number
+  tone: "neutral" | "warning" | "danger"
+}) {
+  return (
+    <div className={cn(
+      "rounded-[var(--r-10)] border px-3 py-2.5",
+      tone === "warning" ? "border-[var(--warn)]/20 bg-[var(--warn-soft)]/30" :
+      tone === "danger" ? "border-[var(--danger)]/20 bg-[var(--danger-soft)]/30" :
+      "border-[var(--hairline)]/50 bg-[var(--panel-bg)]/20"
+    )}>
+      <div className="flex items-center gap-1.5 text-[var(--ink)]">
+        {icon}
+        <span className="text-[10px] font-medium">{label}</span>
+      </div>
+      <p className="mt-1 text-lg font-bold text-[var(--foreground)]">{value}</p>
+    </div>
+  )
+}
+
+function EntryPoint({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
+  return (
+    <div className="rounded-[var(--r-10)] border border-[var(--hairline)]/50 bg-[var(--panel-bg)]/25 p-3">
+      <div className="flex items-center gap-2">
+        <div className="flex size-7 items-center justify-center rounded-md bg-[var(--accent-soft)] text-[var(--accent-strong)]">
+          {icon}
+        </div>
+        <p className="text-xs font-semibold text-[var(--foreground)]">{title}</p>
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-[var(--ink)]">{description}</p>
+    </div>
+  )
+}
+
+function ArtifactRow({ icon, path, label }: { icon: React.ReactNode; path: string; label: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-[var(--hairline)]/40 bg-[var(--panel-bg)]/25 px-3 py-2">
+      <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-[var(--accent-soft)] text-[var(--accent-strong)]">
+        {icon}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] font-medium text-[var(--ink)]">{label}</p>
+        <p className="truncate text-xs font-semibold text-[var(--foreground)]">{path}</p>
+      </div>
+    </div>
+  )
+}
+
+function EmptyPanel({ text }: { text: string }) {
+  return (
+    <div className="rounded-[var(--r-10)] border border-dashed border-[var(--hairline)]/60 bg-[var(--panel-bg)]/15 px-3 py-4 text-center text-[11px] leading-relaxed text-[var(--ink)]">
+      {text}
+    </div>
+  )
+}
+
+function StatusPanel({
+  title,
+  description,
+  tone,
+}: {
+  title: string
+  description: string
+  tone: "neutral" | "warning" | "accent"
+}) {
+  return (
+    <div className={cn(
+      "rounded-[var(--r-10)] border p-3",
+      tone === "warning" ? "border-[var(--warn)]/20 bg-[var(--warn-soft)]/25" :
+      tone === "accent" ? "border-[var(--accent-border)]/30 bg-[var(--accent-soft)]/20" :
+      "border-[var(--hairline)]/50 bg-[var(--panel-bg)]/20"
+    )}>
+      <p className="text-xs font-semibold text-[var(--foreground)]">{title}</p>
+      <p className="mt-1 text-[11px] leading-relaxed text-[var(--ink)]">{description}</p>
+    </div>
+  )
+}
 
 function EmptyState({ icon, title }: { icon: React.ReactNode; title: string }) {
   return (

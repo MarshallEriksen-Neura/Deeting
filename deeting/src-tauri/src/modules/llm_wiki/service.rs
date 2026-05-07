@@ -33,16 +33,21 @@ use super::corpus::{bootstrap_corpus, load_corpus_status, reconcile_corpus, sear
 use super::scan::{inspect_workspace, scan_vault};
 use super::templates::{build_bootstrap_files, build_recommended_agent_prompt};
 use super::types::{
-    BootstrapLocalLlmWikiWorkspaceResult, ConfirmLocalLlmWikiAdoptionRequest,
+    BootstrapLocalLlmWikiWorkspaceResult, CommitLocalLlmWikiCandidateRequest,
+    CommitLocalLlmWikiCandidateResult, ConfirmLocalLlmWikiAdoptionRequest,
     CreateOrUpdateLocalLlmWikiMaintainerAgentResult, IngestLocalLlmWikiSelectionRequest,
     IngestLocalLlmWikiSelectionResult, LocalLlmWikiAdoptionPreview,
-    LocalLlmWikiAutomationExecutionResult, LocalLlmWikiBinding, LocalLlmWikiLintReport,
+    LocalLlmWikiAutomationExecutionResult, LocalLlmWikiBinding, LocalLlmWikiCandidateChangedFile,
+    LocalLlmWikiCandidatePreview, LocalLlmWikiCandidateSourceReference,
+    LocalLlmWikiCandidateValidationFlag, LocalLlmWikiLintReport,
     LocalLlmWikiMaintainerAgentSummary, LocalLlmWikiState, PreviewLocalLlmWikiAdoptionRequest,
-    SaveLocalLlmWikiBindingRequest, SearchLocalLlmWikiCorpusRequest,
-    SearchLocalLlmWikiCorpusResult, UpdateLocalLlmWikiAutomationSettingsRequest,
+    PreviewLocalLlmWikiCandidateRequest, SaveLocalLlmWikiBindingRequest,
+    SearchLocalLlmWikiCorpusRequest, SearchLocalLlmWikiCorpusResult,
+    UpdateLocalLlmWikiAutomationSettingsRequest,
 };
 
 const LLM_WIKI_MAINTAINER_SOURCE_KIND: &str = "llm_wiki_maintainer";
+const LLM_WIKI_MEMORY_IMPACT_NONE: &str = "none";
 
 pub struct ExternalExperienceLlmWikiCandidate {
     pub candidate_id: String,
@@ -295,6 +300,32 @@ pub async fn search_local_llm_wiki_corpus(
     Ok(SearchLocalLlmWikiCorpusResult { hits })
 }
 
+pub async fn preview_local_llm_wiki_candidate(
+    app_state: &AppState,
+    payload: PreviewLocalLlmWikiCandidateRequest,
+) -> Result<LocalLlmWikiCandidatePreview, String> {
+    let binding = load_binding(app_state.mcp.store.as_ref())
+        .await
+        .map_err(|err| err.to_string())?
+        .ok_or_else(|| "llm wiki binding has not been configured yet".to_string())?;
+    let vault_root = normalize_vault_root(&binding.vault_root)?;
+    let workspace_path = resolve_workspace_path(&vault_root, &binding.workspace_relative_path);
+    build_candidate_preview(&workspace_path, payload)
+}
+
+pub async fn commit_local_llm_wiki_candidate(
+    app_state: &AppState,
+    payload: CommitLocalLlmWikiCandidateRequest,
+) -> Result<CommitLocalLlmWikiCandidateResult, String> {
+    let binding = load_binding(app_state.mcp.store.as_ref())
+        .await
+        .map_err(|err| err.to_string())?
+        .ok_or_else(|| "llm wiki binding has not been configured yet".to_string())?;
+    let vault_root = normalize_vault_root(&binding.vault_root)?;
+    let workspace_path = resolve_workspace_path(&vault_root, &binding.workspace_relative_path);
+    commit_candidate_preview(app_state, &vault_root, &workspace_path, payload.preview).await
+}
+
 pub async fn preview_local_llm_wiki_adoption(
     payload: PreviewLocalLlmWikiAdoptionRequest,
 ) -> Result<LocalLlmWikiAdoptionPreview, String> {
@@ -347,21 +378,12 @@ pub async fn accept_external_experience_candidate_to_llm_wiki(
         .ok_or_else(|| "llm wiki binding has not been configured yet".to_string())?;
     let vault_root = normalize_vault_root(&binding.vault_root)?;
     let workspace_path = resolve_workspace_path(&vault_root, &binding.workspace_relative_path);
-    let relative_path = build_external_candidate_relative_path(&candidate);
-    let target_path = workspace_path.join(&relative_path);
-    let markdown = build_external_candidate_markdown(&candidate);
-
-    tokio::task::spawn_blocking({
-        let target_path = target_path.clone();
-        move || write_external_candidate_source_file(&target_path, &markdown)
-    })
-    .await
-    .map_err(|err| format!("external candidate write task failed: {}", err))??;
-
-    let (indexed_files, removed_files, _) =
-        reconcile_corpus(app_state, &vault_root, &workspace_path).await?;
-    handle_corpus_reconcile_completed(app_state, indexed_files, removed_files).await?;
-    Ok(relative_path.to_string_lossy().replace('\\', "/"))
+    let preview = build_candidate_preview(
+        &workspace_path,
+        build_external_candidate_preview_request(&candidate),
+    )?;
+    let result = commit_candidate_preview(app_state, &vault_root, &workspace_path, preview).await?;
+    Ok(result.target_relative_path)
 }
 
 pub async fn run_local_llm_wiki_lint(
@@ -554,21 +576,288 @@ fn build_external_candidate_relative_path(
         .join(filename)
 }
 
-fn build_external_candidate_markdown(candidate: &ExternalExperienceLlmWikiCandidate) -> String {
-    let canonical_payload = pretty_json_or_raw(&candidate.canonical_payload_json);
-    let provenance = pretty_json_or_raw(&candidate.provenance_json);
-    format!(
-        "---\nsource: external_experience_candidate\ncandidate_id: {}\ncandidate_kind: {}\n---\n\n# {}\n\n{}\n\n## Canonical Payload\n\n```json\n{}\n```\n\n## Provenance\n\n```json\n{}\n```\n",
-        escape_yaml_scalar(&candidate.candidate_id),
-        escape_yaml_scalar(&candidate.candidate_kind),
-        candidate.title.trim(),
-        candidate.summary.trim(),
-        canonical_payload,
-        provenance
-    )
+fn build_external_candidate_preview_request(
+    candidate: &ExternalExperienceLlmWikiCandidate,
+) -> PreviewLocalLlmWikiCandidateRequest {
+    PreviewLocalLlmWikiCandidateRequest {
+        source_kind: "external_experience".to_string(),
+        title: candidate.title.clone(),
+        content: candidate.summary.clone(),
+        summary: Some(candidate.summary.clone()),
+        target_relative_path: Some(
+            build_external_candidate_relative_path(candidate)
+                .to_string_lossy()
+                .replace('\\', "/"),
+        ),
+        source_references: vec![LocalLlmWikiCandidateSourceReference {
+            source_type: "external_experience_candidate".to_string(),
+            source_id: Some(candidate.candidate_id.clone()),
+            title: Some(candidate.title.clone()),
+            path: None,
+            metadata: Some(serde_json::json!({
+                "candidateKind": candidate.candidate_kind.clone(),
+            })),
+        }],
+        metadata: Some(serde_json::json!({
+            "candidateId": candidate.candidate_id.clone(),
+            "candidateKind": candidate.candidate_kind.clone(),
+            "canonicalPayloadJson": candidate.canonical_payload_json.clone(),
+            "provenanceJson": candidate.provenance_json.clone(),
+        })),
+    }
 }
 
-fn write_external_candidate_source_file(path: &Path, content: &str) -> Result<(), String> {
+fn build_candidate_preview(
+    workspace_path: &Path,
+    payload: PreviewLocalLlmWikiCandidateRequest,
+) -> Result<LocalLlmWikiCandidatePreview, String> {
+    let source_kind = normalize_candidate_source_kind(&payload.source_kind)?;
+    let suggested_title = payload.title.trim().to_string();
+    if suggested_title.is_empty() {
+        return Err("candidate title is required".to_string());
+    }
+
+    let target_relative_path = normalize_candidate_target_relative_path(
+        payload.target_relative_path.as_deref(),
+        source_kind.as_str(),
+        suggested_title.as_str(),
+    )?;
+    let target_path = workspace_path.join(&target_relative_path);
+    ensure_path_inside_workspace(workspace_path, &target_path)?;
+
+    let proposed_markdown = build_candidate_markdown(
+        source_kind.as_str(),
+        suggested_title.as_str(),
+        payload.summary.as_deref(),
+        payload.content.as_str(),
+        &payload.source_references,
+        payload.metadata.as_ref(),
+    )?;
+    let relative_path = target_relative_path.to_string_lossy().replace('\\', "/");
+    let change_kind = if target_path.exists() {
+        "update"
+    } else {
+        "create"
+    };
+    let validation_flags = build_candidate_validation_flags(
+        payload.content.as_str(),
+        &payload.source_references,
+        change_kind,
+    );
+
+    Ok(LocalLlmWikiCandidatePreview {
+        source_kind,
+        suggested_title,
+        target_relative_path: relative_path.clone(),
+        source_references: payload.source_references,
+        proposed_markdown,
+        changed_files: vec![LocalLlmWikiCandidateChangedFile {
+            relative_path,
+            change_kind: change_kind.to_string(),
+        }],
+        validation_flags,
+        memory_impact: LLM_WIKI_MEMORY_IMPACT_NONE.to_string(),
+        can_commit: true,
+    })
+}
+
+async fn commit_candidate_preview(
+    app_state: &AppState,
+    vault_root: &Path,
+    workspace_path: &Path,
+    preview: LocalLlmWikiCandidatePreview,
+) -> Result<CommitLocalLlmWikiCandidateResult, String> {
+    if !preview.can_commit {
+        return Err("llm wiki candidate preview is not committable".to_string());
+    }
+    if preview.memory_impact.trim() != LLM_WIKI_MEMORY_IMPACT_NONE {
+        return Err("llm wiki candidate commit cannot mutate memory".to_string());
+    }
+    let relative_path = normalize_candidate_relative_path_str(&preview.target_relative_path)?;
+    let target_path = workspace_path.join(&relative_path);
+    ensure_path_inside_workspace(workspace_path, &target_path)?;
+    let markdown = preview.proposed_markdown.clone();
+
+    tokio::task::spawn_blocking({
+        let target_path = target_path.clone();
+        move || write_candidate_file(&target_path, &markdown)
+    })
+    .await
+    .map_err(|err| format!("llm wiki candidate write task failed: {}", err))??;
+
+    let (indexed_files, removed_files, _) =
+        reconcile_corpus(app_state, vault_root, workspace_path).await?;
+    handle_corpus_reconcile_completed(app_state, indexed_files, removed_files).await?;
+    let state = get_local_llm_wiki_state(app_state.mcp.store.as_ref()).await?;
+    Ok(CommitLocalLlmWikiCandidateResult {
+        target_relative_path: relative_path.to_string_lossy().replace('\\', "/"),
+        changed_files: preview.changed_files,
+        state,
+    })
+}
+
+fn normalize_candidate_source_kind(raw: &str) -> Result<String, String> {
+    let value = raw.trim();
+    if value.is_empty() {
+        return Err("candidate source kind is required".to_string());
+    }
+    let normalized = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+                ch.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('_')
+        .to_string();
+    if normalized.is_empty() {
+        return Err("candidate source kind is invalid".to_string());
+    }
+    Ok(normalized)
+}
+
+fn normalize_candidate_target_relative_path(
+    raw: Option<&str>,
+    source_kind: &str,
+    title: &str,
+) -> Result<PathBuf, String> {
+    if let Some(value) = raw.map(str::trim).filter(|value| !value.is_empty()) {
+        return normalize_candidate_relative_path_str(value);
+    }
+    let slug = slugify(title);
+    let filename = if slug.is_empty() {
+        format!("candidate-{}.md", uuid::Uuid::new_v4())
+    } else {
+        format!("{}.md", slug)
+    };
+    let bucket = match source_kind {
+        "knowledge_file" => "sources",
+        "external_experience" => "sources/external",
+        "chat_answer" => "analyses",
+        _ => "analyses",
+    };
+    normalize_candidate_relative_path_str(&format!("wiki/{}/{}", bucket, filename))
+}
+
+fn normalize_candidate_relative_path_str(raw: &str) -> Result<PathBuf, String> {
+    let normalized = normalize_required_relative_path(raw)?;
+    let path = PathBuf::from(&normalized);
+    if path.extension().and_then(|value| value.to_str()) != Some("md") {
+        return Err("llm wiki candidate target must be a markdown file".to_string());
+    }
+    if !path.starts_with("wiki") {
+        return Err("llm wiki candidate target must be inside wiki/".to_string());
+    }
+    Ok(path)
+}
+
+fn ensure_path_inside_workspace(workspace_path: &Path, target_path: &Path) -> Result<(), String> {
+    if !target_path.starts_with(workspace_path) {
+        return Err("llm wiki candidate target cannot escape the workspace".to_string());
+    }
+    Ok(())
+}
+
+fn build_candidate_markdown(
+    source_kind: &str,
+    title: &str,
+    summary: Option<&str>,
+    content: &str,
+    source_references: &[LocalLlmWikiCandidateSourceReference],
+    metadata: Option<&serde_json::Value>,
+) -> Result<String, String> {
+    let now = now_rfc3339().map_err(|err| err.to_string())?;
+    let mut sections = vec![
+        "---".to_string(),
+        "source: llm_wiki_candidate".to_string(),
+        format!("source_kind: {}", escape_yaml_scalar(source_kind)),
+        format!("created_at: {}", escape_yaml_scalar(&now)),
+        "memory_impact: none".to_string(),
+        "---".to_string(),
+        String::new(),
+        format!("# {}", title.trim()),
+    ];
+
+    if let Some(summary) = summary.map(str::trim).filter(|value| !value.is_empty()) {
+        sections.extend([
+            String::new(),
+            "## Summary".to_string(),
+            String::new(),
+            summary.to_string(),
+        ]);
+    }
+
+    sections.extend([
+        String::new(),
+        "## Content".to_string(),
+        String::new(),
+        content.trim().to_string(),
+    ]);
+
+    if !source_references.is_empty() {
+        sections.extend([String::new(), "## Sources".to_string(), String::new()]);
+        for reference in source_references {
+            let label = reference
+                .title
+                .as_deref()
+                .or(reference.path.as_deref())
+                .or(reference.source_id.as_deref())
+                .unwrap_or(reference.source_type.as_str());
+            sections.push(format!("- {}: {}", reference.source_type, label.trim()));
+        }
+    }
+
+    if let Some(metadata) = metadata {
+        let raw = serde_json::to_string_pretty(metadata).map_err(|err| err.to_string())?;
+        sections.extend([
+            String::new(),
+            "## Metadata".to_string(),
+            String::new(),
+            "```json".to_string(),
+            raw,
+            "```".to_string(),
+        ]);
+    }
+
+    sections.push(String::new());
+    Ok(sections.join("\n"))
+}
+
+fn build_candidate_validation_flags(
+    content: &str,
+    source_references: &[LocalLlmWikiCandidateSourceReference],
+    change_kind: &str,
+) -> Vec<LocalLlmWikiCandidateValidationFlag> {
+    let mut flags = Vec::new();
+    if content.trim().len() < 120 {
+        flags.push(LocalLlmWikiCandidateValidationFlag {
+            code: "thin_content".to_string(),
+            severity: "warning".to_string(),
+            message: "Candidate content is short; consider keeping it as a draft analysis."
+                .to_string(),
+        });
+    }
+    if source_references.is_empty() {
+        flags.push(LocalLlmWikiCandidateValidationFlag {
+            code: "missing_sources".to_string(),
+            severity: "warning".to_string(),
+            message: "Candidate has no explicit source references.".to_string(),
+        });
+    }
+    if change_kind == "update" {
+        flags.push(LocalLlmWikiCandidateValidationFlag {
+            code: "updates_existing_page".to_string(),
+            severity: "info".to_string(),
+            message: "Candidate will update an existing wiki page.".to_string(),
+        });
+    }
+    flags
+}
+
+fn write_candidate_file(path: &Path, content: &str) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| format!("{} has no parent directory", path.display()))?;
@@ -576,12 +865,6 @@ fn write_external_candidate_source_file(path: &Path, content: &str) -> Result<()
         .map_err(|err| format!("failed to create {}: {}", parent.display(), err))?;
     fs::write(path, content.as_bytes())
         .map_err(|err| format!("failed to write {}: {}", path.display(), err))
-}
-
-fn pretty_json_or_raw(value: &str) -> String {
-    serde_json::from_str::<serde_json::Value>(value)
-        .and_then(|parsed| serde_json::to_string_pretty(&parsed))
-        .unwrap_or_else(|_| value.to_string())
 }
 
 fn escape_yaml_scalar(value: &str) -> String {
@@ -606,8 +889,15 @@ fn slugify(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::bootstrap_workspace_files;
+    use super::{
+        bootstrap_workspace_files, build_candidate_preview,
+        build_external_candidate_preview_request, normalize_candidate_relative_path_str,
+        ExternalExperienceLlmWikiCandidate,
+    };
     use crate::modules::llm_wiki::templates::BootstrapFile;
+    use crate::modules::llm_wiki::types::{
+        LocalLlmWikiCandidateSourceReference, PreviewLocalLlmWikiCandidateRequest,
+    };
     use std::fs;
     use std::path::PathBuf;
 
@@ -652,5 +942,71 @@ mod tests {
             fs::read_to_string(root.join("Home.md")).expect("read home"),
             "existing"
         );
+    }
+
+    #[test]
+    fn candidate_preview_defaults_chat_answers_to_analysis_pages_without_memory_impact() {
+        let root = temp_dir("candidate-preview");
+        let request = PreviewLocalLlmWikiCandidateRequest {
+            source_kind: "chat_answer".to_string(),
+            title: "LLM Wiki Product Boundary".to_string(),
+            content: "This answer is worth preserving because it explains the visible value loop and separates Local Knowledge, LLM Wiki, and Memory.".to_string(),
+            summary: Some("Visible value loop for LLM Wiki.".to_string()),
+            target_relative_path: None,
+            source_references: vec![LocalLlmWikiCandidateSourceReference {
+                source_type: "conversation_message".to_string(),
+                source_id: Some("message-1".to_string()),
+                title: Some("Current answer".to_string()),
+                path: None,
+                metadata: None,
+            }],
+            metadata: None,
+        };
+
+        let preview = build_candidate_preview(&root, request).expect("preview candidate");
+
+        assert_eq!(preview.source_kind, "chat_answer");
+        assert_eq!(
+            preview.target_relative_path,
+            "wiki/analyses/llm-wiki-product-boundary.md"
+        );
+        assert_eq!(preview.memory_impact, "none");
+        assert!(preview.proposed_markdown.contains("memory_impact: none"));
+    }
+
+    #[test]
+    fn candidate_relative_path_rejects_escape_and_non_markdown_targets() {
+        let escape = normalize_candidate_relative_path_str("wiki/../outside.md")
+            .expect_err("escape should fail");
+        assert!(escape.contains("cannot escape"));
+
+        let absolute = normalize_candidate_relative_path_str("C:/vault/wiki/page.md")
+            .expect_err("absolute path should fail");
+        assert!(absolute.contains("relative"));
+
+        let non_markdown = normalize_candidate_relative_path_str("wiki/analyses/page.txt")
+            .expect_err("non markdown should fail");
+        assert!(non_markdown.contains("markdown"));
+    }
+
+    #[test]
+    fn external_candidate_preview_keeps_existing_target_directory() {
+        let candidate = ExternalExperienceLlmWikiCandidate {
+            candidate_id: "candidate-123".to_string(),
+            candidate_kind: "practice".to_string(),
+            title: "Better Wiki Loop".to_string(),
+            summary: "Keep the user-visible loop short.".to_string(),
+            canonical_payload_json: "{}".to_string(),
+            provenance_json: "{}".to_string(),
+        };
+
+        let request = build_external_candidate_preview_request(&candidate);
+        let target = request.target_relative_path.expect("target path");
+
+        assert_eq!(
+            target,
+            "wiki/sources/external/better-wiki-loop-candidate-123.md"
+        );
+        assert_eq!(request.source_kind, "external_experience");
     }
 }

@@ -23,6 +23,7 @@ import { ScrollArea } from "@/ui/shadcn/scroll-area"
 import { StatusPill } from "@/ui/common/status-pill"
 import { Badge } from "@/ui/shadcn/badge"
 import { GlassButton } from "@/ui/common/glass-button"
+import { KnowledgeWikiCandidateDialog } from "./knowledge-wiki-candidate-dialog"
 import { cn } from "@/lib/utils"
 import type { KnowledgeFile, KnowledgeChunk } from "@/types/knowledge"
 
@@ -175,6 +176,11 @@ export function FileDetailDrawer({
           <div className="space-y-6 px-6 py-6">
             <section className="rounded-2xl border border-[var(--border)]/60 bg-[var(--surface)]/25 p-4">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <KnowledgeWikiCandidateDialog
+                  file={file}
+                  chunks={chunks}
+                  isChunksLoading={isChunksLoading}
+                />
                 <GlassButton
                   variant="secondary"
                   size="sm"
@@ -188,7 +194,7 @@ export function FileDetailDrawer({
                   variant="destructive"
                   size="sm"
                   onClick={onDelete}
-                  className="w-full justify-center"
+                  className="w-full justify-center sm:col-span-2"
                 >
                   <Trash2 className="mr-1 h-4 w-4" />
                   {t("actions.delete")}

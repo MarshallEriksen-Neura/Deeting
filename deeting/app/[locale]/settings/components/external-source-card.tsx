@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react"
 import {
   Activity,
+  CheckCircle2,
+  Circle,
+  CircleDashed,
+  XCircle,
   ChevronDown,
   ClipboardList,
   CloudDownload,
@@ -87,6 +91,115 @@ function statusTone(status: ExternalSourceRecord["status"]) {
   }
 }
 
+type TrustStepState = "done" | "current" | "blocked" | "error"
+
+function trustStepTone(state: TrustStepState) {
+  switch (state) {
+    case "done":
+      return "border-emerald-500/25 bg-emerald-500/8 text-emerald-700 dark:text-emerald-200"
+    case "current":
+      return "border-sky-500/25 bg-sky-500/8 text-sky-700 dark:text-sky-200"
+    case "error":
+      return "border-rose-500/25 bg-rose-500/8 text-rose-700 dark:text-rose-200"
+    default:
+      return "border-border/50 bg-muted/20 text-muted-foreground"
+  }
+}
+
+function TrustStepIcon({ state }: { state: TrustStepState }) {
+  if (state === "done") return <CheckCircle2 className="h-3.5 w-3.5" />
+  if (state === "error") return <XCircle className="h-3.5 w-3.5" />
+  if (state === "current") return <CircleDashed className="h-3.5 w-3.5" />
+  return <Circle className="h-3.5 w-3.5" />
+}
+
+function candidateReviewStepState(candidate: ExternalExperienceCandidate): TrustStepState {
+  if (candidate.review_status === "rejected") return "error"
+  if (candidate.review_status === "approved" || candidate.review_status === "accepted") return "done"
+  return "current"
+}
+
+function candidateWikiStepState(candidate: ExternalExperienceCandidate): TrustStepState {
+  if (candidate.accepted_ref || candidate.review_status === "accepted") return "done"
+  if (candidate.review_status === "approved") return "current"
+  if (candidate.review_status === "rejected") return "blocked"
+  return "blocked"
+}
+
+function candidateMemoryStepState(candidate: ExternalExperienceCandidate): TrustStepState {
+  if (candidate.adoption_error) return "error"
+  if (candidate.adopted_memory_id || candidate.adoption_status === "adopted") return "done"
+  if (candidate.accepted_ref || candidate.review_status === "accepted") return "current"
+  return "blocked"
+}
+
+function ExternalCandidateTrustChain({
+  candidate,
+  t,
+}: {
+  candidate: ExternalExperienceCandidate
+  t: ReturnType<typeof useI18n>
+}) {
+  const steps = [
+    {
+      key: "rawImported",
+      label: t("ecosystem.candidates.trustChain.rawImported"),
+      detail: t("ecosystem.candidates.trustChain.rawImportedDetail"),
+      state: "done" as TrustStepState,
+    },
+    {
+      key: "translatedCandidate",
+      label: t("ecosystem.candidates.trustChain.translatedCandidate"),
+      detail: t("ecosystem.candidates.trustChain.translatedCandidateDetail", {
+        confidence: Math.round(candidate.confidence * 100),
+      }),
+      state: "done" as TrustStepState,
+    },
+    {
+      key: "review",
+      label: t("ecosystem.candidates.trustChain.review"),
+      detail: t("ecosystem.candidates.trustChain.reviewDetail", {
+        status: candidate.review_status,
+      }),
+      state: candidateReviewStepState(candidate),
+    },
+    {
+      key: "llmWiki",
+      label: t("ecosystem.candidates.trustChain.llmWiki"),
+      detail: candidate.accepted_ref
+        ? t("ecosystem.candidates.trustChain.llmWikiDetail", { ref: candidate.accepted_ref })
+        : t("ecosystem.candidates.trustChain.llmWikiPending"),
+      state: candidateWikiStepState(candidate),
+    },
+    {
+      key: "memory",
+      label: t("ecosystem.candidates.trustChain.memory"),
+      detail: candidate.adopted_memory_id
+        ? t("ecosystem.candidates.trustChain.memoryDetail", { id: candidate.adopted_memory_id })
+        : candidate.adoption_error
+          ? candidate.adoption_error
+          : t("ecosystem.candidates.trustChain.memoryPending"),
+      state: candidateMemoryStepState(candidate),
+    },
+  ]
+
+  return (
+    <div className="mt-4 grid gap-2 sm:grid-cols-5">
+      {steps.map((step) => (
+        <div
+          key={step.key}
+          className={cn("rounded-xl border px-3 py-2", trustStepTone(step.state))}
+        >
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold">
+            <TrustStepIcon state={step.state} />
+            <span className="truncate">{step.label}</span>
+          </div>
+          <p className="mt-1 line-clamp-2 text-[10px] leading-4 opacity-80">{step.detail}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
 function formatObservedAt(value: number): string {
   try {
     return new Intl.DateTimeFormat(undefined, {
@@ -323,9 +436,13 @@ export function ExternalSourceCard({
   async function handleCandidateAccept(candidate: ExternalExperienceCandidate) {
     setIsCandidateActionRunning(true)
     try {
-      await acceptExternalExperienceCandidate(candidate.id, "llm_wiki")
+      const result = await acceptExternalExperienceCandidate(candidate.id, "llm_wiki")
       await refreshRecords()
-      toast.success(t("ecosystem.toast.candidateAccepted"))
+      toast.success(
+        t("ecosystem.toast.candidateAcceptedWithRef", {
+          ref: result.accepted_ref,
+        })
+      )
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : t("ecosystem.toast.candidateActionFailed")
@@ -918,6 +1035,7 @@ export function ExternalSourceCard({
                               <p className="mt-3 text-xs leading-5 text-muted-foreground">
                                 {candidate.summary}
                               </p>
+                              <ExternalCandidateTrustChain candidate={candidate} t={t} />
                               <div className="mt-4 flex flex-wrap gap-2">
                                 <Button
                                   type="button"
@@ -964,20 +1082,20 @@ export function ExternalSourceCard({
                                 </Button>
                               </div>
                               {candidate.accepted_ref ? (
-                                <p className="mt-3 break-all text-xs text-muted-foreground">
+                                <p className="mt-3 break-all rounded-xl border border-emerald-500/20 bg-emerald-500/8 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-200">
                                   {t("ecosystem.candidates.acceptedRef", {
                                     ref: candidate.accepted_ref,
                                   })}
                                 </p>
                               ) : null}
                               {candidate.adopted_memory_id ? (
-                                <p className="mt-2 break-all text-xs text-muted-foreground">
+                                <p className="mt-2 break-all rounded-xl border border-sky-500/20 bg-sky-500/8 px-3 py-2 text-xs text-sky-700 dark:text-sky-200">
                                   {t("ecosystem.candidates.adoptedMemory", {
                                     id: candidate.adopted_memory_id,
                                   })}
                                 </p>
                               ) : candidate.adoption_error ? (
-                                <p className="mt-2 break-all text-xs text-rose-600 dark:text-rose-400">
+                                <p className="mt-2 break-all rounded-xl border border-rose-500/20 bg-rose-500/8 px-3 py-2 text-xs text-rose-700 dark:text-rose-200">
                                   {candidate.adoption_error}
                                 </p>
                               ) : null}

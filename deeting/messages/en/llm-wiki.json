@@ -8,7 +8,7 @@
     "hero": {
       "eyebrow": "Local knowledge workspace",
       "title": "Turn your Obsidian vault into a maintained LLM Wiki.",
-      "description": "Deeting reads your vault locally, creates a bounded managed workspace, and keeps it synchronized through retrieval, delegated maintenance, and long-term knowledge growth.",
+      "description": "LLM Wiki is now the maintenance console for artifacts created from chat answers, Local Knowledge files, and reviewed external experience. Day-to-day creation starts in those work surfaces; this page keeps the queue, corpus, lint, and maintainer agent visible.",
       "readScope": "Reads the whole vault locally",
       "writeScope": "Writes only to the managed workspace",
       "agentFlow": "Delegates maintenance to task agents",
@@ -161,6 +161,39 @@
         "title": "Recent Lifecycle Actions",
         "description": "Latest visible maintenance, automation, and crystallization actions.",
         "empty": "No lifecycle actions have been recorded yet."
+      },
+      "console": {
+        "title": "Maintenance console, not the primary capture surface",
+        "description": "Daily Wiki entries are created from useful chat answers, Local Knowledge file details, and reviewed external candidates. Use this console to inspect the queue, recent artifacts, lint findings, and maintenance reminders.",
+        "queue": "Queued / pending",
+        "failed": "Failed writes",
+        "suggestions": "Open suggestions",
+        "dailySources": {
+          "title": "Where new Wiki pages come from",
+          "chat": {
+            "title": "Chat answers",
+            "description": "Use Save to LLM Wiki on a completed answer to preview title, path, evidence, markdown, and Memory impact before writing."
+          },
+          "knowledge": {
+            "title": "Local Knowledge files",
+            "description": "Open an indexed file and create a Wiki source summary from the file detail drawer when the source is ready."
+          }
+        },
+        "recentArtifacts": {
+          "title": "Recent artifacts",
+          "sourcePage": "Source page",
+          "rawCopy": "Raw source copy",
+          "empty": "No recent artifact is available in this session yet. Create one from chat or Local Knowledge, then return here to inspect maintenance state."
+        },
+        "lint": {
+          "title": "Lint status",
+          "summary": "{count} finding(s) in the latest lint run at {generatedAt}.",
+          "empty": "Run lint to inspect stale summaries, weak links, duplicate titles, and orphan pages."
+        },
+        "audit": {
+          "title": "Latest automation activity",
+          "empty": "No automation activity has been recorded yet."
+        }
       }
     },
     "workspace": {

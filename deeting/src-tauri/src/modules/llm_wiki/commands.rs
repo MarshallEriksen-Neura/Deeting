@@ -3,21 +3,24 @@ use tauri::State;
 use crate::state::AppState;
 
 use super::service::{
-    bootstrap_local_llm_wiki_workspace, confirm_local_llm_wiki_adoption,
-    create_or_update_local_llm_wiki_maintainer_agent, dismiss_local_llm_wiki_automation_suggestion,
-    execute_local_llm_wiki_automation_suggestion, get_local_llm_wiki_state,
-    ingest_local_llm_wiki_selection, preview_local_llm_wiki_adoption,
-    reconcile_local_llm_wiki_corpus, run_local_llm_wiki_lint, save_local_llm_wiki_binding,
-    search_local_llm_wiki_corpus, update_local_llm_wiki_automation_settings,
+    bootstrap_local_llm_wiki_workspace, commit_local_llm_wiki_candidate,
+    confirm_local_llm_wiki_adoption, create_or_update_local_llm_wiki_maintainer_agent,
+    dismiss_local_llm_wiki_automation_suggestion, execute_local_llm_wiki_automation_suggestion,
+    get_local_llm_wiki_state, ingest_local_llm_wiki_selection, preview_local_llm_wiki_adoption,
+    preview_local_llm_wiki_candidate, reconcile_local_llm_wiki_corpus, run_local_llm_wiki_lint,
+    save_local_llm_wiki_binding, search_local_llm_wiki_corpus,
+    update_local_llm_wiki_automation_settings,
 };
 use super::types::{
-    BootstrapLocalLlmWikiWorkspaceResult, ConfirmLocalLlmWikiAdoptionRequest,
+    BootstrapLocalLlmWikiWorkspaceResult, CommitLocalLlmWikiCandidateRequest,
+    CommitLocalLlmWikiCandidateResult, ConfirmLocalLlmWikiAdoptionRequest,
     CreateOrUpdateLocalLlmWikiMaintainerAgentResult, IngestLocalLlmWikiSelectionRequest,
     IngestLocalLlmWikiSelectionResult, LocalLlmWikiAdoptionPreview,
-    LocalLlmWikiAutomationExecutionResult, LocalLlmWikiLintReport, LocalLlmWikiState,
-    PreviewLocalLlmWikiAdoptionRequest, ReconcileLocalLlmWikiCorpusResult,
-    SaveLocalLlmWikiBindingRequest, SearchLocalLlmWikiCorpusRequest,
-    SearchLocalLlmWikiCorpusResult, UpdateLocalLlmWikiAutomationSettingsRequest,
+    LocalLlmWikiAutomationExecutionResult, LocalLlmWikiCandidatePreview, LocalLlmWikiLintReport,
+    LocalLlmWikiState, PreviewLocalLlmWikiAdoptionRequest, PreviewLocalLlmWikiCandidateRequest,
+    ReconcileLocalLlmWikiCorpusResult, SaveLocalLlmWikiBindingRequest,
+    SearchLocalLlmWikiCorpusRequest, SearchLocalLlmWikiCorpusResult,
+    UpdateLocalLlmWikiAutomationSettingsRequest,
 };
 
 #[tauri::command]
@@ -62,6 +65,22 @@ pub async fn search_local_llm_wiki_corpus_command(
     payload: SearchLocalLlmWikiCorpusRequest,
 ) -> Result<SearchLocalLlmWikiCorpusResult, String> {
     search_local_llm_wiki_corpus(state.inner(), payload).await
+}
+
+#[tauri::command]
+pub async fn preview_local_llm_wiki_candidate_command(
+    state: State<'_, AppState>,
+    payload: PreviewLocalLlmWikiCandidateRequest,
+) -> Result<LocalLlmWikiCandidatePreview, String> {
+    preview_local_llm_wiki_candidate(state.inner(), payload).await
+}
+
+#[tauri::command]
+pub async fn commit_local_llm_wiki_candidate_command(
+    state: State<'_, AppState>,
+    payload: CommitLocalLlmWikiCandidateRequest,
+) -> Result<CommitLocalLlmWikiCandidateResult, String> {
+    commit_local_llm_wiki_candidate(state.inner(), payload).await
 }
 
 #[tauri::command]
