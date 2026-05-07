@@ -132,7 +132,7 @@ export function TerminalPanel({ isCollapsed }: TerminalPanelProps) {
         </div>
       ) : null}
       <div
-        className="min-h-0 flex-1 overflow-hidden"
+        className="min-h-0 flex-1 overflow-hidden pl-3"
         onContextMenu={handleContextMenu}
       >
         <div ref={setContainerElement} className="h-full w-full" />
