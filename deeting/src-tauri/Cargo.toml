@@ -1,6 +1,6 @@
 [package]
 name = "deeting"
-version = "0.1.2-0"
+version = "0.1.2-1"
 description = "Deeting - AI-powered meeting assistant"
 authors = ["Deeting Team"]
 license = "MIT"
