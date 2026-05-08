@@ -3,7 +3,6 @@
 import * as React from "react"
 import { Bot, ShieldCheck } from "lucide-react"
 import { Input } from "@/ui/shadcn/input"
-import { Textarea } from "@/ui/shadcn/textarea"
 import { Label } from "@/ui/shadcn/label"
 import { GlassButton } from "@/ui/common/glass-button"
 import { toast } from "sonner"
@@ -58,8 +57,6 @@ export function AgentSettingsCard({
   const t = useI18n("settings")
   const [maxRounds, setMaxRounds] = React.useState<string>(String(DEFAULT_MAX_ROUNDS))
   const [savedValue, setSavedValue] = React.useState<string>(String(DEFAULT_MAX_ROUNDS))
-  const [personaPrompt, setPersonaPrompt] = React.useState("")
-  const [savedPersonaPrompt, setSavedPersonaPrompt] = React.useState("")
   const [chatHistoryRetentionDays, setChatHistoryRetentionDays] = React.useState(
     DEFAULT_CHAT_HISTORY_RETENTION_DAYS
   )
@@ -77,18 +74,14 @@ export function AgentSettingsCard({
     let cancelled = false
     Promise.all([
       getDesktopConfig(DESKTOP_CONFIG_KEYS.maxAgenticRounds),
-      getDesktopConfig(DESKTOP_CONFIG_KEYS.personaPrompt),
       getDesktopConfig(DESKTOP_CONFIG_KEYS.chatHistoryRetentionDays),
       getDesktopConfig(DESKTOP_CONFIG_KEYS.approvalPolicyLevel),
     ])
-      .then(([value, personaValue, retentionValue, approvalPolicyValue]) => {
+      .then(([value, retentionValue, approvalPolicyValue]) => {
         if (cancelled) return
         const parsed = value ? String(parseInt(value, 10) || DEFAULT_MAX_ROUNDS) : String(DEFAULT_MAX_ROUNDS)
         setMaxRounds(parsed)
         setSavedValue(parsed)
-        const nextPersonaPrompt = personaValue?.trim() ?? ""
-        setPersonaPrompt(nextPersonaPrompt)
-        setSavedPersonaPrompt(nextPersonaPrompt)
         const nextChatHistoryRetentionDays =
           normalizeChatHistoryRetentionDays(retentionValue)
         setChatHistoryRetentionDays(nextChatHistoryRetentionDays)
@@ -109,7 +102,6 @@ export function AgentSettingsCard({
 
   const hasChanges =
     maxRounds !== savedValue ||
-    personaPrompt !== savedPersonaPrompt ||
     chatHistoryRetentionDays !== savedChatHistoryRetentionDays ||
     approvalPolicyLevel !== savedApprovalPolicyLevel
 
@@ -127,7 +119,6 @@ export function AgentSettingsCard({
         normalizeDesktopApprovalPolicyLevel(approvalPolicyLevel)
       await Promise.all([
         setDesktopConfig(DESKTOP_CONFIG_KEYS.maxAgenticRounds, String(parsed)),
-        setDesktopConfig(DESKTOP_CONFIG_KEYS.personaPrompt, personaPrompt.trim()),
         setDesktopConfig(
           DESKTOP_CONFIG_KEYS.chatHistoryRetentionDays,
           normalizedChatHistoryRetentionDays
@@ -139,8 +130,6 @@ export function AgentSettingsCard({
       ])
       setSavedValue(String(parsed))
       setMaxRounds(String(parsed))
-      setSavedPersonaPrompt(personaPrompt.trim())
-      setPersonaPrompt(personaPrompt.trim())
       setSavedChatHistoryRetentionDays(normalizedChatHistoryRetentionDays)
       setChatHistoryRetentionDays(normalizedChatHistoryRetentionDays)
       setSavedApprovalPolicyLevel(normalizedApprovalPolicyLevel)
@@ -219,23 +208,6 @@ export function AgentSettingsCard({
           </div>
           <p className="text-xs text-muted-foreground">
             {t("agent.maxRoundsHelp")}
-          </p>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="desktop-persona-prompt" className="text-xs font-medium">
-            {t("agent.personaPromptLabel")}
-          </Label>
-          <Textarea
-            id="desktop-persona-prompt"
-            value={personaPrompt}
-            onChange={(event) => setPersonaPrompt(event.target.value)}
-            disabled={isLoading || isSaving}
-            placeholder={t("agent.personaPromptPlaceholder")}
-            className="min-h-32 rounded-xl"
-          />
-          <p className="text-xs text-muted-foreground">
-            {t("agent.personaPromptHelp")}
           </p>
         </div>
 

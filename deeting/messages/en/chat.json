@@ -319,6 +319,22 @@
     "hud": {
       "activeAgent": "Active Agent",
       "sessionTitle": "Deeting OS",
+      "personaPrompt": {
+        "trigger": "Configure fixed persona prompt",
+        "button": "Persona",
+        "title": "Fixed persona prompt",
+        "description": "This prompt becomes the fixed reply personality for desktop chat.",
+        "placeholder": "Example: Speak calmly and directly. Keep explanations practical. Do not role-play as another expert unless capability hints require domain depth.",
+        "help": "Expert routing may attach capabilities, but it will not overwrite this style or identity.",
+        "cancel": "Cancel",
+        "save": "Save",
+        "saving": "Saving...",
+        "toast": {
+          "loadFailed": "Failed to load the fixed persona prompt.",
+          "saveSuccess": "Fixed persona prompt saved.",
+          "saveFailed": "Failed to save the fixed persona prompt."
+        }
+      },
       "selectAgent": "Select Agent",
       "market": "Market",
       "newAgent": "New",

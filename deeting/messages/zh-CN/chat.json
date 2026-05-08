@@ -426,6 +426,22 @@
     "hud": {
       "activeAgent": "当前助手",
       "sessionTitle": "Deeting OS",
+      "personaPrompt": {
+        "trigger": "配置固定人格 Prompt",
+        "button": "人格",
+        "title": "固定人格 Prompt",
+        "description": "这段 Prompt 会成为桌面聊天的固定回复人格。",
+        "placeholder": "例如：请始终用冷静、直接、实用的方式回答。除非能力提示要求领域深度，否则不要切换成另一个专家的人格。",
+        "help": "专家路由只能附加能力，不能覆盖这里定义的风格和身份。",
+        "cancel": "取消",
+        "save": "保存",
+        "saving": "保存中...",
+        "toast": {
+          "loadFailed": "加载固定人格 Prompt 失败。",
+          "saveSuccess": "固定人格 Prompt 已保存。",
+          "saveFailed": "保存固定人格 Prompt 失败。"
+        }
+      },
       "selectAgent": "选择助手",
       "market": "市场",
       "newAgent": "新建",

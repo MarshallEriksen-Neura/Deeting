@@ -1,10 +1,10 @@
 'use client';
 
-import { ChevronDown, LogOut } from 'lucide-react';
+import { ChevronDown, FilePenLine, Loader2, LogOut } from 'lucide-react';
 import { Button } from '@/ui/shadcn/button';
 import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useTheme } from 'next-themes';
+import { toast } from 'sonner';
 import { useChatStore } from '@/store/chat-store';
 import { useChatRuntimeStore } from '@/store/chat-runtime-store';
 import { useShallow } from 'zustand/react/shallow';
@@ -13,7 +13,18 @@ import { useI18n } from '@/hooks/use-i18n';
 import { resolveChatModelSelectionValue } from '@/lib/api/models';
 import { resolveModelVisual, type ModelPickerModel } from '@/components/models/model-visual';
 import { resolveStatusDetail } from '@/lib/chat/status-detail';
+import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
+import { DESKTOP_CONFIG_KEYS, getDesktopConfig, setDesktopConfig } from '@/lib/api/desktop-config';
 import { StatusPill } from '@/ui/common/status-pill';
+import { Textarea } from '@/ui/shadcn/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/ui/shadcn/dialog';
 import {
   DeferredHistorySidebar,
   DeferredHudControlCenterPanel,
@@ -37,8 +48,13 @@ import {
 export default function HUD() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isControlCenterOpen, setIsControlCenterOpen] = useState(false);
+  const [isPersonaDialogOpen, setIsPersonaDialogOpen] = useState(false);
+  const [personaPrompt, setPersonaPrompt] = useState('');
+  const [savedPersonaPrompt, setSavedPersonaPrompt] = useState('');
+  const [isPersonaLoading, setIsPersonaLoading] = useState(false);
+  const [isPersonaSaving, setIsPersonaSaving] = useState(false);
   const t = useI18n('chat');
-  const { setTheme, theme } = useTheme();
+  const isTauriRuntime = detectTauriRuntime();
   
   const { config, setConfig, models, setModels } = useChatStore(
     useShallow((state) => ({
@@ -133,9 +149,48 @@ export default function HUD() {
     setIsHistoryOpen(false);
   }, []);
 
-  const handleThemeToggle = useCallback(() => {
-    setTheme(theme === 'dark' ? 'light' : 'dark');
-  }, [setTheme, theme]);
+  const handleOpenPersonaDialog = useCallback(async () => {
+    if (!isTauriRuntime || isPersonaLoading) return;
+
+    setIsPersonaDialogOpen(true);
+    setIsPersonaLoading(true);
+
+    try {
+      const currentValue = (await getDesktopConfig(DESKTOP_CONFIG_KEYS.personaPrompt))?.trim() ?? '';
+      setPersonaPrompt(currentValue);
+      setSavedPersonaPrompt(currentValue);
+    } catch (error) {
+      console.warn('load_persona_prompt_failed', error);
+      toast.error(t('hud.personaPrompt.toast.loadFailed'));
+    } finally {
+      setIsPersonaLoading(false);
+    }
+  }, [isPersonaLoading, isTauriRuntime, t]);
+
+  const handlePersonaDialogOpenChange = useCallback((open: boolean) => {
+    if (!open && isPersonaSaving) return;
+    setIsPersonaDialogOpen(open);
+  }, [isPersonaSaving]);
+
+  const handleSavePersonaPrompt = useCallback(async () => {
+    if (!isTauriRuntime) return;
+
+    const nextValue = personaPrompt.trim();
+    setIsPersonaSaving(true);
+
+    try {
+      await setDesktopConfig(DESKTOP_CONFIG_KEYS.personaPrompt, nextValue);
+      setPersonaPrompt(nextValue);
+      setSavedPersonaPrompt(nextValue);
+      setIsPersonaDialogOpen(false);
+      toast.success(t('hud.personaPrompt.toast.saveSuccess'));
+    } catch (error) {
+      console.warn('save_persona_prompt_failed', error);
+      toast.error(t('hud.personaPrompt.toast.saveFailed'));
+    } finally {
+      setIsPersonaSaving(false);
+    }
+  }, [isTauriRuntime, personaPrompt, t]);
 
   const handleModelChange = useCallback((value: string) => {
     setConfig({ model: value });
@@ -144,6 +199,8 @@ export default function HUD() {
   const handleExitToHome = useCallback(() => {
     window.location.assign('/');
   }, []);
+
+  const personaPromptDirty = personaPrompt.trim() !== savedPersonaPrompt;
 
   return (
     <>
@@ -178,14 +235,37 @@ export default function HUD() {
           <span className="text-slate-200 dark:text-white/10 text-xs self-center h-4 w-px bg-current"></span>
 
           {/* Session Title (Center) */}
-          <div 
-             onClick={handleOpenHistory}
-             className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-white/60 dark:bg-white/5 text-slate-700/90 dark:text-white/70 hover:text-slate-900 dark:hover:text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] transition-colors cursor-pointer group/session"
-          >
-             <span className="text-[11px] font-medium truncate max-w-[120px]">{t("hud.sessionTitle")}</span>
-             <div className="w-5 h-5 rounded-full bg-white/70 dark:bg-white/10 flex items-center justify-center shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] group-hover/session:bg-white/90 dark:group-hover/session:bg-white/15 transition-colors">
-                <ChevronDown className="w-3 h-3 text-slate-400 dark:text-white/40 transition-transform group-hover/session:rotate-180" />
-             </div>
+          <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-full bg-white/60 dark:bg-white/5 text-slate-700/90 dark:text-white/70 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] transition-colors group/session">
+             <button
+               type="button"
+               onClick={handleOpenHistory}
+               className="flex items-center gap-2 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors hover:text-slate-900 dark:hover:text-white"
+               aria-label={t("history.title")}
+             >
+               <span className="truncate max-w-[120px]">{t("hud.sessionTitle")}</span>
+             </button>
+             <button
+               type="button"
+               onClick={handleOpenHistory}
+               className="flex h-5 w-5 items-center justify-center rounded-full bg-white/70 dark:bg-white/10 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] transition-colors group-hover/session:bg-white/90 dark:group-hover/session:bg-white/15"
+               aria-label={t("history.title")}
+             >
+               <ChevronDown className="w-3 h-3 text-slate-400 dark:text-white/40 transition-transform group-hover/session:rotate-180" />
+             </button>
+             {isTauriRuntime ? (
+               <button
+                 type="button"
+                 onClick={() => {
+                   void handleOpenPersonaDialog();
+                 }}
+                 className="flex items-center gap-1 rounded-full bg-white/70 px-2 py-1 text-[10px] font-medium text-slate-600 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)] transition-colors hover:bg-white/90 hover:text-slate-900 dark:bg-white/10 dark:text-white/60 dark:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] dark:hover:bg-white/15 dark:hover:text-white"
+                 aria-label={t("hud.personaPrompt.trigger")}
+                 title={t("hud.personaPrompt.trigger")}
+               >
+                 <FilePenLine className="h-3 w-3" />
+                 <span>{t("hud.personaPrompt.button")}</span>
+               </button>
+             ) : null}
              {isLoading && statusDetail ? (
                <StatusPill text={statusDetail} className="ml-1 max-w-[160px]" tone="subtle" isLoading />
              ) : null}
@@ -235,7 +315,56 @@ export default function HUD() {
         )}
       </AnimatePresence>
     </nav>
-    
+
+    <Dialog open={isPersonaDialogOpen} onOpenChange={handlePersonaDialogOpenChange}>
+      <DialogContent className="sm:max-w-lg bg-white/80 dark:bg-gray-900/90 backdrop-blur-2xl border-white/20 dark:border-white/10">
+        <DialogHeader>
+          <DialogTitle>{t('hud.personaPrompt.title')}</DialogTitle>
+          <DialogDescription>{t('hud.personaPrompt.description')}</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <Textarea
+            value={personaPrompt}
+            onChange={(event) => setPersonaPrompt(event.target.value)}
+            disabled={isPersonaLoading || isPersonaSaving}
+            placeholder={t('hud.personaPrompt.placeholder')}
+            className="min-h-40 rounded-2xl border-border/60 bg-background/80"
+          />
+          <p className="text-xs text-muted-foreground">
+            {t('hud.personaPrompt.help')}
+          </p>
+        </div>
+
+        <DialogFooter className="gap-2 sm:gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => setIsPersonaDialogOpen(false)}
+            disabled={isPersonaSaving}
+          >
+            {t('hud.personaPrompt.cancel')}
+          </Button>
+          <Button
+            type="button"
+            onClick={() => {
+              void handleSavePersonaPrompt();
+            }}
+            disabled={isPersonaLoading || isPersonaSaving || !personaPromptDirty}
+          >
+            {isPersonaSaving ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                {t('hud.personaPrompt.saving')}
+              </>
+            ) : (
+              t('hud.personaPrompt.save')
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
     <DeferredHistorySidebar isOpen={isHistoryOpen} onClose={handleCloseHistory} />
     </>
   );
