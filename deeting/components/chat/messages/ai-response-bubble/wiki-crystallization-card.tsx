@@ -17,11 +17,9 @@ import {
 import { ScrollArea } from "@/ui/shadcn/scroll-area"
 import { Separator } from "@/ui/shadcn/separator"
 import { useI18n } from "@/hooks/use-i18n"
+import { useLlmWikiCandidatePreview } from "@/hooks/use-llm-wiki-candidate-preview"
 import {
   commitLocalLlmWikiCandidate,
-  previewLocalLlmWikiCandidate,
-  supportsLocalLlmWiki,
-  type LocalLlmWikiCandidatePreview,
 } from "@/lib/api/llm-wiki"
 import { cn } from "@/lib/utils"
 import { useChatStore, type Message } from "@/store/chat-store"
@@ -103,11 +101,8 @@ export function WikiCrystallizationCard({
 }: WikiCrystallizationCardProps) {
   const t = useI18n("chat")
   const sessionId = useChatStore((state) => state.sessionId)
-  const [preview, setPreview] = React.useState<LocalLlmWikiCandidatePreview | null>(null)
   const [receipt, setReceipt] = React.useState<WikiReceipt | null>(null)
-  const [isPreviewing, setIsPreviewing] = React.useState(false)
   const [isCommitting, setIsCommitting] = React.useState(false)
-  const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
 
   const candidatePayload = React.useMemo(() => {
     const title = deriveCandidateTitle(content)
@@ -131,40 +126,20 @@ export function WikiCrystallizationCard({
     }
   }, [content, message, sessionId, t])
 
-  React.useEffect(() => {
-    if (!open || preview || isPreviewing) return
-    let cancelled = false
-    async function loadPreview() {
-      if (!supportsLocalLlmWiki()) {
-        const message = t("wikiCrystallization.toast.desktopOnly")
-        setErrorMessage(message)
-        toast.error(message)
-        return
-      }
-      if (!candidatePayload.content) {
-        setErrorMessage(t("wikiCrystallization.empty"))
-        return
-      }
-      setIsPreviewing(true)
-      setErrorMessage(null)
-      try {
-        const nextPreview = await previewLocalLlmWikiCandidate(candidatePayload)
-        if (!cancelled) setPreview(nextPreview)
-      } catch (error) {
-        const message = error instanceof Error ? error.message : t("wikiCrystallization.toast.previewFailed")
-        if (!cancelled) {
-          setErrorMessage(message)
-          toast.error(message)
-        }
-      } finally {
-        if (!cancelled) setIsPreviewing(false)
-      }
-    }
-    void loadPreview()
-    return () => {
-      cancelled = true
-    }
-  }, [candidatePayload, isPreviewing, open, preview, t])
+  const {
+    preview,
+    isPreviewing,
+    errorMessage,
+    setErrorMessage,
+    resetPreview,
+  } = useLlmWikiCandidatePreview({
+    open,
+    canPreview: Boolean(candidatePayload.content),
+    payload: candidatePayload,
+    desktopOnlyMessage: t("wikiCrystallization.toast.desktopOnly"),
+    unavailableMessage: t("wikiCrystallization.empty"),
+    previewFailedMessage: t("wikiCrystallization.toast.previewFailed"),
+  })
 
   const handleOpenChange = React.useCallback(
     (nextOpen: boolean) => {
@@ -177,10 +152,9 @@ export function WikiCrystallizationCard({
   )
 
   const handleRetryPreview = React.useCallback(() => {
-    setPreview(null)
-    setErrorMessage(null)
+    resetPreview()
     onOpenChange(true)
-  }, [onOpenChange])
+  }, [onOpenChange, resetPreview])
 
   const handleCommit = React.useCallback(async () => {
     if (!preview || disabled || isCommitting) return

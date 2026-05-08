@@ -3,12 +3,6 @@
 import { memo, useState, useMemo } from "react";
 import { AlertTriangle, Brain, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/ui/shadcn/collapsible";
 import { MarkdownViewer } from "@/components/chat/markdown-viewer";
 import { useTypewriter } from "@/hooks/chat/use-typewriter";
 import { useI18n } from "@/hooks/use-i18n";
@@ -17,15 +11,21 @@ import { cn } from "@/lib/utils";
 export const TypingTextBlock = memo<{
   content: string;
   typingEnabled: boolean;
+  isStreaming?: boolean;
   messageId?: string;
   enableRunnableFences?: boolean;
 }>(function TypingTextBlock({
   content,
   typingEnabled,
+  isStreaming = false,
   messageId,
   enableRunnableFences = false,
 }) {
-  const { displayed } = useTypewriter(content ?? "", typingEnabled);
+  const { displayed } = useTypewriter(content ?? "", {
+    enabled: typingEnabled,
+    mode: isStreaming ? "streaming" : "settling",
+    sourceKey: messageId ?? "__assistant_text__",
+  });
 
   return (
     <MarkdownViewer
@@ -114,7 +114,7 @@ export const ErrorMessageBlock = memo<{ message?: string | object }>(
       if (typeof message === "object" && message !== null) {
         try {
           return JSON.stringify(message, null, 2);
-        } catch (e) {
+        } catch {
           return String(message);
         }
       }

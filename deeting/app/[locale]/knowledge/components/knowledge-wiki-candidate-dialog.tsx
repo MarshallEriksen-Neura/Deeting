@@ -17,11 +17,9 @@ import {
 import { ScrollArea } from "@/ui/shadcn/scroll-area"
 import { Separator } from "@/ui/shadcn/separator"
 import { useI18n } from "@/hooks/use-i18n"
+import { useLlmWikiCandidatePreview } from "@/hooks/use-llm-wiki-candidate-preview"
 import {
   commitLocalLlmWikiCandidate,
-  previewLocalLlmWikiCandidate,
-  supportsLocalLlmWiki,
-  type LocalLlmWikiCandidatePreview,
 } from "@/lib/api/llm-wiki"
 import type { KnowledgeChunk, KnowledgeFile } from "@/types/knowledge"
 
@@ -91,11 +89,8 @@ export function KnowledgeWikiCandidateDialog({
 }: KnowledgeWikiCandidateDialogProps) {
   const t = useI18n("knowledge")
   const [open, setOpen] = React.useState(false)
-  const [preview, setPreview] = React.useState<LocalLlmWikiCandidatePreview | null>(null)
   const [receipt, setReceipt] = React.useState<KnowledgeWikiReceipt | null>(null)
-  const [isPreviewing, setIsPreviewing] = React.useState(false)
   const [isCommitting, setIsCommitting] = React.useState(false)
-  const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
 
   const canCreate = file.status === "active" && chunks.length > 0 && !disabled && !isChunksLoading
 
@@ -130,40 +125,20 @@ export function KnowledgeWikiCandidateDialog({
     }
   }, [chunks, file, t])
 
-  React.useEffect(() => {
-    if (!open || preview || isPreviewing) return
-    let cancelled = false
-    async function loadPreview() {
-      if (!supportsLocalLlmWiki()) {
-        const message = t("llmWiki.toast.desktopOnly")
-        setErrorMessage(message)
-        toast.error(message)
-        return
-      }
-      if (!canCreate) {
-        setErrorMessage(t("llmWiki.unavailable"))
-        return
-      }
-      setIsPreviewing(true)
-      setErrorMessage(null)
-      try {
-        const nextPreview = await previewLocalLlmWikiCandidate(payload)
-        if (!cancelled) setPreview(nextPreview)
-      } catch (error) {
-        const message = error instanceof Error ? error.message : t("llmWiki.toast.previewFailed")
-        if (!cancelled) {
-          setErrorMessage(message)
-          toast.error(message)
-        }
-      } finally {
-        if (!cancelled) setIsPreviewing(false)
-      }
-    }
-    void loadPreview()
-    return () => {
-      cancelled = true
-    }
-  }, [canCreate, isPreviewing, open, payload, preview, t])
+  const {
+    preview,
+    isPreviewing,
+    errorMessage,
+    setErrorMessage,
+    resetPreview,
+  } = useLlmWikiCandidatePreview({
+    open,
+    canPreview: canCreate,
+    payload,
+    desktopOnlyMessage: t("llmWiki.toast.desktopOnly"),
+    unavailableMessage: t("llmWiki.unavailable"),
+    previewFailedMessage: t("llmWiki.toast.previewFailed"),
+  })
 
   const handleOpenChange = React.useCallback((nextOpen: boolean) => {
     setOpen(nextOpen)
@@ -171,10 +146,9 @@ export function KnowledgeWikiCandidateDialog({
   }, [])
 
   const handleRetryPreview = React.useCallback(() => {
-    setPreview(null)
-    setErrorMessage(null)
+    resetPreview()
     setOpen(true)
-  }, [])
+  }, [resetPreview])
 
   const handleCommit = React.useCallback(async () => {
     if (!preview || isCommitting) return

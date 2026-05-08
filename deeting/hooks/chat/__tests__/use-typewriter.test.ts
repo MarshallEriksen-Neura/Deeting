@@ -18,6 +18,12 @@ describe("useTypewriter", () => {
     expect(result.current.displayed).toBe("")
 
     act(() => {
+      jest.advanceTimersByTime(20)
+    })
+
+    expect(result.current.displayed.length).toBeGreaterThan(0)
+
+    act(() => {
       jest.advanceTimersByTime(100)
     })
 
@@ -41,10 +47,9 @@ describe("useTypewriter", () => {
     act(() => {
       jest.advanceTimersByTime(20)
     })
-    expect(result.current.displayed).toBe("h")
+    expect(result.current.displayed.length).toBeGreaterThan(0)
 
     rerender({ text: "world", enabled: true })
-    expect(result.current.displayed).toBe("")
 
     act(() => {
       jest.advanceTimersByTime(100)
@@ -63,7 +68,7 @@ describe("useTypewriter", () => {
     act(() => {
       jest.advanceTimersByTime(20)
     })
-    expect(result.current.displayed).toBe("h")
+    expect(result.current.displayed.length).toBeGreaterThan(0)
 
     rerender({ text: "hello world", enabled: false })
     expect(result.current.displayed).toBe("hello world")
@@ -74,6 +79,35 @@ describe("useTypewriter", () => {
     })
 
     expect(result.current.displayed).toBe("hello world")
+    expect(result.current.isAnimating).toBe(false)
+  })
+
+  it("flushes streaming text in larger batches to avoid slow per-character playback", () => {
+    const longText =
+      "Streaming output should reveal in quick phrase-sized batches instead of one character at a time."
+
+    const { result } = renderHook(() =>
+      useTypewriter(longText, {
+        enabled: true,
+        mode: "streaming",
+        sourceKey: "assistant-1",
+      })
+    )
+
+    expect(result.current.displayed).toBe("")
+
+    act(() => {
+      jest.advanceTimersByTime(34)
+    })
+
+    expect(result.current.displayed.length).toBeGreaterThanOrEqual(20)
+    expect(result.current.displayed.length).toBeLessThan(longText.length)
+
+    act(() => {
+      jest.advanceTimersByTime(200)
+    })
+
+    expect(result.current.displayed).toBe(longText)
     expect(result.current.isAnimating).toBe(false)
   })
 })

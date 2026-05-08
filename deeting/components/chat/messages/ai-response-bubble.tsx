@@ -423,6 +423,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                     <TypingTextBlock
                       content={partContent}
                       typingEnabled={typingEnabled}
+                      isStreaming={Boolean(isActive && streamEnabled)}
                       messageId={messageId}
                       enableRunnableFences={enableRunnableFences}
                     />
