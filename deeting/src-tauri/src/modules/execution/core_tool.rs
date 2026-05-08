@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 pub(crate) const SHELL_EXECUTE_TOOL_NAME: &str = "shell_execute";
 
-const SHELL_EXECUTE_TOOL_DESCRIPTION: &str = "Execute commands on the user's machine through a cross-platform execution runtime. Supports direct process execution, shell execution, and script execution. Automatically selects a platform shell when needed and decodes common terminal encodings.";
+const SHELL_EXECUTE_TOOL_DESCRIPTION: &str = "Execute commands in a background host execution runtime on the user's machine. This does not run inside the currently visible embedded terminal session and does not type into the terminal input buffer. Supports direct process execution, shell execution, and script execution. Automatically selects a platform shell when needed and decodes common terminal encodings.";
 
 pub(crate) fn shell_execute_tool_description() -> &'static str {
     SHELL_EXECUTE_TOOL_DESCRIPTION

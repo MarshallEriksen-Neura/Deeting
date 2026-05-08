@@ -1327,6 +1327,7 @@ async fn process_chat_tool_calls(
         if is_terminal_context_tool(&tool_name) {
             realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
             match execute_terminal_context_tool(
+                app,
                 state.terminal_context.as_ref(),
                 &tool_name,
                 &call.arguments,

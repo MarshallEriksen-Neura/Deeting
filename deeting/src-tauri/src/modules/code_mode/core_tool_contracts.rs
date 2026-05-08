@@ -1274,6 +1274,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
         terminal_context_peek_contract(),
         terminal_context_read_contract(),
         terminal_context_pack_contract(),
+        terminal_write_input_contract(),
         build_shell_execute_core_tool_contract(),
         inspect_generated_artifact_contract(),
         patch_generated_artifact_contract(),
@@ -1396,6 +1397,44 @@ fn terminal_context_pack_contract() -> CoreToolContract {
         mutating: false,
         risk_level: "LOW",
         example_arguments: json!({"goal": "diagnose the user's current terminal issue", "max_bytes": 12000}),
+    }
+}
+
+fn terminal_write_input_contract() -> CoreToolContract {
+    CoreToolContract {
+        name: "terminal_write_input",
+        description: "Write text into the input buffer of the currently visible embedded desktop terminal session without executing it. Use this when you want to draft or suggest a shell command directly in that live terminal while leaving the final Enter keypress to the user. This does not run a background host command and does not create a separate execution result. The tool rejects newline characters so it cannot submit the command.",
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "Command text to place into the current embedded terminal session's input buffer. Newline characters are rejected."
+                },
+                "append_space": {
+                    "type": "boolean",
+                    "description": "Optional. Append one trailing space after the inserted text without executing it."
+                }
+            },
+            "required": ["text"]
+        }),
+        output_schema: json!({
+            "type": "object",
+            "properties": {
+                "ok": {"type": "boolean"},
+                "session_id": {"type": "string"},
+                "text": {"type": "string"},
+                "bytes_written": {"type": "integer"},
+                "appended_space": {"type": "boolean"},
+                "wrote_newline": {"type": "boolean"}
+            },
+            "required": ["ok", "session_id", "text", "bytes_written", "appended_space", "wrote_newline"]
+        }),
+        permission_scope: &["terminal_context", "local_runtime"],
+        read_only: false,
+        mutating: true,
+        risk_level: "LOW",
+        example_arguments: json!({"text": "bun test deeting/components/terminal", "append_space": false}),
     }
 }
 
@@ -1880,6 +1919,19 @@ mod tests {
         assert!(!tool.read_only);
         assert!(tool.mutating);
         assert_eq!(tool.risk_level, "MEDIUM");
+    }
+
+    #[test]
+    fn core_tool_registry_includes_terminal_write_input() {
+        let tool = desktop_runtime_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == "terminal_write_input")
+            .expect("terminal_write_input core tool should exist");
+
+        assert!(!tool.read_only);
+        assert!(tool.mutating);
+        assert_eq!(tool.risk_level, "LOW");
+        assert_eq!(tool.permission_scope, &["terminal_context", "local_runtime"]);
     }
 
     #[test]

@@ -1,8 +1,14 @@
+use std::sync::Arc;
+
 use serde_json::{json, Value};
+use tauri::{AppHandle, Manager};
+
+use crate::modules::terminal::TerminalManager;
 
 pub(super) const TERMINAL_CONTEXT_PEEK_TOOL_NAME: &str = "terminal_context_peek";
 pub(super) const TERMINAL_CONTEXT_READ_TOOL_NAME: &str = "terminal_context_read";
 pub(super) const TERMINAL_CONTEXT_PACK_TOOL_NAME: &str = "terminal_context_pack";
+pub(super) const TERMINAL_WRITE_INPUT_TOOL_NAME: &str = "terminal_write_input";
 
 pub(super) fn is_terminal_context_tool(tool_name: &str) -> bool {
     matches!(
@@ -10,10 +16,12 @@ pub(super) fn is_terminal_context_tool(tool_name: &str) -> bool {
         TERMINAL_CONTEXT_PEEK_TOOL_NAME
             | TERMINAL_CONTEXT_READ_TOOL_NAME
             | TERMINAL_CONTEXT_PACK_TOOL_NAME
+            | TERMINAL_WRITE_INPUT_TOOL_NAME
     )
 }
 
 pub(super) fn execute_terminal_context_tool(
+    app: &AppHandle,
     snapshot: Option<&Value>,
     tool_name: &str,
     arguments: &Value,
@@ -29,8 +37,72 @@ pub(super) fn execute_terminal_context_tool(
         TERMINAL_CONTEXT_PEEK_TOOL_NAME => Ok(peek(snapshot)),
         TERMINAL_CONTEXT_READ_TOOL_NAME => read(snapshot, arguments),
         TERMINAL_CONTEXT_PACK_TOOL_NAME => Ok(pack(snapshot, arguments)),
+        TERMINAL_WRITE_INPUT_TOOL_NAME => write_input(app, snapshot, arguments),
         _ => Err(format!("unsupported terminal context tool '{tool_name}'")),
     }
+}
+
+fn write_input(app: &AppHandle, snapshot: &Value, arguments: &Value) -> Result<Value, String> {
+    let (session_id, text, payload, append_space) = prepare_input_payload(snapshot, arguments)?;
+
+    let manager = app
+        .try_state::<Arc<TerminalManager>>()
+        .ok_or_else(|| "terminal manager is unavailable".to_string())?;
+
+    manager
+        .write(&session_id, payload.as_bytes())
+        .map_err(|err| err.to_string())?;
+
+    Ok(json!({
+        "ok": true,
+        "session_id": session_id,
+        "text": text,
+        "bytes_written": payload.len(),
+        "appended_space": append_space,
+        "wrote_newline": false,
+    }))
+}
+
+fn prepare_input_payload(
+    snapshot: &Value,
+    arguments: &Value,
+) -> Result<(String, String, String, bool), String> {
+    let session_id = snapshot
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "terminal_write_input requires an active terminal session".to_string())?
+        .to_string();
+
+    let text = arguments
+        .get("text")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "terminal_write_input requires a string 'text' argument".to_string())?
+        .to_string();
+
+    if text.is_empty() {
+        return Err("terminal_write_input requires non-empty text".to_string());
+    }
+
+    if text.contains('\r') || text.contains('\n') {
+        return Err(
+            "terminal_write_input rejects newline characters because it must not execute the command"
+                .to_string(),
+        );
+    }
+
+    let append_space = arguments
+        .get("append_space")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let payload = if append_space {
+        format!("{text} ")
+    } else {
+        text.clone()
+    };
+
+    Ok((session_id, text, payload, append_space))
 }
 
 fn peek(snapshot: &Value) -> Value {
@@ -296,5 +368,38 @@ mod tests {
     fn slice_text_respects_utf8_byte_budget() {
         assert_eq!(slice_text("中文abcdef", "head", 7), "中文");
         assert_eq!(slice_text("abcdef中文", "tail", 7), "文");
+    }
+
+    #[test]
+    fn prepare_input_payload_rejects_newline_characters() {
+        let error = prepare_input_payload(
+            &json!({"sessionId": "session-1"}),
+            &json!({"text": "npm test\n"}),
+        )
+        .expect_err("newline should be rejected");
+
+        assert!(error.contains("must not execute the command"));
+    }
+
+    #[test]
+    fn prepare_input_payload_requires_active_session() {
+        let error = prepare_input_payload(&json!({}), &json!({"text": "npm test"}))
+            .expect_err("missing session should be rejected");
+
+        assert!(error.contains("active terminal session"));
+    }
+
+    #[test]
+    fn prepare_input_payload_can_append_trailing_space_without_newline() {
+        let (session_id, text, payload, append_space) = prepare_input_payload(
+            &json!({"sessionId": "session-1"}),
+            &json!({"text": "git status", "append_space": true}),
+        )
+        .expect("payload should be prepared");
+
+        assert_eq!(session_id, "session-1");
+        assert_eq!(text, "git status");
+        assert_eq!(payload, "git status ");
+        assert!(append_space);
     }
 }

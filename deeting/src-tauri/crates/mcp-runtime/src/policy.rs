@@ -140,6 +140,7 @@ pub fn resident_capability_control_tool_names() -> Vec<String> {
         "terminal_context_peek",
         "terminal_context_read",
         "terminal_context_pack",
+        "terminal_write_input",
     ]
     .into_iter()
     .map(str::to_string)
@@ -237,6 +238,7 @@ pub fn full_execution_tool_names() -> Vec<String> {
         "terminal_context_peek",
         "terminal_context_read",
         "terminal_context_pack",
+        "terminal_write_input",
         SYS_SUBMIT_ONBOARDING_REQUEST_TOOL_NAME,
         REFRESH_SKILL_INDEX_TOOL_NAME,
     ]
@@ -347,6 +349,7 @@ mod tests {
                 "terminal_context_pack".to_string(),
                 "terminal_context_peek".to_string(),
                 "terminal_context_read".to_string(),
+                "terminal_write_input".to_string(),
             ]
         );
     }
@@ -427,6 +430,7 @@ mod tests {
                 "terminal_context_peek".to_string(),
                 "terminal_context_read".to_string(),
                 "terminal_context_pack".to_string(),
+                "terminal_write_input".to_string(),
             ]
         );
     }
@@ -447,6 +451,7 @@ mod tests {
                 "terminal_context_pack".to_string(),
                 "terminal_context_peek".to_string(),
                 "terminal_context_read".to_string(),
+                "terminal_write_input".to_string(),
             ]
         );
     }
