@@ -3,6 +3,7 @@
 import * as React from "react"
 import {
   Camera,
+  ExternalLink,
   Globe,
   MousePointerClick,
   RefreshCw,
@@ -31,6 +32,9 @@ import {
   type BrowserAgentElementLocator,
 } from "@/lib/api/browser-agent"
 import { isBrowserAgentPanelEnabled } from "./browser-agent-panel-flags"
+
+const DEETING_CHROME_REPOSITORY_URL =
+  "https://github.com/MarshallEriksen-Neura/deeting_chrome"
 
 function formatError(err: unknown): string {
   if (err instanceof Error && err.message) return err.message
@@ -93,7 +97,11 @@ export function DesktopBrowserAgentPanelCard({
   React.useEffect(() => {
     if (!isTauriRuntime || !isPanelEnabled) return
     refreshStatus()
-  }, [isTauriRuntime, refreshStatus])
+  }, [isPanelEnabled, isTauriRuntime, refreshStatus])
+
+  const handleOpenExtensionRepository = React.useCallback(() => {
+    window.open(DEETING_CHROME_REPOSITORY_URL, "_blank", "noopener,noreferrer")
+  }, [])
 
   if (!isTauriRuntime || !isPanelEnabled) {
     return null
@@ -183,6 +191,30 @@ export function DesktopBrowserAgentPanelCard({
             {lastError}
           </div>
         ) : null}
+
+        <div className="rounded-xl border border-border/30 bg-muted/10 p-4 dark:bg-muted/5">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-foreground">
+                {t("browserAgent.extensionInstallTitle")}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t("browserAgent.extensionInstallDescription")}
+              </p>
+            </div>
+            <GlassButton
+              type="button"
+              size="sm"
+              onClick={handleOpenExtensionRepository}
+            >
+              <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+              {t("browserAgent.extensionInstallAction")}
+            </GlassButton>
+          </div>
+          <p className="mt-3 break-all font-mono text-[11px] text-muted-foreground">
+            {t("browserAgent.extensionInstallHint")}
+          </p>
+        </div>
 
         <div className="grid gap-3 md:grid-cols-2">
           <div className="rounded-xl border border-border/30 bg-muted/15 p-3 dark:bg-muted/10">
