@@ -197,3 +197,4 @@ installer/.next
 installer/node_modules
 
 installer/out
+.analysis/
