@@ -472,6 +472,31 @@
         "queueTakeover": "Queue follow-up",
         "send": "Send"
       },
+    "terminal": {
+      "title": "Terminal",
+      "hint": "Tip: select text and right-click to send it to chat AI, or use copy and paste directly.",
+      "dismissHint": "Dismiss tip",
+      "contextMenu": {
+        "copy": "Copy",
+        "paste": "Paste",
+        "sendSelectionToChat": "Send selection to chat AI",
+        "sendLastCommand": "Send last command",
+        "sendLastCommandOutput": "Send last command output",
+        "sendLastError": "Send error to AI for diagnosis"
+      },
+      "failure": {
+        "title": "Latest command failed",
+        "exitCode": "Exit code {code}",
+        "commandUnavailable": "Command text unavailable",
+        "sendToAi": "Send to AI",
+        "dismiss": "Dismiss failure notice"
+      },
+      "toast": {
+        "clipboardUnavailable": "Clipboard read is not available in this environment",
+        "copyFailed": "Copy failed",
+        "pasteFailed": "Paste failed"
+      }
+    },
     "codeBlock": {
       "copy": "Copy code",
       "copied": "Copied",

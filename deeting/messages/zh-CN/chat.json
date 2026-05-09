@@ -579,6 +579,31 @@
         }
       }
     },
+    "terminal": {
+      "title": "终端",
+      "hint": "提示：选中文本后右键，可以发送到聊天 AI，也可以直接复制或粘贴。",
+      "dismissHint": "关闭提示",
+      "contextMenu": {
+        "copy": "复制",
+        "paste": "粘贴",
+        "sendSelectionToChat": "发送选中内容到聊天 AI",
+        "sendLastCommand": "发送上一条命令",
+        "sendLastCommandOutput": "发送上一条命令输出",
+        "sendLastError": "发送错误给 AI 诊断"
+      },
+      "failure": {
+        "title": "上一条命令执行失败",
+        "exitCode": "退出码 {code}",
+        "commandUnavailable": "无法识别命令内容",
+        "sendToAi": "发给 AI 诊断",
+        "dismiss": "关闭失败提示"
+      },
+      "toast": {
+        "clipboardUnavailable": "当前环境暂不支持读取剪贴板",
+        "copyFailed": "复制失败",
+        "pasteFailed": "粘贴失败"
+      }
+    },
     "codeBlock": {
       "copy": "复制代码",
       "copied": "已复制",

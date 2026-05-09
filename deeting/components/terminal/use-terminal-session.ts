@@ -5,7 +5,6 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
-import { toast } from "sonner";
 
 import { isTauriRuntime } from "@/lib/runtime/tauri";
 import { useTerminalPanelStore } from "@/store/terminal-panel-store";
@@ -16,7 +15,6 @@ import {
   type TerminalCommandSnapshot,
 } from "./terminal-command-boundaries";
 import {
-  buildTerminalBridgeText,
   injectOsc133ShellIntegration,
   resolveTerminalPlatform,
 } from "./terminal-shell-integration";
@@ -33,6 +31,8 @@ interface UseTerminalSessionResult {
   getSelection: () => string;
   /** Reads the latest OSC 133-delimited command, or null if unavailable. */
   getLastCommand: () => TerminalCommandSnapshot | null;
+  /** Pastes text into the live terminal session. */
+  pasteText: (text: string) => Promise<void>;
 }
 
 interface PtyOpenResponse {
@@ -48,6 +48,10 @@ interface PtyExitPayload {
   sessionId: string;
   exitCode: number | null;
 }
+
+type TerminalWithOptionalPaste = Terminal & {
+  paste?: (data: string) => void;
+};
 
 const TERMINAL_OUTPUT_EVENT = "terminal:output";
 const TERMINAL_EXIT_EVENT = "terminal:exit";
@@ -211,21 +215,8 @@ export function useTerminalSession({
       });
     };
     commandTrackerRef.current = installOsc133CommandBoundaries(term, {
-      onCommandFailed: (snapshot) => {
+      onCommandFailed: () => {
         schedulePublishTerminalContext();
-        toast.error("Terminal command failed", {
-          description: "Send error to AI for diagnosis",
-          action: {
-            label: "Send",
-            onClick: () => {
-              useTerminalPanelStore
-                .getState()
-                .setPendingSelection(
-                  buildTerminalBridgeText(snapshot, "diagnose-error"),
-                );
-            },
-          },
-        });
       },
     });
 
@@ -419,5 +410,27 @@ export function useTerminalSession({
     UseTerminalSessionResult["getLastCommand"]
   >(() => commandTrackerRef.current?.getLastCommand() ?? null, []);
 
-  return { getSelection, getLastCommand };
+  const pasteText = React.useCallback<UseTerminalSessionResult["pasteText"]>(
+    async (text) => {
+      if (!text) return;
+      const term = terminalRef.current as TerminalWithOptionalPaste | null;
+      if (!term) {
+        throw new Error("Terminal unavailable");
+      }
+      term.focus();
+      if (typeof term.paste === "function" && isReadyRef.current) {
+        term.paste(text);
+        return;
+      }
+      const sessionId = sessionIdRef.current;
+      if (!sessionId || !isReadyRef.current || !isTauriRuntime()) {
+        throw new Error("Terminal not ready");
+      }
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("pty_write", { sessionId, data: text });
+    },
+    [],
+  );
+
+  return { getSelection, getLastCommand, pasteText };
 }

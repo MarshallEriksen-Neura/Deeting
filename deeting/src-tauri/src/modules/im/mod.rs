@@ -9,6 +9,7 @@
 //! - 可扩展的平台支持
 //! - 无需公网 IP (飞书、Telegram)
 
+mod commands;
 pub(crate) mod handlers;
 mod manager;
 mod profile;

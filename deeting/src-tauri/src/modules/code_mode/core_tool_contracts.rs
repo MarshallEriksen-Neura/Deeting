@@ -1931,7 +1931,10 @@ mod tests {
         assert!(!tool.read_only);
         assert!(tool.mutating);
         assert_eq!(tool.risk_level, "LOW");
-        assert_eq!(tool.permission_scope, &["terminal_context", "local_runtime"]);
+        assert_eq!(
+            tool.permission_scope,
+            &["terminal_context", "local_runtime"]
+        );
     }
 
     #[test]

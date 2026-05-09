@@ -1,19 +1,29 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, FileText, History, Sparkles } from "lucide-react";
+import {
+  AlertTriangle,
+  ClipboardPaste,
+  Copy,
+  FileText,
+  History,
+  Sparkles,
+} from "lucide-react";
 
+import { useI18n } from "@/hooks/use-i18n";
 import { cn } from "@/lib/utils";
 
 interface TerminalContextMenuProps {
   /** Viewport-relative position. Comes from the contextmenu event coords. */
   x: number;
   y: number;
-  /** True iff the terminal has a non-empty selection. Disables the only
-   *  action when false (we still render the menu so the user gets feedback
-   *  that right-click "did something"). */
-  hasSelection: boolean;
-  /** Fired only when `hasSelection` is true. */
+  /** True iff the terminal has any copied-eligible selection. */
+  canCopySelection: boolean;
+  /** True iff the terminal has a non-empty trimmed selection for AI bridge. */
+  canSendSelection: boolean;
+  canPaste: boolean;
+  onCopySelection: () => void;
+  onPasteFromClipboard: () => void;
   onSendToChat: () => void;
   /** True when OSC 133 has captured a previous command. */
   hasLastCommand: boolean;
@@ -34,9 +44,8 @@ const VIEWPORT_MARGIN = 8;
 /**
  * Minimal context menu surfaced on right-click within the terminal panel.
  *
- * Copy / Paste deliberately stay on Ctrl+C / Ctrl+V (xterm handles those
- * natively); this menu only exposes AI bridge actions backed by either a
- * selection or OSC 133 command boundaries.
+ * Includes basic clipboard actions plus AI bridge actions backed by either
+ * a selection or OSC 133 command boundaries.
  *
  * Position is clamped to the viewport: if the raw click coords would push
  * the menu off the right or bottom edge, the anchor flips so the menu opens
@@ -46,7 +55,11 @@ const VIEWPORT_MARGIN = 8;
 export function TerminalContextMenu({
   x,
   y,
-  hasSelection,
+  canCopySelection,
+  canSendSelection,
+  canPaste,
+  onCopySelection,
+  onPasteFromClipboard,
   onSendToChat,
   hasLastCommand,
   hasLastCommandOutput,
@@ -56,6 +69,7 @@ export function TerminalContextMenu({
   onSendLastError,
   onDismiss,
 }: TerminalContextMenuProps) {
+  const t = useI18n("chat");
   const menuRef = React.useRef<HTMLDivElement>(null);
   const [position, setPosition] = React.useState({ x, y });
 
@@ -114,23 +128,40 @@ export function TerminalContextMenu({
       className="min-w-[200px] overflow-hidden rounded-md border border-zinc-700 bg-zinc-900 py-1 text-zinc-100 shadow-[0_18px_48px_-18px_rgba(0,0,0,0.7)]"
     >
       <ContextMenuButton
-        enabled={hasSelection}
+        enabled={canCopySelection}
+        icon={<Copy className="h-3.5 w-3.5 shrink-0 text-zinc-200" />}
+        label={t("terminal.contextMenu.copy")}
+        onSelect={onCopySelection}
+        onDismiss={onDismiss}
+      />
+      <ContextMenuButton
+        enabled={canPaste}
+        icon={
+          <ClipboardPaste className="h-3.5 w-3.5 shrink-0 text-zinc-200" />
+        }
+        label={t("terminal.contextMenu.paste")}
+        onSelect={onPasteFromClipboard}
+        onDismiss={onDismiss}
+      />
+      <ContextMenuSeparator />
+      <ContextMenuButton
+        enabled={canSendSelection}
         icon={<Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-400" />}
-        label="Send selection to chat AI"
+        label={t("terminal.contextMenu.sendSelectionToChat")}
         onSelect={onSendToChat}
         onDismiss={onDismiss}
       />
       <ContextMenuButton
         enabled={hasLastCommand}
         icon={<History className="h-3.5 w-3.5 shrink-0 text-sky-300" />}
-        label="Send last command"
+        label={t("terminal.contextMenu.sendLastCommand")}
         onSelect={onSendLastCommand}
         onDismiss={onDismiss}
       />
       <ContextMenuButton
         enabled={hasLastCommandOutput}
         icon={<FileText className="h-3.5 w-3.5 shrink-0 text-emerald-300" />}
-        label="Send last command output"
+        label={t("terminal.contextMenu.sendLastCommandOutput")}
         onSelect={onSendLastCommandOutput}
         onDismiss={onDismiss}
       />
@@ -139,12 +170,16 @@ export function TerminalContextMenu({
         icon={
           <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-rose-300" />
         }
-        label="Send error to AI for diagnosis"
+        label={t("terminal.contextMenu.sendLastError")}
         onSelect={onSendLastError}
         onDismiss={onDismiss}
       />
     </div>
   );
+}
+
+function ContextMenuSeparator() {
+  return <div className="my-1 h-px bg-zinc-800" role="separator" />;
 }
 
 interface ContextMenuButtonProps {

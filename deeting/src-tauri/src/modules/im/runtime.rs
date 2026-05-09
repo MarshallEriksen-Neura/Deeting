@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
@@ -9,6 +10,7 @@ use tokio::time::sleep;
 
 use crate::state::AppState;
 
+use super::commands::{default_im_session_id, execute_im_command, load_active_session_id};
 use super::feishu::{FeishuClient, FeishuConfig};
 use super::handlers::{build_direct_card_action_outcome, generate_local_chat_reply_outcome};
 use super::{
@@ -290,6 +292,7 @@ async fn run_feishu_direct_profile_worker(
         ..Default::default()
     });
     let (event_tx, mut event_rx) = mpsc::channel(256);
+    let mut active_sessions: HashMap<String, String> = HashMap::new();
     client
         .start(event_tx)
         .await
@@ -328,8 +331,41 @@ async fn run_feishu_direct_profile_worker(
                     ),
                     MessageContent::Card { .. } => continue,
                 };
-                let session_id = format!("im:{}:chat:{}", profile.id, chat_id);
                 let reply_to = Some(message_id.clone());
+                if let Some(command_outcome) =
+                    execute_im_command(&app_state, &profile, &chat_id, incoming_text.as_str())
+                        .await?
+                {
+                    if let Some(session_id) = command_outcome.active_session_id.clone() {
+                        active_sessions.insert(chat_id.clone(), session_id);
+                    }
+                    if let Err(e) = client
+                        .send_message(SendMessageRequest {
+                            chat_id: chat_id.clone(),
+                            content: command_outcome.reply,
+                            reply_to: reply_to.clone(),
+                        })
+                        .await
+                    {
+                        warn!(
+                            "im_direct_profile command_send_failed profile={} chat_id={} err={}",
+                            profile.id, chat_id, e
+                        );
+                    }
+                    continue;
+                }
+                let session_id = if let Some(existing) = active_sessions.get(&chat_id) {
+                    existing.clone()
+                } else {
+                    let resolved =
+                        load_active_session_id(&app_state, profile.id.as_str(), &chat_id)
+                            .await?
+                            .unwrap_or_else(|| {
+                                default_im_session_id(profile.id.as_str(), &chat_id)
+                            });
+                    active_sessions.insert(chat_id.clone(), resolved.clone());
+                    resolved
+                };
                 let ack = "收到，正在处理中…";
                 if let Err(e) = client
                     .send_message(SendMessageRequest {

@@ -3,6 +3,9 @@ use std::future::Future;
 use std::pin::Pin;
 
 use crate::modules::conversation::service as conversation;
+use crate::modules::im::commands::{
+    default_im_session_id, execute_im_command, load_active_session_id,
+};
 use crate::modules::im::handlers::{
     build_direct_card_action_outcome, generate_local_chat_reply_outcome, LocalChatReplyOutcome,
 };
@@ -21,6 +24,7 @@ struct PendingTextApproval {
 
 #[derive(Debug, Default)]
 pub(crate) struct TextImConversationRuntime {
+    active_sessions: HashMap<String, String>,
     pending_text_approvals: HashMap<String, PendingTextApproval>,
 }
 
@@ -28,6 +32,24 @@ pub(crate) type SendMessageFuture = Pin<Box<dyn Future<Output = Result<(), Strin
 pub(crate) type SendMessageFn<'a> = dyn FnMut(MessageContent) -> SendMessageFuture + Send + 'a;
 
 impl TextImConversationRuntime {
+    async fn active_session_id_for_peer(
+        &mut self,
+        app_state: &AppState,
+        profile: &ImConnectionProfile,
+        peer_id: &str,
+    ) -> Result<String, String> {
+        if let Some(existing) = self.active_sessions.get(peer_id) {
+            return Ok(existing.clone());
+        }
+
+        let session_id = load_active_session_id(app_state, profile.id.as_str(), peer_id)
+            .await?
+            .unwrap_or_else(|| default_im_session_id(profile.id.as_str(), peer_id));
+        self.active_sessions
+            .insert(peer_id.to_string(), session_id.clone());
+        Ok(session_id)
+    }
+
     pub async fn handle_incoming_text(
         &mut self,
         app_state: &AppState,
@@ -83,7 +105,18 @@ impl TextImConversationRuntime {
             return Ok(());
         }
 
-        let session_id = format!("im:{}:chat:{}", profile.id, peer_id);
+        if let Some(command_outcome) = execute_im_command(app_state, profile, peer_id, text).await?
+        {
+            if let Some(session_id) = command_outcome.active_session_id.clone() {
+                self.active_sessions.insert(peer_id.to_string(), session_id);
+            }
+            send_message(command_outcome.reply).await?;
+            return Ok(());
+        }
+
+        let session_id = self
+            .active_session_id_for_peer(app_state, profile, peer_id)
+            .await?;
         send_message(MessageContent::Text {
             text: "收到，正在处理中…".to_string(),
         })
@@ -385,7 +418,7 @@ pub(crate) fn parse_text_approval_command(text: &str) -> Option<bool> {
 
 #[cfg(test)]
 mod tests {
-    use super::{adapt_reply_for_profile, parse_text_approval_command};
+    use super::{adapt_reply_for_profile, parse_text_approval_command, TextImConversationRuntime};
     use crate::modules::im::{
         ImConnectionProfile, ImPlatform, ImReplyCapability, ImReplyDelivery, MessageContent,
         MessagePart,
@@ -396,6 +429,20 @@ mod tests {
         assert_eq!(parse_text_approval_command("1"), Some(true));
         assert_eq!(parse_text_approval_command("0"), Some(false));
         assert_eq!(parse_text_approval_command(" yes "), None);
+    }
+
+    #[test]
+    fn text_runtime_uses_default_active_session_until_overridden() {
+        let mut runtime = TextImConversationRuntime::default();
+        runtime
+            .active_sessions
+            .insert("peer-1".to_string(), "session-override".to_string());
+
+        assert_eq!(
+            runtime.active_sessions.get("peer-1").map(String::as_str),
+            Some("session-override")
+        );
+        assert!(runtime.active_sessions.get("peer-2").is_none());
     }
 
     fn telegram_profile(media_enabled: bool) -> ImConnectionProfile {
