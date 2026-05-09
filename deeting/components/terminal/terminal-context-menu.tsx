@@ -125,7 +125,7 @@ export function TerminalContextMenu({
         top: position.y,
         zIndex: 80,
       }}
-      className="min-w-[200px] overflow-hidden rounded-md border border-zinc-700 bg-zinc-900 py-1 text-zinc-100 shadow-[0_18px_48px_-18px_rgba(0,0,0,0.7)]"
+      className="min-w-[200px] overflow-hidden rounded-sm border border-[rgba(255,255,255,0.1)] bg-[#18181b] py-1 text-zinc-100"
     >
       <ContextMenuButton
         enabled={canCopySelection}
@@ -146,21 +146,21 @@ export function TerminalContextMenu({
       <ContextMenuSeparator />
       <ContextMenuButton
         enabled={canSendSelection}
-        icon={<Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-400" />}
+        icon={<Sparkles className="h-3.5 w-3.5 shrink-0 text-[#6d5cff]" />}
         label={t("terminal.contextMenu.sendSelectionToChat")}
         onSelect={onSendToChat}
         onDismiss={onDismiss}
       />
       <ContextMenuButton
         enabled={hasLastCommand}
-        icon={<History className="h-3.5 w-3.5 shrink-0 text-sky-300" />}
+        icon={<History className="h-3.5 w-3.5 shrink-0 text-[#6d5cff]" />}
         label={t("terminal.contextMenu.sendLastCommand")}
         onSelect={onSendLastCommand}
         onDismiss={onDismiss}
       />
       <ContextMenuButton
         enabled={hasLastCommandOutput}
-        icon={<FileText className="h-3.5 w-3.5 shrink-0 text-emerald-300" />}
+        icon={<FileText className="h-3.5 w-3.5 shrink-0 text-[#22c55e]" />}
         label={t("terminal.contextMenu.sendLastCommandOutput")}
         onSelect={onSendLastCommandOutput}
         onDismiss={onDismiss}
@@ -168,7 +168,7 @@ export function TerminalContextMenu({
       <ContextMenuButton
         enabled={hasLastCommandFailure}
         icon={
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-rose-300" />
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-[#ef4444]" />
         }
         label={t("terminal.contextMenu.sendLastError")}
         onSelect={onSendLastError}
@@ -179,7 +179,7 @@ export function TerminalContextMenu({
 }
 
 function ContextMenuSeparator() {
-  return <div className="my-1 h-px bg-zinc-800" role="separator" />;
+  return <div className="my-1 h-px bg-[rgba(255,255,255,0.06)]" role="separator" />;
 }
 
 interface ContextMenuButtonProps {
@@ -208,9 +208,9 @@ function ContextMenuButton({
         onDismiss();
       }}
       className={cn(
-        "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] transition-colors",
+        "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] tracking-wide transition-colors",
         enabled
-          ? "text-zinc-100 hover:bg-zinc-800"
+          ? "text-zinc-200 hover:bg-[rgba(109,92,255,0.12)] hover:text-zinc-100"
           : "cursor-not-allowed text-zinc-500",
       )}
     >

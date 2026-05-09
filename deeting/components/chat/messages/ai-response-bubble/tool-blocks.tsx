@@ -1540,7 +1540,7 @@ export const ToolCallBlock = memo<{
                 <div className="space-y-3">
                   {uiBlocks.map((uiBlock, index) => (
                     <div
-                      key={uiBlock.id || `${callId || name || "tool"}-ui-${index}`}
+                      key={`${uiBlock.id || `${callId || name || "tool"}-ui`}-${index}`}
                       className={cn(
                         "overflow-hidden rounded-xl",
                         uiBlock.viewType === "html.v1"

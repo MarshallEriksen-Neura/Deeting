@@ -1978,3 +1978,11 @@ html:not(.dark) [data-tauri-drag-region] {
     animation: none;
   }
 }
+
+/* ─── 18. Swiss Design · xterm overrides ──────────────────── */
+/* xterm.css hardcodes background-color: #000 on .xterm-viewport,
+   overriding the TERMINAL_THEME.background we set. We make it
+   transparent so the theme background shows through. */
+.xterm .xterm-viewport {
+  background-color: transparent !important;
+}

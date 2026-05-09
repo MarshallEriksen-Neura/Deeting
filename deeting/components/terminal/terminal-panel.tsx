@@ -176,74 +176,108 @@ export function TerminalPanel({ isCollapsed }: TerminalPanelProps) {
   const showHint = !isCollapsed && !hasSeenHint;
 
   return (
-    <div className="flex h-full w-full flex-col bg-zinc-950 text-zinc-100">
-      <div className="flex shrink-0 items-center gap-2 border-b border-zinc-800 px-3 py-2 text-[11px] font-medium text-zinc-400">
-        <SquareTerminal className="h-3.5 w-3.5" />
-        <span>{t("terminal.title")}</span>
+    <div className="flex h-full w-full flex-col border-l border-[rgba(15,17,28,0.08)] bg-[#f8f7f2]">
+      {/* ── Swiss Card Header ── */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-[rgba(15,17,28,0.08)] px-6 py-3">
+        <SquareTerminal className="h-3.5 w-3.5 text-[#6d5cff]" />
+        <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-[rgba(20,21,28,0.52)]">
+          {t("terminal.title")}
+        </span>
       </div>
+
+      {/* ── Hint Banner (card chip) ── */}
       {showHint ? (
-        <div className="flex shrink-0 items-center gap-2 border-b border-zinc-800/80 bg-zinc-900/60 px-3 py-1.5 text-[11px] text-zinc-300">
-          <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-400" />
-          <span className="flex-1 leading-snug">
+        <div className="mx-6 mt-4 flex shrink-0 items-center gap-2 rounded-sm border border-[rgba(15,17,28,0.08)] bg-[rgba(255,255,255,0.58)] px-3 py-2 text-[11px]">
+          <Sparkles className="h-3 w-3 shrink-0 text-[#6d5cff]" />
+          <span className="flex-1 leading-snug text-[rgba(20,21,28,0.6)]">
             {t("terminal.hint")}
           </span>
           <button
             type="button"
             onClick={markHintSeen}
             aria-label={t("terminal.dismissHint")}
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+            className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-[rgba(20,21,28,0.42)] transition-colors hover:bg-[rgba(15,17,28,0.05)] hover:text-[rgba(20,21,28,0.76)]"
           >
-            <X className="h-3 w-3" />
+            <X className="h-2.5 w-2.5" />
           </button>
         </div>
       ) : null}
+
+      {/* ── Failure Banner (card chip) ── */}
       {visibleFailedCommand ? (
-        <div className="flex shrink-0 items-start gap-3 border-b border-rose-900/60 bg-rose-950/40 px-3 py-2 text-[11px] text-rose-100">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-300" />
+        <div className="mx-6 mt-4 flex shrink-0 items-start gap-2.5 rounded-sm border border-[rgba(220,38,38,0.12)] bg-[rgba(220,38,38,0.04)] px-3 py-2 text-[11px]">
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-rose-400" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-semibold">
+              <span className="text-[11px] font-medium tracking-wide text-rose-700">
                 {t("terminal.failure.title")}
               </span>
-              <span className="rounded-full border border-rose-400/25 bg-rose-500/10 px-1.5 py-0.5 text-[10px] text-rose-200/85">
+              <span className="rounded-sm border border-[rgba(220,38,38,0.12)] px-1.5 py-0.5 text-[10px] text-rose-700/70">
                 {t("terminal.failure.exitCode", {
                   code: visibleFailedCommand.exitCode,
                 })}
               </span>
             </div>
-            <div className="mt-1 truncate font-mono text-[11px] text-rose-100/90">
+            <div className="mt-1 truncate font-mono text-[11px] text-rose-700/75">
               {visibleFailedCommand.command?.trim() ||
                 t("terminal.failure.commandUnavailable")}
             </div>
             {visibleFailedCommand.outputSummary.trim() ? (
-              <div className="mt-1 line-clamp-2 text-rose-100/70">
+              <div className="mt-1 line-clamp-2 text-rose-700/55">
                 {visibleFailedCommand.outputSummary}
               </div>
             ) : null}
           </div>
-          <button
-            type="button"
-            onClick={handleSendFailureToChat}
-            className="shrink-0 rounded-md border border-rose-400/30 bg-rose-500/10 px-2 py-1 text-[10px] font-medium text-rose-100 transition-colors hover:bg-rose-500/20"
-          >
-            {t("terminal.failure.sendToAi")}
-          </button>
-          <button
-            type="button"
-            onClick={handleDismissFailure}
-            aria-label={t("terminal.failure.dismiss")}
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-rose-200/70 transition-colors hover:bg-rose-500/15 hover:text-rose-100"
-          >
-            <X className="h-3 w-3" />
-          </button>
+          <div className="flex shrink-0 items-start gap-1.5">
+            <button
+              type="button"
+              onClick={handleSendFailureToChat}
+              className="rounded-sm border border-[rgba(220,38,38,0.12)] bg-[rgba(220,38,38,0.06)] px-2 py-1 text-[10px] font-medium text-rose-700 transition-colors hover:bg-[rgba(220,38,38,0.1)]"
+            >
+              {t("terminal.failure.sendToAi")}
+            </button>
+            <button
+              type="button"
+              onClick={handleDismissFailure}
+              aria-label={t("terminal.failure.dismiss")}
+              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-rose-700/40 transition-colors hover:bg-[rgba(220,38,38,0.08)] hover:text-rose-700"
+            >
+              <X className="h-2.5 w-2.5" />
+            </button>
+          </div>
         </div>
       ) : null}
+
+      {/* ── xterm Canvas Area (card body with Swiss spacing) ── */}
       <div
-        className="min-h-0 flex-1 overflow-hidden pl-3"
+        className="relative min-h-0 flex-1 overflow-hidden"
         onContextMenu={handleContextMenu}
       >
-        <div ref={setContainerElement} className="h-full w-full" />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 opacity-100"
+          style={{
+            backgroundColor: "#f8f7f2",
+            backgroundImage:
+              "linear-gradient(rgba(20,21,28,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(20,21,28,0.045) 1px, transparent 1px)",
+            backgroundSize: "36px 36px",
+            backgroundPosition: "-1px -1px",
+          }}
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 h-28"
+          style={{
+            background:
+              "linear-gradient(180deg, rgba(248,247,242,0.94) 0%, rgba(248,247,242,0.72) 48%, rgba(248,247,242,0) 100%)",
+          }}
+        />
+        <div className="relative z-10 h-full w-full px-5 pb-4 pt-5">
+          <div ref={setContainerElement} className="h-full w-full" />
+        </div>
       </div>
+
+      {/* ── Context Menu ── */}
       {menu ? (
         <TerminalContextMenu
           x={menu.x}

@@ -58,8 +58,8 @@ export interface TerminalCommandBoundaryTracker extends IDisposable {
 }
 
 const MAX_COMPLETED_RECORDS = 20;
-const SUCCESS_DECORATION_COLOR = "#13261f";
-const FAILURE_DECORATION_COLOR = "#2a1518";
+const SUCCESS_DECORATION_COLOR = "rgba(34, 197, 94, 0.08)";
+const FAILURE_DECORATION_COLOR = "rgba(239, 68, 68, 0.10)";
 
 export function installOsc133CommandBoundaries(
   term: Terminal,
@@ -377,7 +377,7 @@ function decorateCommandOutput(
         backgroundColor: failed ? FAILURE_DECORATION_COLOR : SUCCESS_DECORATION_COLOR,
         layer: "bottom",
         overviewRulerOptions: {
-          color: failed ? "#ef4444" : "#22c55e",
+          color: failed ? "rgba(239, 68, 68, 0.6)" : "rgba(34, 197, 94, 0.6)",
           position: "right",
         },
       }) ?? null

@@ -6,7 +6,7 @@ import { useChatStore } from "@/store/chat-store";
 import { useTerminalPanelStore } from "@/store/terminal-panel-store";
 
 interface UsePendingTerminalSelectionOptions {
-  inputRef: React.RefObject<HTMLInputElement | null>;
+  inputRef: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>;
 }
 
 interface UsePendingTerminalSelectionResult {

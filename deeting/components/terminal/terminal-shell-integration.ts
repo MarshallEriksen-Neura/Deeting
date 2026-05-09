@@ -7,6 +7,9 @@ $global:__DEETING_OSC133_COMMAND_ACTIVE = $false
 if (-not $global:__DEETING_OSC133_ORIGINAL_PROMPT) {
   $global:__DEETING_OSC133_ORIGINAL_PROMPT = (Get-Command prompt -CommandType Function).ScriptBlock
 }
+try {
+  $PSStyle.FileInfo.Directory = $PSStyle.Foreground.BrightBlue
+} catch {}
 function global:__deeting_osc133_emit([string]$Payload) {
   [Console]::Write("$([char]27)]133;$Payload$([char]7)")
 }
@@ -20,7 +23,12 @@ function global:prompt {
   }
   $deetingCwd = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Get-Location).Path))
   __deeting_osc133_emit "A;cwd_base64=$deetingCwd"
-  & $global:__DEETING_OSC133_ORIGINAL_PROMPT
+  $deetingPromptOutput = & $global:__DEETING_OSC133_ORIGINAL_PROMPT
+  if ($null -eq $deetingPromptOutput) {
+    [Console]::Write($PSStyle.Reset)
+    return
+  }
+  return "$deetingPromptOutput$($PSStyle.Reset)"
 }
 try {
   Import-Module PSReadLine -ErrorAction SilentlyContinue

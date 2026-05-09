@@ -148,7 +148,7 @@ export function ChatTerminalSplitView({
 
       <ResizableHandle
         className={cn(
-          "transition-opacity duration-200",
+          "relative w-[1px] bg-[rgba(255,255,255,0.08)] transition-opacity duration-200 after:absolute after:inset-y-0 after:left-1/2 after:w-2 after:-translate-x-1/2 after:cursor-col-resize",
           // Hide handle visually + disable pointer events when collapsed.
           // No edge-drag-to-reveal by design; toggle is button-only.
           !isOpen && "pointer-events-none opacity-0",

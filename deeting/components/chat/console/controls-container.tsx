@@ -15,11 +15,11 @@ import { Button } from '@/ui/shadcn/button';
 import { GlassButton } from '@/ui/common/glass-button';
 import { ImageLightbox } from '@/ui/common/image-lightbox';
 import { Input } from '@/ui/shadcn/input';
+import { Textarea } from '@/ui/shadcn/textarea';
 import { Switch } from '@/ui/shadcn/switch';
 import { BrowserModeConfirmationBar } from '@/components/chat/browser-mode/browser-mode-confirmation-bar';
 import { TakeoverPendingBar } from '@/components/chat/takeover/takeover-pending-bar';
 import { RecoveryActionBar } from '@/components/chat/recovery/recovery-action-bar';
-import { WorkflowSuggestionBar } from '@/components/chat/console/workflow-suggestion-bar';
 import Image from 'next/image';
 import { Popover, PopoverContent, PopoverTrigger } from '@/ui/shadcn/popover';
 import { Slider } from '@/ui/shadcn/slider';
@@ -51,7 +51,6 @@ import { useWorkspaceStore } from '@/store/workspace-store';
 import { useArtifactStore } from '@/store/artifact-store';
 import { deriveAssistantActivityState } from '@/lib/chat/assistant-activity';
 import { extractLatestComposerRecoveryPrompt } from '@/lib/chat/recovery';
-import { shouldSuggestWorkflowPlanning } from '@/lib/chat/workflow-planning-suggestion';
 
 type ComposerMode = 'chat' | 'workflow';
 type KnowledgePickerFilter = 'all' | KnowledgeStatusTone;
@@ -130,7 +129,7 @@ function ControlsContainer() {
   const [isPlanningWorkflow, setIsPlanningWorkflow] = useState(false);
   const [isAttachingPageContext, setIsAttachingPageContext] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const t = useI18n('chat');
   const openWorkflow = useOpenWorkflow();
   const {
@@ -323,27 +322,6 @@ function ControlsContainer() {
   );
   const hasWorkflowGoal = workflowGoal.trim().length > 0;
   const hasResolvedTaskAgent = !resolvedTaskAgentMention || Boolean(resolvedTaskAgentMention.agent);
-  const showWorkflowSuggestion = useMemo(
-    () => Boolean(
-      isTauriRuntime &&
-      composerMode === 'chat' &&
-      hasWorkflowGoal &&
-      hasResolvedTaskAgent &&
-      !isLoading &&
-      !isApprovalFlowActive &&
-      shouldSuggestWorkflowPlanning(workflowGoal)
-    ),
-    [
-      composerMode,
-      hasResolvedTaskAgent,
-      hasWorkflowGoal,
-      isApprovalFlowActive,
-      isLoading,
-      isTauriRuntime,
-      workflowGoal,
-    ]
-  );
-
   const isGenerating = isLoading;
   const isApprovalPending = latestAssistantActivity.statusCode === 'approval.required';
   const isApprovalExecuting = latestAssistantActivity.statusCode === 'approval.executing';
@@ -481,6 +459,16 @@ function ControlsContainer() {
   const { isFlashing: isBridgeFlashing } = usePendingTerminalSelection({
     inputRef,
   });
+
+  useEffect(() => {
+    const node = inputRef.current;
+    if (!node) return;
+
+    node.style.height = '0px';
+    const nextHeight = Math.min(Math.max(node.scrollHeight, 44), 220);
+    node.style.height = `${nextHeight}px`;
+    node.style.overflowY = node.scrollHeight > 220 ? 'auto' : 'hidden';
+  }, [input]);
 
   const loadKnowledgeFiles = useCallback(async () => {
     if (!isTauriRuntime) return;
@@ -647,7 +635,7 @@ function ControlsContainer() {
     t,
   ]);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (showTaskAgentMentionPicker && filteredTaskAgentMentionOptions.length > 0) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
@@ -719,7 +707,7 @@ function ControlsContainer() {
     }
   }, [t, addAttachments, selectedModel]);
 
-  const handlePaste = useCallback((event: React.ClipboardEvent<HTMLInputElement>) => {
+  const handlePaste = useCallback((event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     if (isLoading) return;
     const items = event.clipboardData?.items;
     if (!items?.length) return;
@@ -990,7 +978,7 @@ function ControlsContainer() {
         ) : null}
         <div
           className={cn(
-            "relative flex items-center rounded-[22px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]",
+            "relative flex items-end rounded-[22px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]",
             isBridgeFlashing && "terminal-bridge-flash",
           )}
         >
@@ -1041,13 +1029,14 @@ function ControlsContainer() {
               </div>
             </div>
           ) : null}
-          <Input
+          <Textarea
             ref={inputRef}
             value={input}
             onChange={(e) => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            className="min-h-[44px] w-full bg-transparent border-0 shadow-none text-slate-800 dark:text-white/80 placeholder:text-slate-500 dark:placeholder:text-white/30 text-[15px] font-normal focus-visible:ring-0 focus-visible:border-transparent"
+            rows={1}
+            className="max-h-[220px] min-h-[44px] w-full resize-none overflow-y-hidden border-0 bg-transparent px-0 py-[9px] text-[15px] font-normal leading-7 text-slate-800 shadow-none focus-visible:ring-0 focus-visible:border-transparent dark:text-white/80 placeholder:text-slate-500 dark:placeholder:text-white/30"
             placeholder={t("controls.placeholder")}
             aria-label={t("controls.placeholder")}
             autoFocus
@@ -1389,10 +1378,6 @@ function ControlsContainer() {
 
       {attachmentError ? (
         <div className="text-center text-xs font-medium text-red-500/90 dark:text-red-400/90">{attachmentError}</div>
-      ) : null}
-
-      {showWorkflowSuggestion ? (
-        <WorkflowSuggestionBar onSwitchToWorkflow={() => setComposerMode('workflow')} />
       ) : null}
 
       {/* 2. Action Row */}

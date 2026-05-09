@@ -56,28 +56,34 @@ type TerminalWithOptionalPaste = Terminal & {
 const TERMINAL_OUTPUT_EVENT = "terminal:output";
 const TERMINAL_EXIT_EVENT = "terminal:exit";
 
+/* Swiss Design · xterm.js Theme
+ * Keep the xterm canvas itself transparent so the panel-level Swiss grid
+ * can remain visible behind the shell text.
+ */
 const TERMINAL_THEME = {
-  background: "#09090b",
-  foreground: "#e4e4e7",
-  cursor: "#fbbf24",
-  cursorAccent: "#09090b",
-  selectionBackground: "#3f3f46",
-  black: "#27272a",
-  red: "#f87171",
-  green: "#4ade80",
-  yellow: "#facc15",
-  blue: "#60a5fa",
-  magenta: "#c084fc",
-  cyan: "#22d3ee",
+  background: "rgba(248, 247, 242, 0)",
+  foreground: "#4b5563",
+  cursor: "#6d5cff",
+  cursorAccent: "#f8f7f2",
+  selectionBackground: "rgba(214, 169, 48, 0.28)",
+  selectionForeground: "#14151c",
+  selectionInactiveBackground: "rgba(214, 169, 48, 0.18)",
+  black: "#1f2937",
+  red: "#dc2626",
+  green: "#15803d",
+  yellow: "#a16207",
+  blue: "#6d5cff",
+  magenta: "#9333ea",
+  cyan: "#0f766e",
   white: "#e4e4e7",
-  brightBlack: "#52525b",
-  brightRed: "#fca5a5",
-  brightGreen: "#86efac",
-  brightYellow: "#fde047",
-  brightBlue: "#93c5fd",
-  brightMagenta: "#d8b4fe",
-  brightCyan: "#67e8f9",
-  brightWhite: "#fafafa",
+  brightBlack: "#71717a",
+  brightRed: "#ef4444",
+  brightGreen: "#22c55e",
+  brightYellow: "#ca8a04",
+  brightBlue: "#818cf8",
+  brightMagenta: "#c084fc",
+  brightCyan: "#14b8a6",
+  brightWhite: "#09090b",
 };
 
 const NON_TAURI_BANNER = [
@@ -170,12 +176,14 @@ export function useTerminalSession({
       cursorBlink: true,
       cursorStyle: "block",
       fontFamily:
-        "'JetBrains Mono', 'Menlo', 'Consolas', 'DejaVu Sans Mono', monospace",
-      fontSize: 13,
-      lineHeight: 1.3,
+        "'IBM Plex Mono', 'JetBrains Mono', 'SFMono-Regular', 'Menlo', 'Consolas', monospace",
+      fontSize: 12,
+      fontWeight: "400",
+      lineHeight: 1.22,
+      letterSpacing: 0,
       scrollback: 5000,
       allowProposedApi: true,
-      overviewRuler: { width: 6 },
+      overviewRuler: { width: 5 },
       theme: TERMINAL_THEME,
     });
 

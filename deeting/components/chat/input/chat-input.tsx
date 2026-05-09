@@ -65,7 +65,7 @@ interface ChatInputProps {
   /** 流式模式切换回调 */
   onStreamChange: (enabled: boolean) => void
   /** 粘贴事件回调（可选） */
-  onPaste?: (event: React.ClipboardEvent<HTMLInputElement>) => void
+  onPaste?: (event: React.ClipboardEvent<HTMLTextAreaElement>) => void
   /** 是否正在生成 */
   isGenerating?: boolean
   /** 取消生成回调 */
@@ -152,7 +152,7 @@ export const ChatInput = React.memo<ChatInputProps>(
     }, [t, addAttachments, selectedModel])
 
     // 使用 useCallback 缓存粘贴处理函数
-    const handlePaste = React.useCallback((event: React.ClipboardEvent<HTMLInputElement>) => {
+    const handlePaste = React.useCallback((event: React.ClipboardEvent<HTMLTextAreaElement>) => {
       if (disabled) return
       
       // 如果有外部 onPaste 处理器，优先使用
@@ -183,7 +183,7 @@ export const ChatInput = React.memo<ChatInputProps>(
     }, [handleFiles])
 
     // 使用 useCallback 缓存键盘事件处理函数
-    const handleKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    const handleKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
         if (hasContent && !disabled) {
@@ -191,6 +191,17 @@ export const ChatInput = React.memo<ChatInputProps>(
         }
       }
     }, [hasContent, disabled, onSend])
+
+    // 输入框 auto-resize 的 ref
+    const textareaRef = React.useRef<HTMLTextAreaElement>(null)
+
+    // 根据 inputValue 自动调整高度
+    React.useEffect(() => {
+      const el = textareaRef.current
+      if (!el) return
+      el.style.height = "auto"
+      el.style.height = el.scrollHeight + "px"
+    }, [inputValue])
 
     // 使用 useCallback 缓存文件选择按钮点击处理函数
     const handleFileButtonClick = React.useCallback(() => {
@@ -257,15 +268,17 @@ export const ChatInput = React.memo<ChatInputProps>(
             
             {/* 输入框容器 */}
             <div className="relative flex-1 flex items-end gap-2 rounded-2xl border border-slate-200/70 dark:border-white/10 bg-slate-50/80 dark:bg-white/5 p-2 shadow-sm transition-all focus-within:ring-2 focus-within:ring-slate-300 dark:focus-within:ring-white/20">
-              <Input
+              <textarea
+                ref={textareaRef}
                 value={inputValue}
                 onChange={(e) => onInputChange(e.target.value)}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
                 placeholder={t("input.placeholder", { name: placeholderName })}
-                className="flex-1 bg-transparent border-0 shadow-none text-slate-800 dark:text-white placeholder:text-slate-500 dark:placeholder:text-white/40 text-[15px] h-auto min-h-[44px] py-2.5 px-3 focus-visible:ring-0 focus-visible:outline-none"
+                rows={1}
                 autoFocus
                 disabled={disabled}
+                className="flex-1 bg-transparent border-0 shadow-none text-slate-800 dark:text-white placeholder:text-slate-500 dark:placeholder:text-white/40 text-[15px] min-h-[44px] max-h-[200px] py-2.5 px-3 focus-visible:ring-0 focus-visible:outline-none resize-none overflow-y-auto leading-relaxed"
               />
               <GlassButton
                 variant="default"
