@@ -77,7 +77,7 @@ const LazyImage = memo<{
           </div>
         ) : null}
         {!error && (isLoading || !imageSrc) ? (
-          <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-foreground/[0.04] via-foreground/[0.07] to-foreground/[0.04]" />
+          <div className="absolute inset-0 animate-pulse bg-foreground/[0.04]" />
         ) : null}
       </div>
     )
@@ -95,7 +95,7 @@ const LazyImage = memo<{
         )}
       />
       {(isLoading || !imageSrc) && !error ? (
-        <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-foreground/[0.04] via-foreground/[0.07] to-foreground/[0.04]" />
+        <div className="absolute inset-0 animate-pulse bg-foreground/[0.04]" />
       ) : null}
       {error ? (
         <div className="absolute inset-0 flex items-center justify-center text-foreground/30">
@@ -221,6 +221,9 @@ function tileClassFor(count: number) {
   return "aspect-square"
 }
 
+const imageActionButtonClass =
+  "h-7 w-7 rounded-[7px] border [border-color:rgba(15,17,28,0.08)] bg-[var(--panel-bg)] text-foreground shadow-none hover:bg-foreground/[0.05] dark:[border-color:rgba(255,255,255,0.08)]"
+
 export const ImageResultPanel = memo<ImageResultPanelProps>(function ImageResultPanel({
   payload,
   className,
@@ -295,7 +298,7 @@ export const ImageResultPanel = memo<ImageResultPanelProps>(function ImageResult
 
   if (outputs.length === 0) {
     return (
-      <div className={cn("flex min-h-48 items-center justify-center rounded-xl bg-muted/40 text-muted-foreground", className)}>
+      <div className={cn("flex min-h-48 items-center justify-center border [border-color:rgba(15,17,28,0.08)] dark:[border-color:rgba(255,255,255,0.08)] text-foreground/40", className)}>
         <span className="text-sm">{t("imageHistory.previewEmpty")}</span>
       </div>
     )
@@ -313,71 +316,68 @@ export const ImageResultPanel = memo<ImageResultPanelProps>(function ImageResult
 
     return (
       <div className={cn("w-full", className)}>
-        <div className="group relative isolate w-full max-w-[34rem]">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute -inset-x-6 -inset-y-3 -z-10 rounded-[2.25rem] bg-[radial-gradient(circle_at_30%_20%,rgba(99,102,241,0.10),transparent_55%),radial-gradient(circle_at_75%_80%,rgba(236,72,153,0.08),transparent_60%)] opacity-70 blur-2xl transition-opacity duration-700 group-hover:opacity-100"
-          />
-          <div className="relative rounded-[1.625rem] bg-gradient-to-b from-foreground/[0.05] to-transparent p-1 ring-1 ring-foreground/[0.06] backdrop-blur-sm dark:from-foreground/[0.04] dark:ring-foreground/[0.08]">
-            <div className="relative overflow-hidden rounded-[1.25rem] bg-gradient-to-br from-background via-background to-foreground/[0.02] shadow-[inset_0_1px_0_rgba(255,255,255,0.6),inset_0_-1px_0_rgba(0,0,0,0.04)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_-1px_0_rgba(0,0,0,0.3)]">
-              {src ? (
-                <button
-                  type="button"
-                  className="relative block w-full cursor-zoom-in"
-                  onClick={() => openPreview(0)}
-                  aria-label={t("imageHistory.previewTitle")}
-                >
-                  <LazyImage src={src} alt={t("input.image.alt")} fit="natural" />
-                  <span className="pointer-events-none absolute inset-0 bg-foreground/0 transition-colors duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:bg-foreground/[0.04]" />
-                </button>
-              ) : null}
+        <div
+          className={cn(
+            "group relative w-full max-w-[34rem] overflow-hidden",
+            !src && "border [border-color:rgba(15,17,28,0.08)] dark:[border-color:rgba(255,255,255,0.08)]"
+          )}
+        >
+          {src ? (
+            <button
+              type="button"
+              className="relative block w-full cursor-zoom-in overflow-hidden"
+              onClick={() => openPreview(0)}
+              aria-label={t("imageHistory.previewTitle")}
+            >
+              <LazyImage src={src} alt={t("input.image.alt")} fit="natural" />
+              <span className="pointer-events-none absolute inset-0 transition-colors duration-300 group-hover:bg-foreground/[0.04]" />
+            </button>
+          ) : null}
 
-              {showSkeleton ? (
-                <div className="aspect-[4/3] w-full animate-pulse bg-gradient-to-br from-foreground/[0.04] via-foreground/[0.07] to-foreground/[0.04]" />
-              ) : null}
+          {showSkeleton ? (
+            <div className="aspect-[4/3] w-full animate-pulse bg-foreground/[0.04]" />
+          ) : null}
 
-              {showError ? (
-                <div className="flex aspect-[4/3] w-full items-center justify-center text-foreground/30">
-                  <ImageIcon className="h-6 w-6" />
-                </div>
-              ) : null}
-
-              {resolved ? (
-                <div className="pointer-events-none absolute right-3 top-3 flex items-center gap-1.5 opacity-0 translate-y-1 transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:pointer-events-auto group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="icon-sm"
-                    className="h-9 w-9 rounded-full border border-white/40 bg-white/80 text-foreground shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)] backdrop-blur-md transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:scale-105 hover:bg-white active:scale-95 dark:border-white/10 dark:bg-zinc-900/80 dark:hover:bg-zinc-900"
-                    aria-label={t("views.generatedFile.download")}
-                    title={t("views.generatedFile.download")}
-                    disabled={busyAction === `download-0`}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      void handleDownload(resolved, 0)
-                    }}
-                  >
-                    <Download className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="icon-sm"
-                    className="h-9 w-9 rounded-full border border-white/40 bg-white/80 text-foreground shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)] backdrop-blur-md transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:scale-105 hover:bg-white active:scale-95 dark:border-white/10 dark:bg-zinc-900/80 dark:hover:bg-zinc-900"
-                    aria-label={copiedIndex === 0 ? t("actions.copied") : t("actions.copy")}
-                    title={copiedIndex === 0 ? t("actions.copied") : t("actions.copy")}
-                    disabled={busyAction === `copy-0`}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      void handleCopy(resolved, 0)
-                    }}
-                  >
-                    {copiedIndex === 0 ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  </Button>
-                </div>
-              ) : null}
+          {showError ? (
+            <div className="flex aspect-[4/3] w-full items-center justify-center text-foreground/30">
+              <ImageIcon className="h-6 w-6" />
             </div>
-          </div>
+          ) : null}
+
+          {resolved ? (
+            <div className="pointer-events-none absolute right-1.5 top-1.5 flex items-center gap-1 opacity-0 transition-opacity duration-200 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className={imageActionButtonClass}
+                aria-label={t("views.generatedFile.download")}
+                title={t("views.generatedFile.download")}
+                disabled={busyAction === `download-0`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void handleDownload(resolved, 0)
+                }}
+              >
+                <Download className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className={imageActionButtonClass}
+                aria-label={copiedIndex === 0 ? t("actions.copied") : t("actions.copy")}
+                title={copiedIndex === 0 ? t("actions.copied") : t("actions.copy")}
+                disabled={busyAction === `copy-0`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void handleCopy(resolved, 0)
+                }}
+              >
+                {copiedIndex === 0 ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              </Button>
+            </div>
+          ) : null}
         </div>
 
         <Dialog open={previewIndex !== null} onOpenChange={(open) => (!open ? closePreview() : undefined)}>
@@ -390,14 +390,14 @@ export const ImageResultPanel = memo<ImageResultPanelProps>(function ImageResult
                 <img
                   src={previewItem.resolvedUrl}
                   alt={t("input.image.alt")}
-                  className="max-h-full max-w-full select-none rounded-lg object-contain shadow-2xl"
+                  className="max-h-full max-w-full select-none object-contain"
                 />
                 <div className="absolute right-3 top-3 flex items-center gap-2">
                   <Button
                     type="button"
-                    variant="secondary"
+                    variant="ghost"
                     size="icon-sm"
-                    className="h-9 w-9 rounded-full border border-white/20 bg-zinc-950/70 text-white shadow-sm backdrop-blur-md hover:bg-zinc-900"
+                    className="h-9 w-9 border [border-color:rgba(255,255,255,0.15)] bg-zinc-950/60 text-white hover:bg-zinc-800"
                     aria-label={t("views.generatedFile.download")}
                     onClick={() => void handleDownload(previewItem, previewIndex ?? 0)}
                   >
@@ -405,9 +405,9 @@ export const ImageResultPanel = memo<ImageResultPanelProps>(function ImageResult
                   </Button>
                   <Button
                     type="button"
-                    variant="secondary"
+                    variant="ghost"
                     size="icon-sm"
-                    className="h-9 w-9 rounded-full border border-white/20 bg-zinc-950/70 text-white shadow-sm backdrop-blur-md hover:bg-zinc-900"
+                    className="h-9 w-9 border [border-color:rgba(255,255,255,0.15)] bg-zinc-950/60 text-white hover:bg-zinc-800"
                     aria-label={t("actions.copy")}
                     onClick={() => void handleCopy(previewItem, previewIndex ?? 0)}
                   >
@@ -415,9 +415,9 @@ export const ImageResultPanel = memo<ImageResultPanelProps>(function ImageResult
                   </Button>
                   <Button
                     type="button"
-                    variant="secondary"
+                    variant="ghost"
                     size="icon-sm"
-                    className="h-9 w-9 rounded-full border border-white/20 bg-zinc-950/70 text-white shadow-sm backdrop-blur-md hover:bg-zinc-900"
+                    className="h-9 w-9 border [border-color:rgba(255,255,255,0.15)] bg-zinc-950/60 text-white hover:bg-zinc-800"
                     aria-label="Close"
                     onClick={closePreview}
                   >
@@ -446,7 +446,7 @@ export const ImageResultPanel = memo<ImageResultPanelProps>(function ImageResult
             <div
               key={`${getPreferredUrl(output)}-${index}`}
               className={cn(
-                "group relative overflow-hidden rounded-[1.125rem] bg-gradient-to-br from-foreground/[0.03] to-foreground/[0.01] ring-1 ring-foreground/[0.06] transition-shadow duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] hover:ring-foreground/[0.12]",
+                "group relative overflow-hidden border [border-color:rgba(15,17,28,0.08)] dark:[border-color:rgba(255,255,255,0.08)]",
                 tileClassFor(outputs.length)
               )}
             >
@@ -463,7 +463,7 @@ export const ImageResultPanel = memo<ImageResultPanelProps>(function ImageResult
               ) : null}
 
               {showSkeleton ? (
-                <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-foreground/[0.04] via-foreground/[0.07] to-foreground/[0.04]" />
+                <div className="absolute inset-0 animate-pulse bg-foreground/[0.04]" />
               ) : null}
 
               {showError ? (
@@ -473,12 +473,12 @@ export const ImageResultPanel = memo<ImageResultPanelProps>(function ImageResult
               ) : null}
 
               {resolved ? (
-                <div className="pointer-events-none absolute right-2 top-2 flex items-center gap-1.5 opacity-0 translate-y-1 transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover:pointer-events-auto group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0">
+                <div className="pointer-events-none absolute right-1.5 top-1.5 flex items-center gap-1 opacity-0 transition-opacity duration-200 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
                   <Button
                     type="button"
-                    variant="secondary"
+                    variant="ghost"
                     size="icon-sm"
-                    className="h-8 w-8 rounded-full border border-white/40 bg-white/85 text-foreground shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)] backdrop-blur-md transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:scale-105 hover:bg-white active:scale-95 dark:border-white/10 dark:bg-zinc-900/80 dark:hover:bg-zinc-900"
+                    className={imageActionButtonClass}
                     aria-label={t("views.generatedFile.download")}
                     title={t("views.generatedFile.download")}
                     disabled={busyAction === `download-${index}`}
@@ -491,9 +491,9 @@ export const ImageResultPanel = memo<ImageResultPanelProps>(function ImageResult
                   </Button>
                   <Button
                     type="button"
-                    variant="secondary"
+                    variant="ghost"
                     size="icon-sm"
-                    className="h-8 w-8 rounded-full border border-white/40 bg-white/85 text-foreground shadow-[0_4px_14px_-2px_rgba(0,0,0,0.18)] backdrop-blur-md transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:scale-105 hover:bg-white active:scale-95 dark:border-white/10 dark:bg-zinc-900/80 dark:hover:bg-zinc-900"
+                    className={imageActionButtonClass}
                     aria-label={copiedIndex === index ? t("actions.copied") : t("actions.copy")}
                     title={copiedIndex === index ? t("actions.copied") : t("actions.copy")}
                     disabled={busyAction === `copy-${index}`}
@@ -521,40 +521,40 @@ export const ImageResultPanel = memo<ImageResultPanelProps>(function ImageResult
               <img
                 src={previewItem.resolvedUrl}
                 alt={t("input.image.alt")}
-                className="max-h-full max-w-full select-none rounded-lg object-contain shadow-2xl"
+                className="max-h-full max-w-full select-none object-contain"
               />
               <div className="absolute right-3 top-3 flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="icon-sm"
-                  className="h-9 w-9 rounded-full border border-white/20 bg-zinc-950/70 text-white shadow-sm backdrop-blur-md hover:bg-zinc-900"
-                  aria-label={t("views.generatedFile.download")}
-                  onClick={() => void handleDownload(previewItem, previewIndex ?? 0)}
-                >
-                  <Download className="h-4 w-4" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="icon-sm"
-                  className="h-9 w-9 rounded-full border border-white/20 bg-zinc-950/70 text-white shadow-sm backdrop-blur-md hover:bg-zinc-900"
-                  aria-label={t("actions.copy")}
-                  onClick={() => void handleCopy(previewItem, previewIndex ?? 0)}
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="icon-sm"
-                  className="h-9 w-9 rounded-full border border-white/20 bg-zinc-950/70 text-white shadow-sm backdrop-blur-md hover:bg-zinc-900"
-                  aria-label="Close"
-                  onClick={closePreview}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-9 w-9 border [border-color:rgba(255,255,255,0.15)] bg-zinc-950/60 text-white hover:bg-zinc-800"
+                    aria-label={t("views.generatedFile.download")}
+                    onClick={() => void handleDownload(previewItem, previewIndex ?? 0)}
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-9 w-9 border [border-color:rgba(255,255,255,0.15)] bg-zinc-950/60 text-white hover:bg-zinc-800"
+                    aria-label={t("actions.copy")}
+                    onClick={() => void handleCopy(previewItem, previewIndex ?? 0)}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-9 w-9 border [border-color:rgba(255,255,255,0.15)] bg-zinc-950/60 text-white hover:bg-zinc-800"
+                    aria-label="Close"
+                    onClick={closePreview}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
             </div>
           ) : null}
         </DialogContent>

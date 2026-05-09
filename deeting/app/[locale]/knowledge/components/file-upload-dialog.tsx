@@ -245,24 +245,24 @@ export function FileUploadDialog({
           <Upload
             className={cn(
               "h-10 w-10 mx-auto mb-3",
-              isDragging ? "text-[var(--primary)]" : "text-[var(--muted)]"
+              isDragging ? "text-[var(--primary)]" : "text-muted-foreground"
             )}
           />
-          <p className="text-sm text-[var(--muted)]">
+          <p className="text-sm text-muted-foreground">
             {isDragging ? t("uploadDialog.dropHint") : t("uploadDialog.selectFiles")}
           </p>
         </div>
 
         {/* Supported types */}
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-[var(--muted)]">{t("uploadDialog.supportedTypes")}:</span>
+          <span className="text-xs text-muted-foreground">{t("uploadDialog.supportedTypes")}:</span>
           {supportedTypeLabels.map((type) => (
             <Badge key={type} variant="secondary" className="text-[10px]">
               {type}
             </Badge>
           ))}
           {maxSizeLabel ? (
-            <span className="text-xs text-[var(--muted)] ml-2">
+            <span className="text-xs text-muted-foreground ml-2">
               {t("uploadDialog.maxSize")} {maxSizeLabel}
             </span>
           ) : null}
@@ -281,13 +281,13 @@ export function FileUploadDialog({
                   key={file.name}
                   className="flex items-center gap-3 rounded-lg bg-[var(--surface)]/40 px-3 py-2"
                 >
-                  <Icon className="h-5 w-5 text-[var(--muted)] shrink-0" />
+                  <Icon className="h-5 w-5 text-muted-foreground shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm truncate">{file.name}</p>
                     {status === "uploading" ? (
                       <Progress value={progress} className="h-1 mt-1" />
                     ) : (
-                      <p className="text-xs text-[var(--muted)]">{formatBytes(file.size)}</p>
+                      <p className="text-xs text-muted-foreground">{formatBytes(file.size)}</p>
                     )}
                   </div>
                   {status === "success" ? (
@@ -300,7 +300,7 @@ export function FileUploadDialog({
                         e.stopPropagation()
                         removeFile(file.name)
                       }}
-                      className="text-[var(--muted)] hover:text-[var(--foreground)] shrink-0"
+                      className="text-muted-foreground hover:text-[var(--foreground)] shrink-0"
                     >
                       <X className="h-4 w-4" />
                     </button>

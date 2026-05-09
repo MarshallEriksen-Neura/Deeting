@@ -147,62 +147,44 @@ export function useTypewriter(
   const backlogRef = useRef("")
   const fullTextRef = useRef(options.enabled ? "" : normalizedTargetText)
   const sourceKeyRef = useRef(options.sourceKey)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const runIdRef = useRef(0)
 
   useEffect(() => {
-    const sourceKeyChanged = options.sourceKey !== sourceKeyRef.current
-    if (sourceKeyChanged) {
-      sourceKeyRef.current = options.sourceKey
-      backlogRef.current = ""
-      fullTextRef.current = options.enabled ? "" : normalizedTargetText
-      displayedRef.current = options.enabled ? "" : normalizedTargetText
-      enqueueDisplayedUpdate(
-        setDisplayed,
-        options.enabled ? "" : normalizedTargetText
-      )
-    }
-
-    if (!options.enabled) {
-      backlogRef.current = ""
-      fullTextRef.current = normalizedTargetText
-      displayedRef.current = normalizedTargetText
-      enqueueDisplayedUpdate(setDisplayed, normalizedTargetText)
-      return
-    }
-
-    if (
-      normalizedTargetText.length < fullTextRef.current.length ||
-      (displayedRef.current &&
-        !normalizedTargetText.startsWith(displayedRef.current))
-    ) {
-      backlogRef.current = normalizedTargetText
-      fullTextRef.current = normalizedTargetText
-      displayedRef.current = ""
-      enqueueDisplayedUpdate(setDisplayed, "")
-      return
-    }
-
-    if (normalizedTargetText !== fullTextRef.current) {
-      const delta = normalizedTargetText.slice(fullTextRef.current.length)
-      fullTextRef.current = normalizedTargetText
-      if (delta) {
-        backlogRef.current += delta
-      }
-    }
-  }, [normalizedTargetText, options.enabled, options.sourceKey])
-
-  useEffect(() => {
-    if (!options.enabled) return
+    const runId = runIdRef.current + 1
+    runIdRef.current = runId
 
     const profile = resolveProfile(options.mode)
-    let canceled = false
-    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const clearTimer = () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current)
+        timerRef.current = null
+      }
+    }
+
+    const publishDisplayedFromEffect = (nextDisplayed: string) => {
+      if (displayedRef.current === nextDisplayed) return
+      displayedRef.current = nextDisplayed
+      enqueueDisplayedUpdate(setDisplayed, nextDisplayed)
+    }
+
+    const publishDisplayedFromTick = (nextDisplayed: string) => {
+      if (displayedRef.current === nextDisplayed) return
+      displayedRef.current = nextDisplayed
+      setDisplayed(nextDisplayed)
+    }
+
+    const scheduleTick = (delay: number) => {
+      timerRef.current = setTimeout(tick, delay)
+    }
 
     const tick = () => {
-      if (canceled) return
+      if (runId !== runIdRef.current) return
 
       const pending = backlogRef.current.length
       if (pending === 0) {
-        timer = setTimeout(tick, profile.idleTickMs)
+        scheduleTick(profile.idleTickMs)
         return
       }
 
@@ -223,18 +205,62 @@ export function useTypewriter(
       backlogRef.current = backlogRef.current.slice(sliceSize)
 
       const nextDisplayed = displayedRef.current + nextChunk
-      displayedRef.current = nextDisplayed
-      setDisplayed(nextDisplayed)
-
-      timer = setTimeout(tick, profile.tickMs)
+      publishDisplayedFromTick(nextDisplayed)
+      scheduleTick(profile.tickMs)
     }
 
-    timer = setTimeout(tick, profile.tickMs)
+    clearTimer()
+
+    const sourceKeyChanged = options.sourceKey !== sourceKeyRef.current
+    if (sourceKeyChanged) {
+      sourceKeyRef.current = options.sourceKey
+      backlogRef.current = ""
+      fullTextRef.current = options.enabled ? "" : normalizedTargetText
+      publishDisplayedFromEffect(options.enabled ? "" : normalizedTargetText)
+    }
+
+    if (!options.enabled) {
+      backlogRef.current = ""
+      fullTextRef.current = normalizedTargetText
+      publishDisplayedFromEffect(normalizedTargetText)
+      return () => {
+        if (runIdRef.current === runId) {
+          runIdRef.current += 1
+        }
+        clearTimer()
+      }
+    }
+
+    if (
+      normalizedTargetText.length < fullTextRef.current.length ||
+      (displayedRef.current &&
+        !normalizedTargetText.startsWith(displayedRef.current))
+    ) {
+      backlogRef.current = normalizedTargetText
+      fullTextRef.current = normalizedTargetText
+      publishDisplayedFromEffect("")
+    } else if (normalizedTargetText !== fullTextRef.current) {
+      const delta = normalizedTargetText.slice(fullTextRef.current.length)
+      fullTextRef.current = normalizedTargetText
+      if (delta) {
+        backlogRef.current += delta
+      }
+    }
+
+    scheduleTick(backlogRef.current.length > 0 ? profile.tickMs : profile.idleTickMs)
+
     return () => {
-      canceled = true
-      if (timer) clearTimeout(timer)
+      if (runIdRef.current === runId) {
+        runIdRef.current += 1
+      }
+      clearTimer()
     }
-  }, [options.enabled, options.mode])
+  }, [
+    normalizedTargetText,
+    options.enabled,
+    options.mode,
+    options.sourceKey,
+  ])
 
   return {
     displayed: options.enabled ? displayed : normalizedTargetText,

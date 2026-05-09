@@ -13,14 +13,8 @@ import { CodeBlock } from "@/components/chat/code-block"
 import { cn } from "@/lib/utils"
 import { Eye, Code2, Columns3, Expand, Shrink } from "lucide-react"
 
-const DEFAULT_MAX_PREVIEW_CHARS = 12000
-const DEFAULT_MAX_PREVIEW_LINES = 400
 const STATIC_PREVIEW_MAX_PREVIEW_CHARS = 200000
 const STATIC_PREVIEW_MAX_PREVIEW_LINES = 4000
-const BARE_IMPORT_REGEX =
-  /\bimport\s+(?:[\w*\s{},]*?\s+from\s+)?["'](@?[^"'./][^"']*)["']/g
-const REQUIRE_REGEX = /\brequire\(\s*["'](@?[^"'./][^"']*)["']\s*\)/g
-const DYNAMIC_IMPORT_REGEX = /\bimport\(\s*["'](@?[^"'./][^"']*)["']\s*\)/g
 
 type ViewMode = "preview" | "code" | "split"
 
@@ -42,7 +36,7 @@ function countLines(source: string): number {
 }
 
 function getPreviewLimits(language: string): { maxChars: number; maxLines: number } {
-  if (language === "html" || language === "svg") {
+  if (language === "html") {
     return {
       maxChars: STATIC_PREVIEW_MAX_PREVIEW_CHARS,
       maxLines: STATIC_PREVIEW_MAX_PREVIEW_LINES,
@@ -50,121 +44,32 @@ function getPreviewLimits(language: string): { maxChars: number; maxLines: numbe
   }
 
   return {
-    maxChars: DEFAULT_MAX_PREVIEW_CHARS,
-    maxLines: DEFAULT_MAX_PREVIEW_LINES,
+    maxChars: 0,
+    maxLines: 0,
   }
 }
 
 function shouldSkipPreview(language: string, source: string): boolean {
   const limits = getPreviewLimits(language)
+  if (limits.maxChars <= 0 || limits.maxLines <= 0) {
+    return true
+  }
   return source.length > limits.maxChars || countLines(source) > limits.maxLines
 }
 
-function looksLikeHtmlDocument(source: string): boolean {
-  return /<!doctype\s+html/i.test(source) || /<html[\s>]/i.test(source)
-}
-
-function looksLikeReactSource(source: string): boolean {
-  return (
-    /from\s+["']react["']/.test(source) ||
-    /export\s+default\s+function\s+[A-Z]/.test(source) ||
-    /return\s*\(\s*</.test(source) ||
-    /<[A-Z][A-Za-z0-9]*/.test(source) ||
-    /ReactDOM\./.test(source)
-  )
-}
-
-function looksLikeDomScript(source: string): boolean {
-  return (
-    /\bdocument\./.test(source) ||
-    /\bwindow\./.test(source) ||
-    /\bquerySelector\(/.test(source) ||
-    /\bgetElementById\(/.test(source) ||
-    /\baddEventListener\(/.test(source) ||
-    /\bcreateElement\(/.test(source)
-  )
-}
-
-function ensureDefaultReactExport(source: string): string {
-  if (/export\s+default\s+/m.test(source)) {
-    return source
-  }
-
-  const namedMatch =
-    source.match(/\bfunction\s+([A-Z][A-Za-z0-9_]*)\s*\(/) ||
-    source.match(/\bconst\s+([A-Z][A-Za-z0-9_]*)\s*=/) ||
-    source.match(/\blet\s+([A-Z][A-Za-z0-9_]*)\s*=/) ||
-    source.match(/\bclass\s+([A-Z][A-Za-z0-9_]*)\s+/)
-
-  if (!namedMatch?.[1]) {
-    return source
-  }
-
-  return `${source.trim()}\n\nexport default ${namedMatch[1]};\n`
+function looksLikeCompleteHtmlDocument(source: string): boolean {
+  const hasHtmlRoot = /<html[\s>][\s\S]*<\/html>/i.test(source)
+  const hasDocumentSection =
+    /<body[\s>][\s\S]*<\/body>/i.test(source) || /<head[\s>][\s\S]*<\/head>/i.test(source)
+  return hasHtmlRoot && hasDocumentSection
 }
 
 function buildHtmlDocument(source: string): string {
-  if (looksLikeHtmlDocument(source)) {
+  if (/<!doctype\s+html/i.test(source)) {
     return source
   }
 
-  return [
-    "<!doctype html>",
-    '<html lang="en">',
-    "  <head>",
-    '    <meta charset="utf-8" />',
-    '    <meta name="viewport" content="width=device-width, initial-scale=1" />',
-    "    <title>Preview</title>",
-    "  </head>",
-    "  <body>",
-    source,
-    "  </body>",
-    "</html>",
-  ].join("\n")
-}
-
-function buildSvgDocument(source: string): string {
-  return buildHtmlDocument(`
-<style>
-  body {
-    margin: 0;
-    min-height: 100vh;
-    display: grid;
-    place-items: center;
-    padding: 24px;
-    background:
-      radial-gradient(circle at top, rgba(148, 163, 184, 0.18), transparent 52%),
-      linear-gradient(180deg, #ffffff, #f8fafc);
-  }
-  svg {
-    max-width: 100%;
-    max-height: 70vh;
-  }
-</style>
-${source}
-  `.trim())
-}
-
-function inferDependencies(source: string): Record<string, string> | undefined {
-  const dependencies = new Set<string>()
-
-  for (const pattern of [BARE_IMPORT_REGEX, REQUIRE_REGEX, DYNAMIC_IMPORT_REGEX]) {
-    pattern.lastIndex = 0
-    let match: RegExpExecArray | null
-    while ((match = pattern.exec(source)) !== null) {
-      const dependency = match[1]?.trim()
-      if (!dependency || dependency === "react" || dependency === "react-dom") {
-        continue
-      }
-      dependencies.add(dependency)
-    }
-  }
-
-  if (dependencies.size === 0) {
-    return undefined
-  }
-
-  return Object.fromEntries(Array.from(dependencies).map((dependency) => [dependency, "latest"]))
+  return `<!doctype html>\n${source}`
 }
 
 function buildSandpackPreviewConfig(
@@ -178,95 +83,11 @@ function buildSandpackPreviewConfig(
     return null
   }
 
-  if (normalizedLanguage === "html") {
+  if (normalizedLanguage === "html" && looksLikeCompleteHtmlDocument(trimmedSource)) {
     return {
       template: "static",
       files: {
         "/index.html": buildHtmlDocument(trimmedSource),
-      },
-      codeLanguage: normalizedLanguage,
-      previewHeight: 320,
-    }
-  }
-
-  if (normalizedLanguage === "svg" && /<svg[\s>]/i.test(trimmedSource)) {
-    return {
-      template: "static",
-      files: {
-        "/index.html": buildSvgDocument(trimmedSource),
-      },
-      codeLanguage: normalizedLanguage,
-      previewHeight: 320,
-    }
-  }
-
-  if (normalizedLanguage === "jsx" || normalizedLanguage === "tsx") {
-    const isTypeScript = normalizedLanguage === "tsx"
-    return {
-      template: isTypeScript ? "react-ts" : "react",
-      files: {
-        [isTypeScript ? "/App.tsx" : "/App.js"]: ensureDefaultReactExport(trimmedSource),
-      },
-      customSetup: {
-        dependencies: inferDependencies(trimmedSource),
-      },
-      codeLanguage: normalizedLanguage,
-      previewHeight: 360,
-    }
-  }
-
-  if (
-    (normalizedLanguage === "javascript" || normalizedLanguage === "js") &&
-    looksLikeReactSource(trimmedSource)
-  ) {
-    return {
-      template: "react",
-      files: {
-        "/App.js": ensureDefaultReactExport(trimmedSource),
-      },
-      customSetup: {
-        dependencies: inferDependencies(trimmedSource),
-      },
-      codeLanguage: normalizedLanguage,
-      previewHeight: 360,
-    }
-  }
-
-  if (
-    (normalizedLanguage === "typescript" || normalizedLanguage === "ts") &&
-    looksLikeReactSource(trimmedSource)
-  ) {
-    return {
-      template: "react-ts",
-      files: {
-        "/App.tsx": ensureDefaultReactExport(trimmedSource),
-      },
-      customSetup: {
-        dependencies: inferDependencies(trimmedSource),
-      },
-      codeLanguage: normalizedLanguage,
-      previewHeight: 360,
-    }
-  }
-
-  if (
-    normalizedLanguage === "javascript" ||
-    normalizedLanguage === "js" ||
-    normalizedLanguage === "typescript" ||
-    normalizedLanguage === "ts"
-  ) {
-    if (!looksLikeDomScript(trimmedSource)) {
-      return null
-    }
-
-    const isTypeScript = normalizedLanguage === "typescript" || normalizedLanguage === "ts"
-    return {
-      template: isTypeScript ? "vanilla-ts" : "vanilla",
-      files: {
-        [isTypeScript ? "/index.ts" : "/index.js"]: trimmedSource,
-      },
-      customSetup: {
-        dependencies: inferDependencies(trimmedSource),
       },
       codeLanguage: normalizedLanguage,
       previewHeight: 320,

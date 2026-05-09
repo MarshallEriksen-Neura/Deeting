@@ -102,7 +102,7 @@ export function FileDetailDrawer({
 
             <div className="rounded-2xl border border-[var(--border)]/60 bg-[var(--background)]/85 p-4">
               <div className="mb-4 flex items-center justify-between gap-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                   {t("detailDrawer.metadata")}
                 </p>
                 <StatusPill
@@ -116,11 +116,11 @@ export function FileDetailDrawer({
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="rounded-xl bg-[var(--surface)]/55 p-3">
                   <div className="flex items-start gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--background)] text-[var(--muted)]">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--background)] text-muted-foreground">
                       <HardDrive className="h-4 w-4" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs text-[var(--muted)]">{t("detailDrawer.fileSize")}</p>
+                      <p className="text-xs text-muted-foreground">{t("detailDrawer.fileSize")}</p>
                       <p className="mt-1 text-sm font-semibold text-[var(--foreground)]">
                         {formatBytes(file.size)}
                       </p>
@@ -130,11 +130,11 @@ export function FileDetailDrawer({
 
                 <div className="rounded-xl bg-[var(--surface)]/55 p-3">
                   <div className="flex items-start gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--background)] text-[var(--muted)]">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--background)] text-muted-foreground">
                       <Clock className="h-4 w-4" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs text-[var(--muted)]">{t("detailDrawer.uploadTime")}</p>
+                      <p className="text-xs text-muted-foreground">{t("detailDrawer.uploadTime")}</p>
                       <p className="mt-1 text-sm font-semibold leading-5 text-[var(--foreground)]">
                         {formatDate(file.createdAt)}
                       </p>
@@ -144,11 +144,11 @@ export function FileDetailDrawer({
 
                 <div className="rounded-xl bg-[var(--surface)]/55 p-3">
                   <div className="flex items-start gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--background)] text-[var(--muted)]">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--background)] text-muted-foreground">
                       <Hash className="h-4 w-4" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs text-[var(--muted)]">{t("detailDrawer.status")}</p>
+                      <p className="text-xs text-muted-foreground">{t("detailDrawer.status")}</p>
                       <p className="mt-1 text-sm font-semibold text-[var(--foreground)]">{statusText}</p>
                     </div>
                   </div>
@@ -156,11 +156,11 @@ export function FileDetailDrawer({
 
                 <div className="rounded-xl bg-[var(--surface)]/55 p-3">
                   <div className="flex items-start gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--background)] text-[var(--muted)]">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--background)] text-muted-foreground">
                       <Layers className="h-4 w-4" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs text-[var(--muted)]">{t("detailDrawer.chunkCount")}</p>
+                      <p className="text-xs text-muted-foreground">{t("detailDrawer.chunkCount")}</p>
                       <p className="mt-1 text-sm font-semibold text-[var(--foreground)]">
                         {file.chunks != null ? file.chunks.toLocaleString() : "--"}
                       </p>
@@ -216,7 +216,7 @@ export function FileDetailDrawer({
 
               <div className="mt-4 space-y-3">
                 {file.status === "processing" && (
-                  <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border)]/70 bg-[var(--background)]/70 px-4 py-10 text-center text-[var(--muted)]">
+                  <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border)]/70 bg-[var(--background)]/70 px-4 py-10 text-center text-muted-foreground">
                     <Loader2 className="mb-2 h-6 w-6 animate-spin" />
                     <p className="text-sm">{t("detailDrawer.processingHint")}</p>
                   </div>
@@ -232,7 +232,7 @@ export function FileDetailDrawer({
                 )}
 
                 {file.status === "active" && isChunksLoading && (
-                  <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border)]/70 bg-[var(--background)]/70 px-4 py-10 text-center text-[var(--muted)]">
+                  <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border)]/70 bg-[var(--background)]/70 px-4 py-10 text-center text-muted-foreground">
                     <Loader2 className="mb-2 h-6 w-6 animate-spin" />
                     <p className="text-sm">{t("detailDrawer.loadingChunks")}</p>
                   </div>
@@ -240,7 +240,7 @@ export function FileDetailDrawer({
 
                 {file.status === "active" && !isChunksLoading && chunks.length === 0 && (
                   <div className="rounded-xl border border-dashed border-[var(--border)]/70 bg-[var(--background)]/70 px-4 py-10 text-center">
-                    <p className="text-sm text-[var(--muted)]">{t("detailDrawer.noChunks")}</p>
+                    <p className="text-sm text-muted-foreground">{t("detailDrawer.noChunks")}</p>
                   </div>
                 )}
 
@@ -260,7 +260,7 @@ export function FileDetailDrawer({
                         <Badge variant="outline" className="text-[10px]">
                           #{chunk.index}
                         </Badge>
-                        <span className="rounded-full bg-[var(--surface)]/80 px-2.5 py-1 text-[10px] text-[var(--muted)]">
+                        <span className="rounded-full bg-[var(--surface)]/80 px-2.5 py-1 text-[10px] text-muted-foreground">
                           {chunk.tokenCount} tokens
                         </span>
                       </div>

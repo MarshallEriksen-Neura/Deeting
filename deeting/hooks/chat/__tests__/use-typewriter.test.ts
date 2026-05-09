@@ -110,4 +110,47 @@ describe("useTypewriter", () => {
     expect(result.current.displayed).toBe(longText)
     expect(result.current.isAnimating).toBe(false)
   })
+
+  it("restarts the reveal when the source key changes mid-stream", () => {
+    const longText =
+      "Source changes should restart the reveal loop without stale timers publishing old progress."
+
+    const { result, rerender } = renderHook(
+      ({ sourceKey }) =>
+        useTypewriter(longText, {
+          enabled: true,
+          mode: "streaming",
+          sourceKey,
+        }),
+      { initialProps: { sourceKey: "assistant-1" } }
+    )
+
+    act(() => {
+      jest.advanceTimersByTime(34)
+    })
+
+    expect(result.current.displayed.length).toBeGreaterThan(0)
+
+    rerender({ sourceKey: "assistant-2" })
+
+    act(() => {
+      jest.runAllTicks()
+    })
+
+    expect(result.current.displayed).toBe("")
+
+    act(() => {
+      jest.advanceTimersByTime(34)
+    })
+
+    expect(result.current.displayed.length).toBeGreaterThan(0)
+    expect(result.current.displayed.length).toBeLessThan(longText.length)
+
+    act(() => {
+      jest.advanceTimersByTime(300)
+    })
+
+    expect(result.current.displayed).toBe(longText)
+    expect(result.current.isAnimating).toBe(false)
+  })
 })

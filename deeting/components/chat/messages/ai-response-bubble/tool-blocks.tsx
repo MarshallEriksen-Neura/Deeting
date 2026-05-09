@@ -14,7 +14,6 @@ import {
   Check,
   ChevronDown,
   Loader2,
-  Terminal,
   Zap,
 } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -139,6 +138,9 @@ type ToolOutcomeInsight = {
   continuationCount?: number | null;
   pendingApprovalCount?: number | null;
 };
+type UiRenderItem =
+  | { kind: "single"; block: MessageUIBlock; key: string }
+  | { kind: "image-group"; block: MessageUIBlock; key: string };
 
 function toRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") return null;
@@ -488,30 +490,121 @@ function resolveToolVisualState(
 
 function ToolStateGlyph({ state }: { state: ToolVisualState }) {
   return (
-    <span
-      className={cn(
-        "flex h-4 w-4 items-center justify-center rounded-full border",
-        state === "running" &&
-          "border-blue-200 bg-blue-100/90 text-blue-600 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300",
-        state === "success" &&
-          "border-emerald-200 bg-emerald-100/90 text-emerald-600 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300",
-        state === "error" &&
-          "border-red-200 bg-red-100/90 text-red-600 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300",
-        state === "pending" &&
-          "border-[var(--hairline)] bg-transparent text-[var(--ink-3)]",
-      )}
-    >
-      {state === "running" ? (
-        <Zap size={10} className="animate-pulse" />
-      ) : state === "success" ? (
-        <Check size={10} />
-      ) : state === "error" ? (
-        <AlertTriangle size={10} />
-      ) : (
-        <Terminal size={10} />
-      )}
+    <span className="flex h-4 w-4 items-center justify-center" aria-hidden="true">
+      <span
+        className={cn(
+          "h-1.5 w-1.5 rounded-full",
+          state === "running" &&
+            "bg-blue-500 shadow-[0_0_0_2px_rgba(59,130,246,0.14)]",
+          state === "success" &&
+            "bg-emerald-500 shadow-[0_0_0_2px_rgba(34,197,94,0.14)]",
+          state === "error" &&
+            "bg-red-500 shadow-[0_0_0_2px_rgba(239,68,68,0.14)]",
+          state === "pending" && "bg-[var(--ink-4)]",
+        )}
+      />
     </span>
   );
+}
+
+function toolDisclosureClass(state: ToolVisualState, accented = false) {
+  return cn(
+    "inline-flex min-h-8 items-center gap-2 rounded-[8px] border px-2.5 py-1 text-left transition-colors cursor-pointer select-none",
+    "border-[var(--hairline)] bg-[var(--panel-bg)] hover:border-[var(--ink-3)] hover:bg-[var(--panel-bg-inset)]",
+    state === "running" &&
+      "border-blue-500/20 bg-blue-500/[0.035] hover:border-blue-500/35",
+    state === "pending" &&
+      "border-[var(--hairline)] bg-transparent hover:bg-[var(--panel-bg-inset)]",
+    accented &&
+      "border-emerald-500/30 bg-emerald-500/[0.06] shadow-none dark:border-emerald-500/25 dark:bg-emerald-500/[0.08]",
+  );
+}
+
+function isChromeLightView(viewType: string) {
+  return viewType === "html.v1" || viewType === "image.result";
+}
+
+function isImageResultBlock(block: MessageUIBlock) {
+  return block.viewType === "image.result";
+}
+
+function extractImageResultOutputs(payload: unknown): Record<string, unknown>[] {
+  const record = toRecord(payload);
+  if (!record) return [];
+  const outputs = Array.isArray(record.outputs)
+    ? record.outputs
+        .map((output) => toRecord(output))
+        .filter((output): output is Record<string, unknown> => Boolean(output))
+    : [];
+  if (outputs.length > 0) return outputs;
+  const preview = toRecord(record.preview);
+  return preview ? [preview] : [];
+}
+
+function mergeImageResultBlocks(blocks: MessageUIBlock[]): MessageUIBlock | null {
+  if (blocks.length === 0) return null;
+  const first = blocks[0];
+  const outputs = blocks.flatMap((block) => extractImageResultOutputs(block.payload));
+  if (outputs.length === 0) return null;
+  const firstPayload = toRecord(first.payload) ?? {};
+
+  return {
+    ...first,
+    id: `${first.id || first.callId || "image-result"}-group-${blocks.length}`,
+    title: first.title,
+    payload: {
+      ...firstPayload,
+      preview: outputs[0],
+      outputs: outputs.map((output, index) => ({
+        ...output,
+        output_index:
+          typeof output.output_index === "number" && Number.isFinite(output.output_index)
+            ? output.output_index
+            : index,
+      })),
+    },
+  };
+}
+
+function buildUiRenderItems(blocks: MessageUIBlock[]): UiRenderItem[] {
+  const items: UiRenderItem[] = [];
+  let index = 0;
+
+  while (index < blocks.length) {
+    const block = blocks[index];
+    if (!isImageResultBlock(block)) {
+      items.push({ kind: "single", block, key: `${block.id || "ui"}-${index}` });
+      index += 1;
+      continue;
+    }
+
+    const imageBlocks: MessageUIBlock[] = [];
+    while (index < blocks.length && isImageResultBlock(blocks[index])) {
+      imageBlocks.push(blocks[index]);
+      index += 1;
+    }
+
+    if (imageBlocks.length === 1) {
+      const imageBlock = imageBlocks[0];
+      items.push({ kind: "single", block: imageBlock, key: `${imageBlock.id || "image"}-${index}` });
+      continue;
+    }
+
+    const merged = mergeImageResultBlocks(imageBlocks);
+    if (merged) {
+      items.push({ kind: "image-group", block: merged, key: merged.id });
+    } else {
+      imageBlocks.forEach((imageBlock, imageIndex) => {
+        items.push({
+          kind: "single",
+          block: imageBlock,
+          key: `${imageBlock.id || "image"}-${index}-${imageIndex}`,
+        });
+      });
+    }
+  }
+
+  return items;
 }
 
 const SkillInstallStatusCard = memo<{ insight: SkillInstallInsight }>(
@@ -1244,6 +1337,7 @@ export const ToolCallBlock = memo<{
     () => extractRuntimeToolTrace(resultBlock?.debug),
     [resultBlock?.debug],
   );
+  const uiRenderItems = useMemo(() => buildUiRenderItems(uiBlocks), [uiBlocks]);
 
   useEffect(
     () => () => {
@@ -1406,23 +1500,18 @@ export const ToolCallBlock = memo<{
 
   const card = (
     <div ref={cardRef} className="w-full group/tool mb-2">
-      <div 
+      <div
         onClick={() => hasExpandableContent && setIsOpen(!isOpen)}
-        className={cn(
-          "inline-flex items-center gap-2 py-1.5 px-3 rounded-full border transition-all select-none cursor-pointer",
-          visualState === "running" 
-            ? "border-blue-200 bg-blue-50/30 dark:border-blue-900/50" 
-            : "border-[var(--hairline)] bg-transparent hover:border-[var(--ink-2)]"
-        )}
+        className={toolDisclosureClass(visualState)}
       >
         <ToolStateGlyph state={visualState} />
         <div className="flex items-center gap-2 overflow-hidden">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--ink)] whitespace-nowrap">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--ink)] whitespace-nowrap">
             {sharedHumanizeToolName(name) ?? name ?? "Tool"}
           </span>
           {preview && (
-            <span className="text-[11px] font-mono text-[var(--ink-3)] truncate opacity-70 max-w-[120px] sm:max-w-[200px]">
-              / {toInlinePreview(preview, 48)}
+            <span className="border-l border-[var(--hairline)] pl-2 text-[11px] font-mono text-[var(--ink-3)] truncate max-w-[120px] sm:max-w-[240px]">
+              {toInlinePreview(preview, 56)}
             </span>
           )}
         </div>
@@ -1430,7 +1519,7 @@ export const ToolCallBlock = memo<{
           <ChevronDown
             size={12}
             className={cn(
-              "text-[var(--ink-3)] transition-transform duration-200",
+              "ml-0.5 text-[var(--ink-3)] transition-transform duration-200",
               !isOpen && "-rotate-90",
             )}
           />
@@ -1519,7 +1608,14 @@ export const ToolCallBlock = memo<{
             exit={{ opacity: 0, height: 0 }}
             className="overflow-hidden"
           >
-            <div className="mb-4 p-4 rounded-xl border border-[var(--hairline)] bg-[var(--panel-bg)]">
+            <div
+              className={cn(
+                "mb-4",
+                hasUi && uiBlocks.every((uiBlock) => isChromeLightView(uiBlock.viewType))
+                  ? "p-0"
+                  : "rounded-[10px] border border-[var(--hairline)] bg-[var(--panel-bg)] p-4",
+              )}
+            >
               <ToolOutcomeStatusCard insight={toolOutcomeInsight} />
               <RuntimeToolTimeline trace={runtimeTrace} outcome={toolOutcomeInsight} />
               {taskLiveId ? (
@@ -1538,14 +1634,14 @@ export const ToolCallBlock = memo<{
                 </div>
               ) : hasUi ? (
                 <div className="space-y-3">
-                  {uiBlocks.map((uiBlock, index) => (
+                  {uiRenderItems.map(({ block: uiBlock, key }) => (
                     <div
-                      key={`${uiBlock.id || `${callId || name || "tool"}-ui`}-${index}`}
+                      key={`${key}-${callId || name || "tool"}`}
                       className={cn(
-                        "overflow-hidden rounded-xl",
-                        uiBlock.viewType === "html.v1"
+                        "overflow-hidden",
+                        isChromeLightView(uiBlock.viewType)
                           ? "border-transparent bg-transparent p-0"
-                          : "border border-[var(--hairline)] bg-background/80 p-2",
+                          : "rounded-[10px] border border-[var(--hairline)] bg-background/80 p-2",
                       )}
                     >
                       <ViewBlock
@@ -1683,30 +1779,23 @@ export const ToolCallGroup = memo<{
       <div
         ref={groupRef}
         onClick={() => dispatchOpen("toggle")}
-        className={cn(
-          "inline-flex items-center gap-2 py-1.5 px-3 rounded-full border transition-all cursor-pointer select-none",
-          groupState === "running"
-            ? "border-blue-200 bg-blue-50/30 dark:border-blue-900/50"
-            : "border-[var(--hairline)] bg-transparent hover:border-[var(--ink-2)]",
-          containsRecentApproval &&
-            "border-emerald-300 bg-emerald-50/70 shadow-[0_0_0_3px_rgba(16,185,129,0.14)] dark:border-emerald-700 dark:bg-emerald-950/20",
-        )}
+        className={toolDisclosureClass(groupState, containsRecentApproval)}
       >
         <ToolStateGlyph state={groupState} />
         <div className="flex items-center gap-2 overflow-hidden">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--ink)] whitespace-nowrap">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--ink)] whitespace-nowrap">
             {t(summaryKey, { count: toolCalls.length })}
           </span>
           {summary?.highlights && (
-            <span className="text-[11px] font-mono text-[var(--ink-3)] truncate opacity-70 max-w-[120px] sm:max-w-[200px]">
-              / {summary.highlights}
+            <span className="border-l border-[var(--hairline)] pl-2 text-[11px] font-mono text-[var(--ink-3)] truncate max-w-[120px] sm:max-w-[240px]">
+              {summary.highlights}
             </span>
           )}
         </div>
         <ChevronDown
           size={12}
           className={cn(
-            "text-[var(--ink-3)] transition-transform duration-200",
+            "ml-0.5 text-[var(--ink-3)] transition-transform duration-200",
             !isOpen && "-rotate-90",
           )}
         />
@@ -1810,30 +1899,25 @@ export const ToolResultBlock = memo<{
 
   return (
     <div className="w-full mb-2">
-      <div 
+      <div
         onClick={() => setIsOpen(!isOpen)}
-        className={cn(
-          "inline-flex items-center gap-2 py-1.5 px-3 rounded-full border transition-all select-none cursor-pointer",
-          isError
-            ? "border-red-200 bg-red-50/30 dark:border-red-900/50"
-            : "border-[var(--hairline)] bg-transparent hover:border-[var(--ink-2)]"
-        )}
+        className={toolDisclosureClass(visualState)}
       >
         <ToolStateGlyph state={visualState} />
         <div className="flex items-center gap-2 overflow-hidden">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--ink)] whitespace-nowrap">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--ink)] whitespace-nowrap">
             {title}
           </span>
           {preview && (
-            <span className="text-[11px] font-mono text-[var(--ink-3)] truncate opacity-70 max-w-[120px] sm:max-w-[200px]">
-              / {toInlinePreview(preview, 48)}
+            <span className="border-l border-[var(--hairline)] pl-2 text-[11px] font-mono text-[var(--ink-3)] truncate max-w-[120px] sm:max-w-[240px]">
+              {toInlinePreview(preview, 56)}
             </span>
           )}
         </div>
         <ChevronDown
           size={12}
           className={cn(
-            "text-[var(--ink-3)] transition-transform duration-200",
+            "ml-0.5 text-[var(--ink-3)] transition-transform duration-200",
             !isOpen && "-rotate-90",
           )}
         />

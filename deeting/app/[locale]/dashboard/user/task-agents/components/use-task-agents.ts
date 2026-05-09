@@ -155,12 +155,22 @@ export function useTaskAgents(t: Translation) {
     { revalidateOnFocus: false, keepPreviousData: true },
   )
 
+  const selectedAgent = React.useMemo(
+    () =>
+      selectedAgentId && selectedAgentId !== NEW_AGENT_ID
+        ? agents.find((agent) => agent.id === selectedAgentId) ?? null
+        : null,
+    [agents, selectedAgentId],
+  )
+
+  const activeInvocationKind = selectedAgent?.invocation_kind ?? draft.invocation_kind
+
   const { modelGroups, isLoadingModels } = useChatModels({
     enabled: isDesktop,
     modelCapability:
-      draft.invocation_kind === "image_generation"
+      activeInvocationKind === "image_generation"
         ? "image_generation"
-        : draft.invocation_kind === "text_to_speech"
+        : activeInvocationKind === "text_to_speech"
           ? "text_to_speech"
           : "chat",
   })
@@ -248,23 +258,15 @@ export function useTaskAgents(t: Translation) {
 
   // 鈹€鈹€ Computed values 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-  const selectedAgent = React.useMemo(
-    () =>
-      selectedAgentId && selectedAgentId !== NEW_AGENT_ID
-        ? agents.find((agent) => agent.id === selectedAgentId) ?? null
-        : null,
-    [agents, selectedAgentId],
-  )
-
   const isStarterState =
     selectedAgentId === NEW_AGENT_ID && createFlowStep === "starter"
 
   const isImageWorkspace =
     !isStarterState &&
-    (selectedAgent?.invocation_kind ?? draft.invocation_kind) === "image_generation"
+    activeInvocationKind === "image_generation"
   const isVoiceWorkspace =
     !isStarterState &&
-    (selectedAgent?.invocation_kind ?? draft.invocation_kind) === "text_to_speech"
+    activeInvocationKind === "text_to_speech"
   const showBindingsWorkspace = !isStarterState && !isImageWorkspace && !isVoiceWorkspace
 
   const dateFormatter = React.useMemo(

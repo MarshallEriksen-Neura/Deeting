@@ -335,7 +335,7 @@ export function KnowledgeClient() {
 
       {/* Search */}
       <div className="flex items-center gap-2">
-        <Search className="h-4 w-4 text-[var(--muted)]" />
+        <Search className="h-4 w-4 text-muted-foreground" />
         <Input
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}

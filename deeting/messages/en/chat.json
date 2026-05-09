@@ -430,11 +430,13 @@
       "workflowSuggestionTitle": "This task is a better fit for orchestration",
       "workflowSuggestionDescription": "Generate a plan first so you can review phases, owners, and approvals before running it.",
       "switchToWorkflow": "Switch to orchestration",
-        "placeholder": "Type a message...",
-        "menu": "Actions",
-        "stop": "Stop",
-        "continue": "Continue",
-        "recovery": {
+      "immersiveCollapse": "Collapse composer",
+      "immersiveExpand": "Expand composer",
+      "placeholder": "Type a message...",
+      "menu": "Actions",
+      "stop": "Stop",
+      "continue": "Continue",
+      "recovery": {
           "title": "Recovered interrupted execution",
           "stageLabel": "Stage",
           "executionLabel": "Execution",

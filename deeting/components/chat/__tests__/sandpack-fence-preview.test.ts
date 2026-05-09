@@ -43,8 +43,14 @@ describe("supportsSandpackFence", () => {
     expect(supportsSandpackFence("html", largeHtml)).toBe(true)
   })
 
-  it("still skips oversized reactive sandpack previews", () => {
+  it("hides preview for html fragments instead of auto-wrapping them", () => {
+    const fragment = `<div class="card">partial html only</div>`
+    expect(supportsSandpackFence("html", fragment)).toBe(false)
+  })
+
+  it("hides preview for non-html code fences", () => {
     const largeTsx = buildLargeTsxComponent(700)
     expect(supportsSandpackFence("tsx", largeTsx)).toBe(false)
+    expect(supportsSandpackFence("tsx", "useQuery({ queryKey: ['todos'] })")).toBe(false)
   })
 })

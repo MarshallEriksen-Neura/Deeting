@@ -537,6 +537,8 @@
       "workflowSuggestionTitle": "这个任务更适合先进入编排",
       "workflowSuggestionDescription": "先生成计划，再确认阶段、负责人和审批节点，会更可控。",
       "switchToWorkflow": "转为编排",
+      "immersiveCollapse": "收起输入框",
+      "immersiveExpand": "展开输入框",
       "placeholder": "输入消息...",
       "menu": "更多功能",
       "stop": "停止",

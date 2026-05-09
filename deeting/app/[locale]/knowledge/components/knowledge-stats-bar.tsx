@@ -30,7 +30,7 @@ export function KnowledgeStatsBar({ stats }: KnowledgeStatsBarProps) {
           <HardDrive className="h-5 w-5 text-[var(--primary)] shrink-0" />
           <div className="flex-1 space-y-1">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-[var(--muted)]">{t("stats.usedSpace")}</span>
+              <span className="text-muted-foreground">{t("stats.usedSpace")}</span>
               <span className="text-[var(--foreground)] font-medium">
                 {formatBytes(stats.usedBytes)}
                 {hasManagedTotal ? ` / ${formatBytes(stats.totalBytes!)}` : ""}
@@ -46,7 +46,7 @@ export function KnowledgeStatsBar({ stats }: KnowledgeStatsBarProps) {
         <div className="flex items-center gap-2">
           <Database className="h-4 w-4 text-emerald-500" />
           <div className="text-xs">
-            <span className="text-[var(--muted)]">{t("stats.vectors")}</span>
+            <span className="text-muted-foreground">{t("stats.vectors")}</span>
             <span className="ml-1.5 text-[var(--foreground)] font-semibold">
               {stats.totalVectors.toLocaleString()}
             </span>
@@ -60,7 +60,7 @@ export function KnowledgeStatsBar({ stats }: KnowledgeStatsBarProps) {
         <div className="flex items-center gap-2">
           <FileText className="h-4 w-4 text-blue-500" />
           <div className="text-xs">
-            <span className="text-[var(--muted)]">{t("stats.files")}</span>
+            <span className="text-muted-foreground">{t("stats.files")}</span>
             <span className="ml-1.5 text-[var(--foreground)] font-semibold">{stats.totalFiles}</span>
           </div>
         </div>
@@ -72,7 +72,7 @@ export function KnowledgeStatsBar({ stats }: KnowledgeStatsBarProps) {
         <div className="flex items-center gap-2">
           <FolderOpen className="h-4 w-4 text-amber-500" />
           <div className="text-xs">
-            <span className="text-[var(--muted)]">{t("stats.folders")}</span>
+            <span className="text-muted-foreground">{t("stats.folders")}</span>
             <span className="ml-1.5 text-[var(--foreground)] font-semibold">{stats.totalFolders}</span>
           </div>
         </div>

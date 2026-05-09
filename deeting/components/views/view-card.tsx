@@ -1,7 +1,6 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { Badge } from "@/ui/shadcn/badge"
 import { cn } from "@/lib/utils"
 
 interface ViewCardProps {
@@ -22,23 +21,15 @@ export function ViewCard({
   return (
     <div
       className={cn(
-        "rounded-lg border border-border bg-card overflow-hidden w-full max-w-lg",
+        "w-full overflow-hidden border [border-color:rgba(15,17,28,0.08)] dark:[border-color:rgba(255,255,255,0.08)]",
         className
       )}
     >
       {(title || viewType) && (
-        <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-muted/30">
-          {title && (
-            <span className="text-sm font-medium truncate">{title}</span>
-          )}
-          {viewType && (
-            <Badge
-              variant="outline"
-              className="text-[10px] h-5 font-normal text-muted-foreground shrink-0"
-            >
-              {viewType}
-            </Badge>
-          )}
+        <div className="flex items-center justify-between gap-2 px-3 py-2 border-b [border-color:rgba(15,17,28,0.08)] dark:[border-color:rgba(255,255,255,0.08)]">
+          <span className="truncate text-[12px] font-medium uppercase tracking-wider text-[#64748b] dark:text-[#94a3b8]">
+            {title || viewType}
+          </span>
         </div>
       )}
       <div className={cn("p-3", contentClassName)}>{children}</div>

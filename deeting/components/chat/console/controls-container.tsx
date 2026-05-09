@@ -1,6 +1,7 @@
 'use client';
 
-import { AlertCircle, ArrowUp, Bot, CircleDashed, RotateCcw, Search, Sliders, MessageSquarePlus, Paperclip, X, Square, FileText, Play, Check, Loader2, Globe, Presentation } from 'lucide-react';
+import { AlertCircle, ArrowUp, Bot, Check, ChevronsDown, ChevronsUp, CircleDashed, FileText, Globe, Loader2, MessageSquarePlus, Paperclip, Play, Presentation, RotateCcw, Search, Sliders, Square, X } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useMemo, useRef, useState, useCallback, useEffect, memo } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
@@ -128,9 +129,12 @@ function ControlsContainer() {
   const [composerMode, setComposerMode] = useState<ComposerMode>('chat');
   const [isPlanningWorkflow, setIsPlanningWorkflow] = useState(false);
   const [isAttachingPageContext, setIsAttachingPageContext] = useState(false);
+  const [isImmersiveComposerCollapsed, setIsImmersiveComposerCollapsed] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const hasMountedImmersiveComposerRef = useRef(false);
   const t = useI18n('chat');
+  const prefersReducedMotion = useReducedMotion();
   const openWorkflow = useOpenWorkflow();
   const {
     input,
@@ -387,6 +391,30 @@ function ControlsContainer() {
       attachments.length === 0,
     [attachments.length, hasInterruptedGeneration, input, isGenerating, recoveryPrompt]
   );
+  const immersiveToggleLabel = useMemo(
+    () => (
+      isImmersiveComposerCollapsed
+        ? t("controls.immersiveExpand")
+        : t("controls.immersiveCollapse")
+    ),
+    [isImmersiveComposerCollapsed, t]
+  );
+  const composerTransition = useMemo(
+    () => (
+      prefersReducedMotion
+        ? { duration: 0.16, ease: 'easeOut' as const }
+        : { type: 'spring' as const, stiffness: 360, damping: 30, mass: 0.9 }
+    ),
+    [prefersReducedMotion]
+  );
+  const composerLayoutTransition = useMemo(
+    () => (
+      prefersReducedMotion
+        ? { duration: 0.16, ease: 'easeOut' as const }
+        : { type: 'spring' as const, stiffness: 320, damping: 32, mass: 0.86 }
+    ),
+    [prefersReducedMotion]
+  );
   const sendButtonDisabled = useMemo(() => {
     if (isPlanningWorkflow) return true;
     if (isGenerating) return false;
@@ -448,6 +476,10 @@ function ControlsContainer() {
     setIsTaskAgentMentionPickerDismissed(false);
   }, [setInput]);
 
+  const handleImmersiveComposerToggle = useCallback(() => {
+    setIsImmersiveComposerCollapsed((current) => !current);
+  }, []);
+
   const handleSelectTaskAgentMention = useCallback((agent: CustomTaskAgentProfile) => {
     setInput(buildLeadingTaskAgentMentionInput(agent.name, ''));
     setIsTaskAgentMentionPickerDismissed(true);
@@ -469,6 +501,18 @@ function ControlsContainer() {
     node.style.height = `${nextHeight}px`;
     node.style.overflowY = node.scrollHeight > 220 ? 'auto' : 'hidden';
   }, [input]);
+
+  useEffect(() => {
+    if (!hasMountedImmersiveComposerRef.current) {
+      hasMountedImmersiveComposerRef.current = true;
+      return;
+    }
+    if (isImmersiveComposerCollapsed) return;
+    const frame = window.requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isImmersiveComposerCollapsed]);
 
   const loadKnowledgeFiles = useCallback(async () => {
     if (!isTauriRuntime) return;
@@ -933,12 +977,26 @@ function ControlsContainer() {
   ]);
 
   return (
-    <div className="relative flex flex-col gap-2 overflow-visible rounded-[28px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-bg)] p-2.5 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.38)] backdrop-blur-2xl supports-[backdrop-filter]:bg-[color:var(--ios-shell-bg)]">
-      <div className="pointer-events-none absolute inset-x-8 top-0 h-16 rounded-full bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.72),transparent_70%)] opacity-70 dark:opacity-40" />
-      <BrowserModeConfirmationBar />
+    <div className="relative">
+      <AnimatePresence initial={false} mode="wait">
+        {!isImmersiveComposerCollapsed ? (
+          <motion.div
+            key="controls-expanded"
+            initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 24, scale: 0.985, filter: 'blur(10px)' }}
+            animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
+            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 46, scale: 0.97, filter: 'blur(12px)' }}
+            transition={composerTransition}
+            className="relative flex flex-col gap-2 overflow-visible rounded-[28px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-bg)] p-2.5 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.38)] backdrop-blur-2xl supports-[backdrop-filter]:bg-[color:var(--ios-shell-bg)]"
+          >
+            <div className="pointer-events-none absolute inset-x-8 top-0 h-16 rounded-full bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.72),transparent_70%)] opacity-70 dark:opacity-40" />
+            <BrowserModeConfirmationBar />
 
       {/* 1. Main Input Area */}
-      <div className="relative pt-0.5">
+      <motion.div
+        layout="position"
+        transition={{ layout: composerLayoutTransition }}
+        className="relative pt-0.5"
+      >
         <div className="pointer-events-none absolute bottom-full left-0 z-20 mb-2 flex flex-col gap-2">
           <RecoveryActionBar
             recovery={recoveryPrompt}
@@ -956,7 +1014,11 @@ function ControlsContainer() {
           />
         </div>
         {contextBarItems.length > 0 ? (
-          <div className="mb-2 flex flex-wrap items-center gap-1.5 px-1">
+          <motion.div
+            layout="position"
+            transition={{ layout: composerLayoutTransition }}
+            className="mb-2 flex flex-wrap items-center gap-1.5 px-1"
+          >
             {contextBarItems.map((item) => (
               <span
                 key={item.key}
@@ -974,7 +1036,7 @@ function ControlsContainer() {
                 {item.label}
               </span>
             ))}
-          </div>
+          </motion.div>
         ) : null}
         <div
           className={cn(
@@ -982,193 +1044,206 @@ function ControlsContainer() {
             isBridgeFlashing && "terminal-bridge-flash",
           )}
         >
-          {showTaskAgentMentionPicker ? (
-            <div className="absolute bottom-[calc(100%+8px)] left-0 z-20 w-full max-w-[720px] overflow-hidden rounded-[24px] border border-slate-200/80 bg-white/95 p-2 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.65)] backdrop-blur-2xl dark:border-white/10 dark:bg-[#151515]/95">
-              <div className="px-3 pb-1.5 pt-1 text-[11px] font-semibold text-slate-500 dark:text-white/45">
-                {t("input.taskAgentPickerTitle")}
-              </div>
-              <div className="max-h-72 overflow-y-auto pr-1">
-                {filteredTaskAgentMentionOptions.map((agent, index) => {
-                  const isActive = index === taskAgentMentionActiveIndex;
-                  return (
-                    <button
-                      key={agent.id}
-                      type="button"
-                      className={cn(
-                        "flex min-h-11 w-full items-center gap-3 rounded-[16px] px-3 py-2 text-left transition-colors",
-                        isActive
-                          ? "bg-slate-100 text-slate-900 dark:bg-white/10 dark:text-white"
-                          : "text-slate-700 hover:bg-slate-50 dark:text-white/75 dark:hover:bg-white/[0.06]"
-                      )}
-                      onMouseEnter={() => setTaskAgentMentionActiveIndex(index)}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => handleSelectTaskAgentMention(agent)}
-                    >
-                      <div className={cn(
-                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border",
-                        isActive
-                          ? "border-slate-300 bg-white text-slate-800 dark:border-white/20 dark:bg-white/10 dark:text-white"
-                          : "border-slate-200 bg-slate-50 text-slate-500 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/45"
-                      )}>
-                        <Bot className="h-4 w-4" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate text-sm font-semibold">{agent.name}</span>
-                          <span className="rounded-full border border-slate-200 px-1.5 py-0.5 text-[10px] font-medium uppercase text-slate-400 dark:border-white/10 dark:text-white/35">
-                            {agent.invocation_kind.replace(/_/g, ' ')}
-                          </span>
-                        </div>
-                        <div className="truncate text-xs text-slate-500 dark:text-white/40">
-                          {agent.description || agent.task_prompt}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-          <Textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => handleInputChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            rows={1}
-            className="max-h-[220px] min-h-[44px] w-full resize-none overflow-y-hidden border-0 bg-transparent px-0 py-[9px] text-[15px] font-normal leading-7 text-slate-800 shadow-none focus-visible:ring-0 focus-visible:border-transparent dark:text-white/80 placeholder:text-slate-500 dark:placeholder:text-white/30"
-            placeholder={t("controls.placeholder")}
-            aria-label={t("controls.placeholder")}
-            autoFocus
-            onFocus={handleInputFocus}
-          />
-          <Popover open={isParamsOpen} onOpenChange={handleParamsOpenChange}>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="ios"
-                size="icon"
-                aria-label={`${t("hud.temperature")} / ${t("hud.topP")}`}
-                title={`${t("hud.temperature")} / ${t("hud.topP")}`}
-                className={cn(
-                  "min-h-[44px] min-w-[44px] size-10 cursor-pointer",
-                  isParamsOpen ? "ring-2 ring-[color:var(--ios-ring)]" : undefined,
-                )}
-              >
-                <Sliders className="w-5 h-5" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent
-              side="top"
-              align="end"
-              className="w-72 rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/95 dark:bg-[#0a0a0a]/95 shadow-2xl backdrop-blur-2xl"
-            >
-              <div className="space-y-4">
-                <div className="flex items-center justify-between rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]">
-                  <div className="space-y-0.5">
-                    <div className="text-[11px] font-bold text-slate-700 dark:text-white/80">
-                      {t("hud.temperatureToggle")}
-                    </div>
-                    <div className="text-[10px] text-slate-500 dark:text-white/40">
-                      {config.temperatureEnabled
-                        ? t("hud.temperatureEnabled")
-                        : t("hud.temperatureDisabled")}
-                    </div>
+              {showTaskAgentMentionPicker ? (
+                <div className="absolute bottom-[calc(100%+8px)] left-0 z-20 w-full max-w-[720px] overflow-hidden rounded-[24px] border border-slate-200/80 bg-white/95 p-2 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.65)] backdrop-blur-2xl dark:border-white/10 dark:bg-[#151515]/95">
+                  <div className="px-3 pb-1.5 pt-1 text-[11px] font-semibold text-slate-500 dark:text-white/45">
+                    {t("input.taskAgentPickerTitle")}
                   </div>
-                  <Switch
-                    checked={config.temperatureEnabled}
-                    onCheckedChange={handleTemperatureEnabledChange}
-                    aria-label={t("hud.temperatureToggle")}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center px-1">
-                    <label className="text-[11px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
-                      {t("hud.temperature")}
-                    </label>
-                    <span className="text-[11px] font-mono font-bold">{config.temperature}</span>
-                  </div>
-                  <Slider
-                    value={[config.temperature]}
-                    min={0}
-                    max={2}
-                    step={0.1}
-                    aria-label={t("hud.temperature")}
-                    disabled={!config.temperatureEnabled}
-                    onValueChange={handleTemperatureChange}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center px-1">
-                    <label className="text-[11px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
-                      {t("hud.topP")}
-                    </label>
-                    <span className="text-[11px] font-mono font-bold">{config.topP}</span>
-                  </div>
-                  <Slider
-                    value={[config.topP]}
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    aria-label={t("hud.topP")}
-                    disabled={!config.temperatureEnabled}
-                    onValueChange={handleTopPChange}
-                  />
-                </div>
-                <Separator className="bg-slate-200/70 dark:bg-white/10" />
-                <div className="flex items-center justify-between rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]">
-                  <div className="space-y-0.5">
-                    <div className="text-[11px] font-bold text-slate-700 dark:text-white/80">
-                      {t("hud.reasoningToggle")}
-                    </div>
-                    <div className="text-[10px] text-slate-500 dark:text-white/40">
-                      {config.reasoningEnabled
-                        ? t("hud.reasoningEnabled")
-                        : t("hud.reasoningDisabled")}
-                    </div>
-                  </div>
-                  <Switch
-                    checked={config.reasoningEnabled}
-                    onCheckedChange={handleReasoningEnabledChange}
-                    aria-label={t("hud.reasoningToggle")}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center px-1">
-                    <label className="text-[11px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
-                      {t("hud.reasoningEffort")}
-                    </label>
-                    <span className="text-[11px] font-mono font-bold uppercase">{config.reasoningEffort}</span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['low', 'medium', 'high'] as const).map((effort) => {
-                      const active = config.reasoningEffort === effort
+                  <div className="max-h-72 overflow-y-auto pr-1">
+                    {filteredTaskAgentMentionOptions.map((agent, index) => {
+                      const isActive = index === taskAgentMentionActiveIndex;
                       return (
-                        <Button
-                          key={effort}
+                        <button
+                          key={agent.id}
                           type="button"
-                          variant="outline"
-                          size="sm"
-                          disabled={!config.reasoningEnabled}
-                          onClick={() => handleReasoningEffortChange(effort)}
                           className={cn(
-                            "h-8 text-[11px] font-semibold capitalize",
-                            active
-                              ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
-                              : "border-slate-200 dark:border-white/10"
+                            "flex min-h-11 w-full items-center gap-3 rounded-[16px] px-3 py-2 text-left transition-colors",
+                            isActive
+                              ? "bg-slate-100 text-slate-900 dark:bg-white/10 dark:text-white"
+                              : "text-slate-700 hover:bg-slate-50 dark:text-white/75 dark:hover:bg-white/[0.06]"
                           )}
+                          onMouseEnter={() => setTaskAgentMentionActiveIndex(index)}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => handleSelectTaskAgentMention(agent)}
                         >
-                          {t(`hud.reasoningEffortOptions.${effort}`)}
-                        </Button>
-                      )
+                          <div className={cn(
+                            "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border",
+                            isActive
+                              ? "border-slate-300 bg-white text-slate-800 dark:border-white/20 dark:bg-white/10 dark:text-white"
+                              : "border-slate-200 bg-slate-50 text-slate-500 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/45"
+                          )}>
+                            <Bot className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="truncate text-sm font-semibold">{agent.name}</span>
+                              <span className="rounded-full border border-slate-200 px-1.5 py-0.5 text-[10px] font-medium uppercase text-slate-400 dark:border-white/10 dark:text-white/35">
+                                {agent.invocation_kind.replace(/_/g, ' ')}
+                              </span>
+                            </div>
+                            <div className="truncate text-xs text-slate-500 dark:text-white/40">
+                              {agent.description || agent.task_prompt}
+                            </div>
+                          </div>
+                        </button>
+                      );
                     })}
                   </div>
                 </div>
+              ) : null}
+              <Textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => handleInputChange(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                rows={1}
+                className="max-h-[220px] min-h-[44px] w-full resize-none overflow-y-hidden border-0 bg-transparent px-0 py-[9px] text-[15px] font-normal leading-7 text-slate-800 shadow-none focus-visible:ring-0 focus-visible:border-transparent dark:text-white/80 placeholder:text-slate-500 dark:placeholder:text-white/30"
+                placeholder={t("controls.placeholder")}
+                aria-label={t("controls.placeholder")}
+                autoFocus
+                onFocus={handleInputFocus}
+              />
+              <div className="ml-3 flex shrink-0 items-end gap-2 self-end">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={immersiveToggleLabel}
+                  title={immersiveToggleLabel}
+                  onClick={handleImmersiveComposerToggle}
+                  className="min-h-[44px] min-w-[44px] size-10 rounded-full border border-transparent text-slate-400 transition-all duration-200 hover:border-slate-200/90 hover:bg-white/80 hover:text-slate-700 dark:text-white/35 dark:hover:border-white/10 dark:hover:bg-white/[0.06] dark:hover:text-white/80"
+                >
+                  <ChevronsDown className="h-4 w-4" />
+                </Button>
+                <Popover open={isParamsOpen} onOpenChange={handleParamsOpenChange}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ios"
+                      size="icon"
+                      aria-label={`${t("hud.temperature")} / ${t("hud.topP")}`}
+                      title={`${t("hud.temperature")} / ${t("hud.topP")}`}
+                      className={cn(
+                        "min-h-[44px] min-w-[44px] size-10 cursor-pointer",
+                        isParamsOpen ? "ring-2 ring-[color:var(--ios-ring)]" : undefined,
+                      )}
+                    >
+                      <Sliders className="w-5 h-5" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    side="top"
+                    align="end"
+                    className="w-72 rounded-2xl border border-slate-200/70 dark:border-white/10 bg-white/95 dark:bg-[#0a0a0a]/95 shadow-2xl backdrop-blur-2xl"
+                  >
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]">
+                        <div className="space-y-0.5">
+                          <div className="text-[11px] font-bold text-slate-700 dark:text-white/80">
+                            {t("hud.temperatureToggle")}
+                          </div>
+                          <div className="text-[10px] text-slate-500 dark:text-white/40">
+                            {config.temperatureEnabled
+                              ? t("hud.temperatureEnabled")
+                              : t("hud.temperatureDisabled")}
+                          </div>
+                        </div>
+                        <Switch
+                          checked={config.temperatureEnabled}
+                          onCheckedChange={handleTemperatureEnabledChange}
+                          aria-label={t("hud.temperatureToggle")}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center px-1">
+                          <label className="text-[11px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
+                            {t("hud.temperature")}
+                          </label>
+                          <span className="text-[11px] font-mono font-bold">{config.temperature}</span>
+                        </div>
+                        <Slider
+                          value={[config.temperature]}
+                          min={0}
+                          max={2}
+                          step={0.1}
+                          aria-label={t("hud.temperature")}
+                          disabled={!config.temperatureEnabled}
+                          onValueChange={handleTemperatureChange}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center px-1">
+                          <label className="text-[11px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
+                            {t("hud.topP")}
+                          </label>
+                          <span className="text-[11px] font-mono font-bold">{config.topP}</span>
+                        </div>
+                        <Slider
+                          value={[config.topP]}
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          aria-label={t("hud.topP")}
+                          disabled={!config.temperatureEnabled}
+                          onValueChange={handleTopPChange}
+                        />
+                      </div>
+                      <Separator className="bg-slate-200/70 dark:bg-white/10" />
+                      <div className="flex items-center justify-between rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]">
+                        <div className="space-y-0.5">
+                          <div className="text-[11px] font-bold text-slate-700 dark:text-white/80">
+                            {t("hud.reasoningToggle")}
+                          </div>
+                          <div className="text-[10px] text-slate-500 dark:text-white/40">
+                            {config.reasoningEnabled
+                              ? t("hud.reasoningEnabled")
+                              : t("hud.reasoningDisabled")}
+                          </div>
+                        </div>
+                        <Switch
+                          checked={config.reasoningEnabled}
+                          onCheckedChange={handleReasoningEnabledChange}
+                          aria-label={t("hud.reasoningToggle")}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center px-1">
+                          <label className="text-[11px] font-bold text-slate-600 dark:text-white/50 flex items-center gap-1.5">
+                            {t("hud.reasoningEffort")}
+                          </label>
+                          <span className="text-[11px] font-mono font-bold uppercase">{config.reasoningEffort}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          {(['low', 'medium', 'high'] as const).map((effort) => {
+                            const active = config.reasoningEffort === effort
+                            return (
+                              <Button
+                                key={effort}
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={!config.reasoningEnabled}
+                                onClick={() => handleReasoningEffortChange(effort)}
+                                className={cn(
+                                  "h-8 text-[11px] font-semibold capitalize",
+                                  active
+                                    ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
+                                    : "border-slate-200 dark:border-white/10"
+                                )}
+                              >
+                                {t(`hud.reasoningEffortOptions.${effort}`)}
+                              </Button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
-            </PopoverContent>
-          </Popover>
         </div>
-      </div>
+      </motion.div>
 
       {attachments.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2 px-1">
@@ -1381,7 +1456,11 @@ function ControlsContainer() {
       ) : null}
 
       {/* 2. Action Row */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5">
+      <motion.div
+        layout="position"
+        transition={{ layout: composerLayoutTransition }}
+        className="flex flex-wrap items-center justify-between gap-2.5"
+      >
         <div className="flex flex-wrap items-center gap-2">
           {/* New Chat Button */}
           <GlassButton
@@ -1678,7 +1757,7 @@ function ControlsContainer() {
             )}
           </GlassButton>
         </div>
-      </div>
+      </motion.div>
 
       <Input
         ref={fileInputRef}
@@ -1689,6 +1768,33 @@ function ControlsContainer() {
         onChange={handleFileChange}
         disabled={isLoading}
       />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="controls-collapsed"
+            initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: -10, scale: 0.94 }}
+            animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 18, scale: 0.9 }}
+            transition={composerTransition}
+            className="flex justify-end px-1"
+          >
+            <motion.button
+              type="button"
+              aria-label={immersiveToggleLabel}
+              title={immersiveToggleLabel}
+              onClick={handleImmersiveComposerToggle}
+              whileHover={prefersReducedMotion ? undefined : { y: -1, scale: 1.02 }}
+              whileTap={prefersReducedMotion ? undefined : { scale: 0.96 }}
+              className="group relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] text-slate-500 shadow-[0_14px_28px_-22px_rgba(15,23,42,0.6)] backdrop-blur-xl transition-colors hover:bg-white/88 hover:text-slate-700 dark:text-white/55 dark:hover:bg-white/[0.08] dark:hover:text-white/85"
+            >
+              <ChevronsUp className="h-4 w-4" />
+              {hasComposerContent ? (
+                <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-sky-500 shadow-[0_0_0_4px_rgba(255,255,255,0.85)] dark:shadow-[0_0_0_4px_rgba(16,23,42,0.9)]" />
+              ) : null}
+            </motion.button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
