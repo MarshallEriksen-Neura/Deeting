@@ -1,5 +1,5 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// Prevents additional console window on Windows (both debug and release), DO NOT REMOVE!!
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 fn main() {
     if std::env::var("DEETING_WECHAT_BRIDGE_MODE").ok().as_deref() == Some("1") {

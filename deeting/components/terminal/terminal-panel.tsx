@@ -214,7 +214,7 @@ export function TerminalPanel({ isCollapsed }: TerminalPanelProps) {
               </span>
               <span className="rounded-sm border border-[rgba(220,38,38,0.12)] px-1.5 py-0.5 text-[10px] text-rose-700/70">
                 {t("terminal.failure.exitCode", {
-                  code: visibleFailedCommand.exitCode,
+                  code: visibleFailedCommand.exitCode ?? "",
                 })}
               </span>
             </div>

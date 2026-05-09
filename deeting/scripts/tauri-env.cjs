@@ -10,6 +10,9 @@ function buildTauriEnv(baseEnv, protocPath) {
     ...baseEnv,
     NEXT_PUBLIC_IS_TAURI: "true",
     PROTOC: protocPath,
+    // Increase Rust compiler stack size to avoid STATUS_STACK_BUFFER_OVERRUN
+    // during compilation of heavy-generics crates (lancedb, arrow, sqlx, etc.)
+    RUST_MIN_STACK: baseEnv.RUST_MIN_STACK || "8388608",
   }
 }
 
