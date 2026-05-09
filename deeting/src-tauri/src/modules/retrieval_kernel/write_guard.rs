@@ -113,12 +113,12 @@ pub(crate) fn policy_for_profile(profile: WriteGuardProfile) -> WriteGuardPolicy
             scope_mode: WriteGuardScopeMode::PayloadFilters,
         },
         WriteGuardProfile::WikiPromotion => WriteGuardPolicy {
-            base_update_threshold: 0.93,
-            base_noop_threshold: 0.99,
-            min_gap: 0.05,
-            max_ratio: 0.97,
+            base_update_threshold: 0.89,
+            base_noop_threshold: 0.978,
+            min_gap: 0.03,
+            max_ratio: 0.98,
             allow_auto_merge: true,
-            protected_noop_threshold: 0.997,
+            protected_noop_threshold: 0.993,
             scope_mode: WriteGuardScopeMode::PayloadFilters,
         },
     }
@@ -464,6 +464,20 @@ mod tests {
         }
     }
 
+    fn wiki_candidate(
+        id: &str,
+        score: f32,
+        meta_info: Option<serde_json::Value>,
+        vitality: Option<f32>,
+        last_accessed_at: Option<&str>,
+    ) -> WriteGuardCandidate {
+        WriteGuardCandidate {
+            category: Some("llm_wiki".to_string()),
+            source: Some("llm_wiki_automation::workspace-1".to_string()),
+            ..candidate(id, score, meta_info, vitality, last_accessed_at)
+        }
+    }
+
     #[test]
     fn manual_profile_is_scoped_and_conservative() {
         let policy = policy_for_profile(WriteGuardProfile::ManualMemory);
@@ -581,6 +595,68 @@ mod tests {
         assert!(detail.effective_update_threshold <= 0.93);
         assert!(detail.effective_noop_threshold >= 0.96);
         assert!(detail.effective_noop_threshold <= 0.9995);
+    }
+
+    #[test]
+    fn wiki_profile_updates_near_duplicate_rewrites_before_adding() {
+        let now = time::OffsetDateTime::parse(
+            "2026-04-14T00:00:00Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .expect("parse time");
+        let detail = decide_write_guard(
+            WriteGuardProfile::WikiPromotion,
+            &crate::modules::memory::types::CreateLocalMemoryRequest {
+                content: "candidate".to_string(),
+                session_id: None,
+                capability_id: None,
+                meta_info: None,
+                category: Some("llm_wiki".to_string()),
+                source: Some("llm_wiki_automation::workspace-1".to_string()),
+                tags: None,
+            },
+            &[wiki_candidate(
+                "existing",
+                0.91,
+                None,
+                Some(0.4),
+                Some("2026-03-01T00:00:00Z"),
+            )],
+            now,
+        );
+        assert_eq!(detail.action, WriteGuardCoreAction::Update);
+        assert_eq!(detail.reason, "confident_unique_match");
+    }
+
+    #[test]
+    fn wiki_profile_noops_high_similarity_duplicates_before_forcing_update() {
+        let now = time::OffsetDateTime::parse(
+            "2026-04-14T00:00:00Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .expect("parse time");
+        let detail = decide_write_guard(
+            WriteGuardProfile::WikiPromotion,
+            &crate::modules::memory::types::CreateLocalMemoryRequest {
+                content: "candidate".to_string(),
+                session_id: None,
+                capability_id: None,
+                meta_info: None,
+                category: Some("llm_wiki".to_string()),
+                source: Some("llm_wiki_automation::workspace-1".to_string()),
+                tags: None,
+            },
+            &[wiki_candidate(
+                "existing",
+                0.985,
+                None,
+                Some(0.4),
+                Some("2026-03-01T00:00:00Z"),
+            )],
+            now,
+        );
+        assert_eq!(detail.action, WriteGuardCoreAction::Noop);
+        assert_eq!(detail.reason, "high_similarity_duplicate");
     }
 
     #[test]
