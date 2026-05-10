@@ -39,6 +39,7 @@ import {
 } from "@/lib/swr/use-embedding-settings";
 import { DesktopEmbeddingSettingsCard } from "./desktop-embedding-settings-card";
 import { DesktopMultimodalSettingsCard } from "./desktop-multimodal-settings-card";
+import { InterfaceSettingsCard } from "./interface-settings-card";
 import { PersonalSettingsCard } from "./personal-settings-card";
 import { SettingsFormActions } from "./settings-form-actions";
 import { SettingsNav } from "./settings-nav";
@@ -621,6 +622,7 @@ export function SettingsForm({
           {/* Models section */}
           {activeSection === "models" && (
             <div className="flex flex-col gap-5 md:gap-6">
+              <InterfaceSettingsCard />
               <DesktopEmbeddingSettingsCard
                 control={form.control}
                 isTauriRuntime={isTauriRuntime}

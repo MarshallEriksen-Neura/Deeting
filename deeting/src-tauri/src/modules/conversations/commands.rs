@@ -11,6 +11,7 @@ use mcp_session::conversation::{
     LocalConversationRenameResponse, LocalConversationSessionPage, LocalConversationSessionsQuery,
     LocalConversationStatus, LocalConversationWindowResponse,
 };
+use serde_json::Value;
 
 const FACT_EXTRACTION_NEW_CHAT_TRIGGER_KEY_PREFIX: &str = "fact_extraction.new_chat_triggered";
 
@@ -403,6 +404,21 @@ pub async fn delete_local_conversation_message(
         .mcp
         .store
         .delete_local_conversation_message(&session_id, turn_index)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn update_local_conversation_assistant_meta_info(
+    state: State<'_, AppState>,
+    session_id: String,
+    turn_index: i64,
+    meta_info: Option<Value>,
+) -> Result<(), String> {
+    state
+        .mcp
+        .store
+        .update_local_conversation_assistant_meta_info(&session_id, turn_index, meta_info)
         .await
         .map_err(to_string)
 }

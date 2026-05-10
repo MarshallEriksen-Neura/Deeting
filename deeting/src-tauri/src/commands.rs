@@ -118,6 +118,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::conversations::commands::get_local_conversation_execution_tree,
         crate::modules::conversations::commands::list_local_conversation_execution_roots,
         crate::modules::conversations::commands::delete_local_conversation_message,
+        crate::modules::conversations::commands::update_local_conversation_assistant_meta_info,
         crate::modules::conversations::commands::clear_local_conversation,
         crate::modules::conversation::commands::execute_local_text_conversation,
         crate::modules::conversation::commands::approve_local_text_conversation_tool,

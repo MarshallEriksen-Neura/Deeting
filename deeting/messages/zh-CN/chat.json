@@ -276,6 +276,7 @@
       "sessionCount": "{count} 次生成",
       "sessionTitle": "本会话图库",
       "sessionEmpty": "当前会话暂无图片",
+      "openSessionWorkspace": "在生图工作台查看本会话",
       "footer": "文生图时间线",
       "groups": {
         "today": "今天",

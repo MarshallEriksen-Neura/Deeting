@@ -276,6 +276,7 @@
       "sessionCount": "{count} generations",
       "sessionTitle": "Session Gallery",
       "sessionEmpty": "No images in this session yet.",
+      "openSessionWorkspace": "Open this session in Image Workspace",
       "footer": "Image generation timeline",
       "groups": {
         "today": "Today",

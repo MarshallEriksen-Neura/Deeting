@@ -14,6 +14,7 @@ import {
   ChartNoAxesCombined,
   ChartSpline,
   ChevronDown,
+  Image as ImageIcon,
   LayoutDashboard,
   ListTree,
   Logs,
@@ -33,6 +34,7 @@ import { useTranslations } from "next-intl";
 import { Link, usePathname } from "@/i18n/routing";
 import { cn } from "@/lib/utils";
 import { useUserProfile } from "@/hooks/use-user";
+import { useAdvancedMode } from "@/hooks/use-advanced-mode";
 import {
   SidebarContent,
   SidebarFooter,
@@ -57,6 +59,7 @@ type NavItem = {
   icon: React.ComponentType<{ className?: string }>;
   disabled?: boolean;
   adminOnly?: boolean;
+  advancedOnly?: boolean;
 };
 
 type NavGroup = {
@@ -77,6 +80,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "chat", href: "/chat", labelKey: "nav.chat", icon: MessageSquare },
       { id: "overview", href: "/", labelKey: "nav.dashboard", icon: LayoutDashboard },
+      { id: "images", href: "/dashboard/images", labelKey: "nav.images", icon: ImageIcon },
       { id: "mcp", href: "/mcp", labelKey: "nav.mcp", icon: PlugZap },
       { id: "skills", href: "/skills", labelKey: "nav.skills", icon: Blocks },
     ],
@@ -87,7 +91,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "providers", href: "/models/providers", labelKey: "nav.providers", icon: ServerCog },
       { id: "provider-market", href: "/models/market", labelKey: "nav.providerMarket", icon: Store },
-      { id: "model-pools", href: "/models/pools", labelKey: "nav.modelPools", icon: Boxes },
+      { id: "model-pools", href: "/models/pools", labelKey: "nav.modelPools", icon: Boxes, advancedOnly: true },
       { id: "task-agents", href: "/agents/task-agents", labelKey: "nav.taskAgents", icon: Bot },
     ],
   },
@@ -95,12 +99,12 @@ const NAV_GROUPS: NavGroup[] = [
     id: "automation-and-observability",
     titleKey: "nav.automationAndObservability",
     items: [
-      { id: "security-policy", href: "/dashboard/approval-rules", labelKey: "nav.securityPolicy", icon: ShieldCheck },
+      { id: "security-policy", href: "/dashboard/approval-rules", labelKey: "nav.securityPolicy", icon: ShieldCheck, advancedOnly: true },
       { id: "monitors", href: "/dashboard/monitors", labelKey: "nav.monitors", icon: Radar },
       { id: "notification-channels", href: "/dashboard/notification-channels", labelKey: "nav.notificationChannels", icon: BellRing },
       { id: "monitoring", href: "/dashboard/monitoring", labelKey: "nav.monitoring", icon: ChartSpline },
-      { id: "bandit", href: "/dashboard/bandit", labelKey: "nav.bandit", icon: Route },
-      { id: "task-learning", href: "/dashboard/task-learning", labelKey: "nav.taskLearning", icon: ChartNoAxesCombined },
+      { id: "bandit", href: "/dashboard/bandit", labelKey: "nav.bandit", icon: Route, advancedOnly: true },
+      { id: "task-learning", href: "/dashboard/task-learning", labelKey: "nav.taskLearning", icon: ChartNoAxesCombined, advancedOnly: true },
       { id: "logs", href: "/dashboard/logs", labelKey: "nav.logs", icon: Logs },
     ],
   },
@@ -349,6 +353,7 @@ export function WorkstationSidebar() {
   const unavailableLabel = tCommon("nav.planned");
   const { profile } = useUserProfile();
   const isAdmin = Boolean(profile?.is_superuser);
+  const { isAdvancedMode } = useAdvancedMode();
   const [expandedGroups, setExpandedGroups] = React.useState<Record<string, boolean>>({
     workspace: true,
     "models-and-agents": true,
@@ -405,7 +410,9 @@ export function WorkstationSidebar() {
       </SidebarHeader>
       <SidebarContent className={cn("relative z-[1] min-h-0 flex-1 overflow-y-auto px-2 pb-3", isCollapsed && "px-1.5")}>
         {NAV_GROUPS.map((group) => {
-          const visibleItems = group.items.filter((item) => !item.adminOnly || isAdmin);
+          const visibleItems = group.items.filter(
+            (item) => (!item.adminOnly || isAdmin) && (!item.advancedOnly || isAdvancedMode)
+          );
           if (visibleItems.length === 0) {
             return null;
           }

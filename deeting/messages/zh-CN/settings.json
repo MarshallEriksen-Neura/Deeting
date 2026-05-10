@@ -124,6 +124,13 @@
       "emptyHint": "暂无可用模型，请先添加",
       "scopeBadge": "仅个人"
     },
+    "interface": {
+      "title": "界面",
+      "description": "自定义侧边栏导航和仪表盘可见性。",
+      "advancedModeLabel": "高级模式",
+      "advancedModeHelp": "在侧边栏显示硬核页面：Bandit 观测台、任务学习、安全策略和模型池状态。默认关闭以保持工作区整洁。",
+      "scopeBadge": "本地偏好"
+    },
     "storage": {
       "title": "桌面对象存储",
       "description": "配置你自己的 R2 或阿里云 OSS 存储桶，让桌面端文件上传优先走你的对象存储，而不是回退为内联数据。",

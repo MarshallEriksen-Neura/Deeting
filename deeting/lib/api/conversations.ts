@@ -645,6 +645,19 @@ export async function deleteConversationMessage(
   return ConversationDeleteResponseSchema.parse(data)
 }
 
+export async function updateConversationAssistantMetaInfo(
+  sessionId: string,
+  turnIndex: number,
+  metaInfo: Record<string, unknown> | null
+): Promise<void> {
+  assertTauriConversationRuntime()
+  await invokeTauri("update_local_conversation_assistant_meta_info", {
+    sessionId,
+    turnIndex,
+    metaInfo,
+  })
+}
+
 const LOCAL_ASSET_RE = /local-asset:\/\/([a-f0-9]{64})/g
 
 const normalizeDesktopObjectStorageKeyFromUrl = (

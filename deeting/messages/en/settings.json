@@ -124,6 +124,13 @@
       "emptyHint": "No models available yet",
       "scopeBadge": "Personal only"
     },
+    "interface": {
+      "title": "Interface",
+      "description": "Customize sidebar navigation and dashboard visibility.",
+      "advancedModeLabel": "Advanced Mode",
+      "advancedModeHelp": "Show hardcore pages in the sidebar: Bandit, Task Learning, Security Policy, and Model Pools. Disabled by default for a cleaner workspace.",
+      "scopeBadge": "Local preference"
+    },
     "storage": {
       "title": "Desktop Object Storage",
       "description": "Configure your own R2 or OSS bucket so desktop file uploads can use your storage instead of inline data fallbacks.",
