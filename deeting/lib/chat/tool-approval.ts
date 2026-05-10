@@ -1049,9 +1049,12 @@ export function extractLocalChatApprovalResume(
       executionGraph,
       resolvedGateNodeId,
     );
+    const hasNextPendingApprovalEvidence =
+      pendingApprovalGateIds.length > 0 || nextPendingApprovalTokens.length > 0;
     if (
       resolvedGateNodeId &&
-      resolvedGateStatus?.toLowerCase() === "waiting_approval"
+      resolvedGateStatus?.toLowerCase() === "waiting_approval" &&
+      !hasNextPendingApprovalEvidence
     ) {
       return {
         status: "LOCAL_CHAT_RESUME_FAILED",
@@ -1073,10 +1076,7 @@ export function extractLocalChatApprovalResume(
       };
     }
 
-    if (
-      pendingApprovalGateIds.length === 0 &&
-      nextPendingApprovalTokens.length === 0
-    ) {
+    if (!hasNextPendingApprovalEvidence) {
       return {
         status: "LOCAL_CHAT_RESUME_FAILED",
         approval_token: approvalToken,

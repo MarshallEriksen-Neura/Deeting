@@ -543,6 +543,21 @@ function getAssistantShadowContentForCandidate(message: Message): string {
   return extractAssistantTextFromBlocks(getAssistantBlocksForCandidate(message))
 }
 
+function findLatestAssistantActivity(messages: Message[]) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message.role !== "assistant") continue
+    const blocks = getAssistantBlocksForCandidate(message)
+    const activity = deriveAssistantActivityState(blocks)
+    return {
+      messageId: message.id,
+      blocks,
+      activity,
+    }
+  }
+  return null
+}
+
 export function useChatMessagingService() {
   const t = useI18n("chat")
   const locale = useLanguageStore((state) => state.language)
@@ -1199,6 +1214,26 @@ export function useChatMessagingService() {
   ])
 
   const sendMessage = useCallback(async (sessionIdOverride?: string | null) => {
+    const currentState = useChatStore.getState()
+    const latestAssistantActivity = findLatestAssistantActivity(currentState.messages)
+    const shouldDeferForActiveAssistant =
+      latestAssistantActivity?.activity.isActive === true &&
+      latestAssistantActivity.activity.statusCode !== "approval.required"
+
+    if (shouldDeferForActiveAssistant) {
+      const normalizedDraft = normalizePendingTakeoverDraft({
+        input: currentState.input,
+        attachments: currentState.attachments,
+        selectedKnowledgeFileIds: currentState.selectedKnowledgeFileIds,
+        pageContext: currentState.pageContext,
+      })
+      if (normalizedDraft) {
+        setPendingTakeover(normalizedDraft)
+        setPendingTakeoverRequestedAction("send_after_step")
+      }
+      return
+    }
+
     await dispatchDraft({
       draft: {
         input,
@@ -1209,7 +1244,15 @@ export function useChatMessagingService() {
       sessionIdOverride,
       clearComposerMode: "always",
     })
-  }, [dispatchDraft, input, attachments, selectedKnowledgeFileIds, pageContext])
+  }, [
+    attachments,
+    dispatchDraft,
+    input,
+    pageContext,
+    selectedKnowledgeFileIds,
+    setPendingTakeover,
+    setPendingTakeoverRequestedAction,
+  ])
 
   const dispatchRenderRefresh = useCallback(async (refreshSpec: HtmlRuntimeRefreshSpec) => {
     if (refreshSpec.kind !== "chat_replay") return false
@@ -1802,13 +1845,12 @@ export function useChatMessagingService() {
       return
     }
 
+    const currentMessages = useChatStore.getState().messages
     const activeAssistantBlocks = activeAssistantMessageIdRef.current
       ? (
-          useChatStore
-            .getState()
-            .messages.find((message) => message.id === activeAssistantMessageIdRef.current)?.blocks ?? []
+          currentMessages.find((message) => message.id === activeAssistantMessageIdRef.current)?.blocks ?? []
         ) as MessageBlock[]
-      : []
+      : findLatestAssistantActivity(currentMessages)?.blocks ?? []
 
     if (
       !isPendingTakeoverSafeBoundary({

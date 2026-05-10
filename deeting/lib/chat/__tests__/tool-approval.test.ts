@@ -453,6 +453,44 @@ describe("extractLocalChatApprovalResume", () => {
       next_pending_approval_tokens: ["approval-next-1"],
     })
   })
+
+  it("does not treat a multi-approval handoff as a resume failure when the next approval is present", () => {
+    expect(
+      extractLocalChatApprovalResume({
+        status: "LOCAL_CHAT_WAITING_APPROVAL",
+        approval_token: "approval-current-1",
+        resolved_gate_node_id: "approval_gate:call-current-1",
+        resolved_call_id: "call-current-1",
+        approved_tool_result: { ok: true },
+        continuation_blocks: [],
+        execution_graph_execution_id: "graph-exec-multi-approval-1",
+        pending_approval_gate_ids: ["approval_gate:call-next-1"],
+        next_pending_approval_tokens: ["approval-next-1"],
+        execution_graph: {
+          execution_id: "graph-exec-multi-approval-1",
+          nodes: [
+            {
+              node_id: "approval_gate:call-current-1",
+              status: "waiting_approval",
+            },
+            {
+              node_id: "approval_gate:call-next-1",
+              status: "waiting_approval",
+            },
+          ],
+        },
+      })
+    ).toMatchObject({
+      status: "LOCAL_CHAT_WAITING_APPROVAL",
+      approval_token: "approval-current-1",
+      resolved_gate_node_id: "approval_gate:call-current-1",
+      resolved_call_id: "call-current-1",
+      pending_approval_gate_ids: ["approval_gate:call-next-1"],
+      next_pending_approval_tokens: ["approval-next-1"],
+      error_code: undefined,
+      error: undefined,
+    })
+  })
 })
 
 describe("createApprovedToolResultBlock", () => {

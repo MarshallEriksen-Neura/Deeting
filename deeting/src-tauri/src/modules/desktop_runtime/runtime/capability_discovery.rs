@@ -850,6 +850,8 @@ fn rank_registry_entry_with_feedback(
         .and_then(|value| value.as_str())
         .map(|value| value.to_string());
     let asset_metadata = asset.get("metadata").cloned();
+    let explicit_identifier_match =
+        explicit_identifier_query_match(&profile.normalized, &id, name, asset_metadata.as_ref());
     let assistant_id = if asset_type == "assistant" {
         Some(id.clone())
     } else {
@@ -890,6 +892,7 @@ fn rank_registry_entry_with_feedback(
         || rank.intent_hit
         || rank.feature_score != 0.0
         || rank.feedback_score != 0.0;
+    let has_signal = has_signal || explicit_identifier_match;
     if !has_signal {
         return None;
     }
@@ -908,6 +911,10 @@ fn rank_registry_entry_with_feedback(
     if let Some(score) = rank.fused_retrieval_score {
         rank_score += score * RETRIEVAL_FUSION_WEIGHT;
         match_reason.push(format!("rrf:{score:.2}"));
+    }
+    if explicit_identifier_match {
+        rank_score += 80.0;
+        match_reason.push("identifier:exact".to_string());
     }
     if rank.domain_hit {
         rank_score += 14.0;
@@ -1263,6 +1270,19 @@ fn capability_profile_feature_score(
                 reasons.push("penalty:delegate_not_specialized".to_string());
             }
         }
+        "browser_attach" | "browser_action" => {
+            if signals.local_browser_bridge {
+                score += 34.0;
+                reasons.push("feature:local_browser_bridge".to_string());
+            } else if signals.browser_like {
+                score += 10.0;
+                reasons.push("feature:browser_related".to_string());
+            }
+            if !availability.is_direct_callable() {
+                score -= 10.0;
+                reasons.push("penalty:not_direct_callable".to_string());
+            }
+        }
         _ => {}
     }
 
@@ -1296,6 +1316,7 @@ struct CapabilitySignals {
     memory_like: bool,
     monitor_like: bool,
     browser_like: bool,
+    local_browser_bridge: bool,
     delegation_like: bool,
 }
 
@@ -1385,6 +1406,19 @@ fn capability_signals(
                 "browser extension lane",
             ],
         ),
+        local_browser_bridge: contains_any(
+            &text,
+            &[
+                "desktop-local chrome extension",
+                "desktop local browser",
+                "local browser agent bridge",
+                "browser extension lane",
+                "browser_agent",
+                "browser agent bridge",
+                "desktop_runtime_core",
+                "source:desktop_runtime_core",
+            ],
+        ),
         delegation_like: contains_any(
             &text,
             &[
@@ -1422,6 +1456,78 @@ fn lexical_text_match_score(normalized_query: &str, haystack: &str) -> Option<f6
     }
     let denom = tokenize(normalized_query).len().max(1) as f64;
     Some((overlap as f64 / denom).min(1.0))
+}
+
+fn explicit_identifier_query_match(
+    normalized_query: &str,
+    id: &str,
+    name: &str,
+    asset_metadata: Option<&Value>,
+) -> bool {
+    let query = normalized_identifier(normalized_query);
+    if query.is_empty() {
+        return false;
+    }
+
+    let mut candidates = vec![id, name];
+    if let Some(metadata) = asset_metadata {
+        for key in ["tool_name", "callable_name", "binding_id", "skill_id"] {
+            if let Some(value) = metadata.get(key).and_then(Value::as_str) {
+                candidates.push(value);
+            }
+        }
+    }
+
+    candidates.into_iter().any(|candidate| {
+        let normalized = normalized_identifier(candidate);
+        identifier_query_contains_candidate(&query, &normalized)
+            || normalized
+                .rsplit_once('_')
+                .map(|(_, suffix)| identifier_query_contains_candidate(&query, suffix))
+                .unwrap_or(false)
+            || identifier_leaf(candidate)
+                .map(|leaf| {
+                    identifier_query_contains_candidate(&query, &normalized_identifier(leaf))
+                })
+                .unwrap_or(false)
+    })
+}
+
+fn identifier_query_contains_candidate(query: &str, candidate: &str) -> bool {
+    if candidate.is_empty() {
+        return false;
+    }
+    if query == candidate {
+        return true;
+    }
+    let Some(start) = query.find(candidate) else {
+        return false;
+    };
+    let end = start + candidate.len();
+    let left_boundary = start == 0 || query.as_bytes().get(start - 1) == Some(&b'_');
+    let right_boundary = end == query.len() || query.as_bytes().get(end) == Some(&b'_');
+    left_boundary && right_boundary
+}
+
+fn identifier_leaf(value: &str) -> Option<&str> {
+    value
+        .rsplit(|ch| ch == '.' || ch == ':' || ch == '/')
+        .find(|part| !part.trim().is_empty())
+}
+
+fn normalized_identifier(value: &str) -> String {
+    let mut out = String::new();
+    let mut last_was_separator = false;
+    for ch in value.trim().to_lowercase().chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch);
+            last_was_separator = false;
+        } else if !last_was_separator {
+            out.push('_');
+            last_was_separator = true;
+        }
+    }
+    out.trim_matches('_').to_string()
 }
 
 fn append_value_terms(target: &mut Vec<String>, value: &Value) {
@@ -2319,9 +2425,10 @@ impl QueryProfile {
             &["安装", "install", "skill", "assistant", "启用", "开通"],
         ) && !wants_local_inspection;
         let wants_browser_attach = wants_local_browser_attach(&normalized);
+        let wants_browser_action = wants_local_browser_action(&normalized);
         let domain = if wants_local_inspection {
             "system"
-        } else if wants_browser_attach {
+        } else if wants_browser_attach || wants_browser_action {
             "browser"
         } else if contains_any(&normalized, &["天气", "weather", "降雨", "forecast"]) {
             "weather"
@@ -2370,6 +2477,8 @@ impl QueryProfile {
             "install_or_enable"
         } else if domain == "delegation" {
             "delegation"
+        } else if wants_browser_action {
+            "browser_action"
         } else if domain == "browser" {
             "browser_attach"
         } else if domain == "web" {
@@ -2464,6 +2573,49 @@ fn wants_local_browser_attach(normalized: &str) -> bool {
                 "标签页",
             ],
         ))
+}
+
+fn wants_local_browser_action(normalized: &str) -> bool {
+    contains_any(normalized, &["browser", "chrome", "浏览器"])
+        && contains_any(
+            normalized,
+            &[
+                "click",
+                "type",
+                "fill",
+                "input",
+                "form",
+                "keyboard",
+                "key",
+                "button",
+                "selector",
+                "field",
+                "select",
+                "upload",
+                "post",
+                "publish",
+                "compose",
+                "tweet",
+                "twitter",
+                "x.com",
+                "social media",
+                "点击",
+                "输入",
+                "填写",
+                "填充",
+                "表单",
+                "输入框",
+                "键盘",
+                "按键",
+                "按钮",
+                "选择",
+                "上传",
+                "发帖",
+                "发布",
+                "推文",
+                "社交媒体",
+            ],
+        )
 }
 
 fn matches_domain(domain: &str, text: &str) -> bool {
@@ -2622,6 +2774,42 @@ fn matches_intent(intent: &str, text: &str, asset_type: &str, _source_type: &str
                 "attach existing browser tab",
             ],
         ),
+        "browser_action" => contains_any(
+            text,
+            &[
+                "浏览器",
+                "browser",
+                "tab",
+                "form",
+                "input",
+                "field",
+                "keyboard",
+                "key",
+                "button",
+                "click",
+                "type",
+                "fill",
+                "select",
+                "upload",
+                "post",
+                "publish",
+                "compose",
+                "tweet",
+                "twitter",
+                "x.com",
+                "social media",
+                "表单",
+                "输入",
+                "填写",
+                "键盘",
+                "按键",
+                "按钮",
+                "发帖",
+                "发布",
+                "推文",
+                "社交媒体",
+            ],
+        ),
         "delegation" => {
             contains_any(
                 text,
@@ -2651,6 +2839,7 @@ fn matches_intent(intent: &str, text: &str, asset_type: &str, _source_type: &str
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::modules::code_mode::core_tool_contracts::desktop_runtime_core_tools;
     use crate::modules::mcp::commands::runtime::tool_resolution::ToolAvailabilityClass;
 
     #[test]
@@ -3690,6 +3879,185 @@ mod tests {
             memory_rank > web_rank,
             "memory={memory_rank}, web={web_rank}"
         );
+    }
+
+    #[test]
+    fn browser_form_queries_route_to_local_browser_action_domain() {
+        let profile = QueryProfile::from_query("browser type text fill input form keyboard page");
+
+        assert_eq!(profile.domain, "browser");
+        assert_eq!(profile.intent, "browser_action");
+
+        let social_profile = QueryProfile::from_query("浏览器 发帖 Twitter 社交媒体 自动化");
+
+        assert_eq!(social_profile.domain, "browser");
+        assert_eq!(social_profile.intent, "browser_action");
+    }
+
+    #[test]
+    fn rank_registry_entry_prefers_local_browser_fill_for_form_input_queries() {
+        let fill_asset = desktop_runtime_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == "browser_fill")
+            .expect("browser_fill core tool should exist")
+            .as_catalog_asset();
+        let firecrawl_asset = json!({
+            "id": "tool.firecrawl_browser_execute",
+            "name": "firecrawl_browser_execute",
+            "description": "Execute code in a browser session. Supports agent-browser commands. Common commands include open, snapshot, click, type, fill, screenshot, scroll, and wait.",
+            "asset_type": "tool",
+            "source_type": "mcp",
+            "pkg_name": "mcp.firecrawl",
+            "metadata": {
+                "asset_namespace": "user_mcp",
+                "permission_scope": ["network_read", "browser_automation"],
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "sessionId": {"type": "string"},
+                        "code": {"type": "string"},
+                        "language": {"type": "string"}
+                    },
+                    "required": ["sessionId", "code"]
+                }
+            }
+        });
+
+        let callable = RegistryAvailability {
+            class: ToolAvailabilityClass::CallableDirect,
+            install_required: false,
+            activation_required: false,
+            recommended_action: "execute",
+            status_reason: "ready",
+        };
+        for query in [
+            "browser type text fill input form keyboard page",
+            "浏览器 发帖 Twitter 社交媒体 自动化",
+        ] {
+            let profile = QueryProfile::from_query(query);
+            let bm25 = bm25_asset_match_scores(
+                &profile.normalized,
+                &[fill_asset.clone(), firecrawl_asset.clone()],
+            );
+            let structured = std::collections::HashMap::new();
+            let retrieval_scores = RetrievalScoreMaps {
+                bm25: bm25.clone(),
+                structured: structured.clone(),
+                semantic: std::collections::HashMap::new(),
+                fused: reciprocal_rank_fusion(&[&bm25, &structured]),
+            };
+            let fill_rank = rank_registry_entry_with_feedback(
+                CapabilityRegistryEntry {
+                    asset: fill_asset.clone(),
+                    availability: callable.clone(),
+                    tool_contract_source: None,
+                },
+                &profile,
+                &SearchFeedbackContext::default(),
+                &retrieval_scores,
+            )
+            .expect("browser_fill should rank")
+            .score;
+            let firecrawl_rank = rank_registry_entry_with_feedback(
+                CapabilityRegistryEntry {
+                    asset: firecrawl_asset.clone(),
+                    availability: callable.clone(),
+                    tool_contract_source: None,
+                },
+                &profile,
+                &SearchFeedbackContext::default(),
+                &retrieval_scores,
+            )
+            .expect("firecrawl browser execute should rank")
+            .score;
+
+            assert!(
+                fill_rank > firecrawl_rank,
+                "{query}: browser_fill={fill_rank}, firecrawl_browser_execute={firecrawl_rank}"
+            );
+        }
+    }
+
+    #[test]
+    fn rank_registry_entry_prioritizes_explicit_browser_tool_name_queries() {
+        let mut assets = desktop_runtime_core_tools()
+            .into_iter()
+            .filter(|tool| {
+                matches!(
+                    tool.name,
+                    "browser_open_tab"
+                        | "browser_get_page_snapshot"
+                        | "browser_click"
+                        | "browser_type"
+                        | "browser_extract"
+                        | "browser_downloads"
+                )
+            })
+            .map(|tool| tool.as_catalog_asset())
+            .collect::<Vec<_>>();
+        assets.push(json!({
+            "id": "tool.firecrawl_browser_execute",
+            "name": "firecrawl_browser_execute",
+            "description": "Execute code in a browser session. Supports agent-browser commands. Common commands include open, snapshot, click, type, fill, screenshot, scroll, and wait.",
+            "asset_type": "tool",
+            "source_type": "mcp",
+            "pkg_name": "mcp.firecrawl",
+            "metadata": {
+                "asset_namespace": "user_mcp",
+                "permission_scope": ["network_read", "browser_automation"]
+            }
+        }));
+
+        let callable = RegistryAvailability {
+            class: ToolAvailabilityClass::CallableDirect,
+            install_required: false,
+            activation_required: false,
+            recommended_action: "execute",
+            status_reason: "ready",
+        };
+
+        for query in ["browser_type", "browser_type browser automation"] {
+            let profile = QueryProfile::from_query(query);
+            let bm25 = bm25_asset_match_scores(&profile.normalized, &assets);
+            let structured = std::collections::HashMap::new();
+            let retrieval_scores = RetrievalScoreMaps {
+                bm25: bm25.clone(),
+                structured: structured.clone(),
+                semantic: std::collections::HashMap::new(),
+                fused: reciprocal_rank_fusion(&[&bm25, &structured]),
+            };
+
+            let mut ranked = assets
+                .iter()
+                .cloned()
+                .filter_map(|asset| {
+                    rank_registry_entry_with_feedback(
+                        CapabilityRegistryEntry {
+                            asset,
+                            availability: callable.clone(),
+                            tool_contract_source: None,
+                        },
+                        &profile,
+                        &SearchFeedbackContext::default(),
+                        &retrieval_scores,
+                    )
+                })
+                .collect::<Vec<_>>();
+            ranked.sort_by(|left, right| {
+                right
+                    .score
+                    .partial_cmp(&left.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            let top = ranked.first().expect("ranked result");
+            assert_eq!(top.value["name"], json!("browser_type"), "{query}");
+            assert!(top.value["match_reason"]
+                .as_array()
+                .expect("match reasons")
+                .iter()
+                .any(|reason| reason == "identifier:exact"));
+        }
     }
 
     #[test]

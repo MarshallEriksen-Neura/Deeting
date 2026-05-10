@@ -76,7 +76,9 @@ export function isPendingTakeoverSafeBoundary({
   statusCode: string | null
   assistantBlocks: MessageBlock[]
 }) {
-  if (!isLoading) return true
+  const assistantActivity = deriveAssistantActivityState(assistantBlocks)
+  if (assistantActivity.statusCode === "approval.required") return true
+  if (assistantActivity.isActive) return false
   if (statusCode === "approval.required") return true
-  return deriveAssistantActivityState(assistantBlocks).statusCode === "approval.required"
+  return !isLoading
 }

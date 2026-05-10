@@ -462,6 +462,7 @@ impl BrowserAgentService {
         payload: Map<String, Value>,
     ) -> Result<serde_json::Value, String> {
         let (bridge_url, _source) = self.get_bridge_url(store).await?;
+        let payload = normalize_expanded_action_payload(payload);
         validate_expanded_action_payload(action_name, &payload)?;
         let action = match action_name {
             "browser_find_element" => {
@@ -591,8 +592,13 @@ fn validate_expanded_action_payload(
     payload: &Map<String, Value>,
 ) -> Result<(), String> {
     match action_name {
-        "browser_full_page_screenshot" | "browser_get_active_page" | "browser_downloads" => Ok(()),
+        "browser_get_active_page" | "browser_downloads" => Ok(()),
+        "browser_full_page_screenshot" | "browser_accessibility_audit" => {
+            require_positive_tab_id(action_name, payload)?;
+            Ok(())
+        }
         "browser_eval" => {
+            require_positive_tab_id(action_name, payload)?;
             let code = payload
                 .get("code")
                 .and_then(Value::as_str)
@@ -605,26 +611,178 @@ fn validate_expanded_action_payload(
             Ok(())
         }
         "browser_tabs" => {
-            payload
+            let action = payload
                 .get("action")
                 .and_then(Value::as_str)
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| "browser_tabs requires an action".to_string())?;
+            match action {
+                "switch" | "close" => {
+                    require_positive_tab_id(action_name, payload)?;
+                }
+                "create" => {
+                    payload
+                        .get("url")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .ok_or_else(|| "browser_tabs create requires non-empty url".to_string())?;
+                }
+                "list" => {}
+                other => return Err(format!("browser_tabs action is unsupported: {other}")),
+            }
+            Ok(())
+        }
+        "browser_find_element"
+        | "browser_fill"
+        | "browser_select"
+        | "browser_upload_file"
+        | "browser_highlight" => {
+            require_positive_tab_id(action_name, payload)?;
+            require_object(action_name, payload, "target")?;
+            if action_name == "browser_fill" {
+                require_non_empty_string(action_name, payload, "text")?;
+            }
+            Ok(())
+        }
+        "browser_key" => {
+            require_positive_tab_id(action_name, payload)?;
+            require_non_empty_string(action_name, payload, "key")?;
+            Ok(())
+        }
+        "browser_storage_read" => {
+            require_positive_tab_id(action_name, payload)?;
+            require_storage_area(action_name, payload)?;
+            Ok(())
+        }
+        "browser_storage_write" => {
+            require_positive_tab_id(action_name, payload)?;
+            require_storage_area(action_name, payload)?;
+            require_non_empty_string(action_name, payload, "key")?;
+            if !payload.contains_key("value") {
+                return Err("browser_storage_write requires value".to_string());
+            }
+            Ok(())
+        }
+        "browser_wait" => {
+            require_positive_tab_id(action_name, payload)?;
+            let mode = require_non_empty_string(action_name, payload, "mode")?;
+            match mode.as_str() {
+                "element" => {
+                    require_object(action_name, payload, "target")?;
+                }
+                "text" => {
+                    require_non_empty_string(action_name, payload, "text")?;
+                }
+                "url" => {
+                    require_non_empty_string(action_name, payload, "url")?;
+                }
+                "title" => {
+                    require_non_empty_string(action_name, payload, "title")?;
+                }
+                "readyState" => {}
+                other => return Err(format!("browser_wait mode is unsupported: {other}")),
+            }
             Ok(())
         }
         _ => {
-            if payload
-                .get("tabId")
-                .or_else(|| payload.get("tab_id"))
-                .is_none()
-            {
-                return Err(format!("{action_name} requires tab_id"));
-            }
+            require_positive_tab_id(action_name, payload)?;
             Ok(())
         }
     }
 }
+
+fn require_positive_tab_id(action_name: &str, payload: &Map<String, Value>) -> Result<i64, String> {
+    payload
+        .get("tabId")
+        .or_else(|| payload.get("tab_id"))
+        .and_then(Value::as_i64)
+        .filter(|value| *value > 0)
+        .ok_or_else(|| format!("{action_name} requires positive tab_id"))
+}
+
+fn require_non_empty_string(
+    action_name: &str,
+    payload: &Map<String, Value>,
+    field: &str,
+) -> Result<String, String> {
+    payload
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .ok_or_else(|| format!("{action_name} requires non-empty {field}"))
+}
+
+fn require_object(
+    action_name: &str,
+    payload: &Map<String, Value>,
+    field: &str,
+) -> Result<(), String> {
+    payload
+        .get(field)
+        .and_then(Value::as_object)
+        .filter(|object| !object.is_empty())
+        .map(|_| ())
+        .ok_or_else(|| format!("{action_name} requires {field}"))
+}
+
+fn require_storage_area(action_name: &str, payload: &Map<String, Value>) -> Result<(), String> {
+    let area = require_non_empty_string(action_name, payload, "area")?;
+    match area.as_str() {
+        "localStorage" | "sessionStorage" => Ok(()),
+        other => Err(format!("{action_name} area is unsupported: {other}")),
+    }
+}
+
+fn normalize_expanded_action_payload(mut payload: Map<String, Value>) -> Map<String, Value> {
+    move_alias_key(&mut payload, "tab_id", "tabId");
+    move_alias_key(&mut payload, "timeout_ms", "timeoutMs");
+    move_alias_key(&mut payload, "poll_interval_ms", "pollIntervalMs");
+    move_alias_key(&mut payload, "expected_url_contains", "expectedUrlContains");
+    move_alias_key(
+        &mut payload,
+        "expected_title_contains",
+        "expectedTitleContains",
+    );
+    move_alias_key(&mut payload, "wait_for_ready_state", "waitForReadyState");
+    move_alias_key(&mut payload, "filename_contains", "filenameContains");
+    move_alias_key(&mut payload, "include_failed", "includeFailed");
+    move_alias_key(&mut payload, "submit_after", "submitAfter");
+    move_alias_key(&mut payload, "duration_ms", "durationMs");
+
+    if let Some(Value::Object(target)) = payload.remove("target") {
+        payload.insert(
+            "target".to_string(),
+            Value::Object(normalize_locator_payload(target)),
+        );
+    }
+
+    payload
+}
+
+fn normalize_locator_payload(mut target: Map<String, Value>) -> Map<String, Value> {
+    move_alias_key(&mut target, "tag_name", "tagName");
+    move_alias_key(&mut target, "element_id", "elementId");
+    move_alias_key(&mut target, "aria_label", "ariaLabel");
+    move_alias_key(&mut target, "accessible_name", "accessibleName");
+    move_alias_key(&mut target, "test_id", "testId");
+    move_alias_key(&mut target, "frame_id", "frameId");
+    target
+}
+
+fn move_alias_key(payload: &mut Map<String, Value>, alias: &str, canonical: &str) {
+    let alias_value = payload.remove(alias);
+    if payload.contains_key(canonical) {
+        return;
+    }
+    if let Some(value) = alias_value {
+        payload.insert(canonical.to_string(), value);
+    }
+}
+
 fn normalize_bridge_url(raw: &str) -> Result<String, String> {
     let normalized = raw.trim();
     if normalized.is_empty() {
@@ -745,12 +903,13 @@ fn snapshot_summary(snapshot: serde_json::Value) -> Option<serde_json::Value> {
 mod tests {
     use super::{
         bridge_socket_target, extract_result_error, is_recoverable_browser_action_error,
-        locator_is_empty, normalize_bridge_url, normalize_scroll_direction,
-        parse_retry_action_kind, requires_fresh_approval_after_recovery, result_ok,
-        snapshot_summary, BrowserRetryActionKind, DEFAULT_BROWSER_AGENT_BRIDGE_URL,
+        locator_is_empty, normalize_bridge_url, normalize_expanded_action_payload,
+        normalize_scroll_direction, parse_retry_action_kind,
+        requires_fresh_approval_after_recovery, result_ok, snapshot_summary,
+        validate_expanded_action_payload, BrowserRetryActionKind, DEFAULT_BROWSER_AGENT_BRIDGE_URL,
     };
     use crate::modules::browser_agent::types::BrowserAgentElementLocator;
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     #[test]
     fn normalize_bridge_url_accepts_default_ws_endpoint() {
@@ -872,5 +1031,128 @@ mod tests {
                 "documentReadyState": "complete"
             }))
         );
+    }
+
+    #[test]
+    fn normalize_expanded_action_payload_normalizes_root_and_target_aliases() {
+        let normalized = normalize_expanded_action_payload(serde_json::Map::from_iter([
+            ("tab_id".to_string(), json!(42)),
+            ("timeout_ms".to_string(), json!(10_000)),
+            (
+                "target".to_string(),
+                json!({
+                    "tag_name": "button",
+                    "element_id": "el-1",
+                    "aria_label": "Submit",
+                    "accessible_name": "Submit order",
+                    "test_id": "submit-button",
+                    "frame_id": "main"
+                }),
+            ),
+        ]));
+
+        assert_eq!(normalized.get("tabId"), Some(&json!(42)));
+        assert!(!normalized.contains_key("tab_id"));
+        assert_eq!(normalized.get("timeoutMs"), Some(&json!(10_000)));
+        assert!(!normalized.contains_key("timeout_ms"));
+
+        let target = normalized
+            .get("target")
+            .and_then(Value::as_object)
+            .expect("normalized target");
+        assert_eq!(target.get("tagName"), Some(&json!("button")));
+        assert_eq!(target.get("elementId"), Some(&json!("el-1")));
+        assert_eq!(target.get("ariaLabel"), Some(&json!("Submit")));
+        assert_eq!(target.get("accessibleName"), Some(&json!("Submit order")));
+        assert_eq!(target.get("testId"), Some(&json!("submit-button")));
+        assert_eq!(target.get("frameId"), Some(&json!("main")));
+        assert!(!target.contains_key("tag_name"));
+        assert!(!target.contains_key("element_id"));
+    }
+
+    #[test]
+    fn normalize_expanded_action_payload_preserves_existing_camel_case_fields() {
+        let normalized = normalize_expanded_action_payload(serde_json::Map::from_iter([
+            ("tabId".to_string(), json!(7)),
+            ("tab_id".to_string(), json!(42)),
+            (
+                "target".to_string(),
+                json!({
+                    "elementId": "preferred",
+                    "element_id": "alias"
+                }),
+            ),
+        ]));
+
+        assert_eq!(normalized.get("tabId"), Some(&json!(7)));
+        let target = normalized
+            .get("target")
+            .and_then(Value::as_object)
+            .expect("normalized target");
+        assert_eq!(target.get("elementId"), Some(&json!("preferred")));
+        assert!(!target.contains_key("element_id"));
+    }
+
+    #[test]
+    fn validate_expanded_action_payload_requires_real_tab_scoped_fields() {
+        assert!(validate_expanded_action_payload(
+            "browser_full_page_screenshot",
+            &serde_json::Map::new()
+        )
+        .expect_err("full-page screenshot requires tab")
+        .contains("positive tab_id"));
+
+        assert!(validate_expanded_action_payload(
+            "browser_fill",
+            &serde_json::Map::from_iter([("tabId".to_string(), json!(42))])
+        )
+        .expect_err("fill requires target")
+        .contains("target"));
+
+        assert!(validate_expanded_action_payload(
+            "browser_storage_write",
+            &serde_json::Map::from_iter([
+                ("tabId".to_string(), json!(42)),
+                ("area".to_string(), json!("localStorage")),
+                ("key".to_string(), json!("feature")),
+            ])
+        )
+        .expect_err("storage_write requires value")
+        .contains("value"));
+    }
+
+    #[test]
+    fn validate_expanded_action_payload_checks_grouped_action_semantics() {
+        assert!(validate_expanded_action_payload(
+            "browser_tabs",
+            &serde_json::Map::from_iter([("action".to_string(), json!("switch"))])
+        )
+        .expect_err("switch requires tab")
+        .contains("positive tab_id"));
+
+        assert!(validate_expanded_action_payload(
+            "browser_tabs",
+            &serde_json::Map::from_iter([("action".to_string(), json!("create"))])
+        )
+        .expect_err("create requires url")
+        .contains("non-empty url"));
+
+        validate_expanded_action_payload(
+            "browser_tabs",
+            &serde_json::Map::from_iter([("action".to_string(), json!("list"))]),
+        )
+        .expect("list requires only action");
+    }
+
+    #[test]
+    fn validate_expanded_action_payload_accepts_normalized_aliases() {
+        let payload = normalize_expanded_action_payload(serde_json::Map::from_iter([
+            ("tab_id".to_string(), json!(42)),
+            ("mode".to_string(), json!("element")),
+            ("target".to_string(), json!({"tag_name": "button"})),
+        ]));
+
+        validate_expanded_action_payload("browser_wait", &payload)
+            .expect("normalized snake-case aliases should validate");
     }
 }

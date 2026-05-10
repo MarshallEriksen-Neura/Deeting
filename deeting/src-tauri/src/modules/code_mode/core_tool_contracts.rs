@@ -123,6 +123,66 @@ impl CoreToolContract {
                 "browser page snapshot",
                 "读取页面内容",
             ]),
+            "browser_click" => terms.extend([
+                "click browser element",
+                "click button link page control",
+                "press browser page button",
+                "点击浏览器元素",
+                "点击页面按钮",
+            ]),
+            "browser_type" => terms.extend([
+                "type text into browser input",
+                "enter text in page field",
+                "write text to form field",
+                "write social media post",
+                "compose tweet text",
+                "type twitter post",
+                "input text",
+                "填写文本",
+                "输入文本",
+                "写入浏览器输入框",
+                "撰写推文",
+                "输入发帖内容",
+            ]),
+            "browser_fill" => terms.extend([
+                "fill browser form",
+                "clear and fill input field",
+                "fill page field",
+                "fill social media compose box",
+                "fill twitter post field",
+                "compose social media post",
+                "form input",
+                "browser form field",
+                "填写浏览器表单",
+                "填充表单",
+                "填写输入框",
+                "填写发帖框",
+                "填写推文",
+                "社交媒体发帖",
+            ]),
+            "browser_key" => terms.extend([
+                "keyboard input",
+                "send keyboard key",
+                "press enter shortcut",
+                "browser keyboard shortcut",
+                "键盘输入",
+                "发送按键",
+                "快捷键",
+            ]),
+            "browser_select" => terms.extend([
+                "select option",
+                "choose dropdown option",
+                "checkbox radio date input",
+                "选择下拉选项",
+                "勾选复选框",
+            ]),
+            "browser_upload_file" => terms.extend([
+                "upload file input",
+                "attach file to browser form",
+                "browser file picker",
+                "上传文件",
+                "附件表单",
+            ]),
             _ => {}
         }
 
@@ -144,9 +204,11 @@ pub(crate) fn build_core_tool_assets() -> Vec<Value> {
         .collect()
 }
 
-fn browser_expanded_tool_contract(
+fn browser_tool_contract(
     name: &'static str,
     description: &'static str,
+    input_schema: Value,
+    permission_scope: &'static [&'static str],
     read_only: bool,
     mutating: bool,
     risk_level: &'static str,
@@ -155,34 +217,343 @@ fn browser_expanded_tool_contract(
     CoreToolContract {
         name,
         description,
-        input_schema: json!({
-            "type": "object",
-            "properties": {
-                "tab_id": {"type": "integer", "description": "Optional browser tab identifier. Required for tab-scoped actions."},
-                "target": {"type": "object", "description": "Optional structured locator using selector, text, role, label, placeholder, element_id, test_id, or frame_id."},
-                "action": {"type": "string", "description": "Sub-action for grouped browser tools such as tabs, storage, downloads, or dialog."},
-                "text": {"type": "string"},
-                "value": {},
-                "url": {"type": "string"},
-                "timeout_ms": {"type": "integer"},
-                "mode": {"type": "string"},
-                "code": {"type": "string"},
-                "path": {"type": "string"},
-                "options": {"type": "object"}
-            },
-            "additionalProperties": true
-        }),
+        input_schema,
         output_schema: json!({
             "type": "object",
             "additionalProperties": true
         }),
-        permission_scope: &["browser_agent_read", "browser_agent_write", "local_runtime"],
+        permission_scope,
         read_only,
         mutating,
         risk_level,
         example_arguments,
     }
 }
+
+fn browser_tab_id_property(description: &'static str) -> Value {
+    json!({
+        "type": "integer",
+        "description": description
+    })
+}
+
+fn browser_locator_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "selector": {"type": "string", "description": "CSS selector to resolve in the page."},
+            "text": {"type": "string", "description": "Visible text to match."},
+            "role": {"type": "string", "description": "Accessible role to match, such as button or link."},
+            "tag_name": {"type": "string", "description": "Element tag name. camelCase alias tagName is also accepted."},
+            "placeholder": {"type": "string", "description": "Placeholder text to match."},
+            "element_id": {"type": "string", "description": "Stable snapshot element id. camelCase alias elementId is also accepted."},
+            "aria_label": {"type": "string", "description": "ARIA label to match. camelCase alias ariaLabel is also accepted."},
+            "accessible_name": {"type": "string", "description": "Accessible name to match. camelCase alias accessibleName is also accepted."},
+            "href": {"type": "string", "description": "Link href to match."},
+            "test_id": {"type": "string", "description": "Test id or data-testid value. camelCase alias testId is also accepted."},
+            "frame_id": {"type": "string", "description": "Frame identifier when targeting a nested frame. camelCase alias frameId is also accepted."},
+            "index": {"type": "integer", "description": "Optional match index when more than one element satisfies the locator."}
+        },
+        "additionalProperties": true
+    })
+}
+
+fn browser_locator_property(description: &'static str) -> Value {
+    let mut schema = browser_locator_schema();
+    if let Some(object) = schema.as_object_mut() {
+        object.insert(
+            "description".to_string(),
+            Value::String(description.to_string()),
+        );
+    }
+    schema
+}
+
+fn browser_region_property() -> Value {
+    json!({
+        "type": "object",
+        "description": "Optional viewport region override when no target locator is provided.",
+        "properties": {
+            "x": {"type": "number"},
+            "y": {"type": "number"},
+            "width": {"type": "number"},
+            "height": {"type": "number"},
+            "top": {"type": "number"},
+            "right": {"type": "number"},
+            "bottom": {"type": "number"},
+            "left": {"type": "number"}
+        },
+        "additionalProperties": true
+    })
+}
+
+fn browser_expanded_permission_scope(mutating: bool) -> &'static [&'static str] {
+    if mutating {
+        &["browser_agent_write", "local_runtime"]
+    } else {
+        &["browser_agent_read", "local_runtime"]
+    }
+}
+
+fn browser_expanded_tool_contract(
+    name: &'static str,
+    description: &'static str,
+    read_only: bool,
+    mutating: bool,
+    risk_level: &'static str,
+    example_arguments: Value,
+) -> CoreToolContract {
+    browser_tool_contract(
+        name,
+        description,
+        browser_expanded_input_schema(name),
+        browser_expanded_permission_scope(mutating),
+        read_only,
+        mutating,
+        risk_level,
+        example_arguments,
+    )
+}
+
+fn browser_extract_contract() -> CoreToolContract {
+    browser_tool_contract(
+        "browser_extract",
+        "Extract structured content from a browser tab, such as visible text, article text, tables, links, images, metadata, or JSON-LD.",
+        json!({
+            "type": "object",
+            "properties": {
+                "tab_id": browser_tab_id_property("Browser tab identifier to extract from. This is normalized to the extension tabId field."),
+                "mode": {
+                    "type": "string",
+                    "enum": ["summary", "main_text", "links", "tables", "metadata"],
+                    "description": "Extraction mode. Omit or use summary for bounded page text."
+                },
+                "target": browser_locator_property("Optional structured locator that scopes extraction to one element. Use fields such as selector, text, role, tag_name/tagName, element_id/elementId, aria_label/ariaLabel, accessible_name/accessibleName, href, test_id/testId, frame_id/frameId, or index."),
+                "options": {
+                    "type": "object",
+                    "description": "Optional extraction options reserved for the browser extension.",
+                    "additionalProperties": true
+                }
+            },
+            "required": ["tab_id"],
+            "additionalProperties": true
+        }),
+        browser_expanded_permission_scope(false),
+        true,
+        false,
+        "MEDIUM",
+        json!({"tab_id": 42, "mode": "summary"}),
+    )
+}
+
+fn browser_expanded_input_schema(name: &str) -> Value {
+    match name {
+        "browser_navigate_tab" => json!({
+            "type": "object",
+            "properties": {
+                "tab_id": browser_tab_id_property("Browser tab identifier to navigate. This is normalized to the extension tabId field."),
+                "url": {"type": "string", "description": "Target http or https URL."}
+            },
+            "required": ["tab_id", "url"],
+            "additionalProperties": true
+        }),
+        "browser_find_element" => json!({
+            "type": "object",
+            "properties": {
+                "tab_id": browser_tab_id_property("Browser tab identifier to search. This is normalized to the extension tabId field."),
+                "target": browser_locator_property("Required structured locator for the element to find.")
+            },
+            "required": ["tab_id", "target"],
+            "additionalProperties": true
+        }),
+        "browser_region_screenshot" => json!({
+            "type": "object",
+            "properties": {
+                "tab_id": browser_tab_id_property("Browser tab identifier to capture. This is normalized to the extension tabId field."),
+                "target": browser_locator_property("Optional structured locator for the element whose bounds should be returned with the visible screenshot."),
+                "region": browser_region_property()
+            },
+            "required": ["tab_id"],
+            "additionalProperties": true
+        }),
+        "browser_full_page_screenshot" => json!({
+            "type": "object",
+            "properties": {
+                "tab_id": browser_tab_id_property("Browser tab identifier to capture. This is normalized to the extension tabId field.")
+            },
+            "required": ["tab_id"],
+            "additionalProperties": true
+        }),
+        "browser_get_active_page" => json!({
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+        }),
+        "browser_wait" => json!({
+            "type": "object",
+            "properties": {
+                "tab_id": browser_tab_id_property("Browser tab identifier to wait in. This is normalized to the extension tabId field."),
+                "mode": {"type": "string", "enum": ["element", "text", "url", "title", "readyState"], "description": "Condition type to wait for."},
+                "target": browser_locator_property("Required when mode is element."),
+                "text": {"type": "string", "description": "Text to wait for when mode is text."},
+                "url": {"type": "string", "description": "URL substring to wait for when mode is url."},
+                "title": {"type": "string", "description": "Title substring to wait for when mode is title."},
+                "wait_for_ready_state": {"type": "string", "enum": ["loading", "interactive", "complete"], "description": "ReadyState to wait for. This is normalized to waitForReadyState."},
+                "timeout_ms": {"type": "integer", "minimum": 1, "description": "Maximum wait time in milliseconds. This is normalized to timeoutMs."},
+                "poll_interval_ms": {"type": "integer", "minimum": 1, "description": "Polling interval in milliseconds. This is normalized to pollIntervalMs."}
+            },
+            "required": ["tab_id", "mode"],
+            "additionalProperties": true
+        }),
+        "browser_tabs" => json!({
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["list", "switch", "create", "close"], "description": "Tab operation to perform."},
+                "tab_id": browser_tab_id_property("Browser tab identifier. Required for switch and close. This is normalized to tabId."),
+                "url": {"type": "string", "description": "URL for action=create."}
+            },
+            "required": ["action"],
+            "additionalProperties": true
+        }),
+        "browser_fill" => json!({
+            "type": "object",
+            "properties": {
+                "tab_id": browser_tab_id_property("Browser tab identifier containing the field. This is normalized to tabId."),
+                "target": browser_locator_property("Required structured locator for the field to fill."),
+                "text": {"type": "string", "description": "Text to place into the field."},
+                "submit_after": {"type": "boolean", "description": "Submit the closest form after filling. This is normalized to submitAfter."}
+            },
+            "required": ["tab_id", "target", "text"],
+            "additionalProperties": true
+        }),
+        "browser_key" => json!({
+            "type": "object",
+            "properties": {
+                "tab_id": browser_tab_id_property("Browser tab identifier receiving the key event. This is normalized to tabId."),
+                "target": browser_locator_property("Optional structured locator to focus before sending the key."),
+                "key": {"type": "string", "description": "Keyboard key value such as Enter or Escape."}
+            },
+            "required": ["tab_id", "key"],
+            "additionalProperties": true
+        }),
+        "browser_select" => json!({
+            "type": "object",
+            "properties": {
+                "tab_id": browser_tab_id_property("Browser tab identifier containing the control. This is normalized to tabId."),
+                "target": browser_locator_property("Required structured locator for the select, checkbox, radio, or input control."),
+                "value": {"description": "Option value/text or input value to select."},
+                "checked": {"type": "boolean", "description": "Checkbox/radio checked state."}
+            },
+            "required": ["tab_id", "target"],
+            "additionalProperties": true
+        }),
+        "browser_upload_file" => json!({
+            "type": "object",
+            "properties": {
+                "tab_id": browser_tab_id_property("Browser tab identifier containing the file input. This is normalized to tabId."),
+                "target": browser_locator_property("Required structured locator for the file input."),
+                "path": {"type": "string", "description": "Single local file path requested for upload."},
+                "paths": {"type": "array", "items": {"type": "string"}, "description": "Multiple local file paths requested for upload."}
+            },
+            "required": ["tab_id", "target"],
+            "additionalProperties": true
+        }),
+        "browser_downloads" => json!({
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["list", "wait"], "description": "Download operation. Omit or use list to inspect recent downloads."},
+                "limit": {"type": "integer", "minimum": 1, "description": "Maximum download records to return."},
+                "filename_contains": {"type": "string", "description": "Filter downloads by filename or URL substring. This is normalized to filenameContains."},
+                "timeout_ms": {"type": "integer", "minimum": 1, "description": "Maximum wait time for action=wait. This is normalized to timeoutMs."}
+            },
+            "additionalProperties": true
+        }),
+        "browser_dialog" => json!({
+            "type": "object",
+            "properties": {
+                "tab_id": browser_tab_id_property("Browser tab identifier. This is normalized to tabId."),
+                "action": {"type": "string", "enum": ["status", "accept", "dismiss", "respond"], "description": "Dialog operation."},
+                "text": {"type": "string", "description": "Prompt response text for action=respond."}
+            },
+            "required": ["tab_id"],
+            "additionalProperties": true
+        }),
+        "browser_console_log" => json!({
+            "type": "object",
+            "properties": {
+                "tab_id": browser_tab_id_property("Browser tab identifier to inspect. This is normalized to tabId."),
+                "level": {"type": "string", "enum": ["log", "warn", "error"], "description": "Optional console level filter."},
+                "limit": {"type": "integer", "minimum": 1, "description": "Maximum log entries to return."}
+            },
+            "required": ["tab_id"],
+            "additionalProperties": true
+        }),
+        "browser_network_log" => json!({
+            "type": "object",
+            "properties": {
+                "tab_id": browser_tab_id_property("Browser tab identifier to inspect. This is normalized to tabId."),
+                "include_failed": {"type": "boolean", "description": "Include failed requests. This is normalized to includeFailed."},
+                "limit": {"type": "integer", "minimum": 1, "description": "Maximum resource entries to return."}
+            },
+            "required": ["tab_id"],
+            "additionalProperties": true
+        }),
+        "browser_storage_read" => json!({
+            "type": "object",
+            "properties": {
+                "tab_id": browser_tab_id_property("Browser tab identifier to inspect. This is normalized to tabId."),
+                "area": {"type": "string", "enum": ["localStorage", "sessionStorage"], "description": "Storage area to read."},
+                "key": {"type": "string", "description": "Optional key to read; omit to return bounded entries."}
+            },
+            "required": ["tab_id", "area"],
+            "additionalProperties": true
+        }),
+        "browser_storage_write" => json!({
+            "type": "object",
+            "properties": {
+                "tab_id": browser_tab_id_property("Browser tab identifier to mutate. This is normalized to tabId."),
+                "area": {"type": "string", "enum": ["localStorage", "sessionStorage"], "description": "Storage area to write."},
+                "key": {"type": "string", "description": "Storage key to write."},
+                "value": {"description": "Value to store. Non-string values are JSON stringified by the extension."}
+            },
+            "required": ["tab_id", "area", "key", "value"],
+            "additionalProperties": true
+        }),
+        "browser_eval" => json!({
+            "type": "object",
+            "properties": {
+                "tab_id": browser_tab_id_property("Browser tab identifier to evaluate in. This is normalized to tabId."),
+                "mode": {"type": "string", "enum": ["read", "write"], "description": "Use read for current extension execution. write is blocked by the content surface."},
+                "code": {"type": "string", "description": "JavaScript expression to evaluate in the page context."}
+            },
+            "required": ["tab_id", "code"],
+            "additionalProperties": true
+        }),
+        "browser_highlight" => json!({
+            "type": "object",
+            "properties": {
+                "tab_id": browser_tab_id_property("Browser tab identifier containing the element. This is normalized to tabId."),
+                "target": browser_locator_property("Required structured locator for the element to highlight."),
+                "duration_ms": {"type": "integer", "minimum": 1, "description": "Highlight duration in milliseconds. This is normalized to durationMs."}
+            },
+            "required": ["tab_id", "target"],
+            "additionalProperties": true
+        }),
+        "browser_accessibility_audit" => json!({
+            "type": "object",
+            "properties": {
+                "tab_id": browser_tab_id_property("Browser tab identifier to audit. This is normalized to tabId.")
+            },
+            "required": ["tab_id"],
+            "additionalProperties": true
+        }),
+        _ => json!({
+            "type": "object",
+            "additionalProperties": true
+        }),
+    }
+}
+
 pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
     vec![
         CoreToolContract {
@@ -846,14 +1217,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
             "MEDIUM",
             json!({"tab_id": 42, "target": {"text": "Continue"}}),
         ),
-        browser_expanded_tool_contract(
-            "browser_extract",
-            "Extract structured content from a browser tab, such as visible text, article text, tables, links, images, metadata, or JSON-LD.",
-            true,
-            false,
-            "MEDIUM",
-            json!({"tab_id": 42, "mode": "main_text"}),
-        ),
+        browser_extract_contract(),
         browser_expanded_tool_contract(
             "browser_region_screenshot",
             "Capture a screenshot of a browser element or viewport region.",
@@ -1817,6 +2181,7 @@ mod tests {
         shell_execute_example_arguments, shell_execute_input_schema, shell_execute_output_schema,
         shell_execute_tool_description, SHELL_EXECUTE_TOOL_NAME,
     };
+    use serde_json::{json, Value};
 
     #[test]
     fn core_tool_registry_includes_browser_agent_status() {
@@ -1987,6 +2352,140 @@ mod tests {
             assert_eq!(tool.risk_level, risk_level, "{name} risk");
         }
     }
+
+    #[test]
+    fn browser_write_tools_advertise_action_specific_discovery_terms() {
+        let tools = desktop_runtime_core_tools();
+        let fill = tools
+            .iter()
+            .find(|tool| tool.name == "browser_fill")
+            .expect("browser_fill core tool should exist")
+            .discovery_terms()
+            .as_array()
+            .expect("browser_fill discovery terms")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>()
+            .join(" ");
+        let type_terms = tools
+            .iter()
+            .find(|tool| tool.name == "browser_type")
+            .expect("browser_type core tool should exist")
+            .discovery_terms()
+            .as_array()
+            .expect("browser_type discovery terms")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>()
+            .join(" ");
+        let key = tools
+            .iter()
+            .find(|tool| tool.name == "browser_key")
+            .expect("browser_key core tool should exist")
+            .discovery_terms()
+            .as_array()
+            .expect("browser_key discovery terms")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        assert!(fill.contains("fill browser form"));
+        assert!(fill.contains("form input"));
+        assert!(fill.contains("fill social media compose box"));
+        assert!(fill.contains("填写发帖框"));
+        assert!(type_terms.contains("type text into browser input"));
+        assert!(type_terms.contains("compose tweet text"));
+        assert!(type_terms.contains("输入发帖内容"));
+        assert!(key.contains("keyboard input"));
+    }
+
+    #[test]
+    fn core_tool_registry_marks_browser_extract_tab_id_required() {
+        let tool = desktop_runtime_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == "browser_extract")
+            .expect("browser_extract core tool should exist");
+
+        assert_eq!(tool.input_schema["required"], json!(["tab_id"]));
+        assert_eq!(
+            tool.example_arguments,
+            json!({"tab_id": 42, "mode": "summary"})
+        );
+        assert!(tool.input_schema["properties"]["target"]["description"]
+            .as_str()
+            .expect("target description")
+            .contains("tagName"));
+    }
+
+    #[test]
+    fn core_tool_registry_uses_specific_required_fields_for_expanded_browser_tools() {
+        let tools = desktop_runtime_core_tools();
+        let expected_required = [
+            ("browser_find_element", json!(["tab_id", "target"])),
+            ("browser_region_screenshot", json!(["tab_id"])),
+            ("browser_full_page_screenshot", json!(["tab_id"])),
+            ("browser_get_active_page", json!(null)),
+            ("browser_wait", json!(["tab_id", "mode"])),
+            ("browser_tabs", json!(["action"])),
+            ("browser_fill", json!(["tab_id", "target", "text"])),
+            ("browser_key", json!(["tab_id", "key"])),
+            ("browser_select", json!(["tab_id", "target"])),
+            ("browser_upload_file", json!(["tab_id", "target"])),
+            ("browser_downloads", json!(null)),
+            ("browser_storage_read", json!(["tab_id", "area"])),
+            (
+                "browser_storage_write",
+                json!(["tab_id", "area", "key", "value"]),
+            ),
+            ("browser_eval", json!(["tab_id", "code"])),
+            ("browser_highlight", json!(["tab_id", "target"])),
+            ("browser_accessibility_audit", json!(["tab_id"])),
+        ];
+
+        for (name, required) in expected_required {
+            let tool = tools
+                .iter()
+                .find(|tool| tool.name == name)
+                .unwrap_or_else(|| panic!("{name} core tool should exist"));
+
+            if required.is_null() {
+                assert!(
+                    tool.input_schema.get("required").is_none(),
+                    "{name} should not require fields"
+                );
+            } else {
+                assert_eq!(tool.input_schema["required"], required, "{name} required");
+            }
+        }
+    }
+
+    #[test]
+    fn core_tool_registry_advertises_snake_case_aliases_for_normalized_fields() {
+        let tool = desktop_runtime_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == "browser_network_log")
+            .expect("browser_network_log core tool should exist");
+
+        assert!(tool.input_schema["properties"]
+            .get("include_failed")
+            .is_some());
+        assert!(tool.input_schema["properties"]
+            .get("includeFailed")
+            .is_none());
+
+        let highlight = desktop_runtime_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == "browser_highlight")
+            .expect("browser_highlight core tool should exist");
+        assert!(highlight.input_schema["properties"]
+            .get("duration_ms")
+            .is_some());
+        assert!(highlight.input_schema["properties"]
+            .get("durationMs")
+            .is_none());
+    }
+
     #[test]
     fn core_tool_registry_includes_browser_wait_for_element() {
         let tool = desktop_runtime_core_tools()

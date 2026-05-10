@@ -364,6 +364,139 @@ describe("useChatMessagingService pending takeover orchestration", () => {
     delete windowWithTauri.__TAURI_INTERNALS__
   })
 
+  it("queues a new draft instead of dispatching while the latest assistant tool is still running", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI_INTERNALS__ = {}
+    mockStreamDesktopLocalChatCompletion.mockResolvedValueOnce("")
+
+    useChatStore.setState({
+      models: [
+        {
+          id: "qwen-local",
+          provider_model_id: "provider-local-1",
+          request_route: "local_invoke",
+          runtime_source: "desktop_local",
+        } as any,
+      ],
+      config: {
+        model: "qwen-local",
+        temperatureEnabled: true,
+        temperature: 0.7,
+        topP: 1,
+        maxTokens: null,
+        reasoningEnabled: false,
+        reasoningEffort: "medium",
+      },
+      input: "follow-up while tool runs",
+      selectedKnowledgeFileIds: ["doc-running-1"],
+      messages: [
+        {
+          id: "assistant-running-1",
+          role: "assistant",
+          content: "",
+          createdAt: 1,
+          blocks: [
+            {
+              id: "call-running-1",
+              type: "tool_call",
+              callId: "call-running-1",
+              toolName: "shell_execute",
+              status: "running",
+            },
+          ],
+        },
+      ],
+    })
+    useChatRuntimeStore.setState({
+      sessionId: "session-local-running-1",
+      isLoading: false,
+    })
+
+    const { result } = renderHook(() => useChatMessagingService())
+
+    await act(async () => {
+      await result.current.sendMessage()
+    })
+
+    expect(mockStreamDesktopLocalChatCompletion).not.toHaveBeenCalled()
+    expect(useChatRuntimeStore.getState().pendingTakeover).toMatchObject({
+      input: "follow-up while tool runs",
+      selectedKnowledgeFileIds: ["doc-running-1"],
+    })
+    expect(useChatRuntimeStore.getState().pendingTakeoverRequestedAction).toBe("send_after_step")
+
+    delete windowWithTauri.__TAURI_INTERNALS__
+  })
+
+  it("does not auto-dispatch a deferred takeover while the latest assistant tool is still running", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI_INTERNALS__ = {}
+    mockStreamDesktopLocalChatCompletion.mockResolvedValueOnce("")
+
+    useChatStore.setState({
+      models: [
+        {
+          id: "qwen-local",
+          provider_model_id: "provider-local-1",
+          request_route: "local_invoke",
+          runtime_source: "desktop_local",
+        } as any,
+      ],
+      config: {
+        model: "qwen-local",
+        temperatureEnabled: true,
+        temperature: 0.7,
+        topP: 1,
+        maxTokens: null,
+        reasoningEnabled: false,
+        reasoningEffort: "medium",
+      },
+      messages: [
+        {
+          id: "assistant-running-queued-1",
+          role: "assistant",
+          content: "",
+          createdAt: 1,
+          blocks: [
+            {
+              id: "call-running-queued-1",
+              type: "tool_call",
+              callId: "call-running-queued-1",
+              toolName: "shell_execute",
+              status: "running",
+            },
+          ],
+        },
+      ],
+    })
+    useChatRuntimeStore.setState({
+      sessionId: "session-local-running-queued-1",
+      isLoading: false,
+      statusCode: null,
+      pendingTakeover: {
+        input: "queued while tool runs",
+        attachments: [],
+        selectedKnowledgeFileIds: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      pendingTakeoverRequestedAction: "send_after_step",
+    })
+
+    renderHook(() => useChatMessagingService())
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(mockStreamDesktopLocalChatCompletion).not.toHaveBeenCalled()
+    expect(useChatRuntimeStore.getState().pendingTakeover).toMatchObject({
+      input: "queued while tool runs",
+    })
+
+    delete windowWithTauri.__TAURI_INTERNALS__
+  })
+
   it("cancels the active request and sends the pending takeover draft", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI_INTERNALS__ = {}
