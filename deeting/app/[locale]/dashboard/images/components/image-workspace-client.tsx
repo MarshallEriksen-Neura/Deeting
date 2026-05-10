@@ -207,6 +207,8 @@ function extractLocalHistoryRuns(
     const blocks = Array.isArray(metaInfo?.blocks) ? metaInfo.blocks : []
     if (!metaInfo || blocks.length === 0) return
 
+    const turnIndex = message.turn_index
+
     blocks.forEach((block, blockIndex) => {
       if (!isImageResultBlock(block)) return
 
@@ -226,7 +228,7 @@ function extractLocalHistoryRuns(
           ? message.created_at
           : new Date().toISOString()
       const blockId = typeof block.id === "string" && block.id.trim().length > 0 ? block.id : null
-      const taskId = `${sessionId}:${message.turn_index}:${blockId ?? blockIndex}`
+      const taskId = `${sessionId}:${turnIndex}:${blockId ?? blockIndex}`
       const prompt =
         typeof payload?.prompt === "string" && payload.prompt.trim().length > 0
           ? payload.prompt.trim()
@@ -266,7 +268,7 @@ function extractLocalHistoryRuns(
         outputs,
         locator: {
           sessionId,
-          turnIndex: message.turn_index,
+          turnIndex,
           blockId,
           blockIndex,
           metaInfo,
