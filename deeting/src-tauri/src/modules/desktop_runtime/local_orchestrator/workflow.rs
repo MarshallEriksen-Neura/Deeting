@@ -903,6 +903,7 @@ impl LocalWorkflowContext {
         self.system_messages.push(LocalChatInputMessage {
             role: "system".to_string(),
             content: trimmed.to_string(),
+            reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,

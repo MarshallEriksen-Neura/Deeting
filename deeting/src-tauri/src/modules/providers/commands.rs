@@ -864,6 +864,7 @@ pub async fn test_local_provider_model(
             &[LocalChatInputMessage {
                 role: "user".to_string(),
                 content: prompt.clone(),
+                reasoning_content: None,
                 tool_calls: vec![],
                 tool_call_id: None,
                 name: None,

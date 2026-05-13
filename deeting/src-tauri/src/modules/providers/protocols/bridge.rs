@@ -232,6 +232,10 @@ pub fn build_canonical_request_from_value(
                     Some(CanonicalMessage {
                         role: role.to_string(),
                         content: normalize_message_content_value(role, item.get("content")),
+                        reasoning_content: item
+                            .get("reasoning_content")
+                            .and_then(|value| value.as_str())
+                            .map(|value| value.to_string()),
                         tool_calls: canonical_tool_calls_from_message(item),
                         tool_call_id: item
                             .get("tool_call_id")
@@ -417,6 +421,7 @@ fn canonical_message_from_local_chat_message(message: &LocalChatInputMessage) ->
             message.role.as_str(),
             Some(&Value::String(message.content.clone())),
         ),
+        reasoning_content: message.reasoning_content.clone(),
         tool_calls: message
             .tool_calls
             .iter()
@@ -450,6 +455,17 @@ fn message_value_from_canonical_message(message: &CanonicalMessage) -> Value {
         object.insert(
             "tool_call_id".to_string(),
             Value::String(tool_call_id.clone()),
+        );
+    }
+    if let Some(reasoning_content) = message
+        .reasoning_content
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        object.insert(
+            "reasoning_content".to_string(),
+            Value::String(reasoning_content.to_string()),
         );
     }
     if !message.tool_calls.is_empty() {
@@ -1071,6 +1087,7 @@ mod tests {
                     content:
                         "[{\"type\":\"text\",\"text\":\"describe this\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"https://example.com/image.png\"}}]"
                             .to_string(),
+            reasoning_content: None,
                     tool_calls: vec![],
                     tool_call_id: None,
                     name: None,
@@ -1078,6 +1095,7 @@ mod tests {
                 LocalChatInputMessage {
                     role: "tool".to_string(),
                     content: raw_tool_content.to_string(),
+            reasoning_content: None,
                     tool_calls: vec![],
                     tool_call_id: Some("call_123".to_string()),
                     name: Some("search_sdk".to_string()),
@@ -1126,6 +1144,7 @@ mod tests {
                 content:
                     "[{\"type\":\"text\",\"text\":\"describe this\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"https://example.com/image.png\"}}]"
                         .to_string(),
+            reasoning_content: None,
                 tool_calls: vec![],
                 tool_call_id: None,
                 name: None,
@@ -1139,6 +1158,31 @@ mod tests {
 
         assert!(request_data["messages"][0]["content"].is_array());
         assert_eq!(request_data["max_tokens"], json!(16));
+    }
+
+    #[test]
+    fn build_chat_request_data_from_canonical_request_preserves_reasoning_content() {
+        let request = build_canonical_chat_request_from_local_messages(
+            "gpt-4o-mini",
+            &[LocalChatInputMessage {
+                role: "assistant".to_string(),
+                content: "".to_string(),
+                reasoning_content: Some("Need to call the tool first.".to_string()),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
+            }],
+            false,
+            None,
+            None,
+        );
+
+        let request_data = build_chat_request_data_from_canonical_request(&request);
+
+        assert_eq!(
+            request_data["messages"][0]["reasoning_content"],
+            json!("Need to call the tool first.")
+        );
     }
 
     #[test]

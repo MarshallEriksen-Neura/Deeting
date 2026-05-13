@@ -345,6 +345,7 @@ fn normalize_messages(
         output.push(LocalChatInputMessage {
             role,
             content,
+            reasoning_content: None,
             tool_calls: Vec::new(),
             tool_call_id: None,
             name: message.name.clone(),

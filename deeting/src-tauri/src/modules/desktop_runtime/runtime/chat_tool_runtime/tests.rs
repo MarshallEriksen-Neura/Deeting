@@ -228,6 +228,7 @@ fn canonicalize_tool_name_for_allowed_list_accepts_underscore_variant() {
 fn structured_tool_replay_messages_use_family_gates_for_supported_protocols() {
     let response = serde_json::json!({
         "content": "",
+        "reasoning_content": "Need to call the tool first.",
         "tool_calls": [
             {
                 "id": "call_123",
@@ -247,6 +248,10 @@ fn structured_tool_replay_messages_use_family_gates_for_supported_protocols() {
         .expect("openai replay");
     assert_eq!(openai_replay.len(), 2);
     assert_eq!(openai_replay[0].role, "assistant");
+    assert_eq!(
+        openai_replay[0].reasoning_content.as_deref(),
+        Some("Need to call the tool first.")
+    );
     assert_eq!(openai_replay[0].tool_calls.len(), 1);
     assert_eq!(openai_replay[1].role, "tool");
     assert_eq!(openai_replay[1].tool_call_id.as_deref(), Some("call_123"));

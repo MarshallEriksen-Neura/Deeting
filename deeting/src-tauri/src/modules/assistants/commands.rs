@@ -97,6 +97,7 @@ fn build_quick_translate_messages(
                 "Do not explain the translation unless the source text is ambiguous and impossible to translate.",
             ]
             .join(" "),
+            reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,
@@ -106,6 +107,7 @@ fn build_quick_translate_messages(
             content: format!(
                 "Translate the following text from {source} into {target_language}.\n\n{text}"
             ),
+            reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,
@@ -470,6 +472,7 @@ pub async fn preview_local_assistant(
         LocalChatInputMessage {
             role: "system".to_string(),
             content: assistant.system_prompt,
+            reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,
@@ -477,6 +480,7 @@ pub async fn preview_local_assistant(
         LocalChatInputMessage {
             role: "user".to_string(),
             content: payload.message,
+            reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,

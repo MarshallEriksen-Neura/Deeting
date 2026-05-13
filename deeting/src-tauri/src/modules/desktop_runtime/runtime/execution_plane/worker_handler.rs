@@ -1087,6 +1087,7 @@ mod tests {
         let input = latest_user_image_input(&[LocalChatInputMessage {
             role: "user".to_string(),
             content: r#"[{"type":"text","text":"draw a cat"},{"type":"image_url","image_url":{"url":"asset://chat-assets/demo.png"}},{"type":"image_url","image_url":{"url":"local-asset://abc123"}}]"#.to_string(),
+            reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,
@@ -1107,6 +1108,7 @@ mod tests {
         let input = latest_user_image_input(&[LocalChatInputMessage {
             role: "user".to_string(),
             content: "@image-agent draw a cat".to_string(),
+            reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,

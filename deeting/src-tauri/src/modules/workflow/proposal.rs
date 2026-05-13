@@ -81,6 +81,7 @@ pub(crate) async fn generate_proposal(
         LocalChatInputMessage {
             role: "system".to_string(),
             content: PLAN_GENERATOR_SYSTEM_PROMPT.to_string(),
+            reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,
@@ -88,6 +89,7 @@ pub(crate) async fn generate_proposal(
         LocalChatInputMessage {
             role: "user".to_string(),
             content: build_user_content(normalized_goal, hints),
+            reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,

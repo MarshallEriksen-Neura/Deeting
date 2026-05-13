@@ -786,6 +786,7 @@ async fn run_constrained_judgment_pass(
                 "Output JSON only."
             )
             .to_string(),
+            reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,
@@ -793,6 +794,7 @@ async fn run_constrained_judgment_pass(
         LocalChatInputMessage {
             role: "user".to_string(),
             content: serde_json::to_string_pretty(&evidence).ok()?,
+            reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,

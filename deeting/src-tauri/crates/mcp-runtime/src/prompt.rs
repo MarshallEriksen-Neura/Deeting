@@ -170,6 +170,7 @@ pub fn build_local_prelude_messages(
         prelude_messages.push(LocalChatInputMessage {
             role: "system".to_string(),
             content: base_system_prompt.to_string(),
+            reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,

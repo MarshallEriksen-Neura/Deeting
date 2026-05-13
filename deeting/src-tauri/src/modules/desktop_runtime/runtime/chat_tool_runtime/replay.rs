@@ -29,10 +29,17 @@ pub(super) fn finalize_tool_round(
         .and_then(|v| v.as_str())
         .map(|v| v.trim().to_string())
         .unwrap_or_default();
+    let assistant_reasoning_content = response
+        .get("reasoning_content")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
     if !assistant_content.is_empty() {
         orchestrated_messages.push(LocalChatInputMessage {
             role: "assistant".to_string(),
             content: assistant_content,
+            reasoning_content: assistant_reasoning_content,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,
@@ -41,6 +48,7 @@ pub(super) fn finalize_tool_round(
     orchestrated_messages.push(LocalChatInputMessage {
         role: "user".to_string(),
         content: tool_feedback,
+        reasoning_content: None,
         tool_calls: vec![],
         tool_call_id: None,
         name: None,
@@ -101,10 +109,17 @@ pub(super) fn build_structured_tool_replay_messages(
         .unwrap_or_default()
         .trim()
         .to_string();
+    let assistant_reasoning_content = response
+        .get("reasoning_content")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
     let mut messages = Vec::with_capacity(1 + ordered_tool_meta.len());
     messages.push(LocalChatInputMessage {
         role: "assistant".to_string(),
         content: assistant_content,
+        reasoning_content: assistant_reasoning_content,
         tool_calls,
         tool_call_id: None,
         name: None,
@@ -114,6 +129,7 @@ pub(super) fn build_structured_tool_replay_messages(
         messages.push(LocalChatInputMessage {
             role: "tool".to_string(),
             content: serialize_tool_replay_content(item),
+            reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: Some(call_id),
             name: item
@@ -234,6 +250,7 @@ fn apply_capability_update(
                             format!("Relevant capability focus: {}", capability_summary.trim())
                         },
                     ),
+            reasoning_content: None,
                     tool_calls: vec![],
                     tool_call_id: None,
                     name: None,
@@ -251,6 +268,7 @@ fn apply_capability_update(
                         "[Expert Capability Detached: {}]\n\nReturn to the default capability-neutral state for this request while keeping the fixed desktop persona unchanged.",
                         label,
                     ),
+            reasoning_content: None,
                     tool_calls: vec![],
                     tool_call_id: None,
                     name: None,

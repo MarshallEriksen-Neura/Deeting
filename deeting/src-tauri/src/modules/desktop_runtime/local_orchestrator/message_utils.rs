@@ -122,6 +122,7 @@ pub(super) fn convert_history_message_to_chat_input(
 ) -> LocalChatInputMessage {
     let tool_calls = extract_tool_calls_from_message(&message);
     let tool_call_id = extract_tool_call_id_from_message(&message);
+    let reasoning_content = extract_reasoning_content_from_message(&message);
     let content = message
         .content
         .as_ref()
@@ -138,10 +139,29 @@ pub(super) fn convert_history_message_to_chat_input(
     LocalChatInputMessage {
         role: message.role,
         content,
+        reasoning_content,
         tool_calls,
         tool_call_id,
         name: message.name,
     }
+}
+
+fn extract_reasoning_content_from_message(
+    message: &LocalConversationHistoryMessage,
+) -> Option<String> {
+    let meta_info = message.meta_info.as_ref()?;
+    let blocks = meta_info.get("blocks").and_then(Value::as_array)?;
+    blocks.iter().find_map(|block| {
+        if block.get("type").and_then(Value::as_str) != Some("thought") {
+            return None;
+        }
+        block
+            .get("content")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    })
 }
 
 fn extract_tool_calls_from_message(

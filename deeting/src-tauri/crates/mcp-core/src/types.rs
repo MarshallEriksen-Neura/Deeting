@@ -463,6 +463,8 @@ pub enum McpLogStream {
 pub struct LocalChatInputMessage {
     pub role: String,
     pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tool_calls: Vec<LocalChatToolCall>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

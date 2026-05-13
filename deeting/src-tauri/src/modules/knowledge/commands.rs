@@ -103,6 +103,7 @@ pub async fn extract_local_knowledge_image_text(
             LocalChatInputMessage {
                 role: "system".to_string(),
                 content: "You extract knowledge-base text from images. Keep the response concise, faithful to the image, and plain text only.".to_string(),
+            reasoning_content: None,
                 tool_calls: vec![],
                 tool_call_id: None,
                 name: None,
@@ -110,6 +111,7 @@ pub async fn extract_local_knowledge_image_text(
             LocalChatInputMessage {
                 role: "user".to_string(),
                 content: user_content,
+            reasoning_content: None,
                 tool_calls: vec![],
                 tool_call_id: None,
                 name: None,

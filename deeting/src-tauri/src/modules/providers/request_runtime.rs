@@ -1173,6 +1173,18 @@ fn render_openai_chat_message_from_canonical(
         );
     }
 
+    if let Some(reasoning_content) = message
+        .get("reasoning_content")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        object.insert(
+            "reasoning_content".to_string(),
+            Value::String(reasoning_content.to_string()),
+        );
+    }
+
     if let Some(tool_calls) = message.get("tool_calls").and_then(|value| value.as_array()) {
         let rendered_tool_calls: Vec<Value> = tool_calls
             .iter()
@@ -2917,6 +2929,7 @@ mod tests {
             &[LocalChatInputMessage {
                 role: "user".to_string(),
                 content: "hi".to_string(),
+                reasoning_content: None,
                 tool_calls: vec![],
                 tool_call_id: None,
                 name: None,
@@ -3058,6 +3071,7 @@ mod tests {
             &[LocalChatInputMessage {
                 role: "user".to_string(),
                 content: "hi".to_string(),
+                reasoning_content: None,
                 tool_calls: vec![],
                 tool_call_id: None,
                 name: None,
@@ -3362,6 +3376,7 @@ mod tests {
             &[LocalChatInputMessage {
                 role: "user".to_string(),
                 content: "hello responses".to_string(),
+                reasoning_content: None,
                 tool_calls: vec![],
                 tool_call_id: None,
                 name: None,
@@ -3597,6 +3612,7 @@ mod tests {
                 LocalChatInputMessage {
                     role: "assistant".to_string(),
                     content: "".to_string(),
+                    reasoning_content: None,
                     tool_calls: vec![LocalChatToolCall {
                         id: Some("call_123".to_string()),
                         name: "search_sdk".to_string(),
@@ -3609,6 +3625,7 @@ mod tests {
                 LocalChatInputMessage {
                     role: "tool".to_string(),
                     content: "{\"status\":\"ok\"}".to_string(),
+                    reasoning_content: None,
                     tool_calls: vec![],
                     tool_call_id: Some("call_123".to_string()),
                     name: None,
@@ -3638,6 +3655,7 @@ mod tests {
                 {
                     "role": "assistant",
                     "content": "",
+                    "reasoning_content": "Need to call the tool first.",
                     "tool_calls": [
                         {
                             "id": "call_123",
@@ -3653,6 +3671,52 @@ mod tests {
                     "role": "tool",
                     "tool_call_id": "call_123",
                     "content": "{\"status\":\"ok\"}"
+                }
+            ])
+        );
+    }
+
+    #[test]
+    fn prepare_provider_request_openai_chat_preserves_reasoning_content_on_assistant_messages() {
+        let preset = mock_preset();
+        let instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
+        let model = mock_model(&["chat"]);
+
+        let canonical = build_canonical_chat_request_from_local_messages(
+            "mimo-v2.5-pro",
+            &[LocalChatInputMessage {
+                role: "assistant".to_string(),
+                content: "".to_string(),
+                reasoning_content: Some("Need to call the tool first.".to_string()),
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
+            }],
+            false,
+            None,
+            None,
+        );
+        let request_data = build_chat_request_data_from_canonical_request(&canonical);
+        let prepared = prepare_provider_request_from_canonical_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "chat",
+            request_data,
+            canonical,
+            None,
+            None,
+        )
+        .expect("prepare request with assistant reasoning replay");
+
+        assert_eq!(
+            prepared.body["messages"],
+            json!([
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "reasoning_content": "Need to call the tool first."
                 }
             ])
         );
@@ -3760,6 +3824,7 @@ mod tests {
             &[LocalChatInputMessage {
                 role: "user".to_string(),
                 content: "reason carefully".to_string(),
+                reasoning_content: None,
                 tool_calls: vec![],
                 tool_call_id: None,
                 name: None,
@@ -3798,6 +3863,7 @@ mod tests {
             &[LocalChatInputMessage {
                 role: "user".to_string(),
                 content: "reason carefully".to_string(),
+                reasoning_content: None,
                 tool_calls: vec![],
                 tool_call_id: None,
                 name: None,
@@ -3889,6 +3955,7 @@ mod tests {
             &[LocalChatInputMessage {
                 role: "user".to_string(),
                 content: "reason carefully".to_string(),
+                reasoning_content: None,
                 tool_calls: vec![],
                 tool_call_id: None,
                 name: None,
@@ -4079,6 +4146,7 @@ mod tests {
                 LocalChatInputMessage {
                     role: "assistant".to_string(),
                     content: "".to_string(),
+                    reasoning_content: None,
                     tool_calls: vec![LocalChatToolCall {
                         id: Some("call_123".to_string()),
                         name: "search_sdk".to_string(),
@@ -4091,6 +4159,7 @@ mod tests {
                 LocalChatInputMessage {
                     role: "tool".to_string(),
                     content: "{\"status\":\"ok\"}".to_string(),
+                    reasoning_content: None,
                     tool_calls: vec![],
                     tool_call_id: Some("call_123".to_string()),
                     name: None,

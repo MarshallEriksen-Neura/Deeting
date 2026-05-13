@@ -362,6 +362,7 @@ pub(crate) async fn run_local_chat_complete_with_tools(
                 "- Environment: Deeting Desktop local runtime\n",
                 "- Follow the base Agent Skills Progressive Disclosure contract for skill discovery, activation, resource reading, and execution boundaries.\n",
             ).to_string(),
+            reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,

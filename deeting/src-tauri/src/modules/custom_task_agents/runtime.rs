@@ -389,6 +389,7 @@ pub(crate) async fn preview_custom_task_agent_with_parent_model(
             messages.push(LocalChatInputMessage {
                 role: "assistant".to_string(),
                 content: content.to_string(),
+                reasoning_content: None,
                 tool_calls: vec![],
                 tool_call_id: None,
                 name: None,
@@ -602,6 +603,7 @@ pub(crate) async fn preview_custom_task_agent_with_parent_model(
         messages.push(LocalChatInputMessage {
             role: "user".to_string(),
             content: build_callable_feedback_message(round, &action_results),
+            reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,
@@ -1016,6 +1018,7 @@ fn build_initial_messages(
     let mut messages = vec![LocalChatInputMessage {
         role: "system".to_string(),
         content: system_lines.join("\n"),
+        reasoning_content: None,
         tool_calls: vec![],
         tool_call_id: None,
         name: None,
@@ -1026,6 +1029,7 @@ fn build_initial_messages(
         messages.push(LocalChatInputMessage {
             role: "system".to_string(),
             content: "## Worker Task Packet\nThe next user message is a canonical WorkerTaskPacket JSON object authored by the desktop runtime. Treat it as authoritative for scope, constraints, capabilities, and completion criteria. Execute the packet directly, do not self-route, and do not widen scope.".to_string(),
+            reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,
@@ -1033,6 +1037,7 @@ fn build_initial_messages(
         messages.push(LocalChatInputMessage {
             role: "user".to_string(),
             content: packet_json,
+            reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,
@@ -1041,6 +1046,7 @@ fn build_initial_messages(
             messages.push(LocalChatInputMessage {
                 role: "user".to_string(),
                 content: format!("Raw user phrasing:\n{}", message.trim()),
+                reasoning_content: None,
                 tool_calls: vec![],
                 tool_call_id: None,
                 name: None,
@@ -1052,6 +1058,7 @@ fn build_initial_messages(
     messages.push(LocalChatInputMessage {
         role: "user".to_string(),
         content: message.to_string(),
+        reasoning_content: None,
         tool_calls: vec![],
         tool_call_id: None,
         name: None,

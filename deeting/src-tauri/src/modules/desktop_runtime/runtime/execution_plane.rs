@@ -593,6 +593,7 @@ pub(crate) fn build_delegated_result_feedback_messages(
         LocalChatInputMessage {
             role: "system".to_string(),
             content: instruction,
+            reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,
@@ -600,6 +601,7 @@ pub(crate) fn build_delegated_result_feedback_messages(
         LocalChatInputMessage {
             role: "user".to_string(),
             content: delegated_result_json,
+            reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,
@@ -984,6 +986,7 @@ mod tests {
             LocalChatInputMessage {
                 role: "user".to_string(),
                 content: "older".to_string(),
+                reasoning_content: None,
                 tool_calls: vec![],
                 tool_call_id: None,
                 name: None,
@@ -991,6 +994,7 @@ mod tests {
             LocalChatInputMessage {
                 role: "assistant".to_string(),
                 content: "reply".to_string(),
+                reasoning_content: None,
                 tool_calls: vec![],
                 tool_call_id: None,
                 name: None,
@@ -998,6 +1002,7 @@ mod tests {
             LocalChatInputMessage {
                 role: "user".to_string(),
                 content: "newest".to_string(),
+                reasoning_content: None,
                 tool_calls: vec![],
                 tool_call_id: None,
                 name: None,

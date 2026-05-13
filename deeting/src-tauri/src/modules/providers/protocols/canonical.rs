@@ -49,6 +49,8 @@ pub struct CanonicalMessage {
     #[serde(default)]
     pub content: Value,
     #[serde(default)]
+    pub reasoning_content: Option<String>,
+    #[serde(default)]
     pub tool_calls: Vec<CanonicalToolCall>,
     #[serde(default)]
     pub tool_call_id: Option<String>,

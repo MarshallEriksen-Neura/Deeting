@@ -136,6 +136,7 @@ async fn execute_via_direct_llm(
         LocalChatInputMessage {
             role: "system".to_string(),
             content: "You are a workflow phase executor. Complete the assigned task based on the provided context. Be thorough and produce a clear result.".to_string(),
+            reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,
@@ -143,6 +144,7 @@ async fn execute_via_direct_llm(
         LocalChatInputMessage {
             role: "user".to_string(),
             content: input.context_packet.context_md.clone(),
+            reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,
             name: None,
