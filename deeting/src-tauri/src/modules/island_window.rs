@@ -3,7 +3,9 @@
 //! 提供 Island 窗口的创建、显示/隐藏切换、尺寸与位置控制。
 
 use tauri::window::Color;
-use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder,
+};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 use crate::modules::mcp::error::McpError;
@@ -11,6 +13,7 @@ use crate::modules::mcp::store::McpStore;
 
 pub(crate) const ISLAND_TOGGLE_SHORTCUT_CONFIG_KEY: &str = "island.toggle_shortcut";
 pub(crate) const DEFAULT_ISLAND_TOGGLE_SHORTCUT: &str = "CommandOrControl+Shift+I";
+const ISLAND_ENTER_COLLAPSED_EVENT: &str = "island:enter-collapsed";
 
 pub(crate) fn normalize_island_toggle_shortcut(raw: &str) -> Result<String, String> {
     let shortcut = raw.trim();
@@ -57,6 +60,7 @@ pub(crate) fn toggle_island_visibility(app: &AppHandle) -> Result<(), String> {
         if is_visible {
             island.hide().map_err(|e| e.to_string())?;
         } else {
+            let _ = island.emit(ISLAND_ENTER_COLLAPSED_EVENT, ());
             island.show().map_err(|e| e.to_string())?;
             island.set_focus().map_err(|e| e.to_string())?;
         }
@@ -122,6 +126,7 @@ pub async fn hide_main_show_island(app: AppHandle) -> Result<(), String> {
         main.hide().map_err(|e| e.to_string())?;
     }
     if let Some(island) = app.get_webview_window("island") {
+        let _ = island.emit(ISLAND_ENTER_COLLAPSED_EVENT, ());
         island.show().map_err(|e| e.to_string())?;
     }
     Ok(())

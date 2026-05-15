@@ -1,7 +1,8 @@
 "use client";
 
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { createSafeJSONStorage } from "./persist-storage";
 
 /**
  * 主题类型定义
@@ -57,7 +58,7 @@ export const useThemeStore = create<ThemeStore>()(
     }),
     {
       name: "deeting-theme-store",
-      storage: createJSONStorage(() => localStorage),
+      storage: createSafeJSONStorage(() => localStorage),
       version: 1,
       partialize: (state) => ({
         mode: state.mode,

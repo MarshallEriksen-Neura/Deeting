@@ -2892,8 +2892,7 @@ for raw_line in sys.stdin:
             .expect("monitor list core tool");
         let save_asset = callable
             .iter()
-            .find(|item| item["name"] == serde_json::json!("save_asset"))
-            .expect("save_asset core tool");
+            .find(|item| item["name"] == serde_json::json!("save_asset"));
         let execute = result["orchestration_primitives"]
             .as_array()
             .expect("orchestration primitives array")
@@ -2911,9 +2910,7 @@ for raw_line in sys.stdin:
         assert_eq!(monitor_list["asset_namespace"], serde_json::json!("core"));
         assert_eq!(monitor_list["invocation_mode"], serde_json::json!("direct"));
         assert_eq!(monitor_list["risk_level"], serde_json::json!("LOW"));
-        assert_eq!(save_asset["asset_namespace"], serde_json::json!("core"));
-        assert_eq!(save_asset["invocation_mode"], serde_json::json!("direct"));
-        assert_eq!(save_asset["risk_level"], serde_json::json!("HIGH"));
+        assert!(save_asset.is_none());
         assert_eq!(execute["risk_level"], serde_json::json!("HIGH"));
         assert!(execute["permission_scope"]
             .as_array()

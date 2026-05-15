@@ -329,16 +329,17 @@ pub fn assess_core_tool_risk(tool_name: &str, arguments: &Value) -> ToolRiskAsse
             target_class: RiskTargetClass::Host,
             boundary_class: ApprovalBoundaryClass::HardBoundary,
         },
-        "save_asset" => ToolRiskAssessment {
-            requires_approval: true,
-            risk_level: "HIGH",
-            reasons: vec![
-                "saving a local asset writes executable HTML or JS to host storage".to_string(),
-            ],
-            operation_class: RiskOperationClass::FilesystemWrite,
-            target_class: RiskTargetClass::Host,
-            boundary_class: ApprovalBoundaryClass::HardBoundary,
-        },
+        // save_asset is experimental and intentionally disabled in desktop runtime for now.
+        // "save_asset" => ToolRiskAssessment {
+        //     requires_approval: true,
+        //     risk_level: "HIGH",
+        //     reasons: vec![
+        //         "saving a local asset writes executable HTML or JS to host storage".to_string(),
+        //     ],
+        //     operation_class: RiskOperationClass::FilesystemWrite,
+        //     target_class: RiskTargetClass::Host,
+        //     boundary_class: ApprovalBoundaryClass::HardBoundary,
+        // },
         _ => ToolRiskAssessment {
             requires_approval: false,
             risk_level: "LOW",

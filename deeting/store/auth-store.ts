@@ -1,8 +1,9 @@
 "use client"
 
 import { create } from "zustand"
-import { persist, createJSONStorage } from "zustand/middleware"
+import { persist } from "zustand/middleware"
 import { setAuthToken, clearAuthToken } from "@/lib/http"
+import { createSafeJSONStorage } from "./persist-storage"
 
 export interface AuthState {
   /** 是否已登录 */
@@ -62,7 +63,7 @@ export const useAuthStore = create<AuthStore>()(
     }),
     {
       name: "deeting-auth-store",
-      storage: createJSONStorage(() => sessionStorage),
+      storage: createSafeJSONStorage(() => sessionStorage),
       version: 1,
       merge: (persistedState, currentState) => {
         const persisted = (persistedState ?? {}) as Partial<AuthState>

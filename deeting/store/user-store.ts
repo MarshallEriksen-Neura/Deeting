@@ -1,9 +1,10 @@
 "use client"
 
 import { create } from "zustand"
-import { persist, createJSONStorage } from "zustand/middleware"
+import { persist } from "zustand/middleware"
 
 import type { UserProfile } from "@/lib/api/user"
+import { createSafeJSONStorage } from "./persist-storage"
 
 interface UserState {
   profile: UserProfile | null
@@ -33,7 +34,7 @@ export const useUserStore = create<UserStore>()(
     }),
     {
       name: "deeting-user-store",
-      storage: createJSONStorage(() => sessionStorage),
+      storage: createSafeJSONStorage(() => sessionStorage),
       version: 2,
       migrate: (_state, version) => {
         if (version < 2) {

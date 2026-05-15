@@ -1,9 +1,10 @@
 "use client";
 
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
 
 import type { AppLocale } from "@/i18n/routing";
+import { createSafeJSONStorage } from "./persist-storage";
 
 /** 语言状态 */
 export interface LanguageState {
@@ -45,7 +46,7 @@ export const useLanguageStore = create<LanguageStore>()(
     }),
     {
       name: "deeting-language-store",
-      storage: createJSONStorage(() => localStorage),
+      storage: createSafeJSONStorage(() => localStorage),
       version: 1,
       partialize: (state) => ({
         language: state.language,

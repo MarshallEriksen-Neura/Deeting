@@ -282,9 +282,16 @@ export function IslandWindowShell() {
     let unlistenLookup: (() => void) | undefined;
     let unlistenDismiss: (() => void) | undefined;
     let unlistenSelection: (() => void) | undefined;
+    let unlistenEnterCollapsed: (() => void) | undefined;
 
     (async () => {
       const { listen } = await import("@tauri-apps/api/event");
+      unlistenEnterCollapsed = await listen(
+        "island:enter-collapsed",
+        () => {
+          useIslandWindowStore.getState().collapse();
+        },
+      );
       unlisten = await listen<IslandSyncPayload>(
         "island:state-sync",
         (event) => {
@@ -312,6 +319,7 @@ export function IslandWindowShell() {
     })();
 
     return () => {
+      unlistenEnterCollapsed?.();
       unlisten?.();
       unlistenSelection?.();
       unlistenLookup?.();

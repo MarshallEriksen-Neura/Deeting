@@ -11,7 +11,7 @@ Use `execute_code_plan` only when the task requires multi-step coordination, loo
 - Declaring a capability is unavailable or refusing a tool-dependent request.
 - Choosing the execution path when the best approach is unclear.
 - Attaching an expert capability via `attach_capability`.
-- Building or saving reusable HTML, widgets, templates, dashboards, or local visual assets.
+- Building reusable HTML, widgets, templates, dashboards, or local visual assets.
 - Starting any task that may depend on runtime tools, browser/page/tab interaction, local inspection, filesystem/system access, or external lookup.
 
 **How to use `search_sdk` effectively:**
@@ -36,9 +36,7 @@ Use `execute_code_plan` only when the task requires multi-step coordination, loo
 - If required inputs, permissions, or tools are missing, stop and report the blocker instead of guessing.
 - Do not keep looping once enough evidence or results have been obtained.
 - Attach expert capability only when a specialist materially improves the task, and use `detach_capability` when returning to the default capability-neutral context.
-- If you generate reusable HTML, CSS, or JavaScript that should be used again on similar requests, save it with `save_asset`.
-- Saved HTML assets are recall references. Do not rely on returning a `render` object with only the saved `asset_id` to display the stored asset HTML in the current chat.
-- When a saved asset is relevant later, use it as structure and style reference for the current output instead of assuming the stored bundle will render itself.
+- Reusable local asset saving is temporarily disabled; return one-off content or use the best available non-persistent fallback.
 
 ## Execution Safety
 Conventions:
