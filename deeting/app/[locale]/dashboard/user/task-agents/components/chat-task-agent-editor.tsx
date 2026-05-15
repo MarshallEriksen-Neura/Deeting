@@ -1,13 +1,11 @@
 "use client"
 
 import type { ModelGroup } from "@/lib/api/models"
-import type { LocalAsset } from "@/lib/api/local-assets"
 import type { CustomTaskAgentBindingCatalog } from "@/lib/api/custom-task-agents"
 import { AlertTriangle } from "lucide-react"
 
 import { buildTaskAgentCapabilityHealth, buildTaskAgentBindingRecommendations } from "./task-agents-helpers"
 import { AgentCanvas } from "./chat-editor/agent-canvas"
-import { ChatAssetBindings } from "./chat-editor/chat-asset-bindings"
 import { ChatToolBindings } from "./chat-editor/chat-tool-bindings"
 import { ChatSkillBindings } from "./chat-editor/chat-skill-bindings"
 import { ChatDebugTab } from "./chat-editor/chat-debug-tab"
@@ -33,8 +31,6 @@ type ChatTaskAgentEditorProps = {
   modelGroups: ModelGroup[]
   bindingCatalog: CustomTaskAgentBindingCatalog
   bindingsLoading: boolean
-  localAssets: LocalAsset[]
-  assetsLoading: boolean
   filteredBindingTools: CustomTaskAgentBindingCatalog["mcp_tools"]
   filteredBindingSkills: CustomTaskAgentBindingCatalog["guidance_skills"]
   toolQuery: string
@@ -67,8 +63,6 @@ export function ChatTaskAgentEditor({
   modelGroups,
   bindingCatalog,
   bindingsLoading,
-  localAssets,
-  assetsLoading,
   filteredBindingTools,
   filteredBindingSkills,
   toolQuery,
@@ -149,14 +143,6 @@ export function ChatTaskAgentEditor({
             </div>
           ) : null}
         </section>
-
-        <ChatAssetBindings
-          t={t}
-          draft={draft}
-          localAssets={localAssets}
-          assetsLoading={assetsLoading}
-          updateDraft={updateDraft}
-        />
 
         <div className="grid gap-16 xl:grid-cols-2">
           <ChatToolBindings

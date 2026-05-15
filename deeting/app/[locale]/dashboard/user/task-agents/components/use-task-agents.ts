@@ -30,7 +30,6 @@ import {
   type ScanExternalAgentsResponse,
   type UpsertCustomTaskAgentPayload,
 } from "@/lib/api/custom-task-agents"
-import { listLocalAssets, type LocalAsset } from "@/lib/api/local-assets"
 import {
   clearLlmWikiTaskAgentHandoff,
   loadLlmWikiTaskAgentHandoff,
@@ -143,15 +142,6 @@ export function useTaskAgents(t: Translation) {
   } = useSWR<CustomTaskAgentBindingCatalog, Error>(
     isDesktop ? "local-custom-task-agent-binding-catalog" : null,
     () => getCustomTaskAgentBindingCatalog(),
-    { revalidateOnFocus: false, keepPreviousData: true },
-  )
-
-  const {
-    data: localAssets = [],
-    isLoading: assetsLoading,
-  } = useSWR<LocalAsset[], Error>(
-    isDesktop ? "local-custom-task-agent-assets" : null,
-    () => listLocalAssets({ limit: 100, includeArchived: false }),
     { revalidateOnFocus: false, keepPreviousData: true },
   )
 
@@ -901,8 +891,6 @@ export function useTaskAgents(t: Translation) {
     agentsLoading,
     bindingCatalog,
     bindingsLoading,
-    localAssets,
-    assetsLoading,
     modelGroups,
     isLoadingModels,
 

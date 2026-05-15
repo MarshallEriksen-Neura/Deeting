@@ -181,8 +181,7 @@
         "discoverable": "可发现",
         "isEnabled": "已启用",
         "boundTools": "已绑定工具",
-        "boundSkills": "已绑定技能",
-        "boundAsset": "参考资产"
+        "boundSkills": "已绑定技能"
       },
       "placeholders": {
         "name": "例如：发布说明撰写器",
@@ -295,14 +294,9 @@
       "toolsDescription": "选择这个智能体可调用的本地 MCP 工具。",
       "skillsTitle": "已安装技能",
       "skillsDescription": "这里只能绑定已经安装在本地的技能。",
-      "assetTitle": "参考资产",
-      "assetDescription": "选择一个已保存的本地 HTML 资产，在这个智能体执行时作为参考上下文。",
-      "clearAsset": "清空",
-      "assetBound": "已引用",
       "searchToolsPlaceholder": "按名称、服务名或状态搜索工具...",
       "searchSkillsPlaceholder": "按技能 ID、版本或运行时搜索技能...",
       "selectedOnly": "只看已选",
-      "noAssets": "当前没有可用的本地 HTML 资产。",
       "noTools": "当前没有可用的本地工具。",
       "noSkills": "当前没有已安装技能。",
       "noFilteredTools": "没有匹配当前筛选条件的工具。",

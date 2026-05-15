@@ -87,10 +87,6 @@ export function ChatDebugTab({
                 value: t(`debug.capabilityHealth.${capabilityHealth.summaryKey}`),
               },
               {
-                label: t("editor.fields.boundAsset"),
-                value: draft.bound_asset_id || t("debug.values.none"),
-              },
-              {
                 label: t("editor.fields.preferredForImageGeneration"),
                 value: draft.preferred_for_image_generation
                   ? t("debug.values.yes")
