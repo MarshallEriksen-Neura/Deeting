@@ -1,8 +1,16 @@
 ﻿"use client"
 
 import * as React from "react"
-import { useTranslations } from "next-intl"
-import { RefreshCw, Plus, Search, X, Activity } from "lucide-react"
+import { useLocale, useTranslations } from "next-intl"
+import {
+  RefreshCw,
+  Plus,
+  Search,
+  X,
+  Activity,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { Tabs } from "@/components/ui/shadcn/tabs"
@@ -21,12 +29,37 @@ import { AgentDialogs } from "./agent-dialogs"
 type Translation = (key: string, values?: Record<string, string | number>) => string
 type WorkspaceTab = "config" | "bindings" | "preview" | "debug"
 
+function safeTranslate(
+  t: Translation,
+  key: string,
+  fallback: string,
+  values?: Record<string, string | number>,
+) {
+  try {
+    return t(key, values)
+  } catch {
+    return fallback
+  }
+}
+
 export function TaskAgentsClient() {
   const t = useTranslations("task-agents") as unknown as Translation
+  const locale = useLocale()
   const [importDialogOpen, setImportDialogOpen] = React.useState(false)
   const [activeWorkspaceTab, setActiveWorkspaceTab] =
     React.useState<WorkspaceTab>("config")
   const [inspectorOpen, setInspectorOpen] = React.useState(false)
+  const [isLibraryCollapsed, setIsLibraryCollapsed] = React.useState(false)
+  const collapseLibraryLabel = safeTranslate(
+    t,
+    "workspace.collapseLibrary",
+    locale.startsWith("zh") ? "收起智能体列表" : "Collapse agent list",
+  )
+  const expandLibraryLabel = safeTranslate(
+    t,
+    "workspace.expandLibrary",
+    locale.startsWith("zh") ? "展开智能体列表" : "Expand agent list",
+  )
 
   const {
     desktopSupport,
@@ -119,7 +152,17 @@ export function TaskAgentsClient() {
           LEFT COLUMN: THE INDEX 
           Rational, borderless typographic navigation
       */}
-      <aside className="flex min-h-0 w-[380px] flex-none flex-col overflow-hidden px-12 pt-16 pb-8">
+      <aside
+        data-testid="task-agent-library-panel"
+        data-state={isLibraryCollapsed ? "collapsed" : "expanded"}
+        aria-hidden={isLibraryCollapsed}
+        className={cn(
+          "flex min-h-0 flex-none flex-col overflow-hidden pt-16 pb-8 transition-[width,padding,opacity] duration-300 ease-out",
+          isLibraryCollapsed
+            ? "w-0 px-0 opacity-0 pointer-events-none"
+            : "w-[380px] px-12 opacity-100",
+        )}
+      >
         <header className="flex-none mb-16 space-y-2">
           <h1 className="text-4xl font-bold tracking-tighter text-[var(--ink)] uppercase">
             {t("title").split('').map((char, i) => (
@@ -218,6 +261,31 @@ export function TaskAgentsClient() {
             <span className="font-mono text-[9px] text-[var(--ink-5)] tabular-nums">{t("workspace.copyright", { year: 2026 })}</span>
         </footer>
       </aside>
+
+      <div className="relative z-10 w-0 flex-none">
+        <button
+          type="button"
+          aria-expanded={!isLibraryCollapsed}
+          aria-label={isLibraryCollapsed ? expandLibraryLabel : collapseLibraryLabel}
+          title={isLibraryCollapsed ? expandLibraryLabel : collapseLibraryLabel}
+          onClick={() => setIsLibraryCollapsed((value) => !value)}
+          className={cn(
+            "absolute top-6 flex size-11 items-center justify-center rounded-2xl border border-[var(--hairline-strong)] bg-[var(--window-bg)] text-[var(--ink-3)] shadow-[0_8px_30px_rgba(15,23,42,0.08)] transition-all duration-300 hover:border-[var(--accent-strong)] hover:text-[var(--accent-strong)]",
+            isLibraryCollapsed
+              ? "left-4"
+              : "left-0 -translate-x-1/2",
+          )}
+        >
+          {isLibraryCollapsed ? (
+            <PanelLeftOpen className="size-4" />
+          ) : (
+            <PanelLeftClose className="size-4" />
+          )}
+          <span className="sr-only">
+            {isLibraryCollapsed ? expandLibraryLabel : collapseLibraryLabel}
+          </span>
+        </button>
+      </div>
 
       {/* 
           RIGHT COLUMN: THE CANVAS

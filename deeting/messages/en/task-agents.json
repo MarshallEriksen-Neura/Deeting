@@ -122,6 +122,8 @@
       "coreRegistry": "Core Registry / {count} Units",
       "defaultKind": "CHAT_AGENT",
       "diagnostic": "Diagnostic",
+      "collapseLibrary": "Collapse agent list",
+      "expandLibrary": "Expand agent list",
       "copyright": "© {year} DEETING LABS",
       "inspector": {
         "title": "Diagnostic.log",

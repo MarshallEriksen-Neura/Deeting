@@ -121,6 +121,8 @@
       "coreRegistry": "核心注册表 / {count} 个单元",
       "defaultKind": "聊天智能体",
       "diagnostic": "诊断",
+      "collapseLibrary": "收起智能体列表",
+      "expandLibrary": "展开智能体列表",
       "copyright": "© {year} DEETING LABS",
       "inspector": {
         "title": "诊断日志",

@@ -664,6 +664,30 @@ describe("TaskAgentsClient", () => {
     expect(screen.getByRole("button", { name: "First agent" })).toBeInTheDocument()
   })
 
+  it("collapses and expands the agent library list", async () => {
+    render(<TaskAgentsClient />)
+
+    const libraryPanel = await screen.findByTestId("task-agent-library-panel")
+    expect(libraryPanel).toHaveAttribute("data-state", "expanded")
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "workspace.collapseLibrary" }),
+    )
+
+    expect(libraryPanel).toHaveAttribute("data-state", "collapsed")
+    expect(libraryPanel).toHaveAttribute("aria-hidden", "true")
+    expect(
+      screen.getByRole("button", { name: "workspace.expandLibrary" }),
+    ).toBeInTheDocument()
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "workspace.expandLibrary" }),
+    )
+
+    expect(libraryPanel).toHaveAttribute("data-state", "expanded")
+    expect(libraryPanel).toHaveAttribute("aria-hidden", "false")
+  })
+
   it("shows structured image config fields for image-generation agents without chat bindings", async () => {
     render(<TaskAgentsClient />)
 
