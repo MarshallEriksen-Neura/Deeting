@@ -322,6 +322,9 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::selection_assistant::commands::capture_active_text_selection,
         // Terminal panel (PTY) commands
         crate::modules::terminal::commands::pty_open,
+        crate::modules::terminal::commands::pty_create,
+        crate::modules::terminal::commands::pty_list,
+        crate::modules::terminal::commands::pty_replay,
         crate::modules::terminal::commands::pty_write,
         crate::modules::terminal::commands::pty_resize,
         crate::modules::terminal::commands::pty_close

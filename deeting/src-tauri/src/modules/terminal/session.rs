@@ -14,10 +14,13 @@
 //! v1 doesn't track exit codes — `PtyExitPayload::exit_code` is always
 //! `None`. v1.5 plans to add a try_wait poll loop to capture it.
 
+use std::collections::VecDeque;
 use std::io::{Read, Write};
 #[cfg(target_os = "windows")]
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
@@ -26,6 +29,7 @@ use tauri::{AppHandle, Emitter};
 use thiserror::Error;
 
 const READ_CHUNK_SIZE: usize = 8 * 1024;
+const REPLAY_MAX_BYTES: usize = 256 * 1024;
 const TERMINAL_OUTPUT_EVENT: &str = "terminal:output";
 const TERMINAL_EXIT_EVENT: &str = "terminal:exit";
 
@@ -97,6 +101,9 @@ pub enum PtySessionError {
 pub struct PtyOutputPayload {
     #[serde(rename = "sessionId")]
     pub session_id: String,
+    /// Monotonic per-session output sequence. Used by remounting xterm views
+    /// to merge backend replay with live output without duplication.
+    pub sequence: u64,
     /// UTF-8 lossy decoded chunk. xterm.js handles ANSI parsing downstream.
     pub data: String,
 }
@@ -118,6 +125,50 @@ pub struct PtySessionConfig {
     pub cwd: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct PtyReplayChunk {
+    pub sequence: u64,
+    pub data: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct PtyReplaySnapshot {
+    #[serde(rename = "lastSequence")]
+    pub last_sequence: u64,
+    pub chunks: Vec<PtyReplayChunk>,
+}
+
+#[derive(Debug, Default)]
+struct PtyReplayBuffer {
+    chunks: VecDeque<PtyReplayChunk>,
+    next_sequence: u64,
+    total_bytes: usize,
+}
+
+impl PtyReplayBuffer {
+    fn append(&mut self, data: String) -> u64 {
+        self.next_sequence = self.next_sequence.saturating_add(1);
+        let sequence = self.next_sequence;
+        self.total_bytes = self.total_bytes.saturating_add(data.len());
+        self.chunks.push_back(PtyReplayChunk { sequence, data });
+        while self.total_bytes > REPLAY_MAX_BYTES {
+            let Some(stale) = self.chunks.pop_front() else {
+                self.total_bytes = 0;
+                break;
+            };
+            self.total_bytes = self.total_bytes.saturating_sub(stale.data.len());
+        }
+        sequence
+    }
+
+    fn snapshot(&self) -> PtyReplaySnapshot {
+        PtyReplaySnapshot {
+            last_sequence: self.next_sequence,
+            chunks: self.chunks.iter().cloned().collect(),
+        }
+    }
+}
+
 pub struct PtySession {
     #[allow(dead_code)]
     id: String,
@@ -125,6 +176,8 @@ pub struct PtySession {
     writer: Mutex<Option<Box<dyn Write + Send>>>,
     child: Mutex<Option<Box<dyn Child + Send + Sync>>>,
     reader_thread: Mutex<Option<JoinHandle<()>>>,
+    replay: Arc<Mutex<PtyReplayBuffer>>,
+    exited: Arc<AtomicBool>,
 }
 
 impl PtySession {
@@ -166,7 +219,15 @@ impl PtySession {
             .take_writer()
             .map_err(|e| PtySessionError::Pty(e.to_string()))?;
 
-        let reader_handle = spawn_reader_thread(id.clone(), reader, app);
+        let replay = Arc::new(Mutex::new(PtyReplayBuffer::default()));
+        let exited = Arc::new(AtomicBool::new(false));
+        let reader_handle = spawn_reader_thread(
+            id.clone(),
+            reader,
+            app,
+            Arc::clone(&replay),
+            Arc::clone(&exited),
+        );
 
         Ok(Self {
             id,
@@ -174,6 +235,8 @@ impl PtySession {
             writer: Mutex::new(Some(writer)),
             child: Mutex::new(Some(child)),
             reader_thread: Mutex::new(Some(reader_handle)),
+            replay,
+            exited,
         })
     }
 
@@ -199,6 +262,17 @@ impl PtySession {
             })
             .map_err(|e| PtySessionError::Pty(e.to_string()))?;
         Ok(())
+    }
+
+    pub fn replay(&self) -> Result<PtyReplaySnapshot, PtySessionError> {
+        self.replay
+            .lock()
+            .map(|guard| guard.snapshot())
+            .map_err(|_| PtySessionError::PoisonedLock)
+    }
+
+    pub fn is_exited(&self) -> bool {
+        self.exited.load(Ordering::SeqCst)
     }
 
     /// Tear down the session. Safe to call repeatedly — subsequent calls
@@ -255,6 +329,8 @@ fn spawn_reader_thread(
     session_id: String,
     mut reader: Box<dyn Read + Send>,
     app: AppHandle,
+    replay: Arc<Mutex<PtyReplayBuffer>>,
+    exited: Arc<AtomicBool>,
 ) -> JoinHandle<()> {
     thread::Builder::new()
         .name(format!("pty-reader-{session_id}"))
@@ -265,10 +341,15 @@ fn spawn_reader_thread(
                     Ok(0) => break, // EOF — child closed master pipe
                     Ok(n) => {
                         let chunk = String::from_utf8_lossy(&buf[..n]).into_owned();
+                        let sequence = replay
+                            .lock()
+                            .map(|mut guard| guard.append(chunk.clone()))
+                            .unwrap_or(0);
                         let _ = app.emit(
                             TERMINAL_OUTPUT_EVENT,
                             PtyOutputPayload {
                                 session_id: session_id.clone(),
+                                sequence,
                                 data: chunk,
                             },
                         );
@@ -276,6 +357,7 @@ fn spawn_reader_thread(
                     Err(_) => break,
                 }
             }
+            exited.store(true, Ordering::SeqCst);
             let _ = app.emit(
                 TERMINAL_EXIT_EVENT,
                 PtyExitPayload {
@@ -335,11 +417,27 @@ mod tests {
     fn output_payload_serializes_with_camel_case_session_id() {
         let payload = PtyOutputPayload {
             session_id: "abc".into(),
+            sequence: 7,
             data: "hello".into(),
         };
         let json = serde_json::to_string(&payload).expect("serialize");
         assert!(json.contains("\"sessionId\":\"abc\""));
+        assert!(json.contains("\"sequence\":7"));
         assert!(json.contains("\"data\":\"hello\""));
+    }
+
+    #[test]
+    fn replay_buffer_prunes_old_chunks_by_byte_budget() {
+        let mut replay = PtyReplayBuffer::default();
+        let first = replay.append("a".repeat(REPLAY_MAX_BYTES));
+        let second = replay.append("b".repeat(2));
+        let snapshot = replay.snapshot();
+
+        assert_eq!(first, 1);
+        assert_eq!(second, 2);
+        assert_eq!(snapshot.last_sequence, 2);
+        assert_eq!(snapshot.chunks.len(), 1);
+        assert_eq!(snapshot.chunks[0].sequence, 2);
     }
 
     #[test]

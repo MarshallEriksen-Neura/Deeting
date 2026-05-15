@@ -479,6 +479,15 @@
       "title": "Terminal",
       "hint": "Tip: select text and right-click to send it to chat AI, or use copy and paste directly.",
       "dismissHint": "Dismiss tip",
+      "newTab": "New terminal",
+      "tabTitle": "Terminal {index}",
+      "tabLimit": "Up to {count} terminals",
+      "closeTab": "Close {title}",
+      "status": {
+        "starting": "Starting",
+        "ready": "Ready",
+        "exited": "Exited"
+      },
       "contextMenu": {
         "copy": "Copy",
         "paste": "Paste",
@@ -493,6 +502,10 @@
         "commandUnavailable": "Command text unavailable",
         "sendToAi": "Send to AI",
         "dismiss": "Dismiss failure notice"
+      },
+      "sessionError": {
+        "title": "Terminal session failed",
+        "dismiss": "Dismiss terminal session error"
       },
       "toast": {
         "clipboardUnavailable": "Clipboard read is not available in this environment",

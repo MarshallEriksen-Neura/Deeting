@@ -190,7 +190,43 @@ function buildRequestMetadata(
 }
 
 function buildTerminalContextMetadata() {
-  const snapshot = useTerminalPanelStore.getState().terminalContext
+  const {
+    activeSessionId,
+    sessions,
+    terminalContext,
+    terminalContextsBySessionId,
+  } = useTerminalPanelStore.getState()
+  const sessionEntries = Object.values(sessions)
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    .flatMap((session) => {
+      const context = terminalContextsBySessionId[session.id]
+      if (!context?.available) return []
+      return [{
+        sessionId: session.id,
+        title: session.title,
+        status: session.status,
+        active: session.id === activeSessionId,
+        context,
+      }]
+    })
+
+  if (sessionEntries.length > 0) {
+    return {
+      terminal_context: {
+        version: 2,
+        available: true,
+        activeSessionId:
+          activeSessionId ??
+          terminalContext?.sessionId ??
+          sessionEntries[0]?.sessionId ??
+          null,
+        capturedAt: new Date().toISOString(),
+        sessions: sessionEntries,
+      },
+    }
+  }
+
+  const snapshot = terminalContext
   if (!snapshot?.available) return undefined
   return {
     terminal_context: snapshot,

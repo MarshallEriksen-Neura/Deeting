@@ -586,6 +586,15 @@
       "title": "终端",
       "hint": "提示：选中文本后右键，可以发送到聊天 AI，也可以直接复制或粘贴。",
       "dismissHint": "关闭提示",
+      "newTab": "新建终端",
+      "tabTitle": "终端 {index}",
+      "tabLimit": "最多 {count} 个终端",
+      "closeTab": "关闭 {title}",
+      "status": {
+        "starting": "启动中",
+        "ready": "就绪",
+        "exited": "已退出"
+      },
       "contextMenu": {
         "copy": "复制",
         "paste": "粘贴",
@@ -600,6 +609,10 @@
         "commandUnavailable": "无法识别命令内容",
         "sendToAi": "发给 AI 诊断",
         "dismiss": "关闭失败提示"
+      },
+      "sessionError": {
+        "title": "终端会话启动失败",
+        "dismiss": "关闭终端会话错误"
       },
       "toast": {
         "clipboardUnavailable": "当前环境暂不支持读取剪贴板",

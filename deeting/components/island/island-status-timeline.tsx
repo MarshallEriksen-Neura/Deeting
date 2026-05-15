@@ -38,7 +38,7 @@ export function IslandStatusTimeline({
   isBusy,
   compact = false,
 }: IslandStatusTimelineProps) {
-  const t = useI18n("chat");
+  const t = useI18n("island");
 
   const steps = useMemo(
     () =>
@@ -97,7 +97,7 @@ export function IslandStatusTimeline({
       <div className="mb-2 flex items-center gap-2">
         <Sparkles className="h-3.5 w-3.5 text-island-gold/80" />
         <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/45">
-          {t("island.liveProgress")}
+          {t("liveProgress")}
         </span>
       </div>
 
@@ -154,3 +154,4 @@ export function IslandStatusTimeline({
     </div>
   );
 }
+

@@ -239,8 +239,8 @@ export function IslandWindowShell() {
           }
           setCollapsedHighlight({
             tone: "success",
-            labelKey: "island.status.completed",
-            detailKey: "island.completedDetail",
+            labelKey: "status.completed",
+            detailKey: "completedDetail",
           });
           collapsedHighlightTimerRef.current = setTimeout(() => {
             setCollapsedHighlight(null);
@@ -615,3 +615,4 @@ export function IslandWindowShell() {
     </IslandProvider>
   );
 }
+

@@ -20,12 +20,12 @@ export function IslandQuickReply({
   placeholder,
   disabled = false,
 }: IslandQuickReplyProps) {
-  const t = useI18n("chat");
+  const t = useI18n("island");
   const [value, setValue] = useState("");
   const [justSent, setJustSent] = useState(false);
   const [isStartingNewConversation, setIsStartingNewConversation] =
     useState(false);
-  const resolvedPlaceholder = placeholder ?? t("island.quickReplyPlaceholder");
+  const resolvedPlaceholder = placeholder ?? t("quickReplyPlaceholder");
 
   const handleSubmit = useCallback(
     async (event: React.FormEvent) => {
@@ -83,8 +83,8 @@ export function IslandQuickReply({
             "disabled:cursor-not-allowed disabled:opacity-35",
             "transition-colors",
           )}
-          aria-label={t("island.newConversation")}
-          title={t("island.newConversation")}
+          aria-label={t("newConversation")}
+          title={t("newConversation")}
         >
           <MessageSquarePlus className="h-3.5 w-3.5" />
         </motion.button>
@@ -108,3 +108,4 @@ export function IslandQuickReply({
     </form>
   );
 }
+

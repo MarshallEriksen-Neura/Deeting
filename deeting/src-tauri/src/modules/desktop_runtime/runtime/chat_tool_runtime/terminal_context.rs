@@ -43,7 +43,9 @@ pub(super) fn execute_terminal_context_tool(
 }
 
 fn write_input(app: &AppHandle, snapshot: &Value, arguments: &Value) -> Result<Value, String> {
-    let (session_id, text, payload, append_space) = prepare_input_payload(snapshot, arguments)?;
+    let resolved = resolve_terminal_snapshot(snapshot, arguments)?;
+    let (session_id, text, payload, append_space) =
+        prepare_input_payload(resolved.snapshot, arguments)?;
 
     let manager = app
         .try_state::<Arc<TerminalManager>>()
@@ -106,6 +108,13 @@ fn prepare_input_payload(
 }
 
 fn peek(snapshot: &Value) -> Value {
+    if is_multi_terminal_context(snapshot) {
+        return peek_multi(snapshot);
+    }
+    peek_single(snapshot)
+}
+
+fn peek_single(snapshot: &Value) -> Value {
     let commands = command_items(snapshot)
         .into_iter()
         .map(command_index_entry)
@@ -127,6 +136,77 @@ fn peek(snapshot: &Value) -> Value {
     })
 }
 
+fn peek_multi(snapshot: &Value) -> Value {
+    let active_session_id = active_session_id(snapshot);
+    let sessions = terminal_session_entries(snapshot)
+        .into_iter()
+        .filter_map(|entry| {
+            let context = terminal_session_context(entry)?;
+            let session_id = terminal_session_id(entry).or_else(|| {
+                context
+                    .get("sessionId")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            });
+            let active = session_id.as_deref() == active_session_id.as_deref();
+            let commands = command_items(context);
+            let failed_command_count = commands
+                .iter()
+                .filter(|command| is_failed_or_error_like_command(command))
+                .count();
+            let running_command_count = commands
+                .iter()
+                .filter(|command| command.get("state").and_then(Value::as_str) == Some("running"))
+                .count();
+            let last_command = commands.last().copied().map(command_index_entry);
+            let last_failed_command = commands
+                .iter()
+                .rev()
+                .copied()
+                .find(|command| is_failed_or_error_like_command(command))
+                .map(command_index_entry);
+            Some(json!({
+                "session_id": session_id,
+                "title": entry.get("title").and_then(Value::as_str),
+                "status": entry.get("status").and_then(Value::as_str),
+                "active": active,
+                "summary": {
+                    "command_count": commands.len(),
+                    "failed_command_count": failed_command_count,
+                    "running_command_count": running_command_count,
+                    "has_selection": context
+                        .get("selection")
+                        .and_then(|selection| selection.get("text"))
+                        .and_then(Value::as_str)
+                        .map(|text| !text.trim().is_empty())
+                        .unwrap_or(false),
+                    "last_command": last_command,
+                    "last_failed_command": last_failed_command,
+                },
+                "index": peek_single(context),
+            }))
+        })
+        .collect::<Vec<_>>();
+
+    json!({
+        "available": !sessions.is_empty(),
+        "active_session_id": active_session_id,
+        "captured_at": snapshot.get("capturedAt").or_else(|| snapshot.get("captured_at")).and_then(Value::as_str),
+        "sessions": sessions,
+    })
+}
+
+fn is_failed_or_error_like_command(command: &Value) -> bool {
+    command
+        .get("exitCode")
+        .and_then(Value::as_i64)
+        .is_some_and(|value| value != 0)
+        || command
+            .get("hasErrorLikeOutput")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+}
+
 fn command_index_entry(command: &Value) -> Value {
     json!({
         "id": command.get("id").and_then(Value::as_str),
@@ -143,6 +223,17 @@ fn command_index_entry(command: &Value) -> Value {
 }
 
 fn read(snapshot: &Value, arguments: &Value) -> Result<Value, String> {
+    let resolved = resolve_terminal_snapshot(snapshot, arguments)?;
+    let mut result = read_single(resolved.snapshot, arguments)?;
+    if let Some(session_id) = resolved.session_id {
+        if let Some(object) = result.as_object_mut() {
+            object.insert("session_id".to_string(), json!(session_id));
+        }
+    }
+    Ok(result)
+}
+
+fn read_single(snapshot: &Value, arguments: &Value) -> Result<Value, String> {
     let target = arguments
         .get("target")
         .and_then(Value::as_str)
@@ -192,6 +283,27 @@ fn read(snapshot: &Value, arguments: &Value) -> Result<Value, String> {
 }
 
 fn pack(snapshot: &Value, arguments: &Value) -> Value {
+    let resolved = match resolve_terminal_snapshot(snapshot, arguments) {
+        Ok(resolved) => resolved,
+        Err(error) => {
+            return json!({
+                "available": false,
+                "error": error,
+                "index": peek(snapshot),
+                "selected_context": [],
+            });
+        }
+    };
+    let mut result = pack_single(resolved.snapshot, arguments);
+    if let Some(session_id) = resolved.session_id {
+        if let Some(object) = result.as_object_mut() {
+            object.insert("session_id".to_string(), json!(session_id));
+        }
+    }
+    result
+}
+
+fn pack_single(snapshot: &Value, arguments: &Value) -> Value {
     let goal = arguments
         .get("goal")
         .and_then(Value::as_str)
@@ -246,6 +358,118 @@ fn pack(snapshot: &Value, arguments: &Value) -> Value {
     })
 }
 
+struct ResolvedTerminalSnapshot<'a> {
+    session_id: Option<String>,
+    snapshot: &'a Value,
+}
+
+fn resolve_terminal_snapshot<'a>(
+    snapshot: &'a Value,
+    arguments: &Value,
+) -> Result<ResolvedTerminalSnapshot<'a>, String> {
+    let requested_session_id = requested_session_id(arguments);
+    if !is_multi_terminal_context(snapshot) {
+        let session_id = snapshot
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        if let (Some(requested), Some(actual)) =
+            (requested_session_id.as_deref(), session_id.as_deref())
+        {
+            if requested != actual {
+                return Err(format!("terminal session '{requested}' was not found"));
+            }
+        }
+        return Ok(ResolvedTerminalSnapshot {
+            session_id,
+            snapshot,
+        });
+    }
+
+    let active_session_id = active_session_id(snapshot);
+    let target_session_id = requested_session_id.or(active_session_id);
+    let entries = terminal_session_entries(snapshot);
+    let selected = if let Some(target_session_id) = target_session_id.as_deref() {
+        entries.into_iter().find(|entry| {
+            terminal_session_id(entry)
+                .as_deref()
+                .is_some_and(|session_id| session_id == target_session_id)
+                || terminal_session_context(entry)
+                    .and_then(|context| context.get("sessionId"))
+                    .and_then(Value::as_str)
+                    .is_some_and(|session_id| session_id == target_session_id)
+        })
+    } else {
+        entries.into_iter().next()
+    };
+
+    let Some(entry) = selected else {
+        return Err(match target_session_id {
+            Some(session_id) => format!("terminal session '{session_id}' was not found"),
+            None => "no terminal session context is available".to_string(),
+        });
+    };
+    let context = terminal_session_context(entry)
+        .ok_or_else(|| "selected terminal session has no context".to_string())?;
+    let session_id = terminal_session_id(entry).or_else(|| {
+        context
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    });
+    Ok(ResolvedTerminalSnapshot {
+        session_id,
+        snapshot: context,
+    })
+}
+
+fn is_multi_terminal_context(snapshot: &Value) -> bool {
+    snapshot.get("version").and_then(Value::as_i64) == Some(2)
+        || snapshot.get("sessions").and_then(Value::as_array).is_some()
+}
+
+fn requested_session_id(arguments: &Value) -> Option<String> {
+    arguments
+        .get("session_id")
+        .or_else(|| arguments.get("sessionId"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn active_session_id(snapshot: &Value) -> Option<String> {
+    snapshot
+        .get("activeSessionId")
+        .or_else(|| snapshot.get("active_session_id"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn terminal_session_entries(snapshot: &Value) -> Vec<&Value> {
+    snapshot
+        .get("sessions")
+        .and_then(Value::as_array)
+        .map(|items| items.iter().collect())
+        .unwrap_or_default()
+}
+
+fn terminal_session_context(entry: &Value) -> Option<&Value> {
+    entry.get("context").filter(|value| value.is_object())
+}
+
+fn terminal_session_id(entry: &Value) -> Option<String> {
+    entry
+        .get("sessionId")
+        .or_else(|| entry.get("session_id"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
 fn command_items(snapshot: &Value) -> Vec<&Value> {
     snapshot
         .get("commands")
@@ -264,14 +488,7 @@ fn resolve_command_target<'a>(snapshot: &'a Value, target: &str) -> Option<&'a V
             .copied()
             .find(|command| command.get("state").and_then(Value::as_str) == Some("running")),
         "last_failed_command" | "last_error" => commands.iter().rev().copied().find(|command| {
-            command
-                .get("exitCode")
-                .and_then(Value::as_i64)
-                .is_some_and(|value| value != 0)
-                || command
-                    .get("hasErrorLikeOutput")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false)
+            is_failed_or_error_like_command(command)
         }),
         _ => commands
             .into_iter()
@@ -362,6 +579,83 @@ mod tests {
             result["selected_context"][0]["content"],
             json!("selected error")
         );
+    }
+
+    #[test]
+    fn peek_indexes_multi_terminal_context() {
+        let snapshot = json!({
+            "version": 2,
+            "activeSessionId": "term-2",
+            "sessions": [
+                {
+                    "sessionId": "term-1",
+                    "title": "Terminal 1",
+                    "status": "ready",
+                    "context": {"available": true, "sessionId": "term-1", "commands": []}
+                },
+                {
+                    "sessionId": "term-2",
+                    "title": "Terminal 2",
+                    "status": "ready",
+                    "context": {"available": true, "sessionId": "term-2", "selection": {"text": "selected", "bytes": 8}, "commands": [
+                        {"id": "cmd_1", "command": "pwd", "state": "completed", "exitCode": 0, "output": "D:/repo"},
+                        {"id": "cmd_2", "command": "bun test", "state": "completed", "exitCode": 1, "output": "failed", "outputSummary": "failed"}
+                    ]}
+                }
+            ]
+        });
+
+        let result = peek(&snapshot);
+
+        assert_eq!(result["active_session_id"], json!("term-2"));
+        assert_eq!(result["sessions"].as_array().unwrap().len(), 2);
+        assert_eq!(result["sessions"][1]["active"], json!(true));
+        assert_eq!(
+            result["sessions"][1]["index"]["session_id"],
+            json!("term-2")
+        );
+        assert_eq!(result["sessions"][1]["summary"]["command_count"], json!(2));
+        assert_eq!(
+            result["sessions"][1]["summary"]["failed_command_count"],
+            json!(1)
+        );
+        assert_eq!(result["sessions"][1]["summary"]["has_selection"], json!(true));
+        assert_eq!(
+            result["sessions"][1]["summary"]["last_failed_command"]["id"],
+            json!("cmd_2")
+        );
+    }
+
+    #[test]
+    fn read_can_target_specific_terminal_session() {
+        let snapshot = json!({
+            "version": 2,
+            "activeSessionId": "term-1",
+            "sessions": [
+                {
+                    "sessionId": "term-1",
+                    "context": {"available": true, "sessionId": "term-1", "commands": [
+                        {"id": "cmd_1", "command": "echo one", "state": "completed", "exitCode": 0, "output": "one"}
+                    ]}
+                },
+                {
+                    "sessionId": "term-2",
+                    "context": {"available": true, "sessionId": "term-2", "commands": [
+                        {"id": "cmd_1", "command": "echo two", "state": "completed", "exitCode": 0, "output": "two"}
+                    ]}
+                }
+            ]
+        });
+
+        let result = read(
+            &snapshot,
+            &json!({"session_id": "term-2", "target": "last_command"}),
+        )
+        .expect("read result");
+
+        assert_eq!(result["session_id"], json!("term-2"));
+        assert_eq!(result["command"], json!("echo two"));
+        assert_eq!(result["content"], json!("two"));
     }
 
     #[test]

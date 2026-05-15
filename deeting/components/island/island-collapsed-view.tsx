@@ -86,7 +86,7 @@ export function IslandCollapsedView({
     collapsedHighlight,
     expand,
   } = useIslandContext();
-  const t = useI18n("chat");
+  const t = useI18n("island");
   const workflowProgress = useWorkflowProgress();
   const isTerminalOpen = useTerminalPanelStore((s) => s.isOpen);
   const toggleTerminal = useTerminalPanelStore((s) => s.toggle);
@@ -249,3 +249,4 @@ export function IslandCollapsedView({
     </motion.div>
   );
 }
+

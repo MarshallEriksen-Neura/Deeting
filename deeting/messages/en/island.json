@@ -1,0 +1,179 @@
+{
+  "island": {
+    "liveProgress": "Live progress",
+    "requestLabel": "Request",
+    "responseTitle": "In-island response",
+    "keepNearby": "Keep the island nearby for long tasks, translation, approvals, and quick follow-ups.",
+    "approvalEmpty": "Paused here for your decision. Approve or reject without leaving the island.",
+    "approvalTitle": "Approval required",
+    "attentionTitle": "Attention",
+    "continueHere": "Continue here",
+    "quickReplyPlaceholder": "Reply from the island...",
+    "newConversation": "New conversation",
+    "modeTitle": "Island mode",
+    "modeDescription": "Approve, continue, translate, or send a short follow-up without leaving the capsule.",
+    "workspaceTitle": "Workspace",
+    "workspaceDescription": "Reopen the full canvas only when you need broader context or longer edits.",
+    "lookup": {
+      "title": "Browser lookup results",
+      "attach": "Bring into chat",
+      "dismiss": "Dismiss"
+    },
+    "decisionTitle": "Decision point",
+    "decisionDescription": "The task is paused right here. Approve now, reject it, or keep a short note in the island before moving on.",
+    "hints": {
+      "pending": "A decision is waiting. Approve or reject directly from the island.",
+      "active": "Stay in flow without opening the full workspace",
+      "idle": "Keep lightweight tasks inside the island"
+    },
+    "badges": {
+      "live": "Live",
+      "latest": "Latest"
+    },
+    "status": {
+      "idle": "Idle",
+      "ready": "Ready",
+      "working": "Working",
+      "pendingApproval": "Pending approval",
+      "needsAttention": "Needs attention",
+      "completed": "Completed"
+    },
+    "selection": {
+      "title": "Selected text",
+      "dismiss": "Dismiss selection",
+      "charCount": "{count} chars",
+      "truncated": "truncated",
+      "empty": "No selected text was detected. Select text in another app and trigger the shortcut again.",
+      "translateTo": "Translate to {target}",
+      "translateOptions": "More translation options",
+      "translateRecent": "Recent",
+      "translatePopular": "Popular",
+      "translateFavorites": "Favorites",
+      "translateApply": "Go",
+      "translateManage": "Manage favorites…",
+      "customTarget": "Other language…",
+      "askPlaceholder": "Ask about the selection...",
+      "askSend": "Ask with selection",
+      "askFooter": "Ask selected text",
+      "configSheet": {
+        "title": "Translation preferences",
+        "description": "Pin the languages you frequently translate to. They appear at the top of the translate menu and never expire.",
+        "favoriteSection": "Favorite languages",
+        "favoriteHint": "Pinned languages always appear first in the translate dropdown.",
+        "noFavorites": "No favorites yet. Add the languages you translate to most often.",
+        "addFavorite": "Add",
+        "addFavoritePlaceholder": "e.g. Japanese, Vietnamese, Latin…",
+        "removeFavorite": "Remove {target}",
+        "moveUp": "Move up",
+        "moveDown": "Move down",
+        "suggestionsLabel": "Suggestions",
+        "automationSection": "Smart automation",
+        "automationHint": "Let the translator react when you paste, copy, or make a new selection — so you never have to copy-paste twice.",
+        "autoTranslateOnPaste": {
+          "title": "Translate on paste",
+          "hint": "Translate immediately after you paste — no extra click."
+        },
+        "clipboardSeed": {
+          "title": "Read clipboard on open",
+          "hint": "Read once when the translator opens. The text stays on your device — nothing is uploaded.",
+          "modes": {
+            "ask": {
+              "label": "Ask first",
+              "hint": "Show a prompt and let you confirm before translating."
+            },
+            "auto": {
+              "label": "Auto-fill and translate",
+              "hint": "Skip the prompt and translate immediately."
+            },
+            "off": {
+              "label": "Disabled",
+              "hint": "The translator never reads your clipboard."
+            }
+          }
+        },
+        "historySection": "Recent history",
+        "historyHint": "Recent targets are tracked automatically (up to 3) so the next translate stays one click away.",
+        "clearHistory": "Clear recent history",
+        "close": "Close"
+      },
+      "sources": {
+        "accessibility": "Native selection",
+        "clipboard_fallback": "Clipboard fallback",
+        "unavailable": "No selection"
+      },
+      "actions": {
+        "translate": "Translate",
+        "explain": "Explain",
+        "summarize": "Summarize",
+        "ask": "Ask",
+        "search": "Search",
+        "copy": "Copy"
+      }
+    },
+    "translator": {
+      "title": "Translator",
+      "subtitle": "Quick translation without entering the full chat runtime",
+      "open": "Open translator",
+      "close": "Back",
+      "sourceLanguage": "Source language",
+      "targetLanguage": "Target language",
+      "swap": "Swap languages",
+      "inputPlaceholder": "Type or paste text to translate...",
+      "characters": "chars",
+      "translate": "Translate",
+      "translating": "Translating...",
+      "outputLabel": "Translated",
+      "outputPlaceholder": "Translation will appear here.",
+      "speak": "Speak",
+      "speaking": "Generating voice...",
+      "speakFailed": "Voice generation failed",
+      "speakFailedWithAgent": "{name} voice generation failed: {error}",
+      "voiceAgent": "Voice agent",
+      "voiceAgentLoading": "Loading voice agents...",
+      "voiceAgentUnavailable": "No voice agents available",
+      "voiceAgentLoadFailed": "Failed to load voice agents",
+      "noVoiceAgent": "No enabled voice agent is available. Create or enable a text-to-speech task agent first.",
+      "copy": "Copy",
+      "noModel": "No local chat model is selected.",
+      "failed": "Translation failed",
+      "auto": "Auto",
+      "useAsInput": "Use as input",
+      "popular": "Popular",
+      "favorites": "Favorites",
+      "recent": "Recent",
+      "customPlaceholder": "Other language...",
+      "customApply": "Use",
+      "phaseIdle": "Ready",
+      "phaseTranslating": "Translating",
+      "phaseCompleted": "Completed",
+      "phaseFailed": "Failed",
+      "languagePair": "{source} → {target}",
+      "dropHint": "Drop to translate",
+      "clipboardSeed": {
+        "title": "Use what you just copied?",
+        "use": "Translate this",
+        "dismiss": "Dismiss"
+      },
+      "bridgedSelection": {
+        "title": "New selection detected",
+        "use": "Replace and translate",
+        "dismiss": "Dismiss"
+      }
+    },
+    "toolStatus": {
+      "pendingApproval": "Waiting for approval to continue with {name}",
+      "running": "Running {name}",
+      "using": "Using {name}"
+    },
+    "completedDetail": "Task finished. The island is ready when you need it again.",
+    "approvalActions": {
+      "reject": "Reject",
+      "approve": "Approve",
+      "denyAlways": "Always block",
+      "blocking": "Blocking...",
+      "approveOnce": "Allow once",
+      "approveAlways": "Always allow",
+      "approving": "Running..."
+    }
+  }
+}

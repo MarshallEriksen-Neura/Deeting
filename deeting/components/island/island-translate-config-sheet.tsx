@@ -77,7 +77,7 @@ export function IslandTranslateConfigSheet({
   onOpenChange,
   onChange,
 }: IslandTranslateConfigSheetProps) {
-  const t = useI18n("chat");
+  const t = useI18n("island");
   const [favorites, setFavorites] = React.useState<string[]>([]);
   const [draft, setDraft] = React.useState("");
   const [automation, setAutomation] =
@@ -186,10 +186,10 @@ export function IslandTranslateConfigSheet({
             </div>
             <div className="min-w-0 flex-1 pr-6">
               <SheetTitle className="truncate text-[15px] font-semibold leading-tight">
-                {t("island.selection.configSheet.title")}
+                {t("selection.configSheet.title")}
               </SheetTitle>
               <SheetDescription className="mt-1 text-xs leading-relaxed">
-                {t("island.selection.configSheet.description")}
+                {t("selection.configSheet.description")}
               </SheetDescription>
             </div>
           </div>
@@ -200,12 +200,12 @@ export function IslandTranslateConfigSheet({
             {/* Favorites */}
             <Section
               icon={Star}
-              title={t("island.selection.configSheet.favoriteSection")}
-              hint={t("island.selection.configSheet.favoriteHint")}
+              title={t("selection.configSheet.favoriteSection")}
+              hint={t("selection.configSheet.favoriteHint")}
             >
               {favorites.length === 0 ? (
                 <EmptyDeclared
-                  label={t("island.selection.configSheet.noFavorites")}
+                  label={t("selection.configSheet.noFavorites")}
                 />
               ) : (
                 <ul className="space-y-1.5">
@@ -226,7 +226,7 @@ export function IslandTranslateConfigSheet({
                           aria-label={t(
                             "island.selection.configSheet.moveUp",
                           )}
-                          title={t("island.selection.configSheet.moveUp")}
+                          title={t("selection.configSheet.moveUp")}
                           className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted disabled:opacity-30"
                         >
                           <span aria-hidden="true">↑</span>
@@ -238,7 +238,7 @@ export function IslandTranslateConfigSheet({
                           aria-label={t(
                             "island.selection.configSheet.moveDown",
                           )}
-                          title={t("island.selection.configSheet.moveDown")}
+                          title={t("selection.configSheet.moveDown")}
                           className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted disabled:opacity-30"
                         >
                           <span aria-hidden="true">↓</span>
@@ -283,7 +283,7 @@ export function IslandTranslateConfigSheet({
                   className="shrink-0"
                 >
                   <Plus className="mr-1 h-3 w-3" />
-                  {t("island.selection.configSheet.addFavorite")}
+                  {t("selection.configSheet.addFavorite")}
                 </Button>
               </form>
 
@@ -292,7 +292,7 @@ export function IslandTranslateConfigSheet({
                   <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                     <Sparkles className="h-3 w-3" />
                     <span>
-                      {t("island.selection.configSheet.suggestionsLabel")}
+                      {t("selection.configSheet.suggestionsLabel")}
                     </span>
                   </div>
                   <div className="flex flex-wrap gap-1">
@@ -318,8 +318,8 @@ export function IslandTranslateConfigSheet({
             {/* Smart automation */}
             <Section
               icon={Zap}
-              title={t("island.selection.configSheet.automationSection")}
-              hint={t("island.selection.configSheet.automationHint")}
+              title={t("selection.configSheet.automationSection")}
+              hint={t("selection.configSheet.automationHint")}
             >
               <div className="flex items-start justify-between gap-3 rounded-md border border-border/60 bg-card px-3 py-2.5">
                 <div className="min-w-0 flex-1">
@@ -348,10 +348,10 @@ export function IslandTranslateConfigSheet({
 
               <div className="rounded-md border border-border/60 bg-card px-3 py-2.5">
                 <div className="text-xs font-medium text-foreground">
-                  {t("island.selection.configSheet.clipboardSeed.title")}
+                  {t("selection.configSheet.clipboardSeed.title")}
                 </div>
                 <div className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-                  {t("island.selection.configSheet.clipboardSeed.hint")}
+                  {t("selection.configSheet.clipboardSeed.hint")}
                 </div>
                 <RadioGroup
                   value={automation.clipboardSeedMode}
@@ -403,8 +403,8 @@ export function IslandTranslateConfigSheet({
             {/* Recent history controls */}
             <Section
               icon={History}
-              title={t("island.selection.configSheet.historySection")}
-              hint={t("island.selection.configSheet.historyHint")}
+              title={t("selection.configSheet.historySection")}
+              hint={t("selection.configSheet.historyHint")}
             >
               <Button
                 variant="outline"
@@ -413,7 +413,7 @@ export function IslandTranslateConfigSheet({
                 className="w-full"
               >
                 <Trash2 className="mr-2 h-3.5 w-3.5" />
-                {t("island.selection.configSheet.clearHistory")}
+                {t("selection.configSheet.clearHistory")}
               </Button>
             </Section>
           </div>
@@ -425,7 +425,7 @@ export function IslandTranslateConfigSheet({
             size="sm"
             onClick={() => onOpenChange(false)}
           >
-            {t("island.selection.configSheet.close")}
+            {t("selection.configSheet.close")}
           </Button>
         </div>
       </SheetContent>
@@ -492,3 +492,4 @@ function canonicalDisplayName(raw: string): string {
   if (code && CANONICAL_NAMES[code]) return CANONICAL_NAMES[code];
   return raw.trim();
 }
+

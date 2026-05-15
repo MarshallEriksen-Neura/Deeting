@@ -53,12 +53,12 @@ export function IslandTranslatorLanguagePicker({
   disabled = false,
   className,
 }: IslandTranslatorLanguagePickerProps) {
-  const t = useI18n("chat");
+  const t = useI18n("island");
   const [open, setOpen] = React.useState(false);
   const [draft, setDraft] = React.useState("");
 
   const isSource = kind === "source";
-  const autoLabel = t("island.translator.auto");
+  const autoLabel = t("translator.auto");
   const displayLabel = (() => {
     if (isSource && value === undefined) {
       if (detected?.displayName) {
@@ -110,8 +110,8 @@ export function IslandTranslatorLanguagePicker({
           disabled={disabled}
           aria-label={
             isSource
-              ? t("island.translator.sourceLanguage")
-              : t("island.translator.targetLanguage")
+              ? t("translator.sourceLanguage")
+              : t("translator.targetLanguage")
           }
           className={cn(
             "inline-flex h-8 items-center justify-between gap-1.5 rounded-full border px-3 text-[12px] font-semibold outline-none transition-colors",
@@ -158,7 +158,7 @@ export function IslandTranslatorLanguagePicker({
           <div className="mb-3">
             <div className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/50">
               <Star className="h-3 w-3 text-island-gold/70" />
-              <span>{t("island.translator.favorites")}</span>
+              <span>{t("translator.favorites")}</span>
             </div>
             <div className="flex flex-wrap gap-1">
               {favorites.map((target) => {
@@ -193,7 +193,7 @@ export function IslandTranslatorLanguagePicker({
         {recentToShow.length > 0 ? (
           <div className="mb-3">
             <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/50">
-              {t("island.translator.recent")}
+              {t("translator.recent")}
             </div>
             <div className="flex flex-wrap gap-1">
               {recentToShow.map((target) => {
@@ -225,7 +225,7 @@ export function IslandTranslatorLanguagePicker({
           <div className="mb-3">
             <div className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/50">
               <Sparkles className="h-3 w-3 text-island-gold/70" />
-              <span>{t("island.translator.popular")}</span>
+              <span>{t("translator.popular")}</span>
             </div>
             <div className="flex flex-wrap gap-1">
               {popularToShow.map((displayName) => (
@@ -249,7 +249,7 @@ export function IslandTranslatorLanguagePicker({
           <input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder={t("island.translator.customPlaceholder")}
+            placeholder={t("translator.customPlaceholder")}
             className="h-7 flex-1 rounded-full border border-foreground/15 bg-background px-2.5 text-[11px] outline-none placeholder:text-foreground/40 focus:border-island-gold/40"
           />
           <button
@@ -257,10 +257,11 @@ export function IslandTranslatorLanguagePicker({
             disabled={!draft.trim()}
             className="inline-flex h-7 items-center justify-center rounded-full bg-island-gold/15 px-2.5 text-[10px] font-semibold text-island-gold transition-colors hover:bg-island-gold/22 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {t("island.translator.customApply")}
+            {t("translator.customApply")}
           </button>
         </form>
       </PopoverContent>
     </Popover>
   );
 }
+

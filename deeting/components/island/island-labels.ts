@@ -1,18 +1,19 @@
 export function resolveIslandStatusLabelKey(statusLabel: string): string | null {
   switch (statusLabel) {
     case "Idle":
-      return "island.status.idle";
+      return "status.idle";
     case "Ready":
-      return "island.status.ready";
+      return "status.ready";
     case "Working...":
-      return "island.status.working";
+      return "status.working";
     case "Pending approval":
-      return "island.status.pendingApproval";
+      return "status.pendingApproval";
     case "Needs attention":
-      return "island.status.needsAttention";
+      return "status.needsAttention";
     case "Completed":
-      return "island.status.completed";
+      return "status.completed";
     default:
       return null;
   }
 }
+

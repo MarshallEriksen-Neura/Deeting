@@ -22,8 +22,10 @@ import {
 import "@xterm/xterm/css/xterm.css";
 
 interface UseTerminalSessionOptions {
+  terminalId: string;
   containerElement: HTMLDivElement | null;
   isCollapsed: boolean;
+  isActive: boolean;
 }
 
 interface UseTerminalSessionResult {
@@ -41,12 +43,22 @@ interface PtyOpenResponse {
 
 interface PtyOutputPayload {
   sessionId: string;
+  sequence?: number;
   data: string;
 }
 
 interface PtyExitPayload {
   sessionId: string;
   exitCode: number | null;
+}
+
+interface PtyReplayResponse {
+  sessionId: string;
+  lastSequence: number;
+  chunks: Array<{
+    sequence: number;
+    data: string;
+  }>;
 }
 
 type TerminalWithOptionalPaste = Terminal & {
@@ -101,7 +113,7 @@ const NON_TAURI_BANNER = [
  * - **Persistent across toggles**: once mounted, the terminal and PTY
  *   survive collapse/expand cycles. If the route unmounts, only the xterm
  *   view is disposed; the Tauri PTY remains app-local and a later mount
- *   reattaches through `pty_open`.
+ *   reattaches through the app-local terminal manager.
  * - **Resize gated by collapse**: while collapsed, the FitAddon is frozen
  *   and `pty_resize` is not called — the parent panel's 0-width
  *   collapsedSize must never propagate into a `cols=0`/`rows=0` update.
@@ -110,17 +122,18 @@ const NON_TAURI_BANNER = [
  * Tauri shell), we render xterm with a placeholder banner instead of
  * trying to invoke commands that would fail.
  *
- * v1 single-session note: `pty_open` errors if a session already exists
- * on the backend. The mount effect runs once and keeps the session for
- * the hook's lifetime, so this is invariant.
+ * Multi-session note: each hook instance owns one terminal id and filters
+ * backend events by that id before writing into xterm.
  */
 export function useTerminalSession({
+  terminalId,
   containerElement,
   isCollapsed,
+  isActive,
 }: UseTerminalSessionOptions): UseTerminalSessionResult {
   const terminalRef = React.useRef<Terminal | null>(null);
   const fitAddonRef = React.useRef<FitAddon | null>(null);
-  const sessionIdRef = React.useRef<string | null>(null);
+  const sessionIdRef = React.useRef<string | null>(terminalId);
   const isReadyRef = React.useRef<boolean>(false);
   const shellRef = React.useRef<"powershell" | "posix" | "unknown">("unknown");
   const publishContextRafRef = React.useRef<number | null>(null);
@@ -207,9 +220,12 @@ export function useTerminalSession({
     const publishTerminalContext = () => {
       const tracker = commandTrackerRef.current;
       if (!tracker) return;
+      const sessionId = sessionIdRef.current;
+      if (!sessionId) return;
       useTerminalPanelStore.getState().setTerminalContext(
+        sessionId,
         tracker.getContextSnapshot({
-          sessionId: sessionIdRef.current,
+          sessionId,
           shell: shellRef.current,
           selectionText: term.hasSelection() ? term.getSelection() : "",
         }),
@@ -231,6 +247,31 @@ export function useTerminalSession({
     let unlistenOutput: (() => void) | null = null;
     let unlistenExit: (() => void) | null = null;
     let cancelled = false;
+    let replayComplete = false;
+    let lastWrittenSequence = 0;
+    const pendingReplayPayloads: PtyOutputPayload[] = [];
+
+    const writeTerminalOutput = (data: string) => {
+      term.write(data, schedulePublishTerminalContext);
+    };
+
+    const handleOutputPayload = (payload: PtyOutputPayload) => {
+      const sequence =
+        typeof payload.sequence === "number" && Number.isFinite(payload.sequence)
+          ? payload.sequence
+          : null;
+      if (!replayComplete && sequence !== null) {
+        pendingReplayPayloads.push(payload);
+        return;
+      }
+      if (sequence !== null && sequence <= lastWrittenSequence) {
+        return;
+      }
+      if (sequence !== null) {
+        lastWrittenSequence = sequence;
+      }
+      writeTerminalOutput(payload.data);
+    };
 
     const startSession = async () => {
       if (!isTauriRuntime()) {
@@ -244,7 +285,7 @@ export function useTerminalSession({
           import("@tauri-apps/api/event"),
         ]);
 
-        // Subscribe BEFORE pty_open so the very first byte (e.g. shell
+        // Subscribe BEFORE pty_create so the very first byte (e.g. shell
         // prompt) is captured. Filter is null-tolerant: in v1 we only
         // ever have one session so accept all events until we know our
         // own sessionId.
@@ -255,7 +296,7 @@ export function useTerminalSession({
             if (expected !== null && event.payload.sessionId !== expected) {
               return;
             }
-            term.write(event.payload.data, schedulePublishTerminalContext);
+            handleOutputPayload(event.payload);
           },
         );
         unlistenExit = await listen<PtyExitPayload>(
@@ -266,6 +307,9 @@ export function useTerminalSession({
               return;
             }
             isReadyRef.current = false;
+            useTerminalPanelStore
+              .getState()
+              .updateSession(event.payload.sessionId, { status: "exited" });
             schedulePublishTerminalContext();
             term.writeln(
               "\r\n\x1b[33m[Process exited. Reload the panel to restart.]\x1b[0m",
@@ -281,10 +325,11 @@ export function useTerminalSession({
 
         const cols = term.cols > 0 ? term.cols : 80;
         const rows = term.rows > 0 ? term.rows : 24;
-        const response = await invoke<PtyOpenResponse>("pty_open", {
+        const response = await invoke<PtyOpenResponse>("pty_create", {
           cols,
           rows,
           cwd: null,
+          clientSessionId: terminalId,
         });
 
         if (cancelled) {
@@ -294,7 +339,31 @@ export function useTerminalSession({
         }
 
         sessionIdRef.current = response.sessionId;
+        const replay = await invoke<PtyReplayResponse>("pty_replay", {
+          sessionId: response.sessionId,
+        }).catch(() => null);
+        if (cancelled) {
+          unlistenOutput?.();
+          unlistenExit?.();
+          return;
+        }
+        if (replay?.sessionId === response.sessionId) {
+          for (const chunk of replay.chunks) {
+            if (chunk.sequence <= lastWrittenSequence) continue;
+            lastWrittenSequence = chunk.sequence;
+            writeTerminalOutput(chunk.data);
+          }
+        }
+        replayComplete = true;
+        for (const payload of pendingReplayPayloads.splice(0)) {
+          handleOutputPayload(payload);
+        }
+
         isReadyRef.current = true;
+        useTerminalPanelStore.getState().updateSession(response.sessionId, {
+          status: "ready",
+          lastError: null,
+        });
         const platform = await resolveTerminalPlatform().catch(() => null);
         shellRef.current =
           platform === "windows"
@@ -306,6 +375,10 @@ export function useTerminalSession({
         await injectOsc133ShellIntegration(invoke, response.sessionId).catch(() => {});
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
+        useTerminalPanelStore.getState().updateSession(terminalId, {
+          status: "exited",
+          lastError: msg,
+        });
         term.writeln(`\r\n\x1b[31m[Failed to start shell: ${msg}]\x1b[0m`);
       }
     };
@@ -334,6 +407,7 @@ export function useTerminalSession({
       onDataDisposable.dispose();
       unlistenOutput?.();
       unlistenExit?.();
+      const sessionId = sessionIdRef.current;
       sessionIdRef.current = null;
       isReadyRef.current = false;
       commandTrackerRef.current?.dispose();
@@ -342,18 +416,20 @@ export function useTerminalSession({
         cancelAnimationFrame(publishContextRafRef.current);
         publishContextRafRef.current = null;
       }
-      useTerminalPanelStore.getState().setTerminalContext(null);
+      if (sessionId) {
+        useTerminalPanelStore.getState().setTerminalContext(sessionId, null);
+      }
       term.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [containerElement, shouldMount]);
+  }, [containerElement, shouldMount, terminalId]);
 
   // Resize observer + focus management. Re-subscribes whenever the panel
   // toggles collapsed state. Skipped while collapsed so the 0-width
   // parent never reaches FitAddon or pty_resize.
   React.useEffect(() => {
-    if (isCollapsed && !hasVisibleContainer) return;
+    if ((isCollapsed && !hasVisibleContainer) || !isActive) return;
     const term = terminalRef.current;
     const fit = fitAddonRef.current;
     const container = containerElement;
@@ -400,6 +476,7 @@ export function useTerminalSession({
     containerSize.height,
     containerSize.width,
     hasVisibleContainer,
+    isActive,
     isCollapsed,
   ]);
 

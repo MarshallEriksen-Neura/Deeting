@@ -113,7 +113,7 @@ export function IslandSelectionPanel({
   ) => void;
   onDismiss: (selectionId: string) => void;
 }) {
-  const t = useI18n("chat");
+  const t = useI18n("island");
   const isZh = useMemo(() => isZhUiLocale(), []);
   const uiTarget = useMemo(() => resolveUiTargetDisplayName(), []);
   const [recentTargets, setRecentTargets] = useState<string[]>(() =>
@@ -198,16 +198,16 @@ export function IslandSelectionPanel({
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
             <div className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground/40">
-              {t("island.selection.title")}
+              {t("selection.title")}
             </div>
             <div className="h-px min-w-4 flex-1 bg-foreground/8" />
             <div className="shrink-0 text-[10px] text-foreground/42">
               {t(`island.selection.sources.${selection.source}`)} ·{" "}
-              {t("island.selection.charCount", {
+              {t("selection.charCount", {
                 count: selection.charCount,
               })}
               {selection.truncated
-                ? ` · ${t("island.selection.truncated")}`
+                ? ` · ${t("selection.truncated")}`
                 : ""}
             </div>
           </div>
@@ -218,7 +218,7 @@ export function IslandSelectionPanel({
             </p>
           ) : (
             <div className="mt-1.5 rounded-[18px] border border-amber-300/30 bg-amber-50/65 px-3 py-2 text-[12px] leading-5 text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/25 dark:text-amber-200">
-              {t("island.selection.empty")}
+              {t("selection.empty")}
             </div>
           )}
         </div>
@@ -226,8 +226,8 @@ export function IslandSelectionPanel({
           type="button"
           onClick={() => onDismiss(selection.selectionId)}
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-foreground/42 transition-colors hover:bg-white/50 hover:text-foreground/65 dark:hover:bg-white/8"
-          aria-label={t("island.selection.dismiss")}
-          title={t("island.selection.dismiss")}
+          aria-label={t("selection.dismiss")}
+          title={t("selection.dismiss")}
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -250,13 +250,13 @@ export function IslandSelectionPanel({
               disabled={isBusy}
               onClick={() => openTranslator(smartTarget)}
               className="inline-flex items-center gap-1.5 pl-3 pr-2 text-[11px] font-semibold focus:outline-none disabled:cursor-not-allowed"
-              title={t("island.selection.translateTo", { target: smartTarget })}
-              aria-label={t("island.selection.translateTo", {
+              title={t("selection.translateTo", { target: smartTarget })}
+              aria-label={t("selection.translateTo", {
                 target: smartTarget,
               })}
             >
               <Languages className="h-3.5 w-3.5 shrink-0" />
-              <span>{t("island.selection.actions.translate")}</span>
+              <span>{t("selection.actions.translate")}</span>
               <span
                 className={cn(
                   "ml-0.5 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium tracking-tight",
@@ -282,8 +282,8 @@ export function IslandSelectionPanel({
                       ? "border-island-gold/30 hover:bg-island-gold/8"
                       : "border-white/30 hover:bg-white/35 dark:border-white/8 dark:hover:bg-white/6",
                   )}
-                  aria-label={t("island.selection.translateOptions")}
-                  title={t("island.selection.translateOptions")}
+                  aria-label={t("selection.translateOptions")}
+                  title={t("selection.translateOptions")}
                 >
                   <ChevronDown className="h-3.5 w-3.5" />
                 </button>
@@ -297,7 +297,7 @@ export function IslandSelectionPanel({
                   <div className="mb-3">
                     <div className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/50">
                       <Star className="h-3 w-3 text-island-gold/70" />
-                      <span>{t("island.selection.translateFavorites")}</span>
+                      <span>{t("selection.translateFavorites")}</span>
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {favoriteTargets.map((target) => {
@@ -332,7 +332,7 @@ export function IslandSelectionPanel({
                 {recentToShow.length > 0 ? (
                   <div className="mb-3">
                     <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/50">
-                      {t("island.selection.translateRecent")}
+                      {t("selection.translateRecent")}
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {recentToShow.map((target) => {
@@ -363,7 +363,7 @@ export function IslandSelectionPanel({
                 {popularToShow.length > 0 ? (
                   <div className="mb-3">
                     <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/50">
-                      {t("island.selection.translatePopular")}
+                      {t("selection.translatePopular")}
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {popularToShow.map(({ displayName }) => (
@@ -390,7 +390,7 @@ export function IslandSelectionPanel({
                     onChange={(event) =>
                       setCustomTargetDraft(event.target.value)
                     }
-                    placeholder={t("island.selection.customTarget")}
+                    placeholder={t("selection.customTarget")}
                     className="h-7 flex-1 rounded-full border border-foreground/15 bg-background px-2.5 text-[11px] outline-none placeholder:text-foreground/40 focus:border-island-gold/40"
                   />
                   <button
@@ -398,7 +398,7 @@ export function IslandSelectionPanel({
                     disabled={isBusy || !customTargetDraft.trim()}
                     className="inline-flex h-7 items-center justify-center rounded-full bg-island-gold/15 px-2.5 text-[10px] font-semibold text-island-gold transition-colors hover:bg-island-gold/22 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {t("island.selection.translateApply")}
+                    {t("selection.translateApply")}
                   </button>
                 </form>
 
@@ -416,7 +416,7 @@ export function IslandSelectionPanel({
                     className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-foreground/55 transition-colors hover:bg-foreground/5 hover:text-foreground/85"
                   >
                     <Settings2 className="h-3 w-3" />
-                    {t("island.selection.translateManage")}
+                    {t("selection.translateManage")}
                   </button>
                 </div>
               </PopoverContent>
@@ -464,3 +464,4 @@ export function IslandSelectionPanel({
     </>
   );
 }
+

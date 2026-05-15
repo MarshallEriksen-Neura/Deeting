@@ -1,8 +1,8 @@
 //! Manager for active PTY sessions.
 //!
 //! This is intentionally a thin coordinator: lifecycle work lives in
-//! [`PtySession`]. The manager owns the session map, enforces the v1
-//! single-session rule, and provides shutdown for app exit.
+//! [`PtySession`]. The manager owns the session map, supports app-local
+//! reattachment, and provides shutdown for app exit.
 //!
 //! [`PtySession`]: crate::modules::terminal::session::PtySession
 
@@ -12,9 +12,15 @@ use std::sync::{Arc, Mutex};
 use tauri::AppHandle;
 use uuid::Uuid;
 
-use super::session::{PtySession, PtySessionConfig, PtySessionError};
+use super::session::{PtyReplaySnapshot, PtySession, PtySessionConfig, PtySessionError};
 
 pub type SessionId = String;
+
+#[derive(Clone, Debug)]
+pub struct TerminalSessionInfo {
+    pub session_id: SessionId,
+    pub status: &'static str,
+}
 
 /// Owns active PTY sessions. App-level singleton.
 pub struct TerminalManager {
@@ -51,10 +57,70 @@ impl TerminalManager {
         if let Some(existing_id) = guard.keys().next().cloned() {
             return Ok(existing_id);
         }
-        let id = Uuid::new_v4().to_string();
-        let session = Arc::new(PtySession::spawn(id.clone(), config, app)?);
-        guard.insert(id.clone(), session);
-        Ok(id)
+        Self::spawn_locked(&mut guard, config, app, None)
+    }
+
+    /// Spawn a new independent shell session, or reattach when the frontend
+    /// presents an id that already belongs to a live backend PTY.
+    pub fn create(
+        &self,
+        config: PtySessionConfig,
+        app: AppHandle,
+        requested_id: Option<String>,
+    ) -> Result<SessionId, PtySessionError> {
+        let requested_id = normalize_requested_id(requested_id);
+        let mut guard = self
+            .sessions
+            .lock()
+            .map_err(|_| PtySessionError::PoisonedLock)?;
+        if let Some(id) = requested_id.as_deref() {
+            if let Some(existing) = guard.get(id).cloned() {
+                if !existing.is_exited() {
+                    drop(guard);
+                    let _ = existing.resize(config.cols, config.rows);
+                    return Ok(id.to_string());
+                }
+
+                guard.remove(id);
+                drop(guard);
+                existing.shutdown();
+
+                let mut guard = self
+                    .sessions
+                    .lock()
+                    .map_err(|_| PtySessionError::PoisonedLock)?;
+                return Self::spawn_locked(&mut guard, config, app, Some(id.to_string()));
+            }
+        }
+        Self::spawn_locked(&mut guard, config, app, requested_id)
+    }
+
+    pub fn session_ids(&self) -> Vec<SessionId> {
+        let mut ids: Vec<SessionId> = self
+            .sessions
+            .lock()
+            .map(|guard| guard.keys().cloned().collect())
+            .unwrap_or_default();
+        ids.sort();
+        ids
+    }
+
+    pub fn session_infos(&self) -> Vec<TerminalSessionInfo> {
+        let mut infos = self
+            .sessions
+            .lock()
+            .map(|guard| {
+                guard
+                    .iter()
+                    .map(|(session_id, session)| TerminalSessionInfo {
+                        session_id: session_id.clone(),
+                        status: if session.is_exited() { "exited" } else { "ready" },
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        infos.sort_by(|left, right| left.session_id.cmp(&right.session_id));
+        infos
     }
 
     pub fn write(&self, id: &str, data: &[u8]) -> Result<(), PtySessionError> {
@@ -63,6 +129,10 @@ impl TerminalManager {
 
     pub fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<(), PtySessionError> {
         self.get(id)?.resize(cols, rows)
+    }
+
+    pub fn replay(&self, id: &str) -> Result<PtyReplaySnapshot, PtySessionError> {
+        self.get(id)?.replay()
     }
 
     /// Close and remove a session. Idempotent: closing an unknown session
@@ -101,6 +171,27 @@ impl TerminalManager {
             .cloned()
             .ok_or(PtySessionError::SessionNotFound)
     }
+
+    fn spawn_locked(
+        guard: &mut HashMap<SessionId, Arc<PtySession>>,
+        config: PtySessionConfig,
+        app: AppHandle,
+        requested_id: Option<String>,
+    ) -> Result<SessionId, PtySessionError> {
+        let id = requested_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+        if guard.contains_key(&id) {
+            return Err(PtySessionError::AlreadyOpen);
+        }
+        let session = Arc::new(PtySession::spawn(id.clone(), config, app)?);
+        guard.insert(id.clone(), session);
+        Ok(id)
+    }
+}
+
+fn normalize_requested_id(requested_id: Option<String>) -> Option<String> {
+    requested_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 impl Default for TerminalManager {

@@ -64,7 +64,7 @@ describe("OSC 133 command boundary helpers", () => {
     expect(terminal.decorations).toEqual([
       expect.objectContaining({
         height: 2,
-        backgroundColor: "#2a1518",
+        backgroundColor: "rgba(239, 68, 68, 0.10)",
       }),
     ]);
 

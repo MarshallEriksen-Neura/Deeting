@@ -1651,7 +1651,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
 fn terminal_context_peek_contract() -> CoreToolContract {
     CoreToolContract {
         name: "terminal_context_peek",
-        description: "Read a lightweight index of the terminal context attached to this chat request. Use this first when the user's question may depend on the current terminal state, recent commands, active process, cwd, or selected terminal output. This tool is read-only and returns summaries only; call terminal_context_read when you need the output for a specific command block.",
+        description: "Read a lightweight index of the terminal context attached to this chat request. Use this first when the user's question may depend on the current terminal state, recent commands, active process, cwd, selected terminal output, or which embedded terminal tab is active. This tool is read-only and returns summaries only; call terminal_context_read when you need the output for a specific command block.",
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -1666,6 +1666,8 @@ fn terminal_context_peek_contract() -> CoreToolContract {
             "type": "object",
             "properties": {
                 "available": {"type": "boolean"},
+                "active_session_id": {"type": ["string", "null"]},
+                "sessions": {"type": "array"},
                 "session_id": {"type": ["string", "null"]},
                 "shell": {"type": ["string", "null"]},
                 "cwd": {"type": ["string", "null"]},
@@ -1685,10 +1687,14 @@ fn terminal_context_peek_contract() -> CoreToolContract {
 fn terminal_context_read_contract() -> CoreToolContract {
     CoreToolContract {
         name: "terminal_context_read",
-        description: "Read terminal output from a specific target in the request-attached terminal context. Call terminal_context_peek first to choose a target. Targets include selection, last_command, last_failed_command, active_process, or a concrete command id such as cmd_3. This is read-only and bounded by max_bytes.",
+        description: "Read terminal output from a specific target in the request-attached terminal context. Call terminal_context_peek first to choose a terminal session and target. Targets include selection, last_command, last_failed_command, active_process, or a concrete command id such as cmd_3. This is read-only and bounded by max_bytes.",
         input_schema: json!({
             "type": "object",
             "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional embedded terminal session id returned by terminal_context_peek. Omit to use the active terminal."
+                },
                 "target": {
                     "type": "string",
                     "description": "selection, last_command, last_failed_command, active_process, or a command id returned by terminal_context_peek."
@@ -1731,10 +1737,14 @@ fn terminal_context_read_contract() -> CoreToolContract {
 fn terminal_context_pack_contract() -> CoreToolContract {
     CoreToolContract {
         name: "terminal_context_pack",
-        description: "Build a compact terminal context pack for answering the current user question or handing context to another agent. It selects terminal selection first, then the most relevant failed/running/recent command. Use when you need a single bounded context bundle instead of manually reading multiple command blocks.",
+        description: "Build a compact terminal context pack for answering the current user question or handing context to another agent. It selects terminal selection first, then the most relevant failed/running/recent command from the active terminal by default. Pass session_id to target another embedded terminal session. Use when you need a single bounded context bundle instead of manually reading multiple command blocks.",
         input_schema: json!({
             "type": "object",
             "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional embedded terminal session id returned by terminal_context_peek. Omit to use the active terminal."
+                },
                 "goal": {
                     "type": "string",
                     "description": "What you are trying to answer or hand off."
@@ -1768,10 +1778,14 @@ fn terminal_context_pack_contract() -> CoreToolContract {
 fn terminal_write_input_contract() -> CoreToolContract {
     CoreToolContract {
         name: "terminal_write_input",
-        description: "Write text into the input buffer of the currently visible embedded desktop terminal session without executing it. Use this when you want to draft or suggest a shell command directly in that live terminal while leaving the final Enter keypress to the user. This does not run a background host command and does not create a separate execution result. The tool rejects newline characters so it cannot submit the command.",
+        description: "Write text into the input buffer of an embedded desktop terminal session without executing it. By default this targets the active visible terminal; pass session_id to target another terminal returned by terminal_context_peek. Use this when you want to draft or suggest a shell command directly in that live terminal while leaving the final Enter keypress to the user. This does not run a background host command and does not create a separate execution result. The tool rejects newline characters so it cannot submit the command.",
         input_schema: json!({
             "type": "object",
             "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional embedded terminal session id returned by terminal_context_peek. Omit to write to the active terminal."
+                },
                 "text": {
                     "type": "string",
                     "description": "Command text to place into the current embedded terminal session's input buffer. Newline characters are rejected."

@@ -29,6 +29,7 @@ const namespaces = [
   "bandit",
   "task-learning",
   "llm-wiki",
+  "island",
 ] as const
 
 type StaticMessageNamespace = (typeof namespaces)[number]
@@ -66,3 +67,6 @@ export async function loadStaticLocaleMessages(
 }
 
 export type { StaticMessageNamespace }
+
+
+

@@ -27,7 +27,7 @@ export function IslandApprovalCard({
   const [feedback, setFeedback] = useState<"approved" | "rejected" | null>(
     null,
   );
-  const t = useI18n("chat");
+  const t = useI18n("island");
   const displayTitle = humanizeToolName(title) ?? title;
 
   const handleApprove = () => {
@@ -51,7 +51,7 @@ export function IslandApprovalCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-island-gold/80">
-            <span>{t("island.approvalTitle")}</span>
+            <span>{t("approvalTitle")}</span>
           </div>
           <p className="truncate text-[13px] font-semibold text-foreground">
             {displayTitle}
@@ -68,7 +68,7 @@ export function IslandApprovalCard({
             disabled={disabled}
             className="h-auto rounded-full border-white/30 bg-white/34 px-3 py-1.5 text-[11px] shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]"
           >
-            {t("approvalDialog.actions.reject")}
+            {t("approvalActions.reject")}
           </GlassButton>
           <GlassButton
             size="sm"
@@ -76,7 +76,7 @@ export function IslandApprovalCard({
             disabled={disabled}
             className="h-auto rounded-full bg-island-gold/18 px-3 py-1.5 text-[11px] text-foreground shadow-[0_10px_22px_-18px_rgba(0,0,0,0.3)]"
           >
-            {t("approvalDialog.actions.approve")}
+            {t("approvalActions.approve")}
           </GlassButton>
         </div>
       </div>
@@ -99,3 +99,5 @@ export function IslandApprovalCard({
     </div>
   );
 }
+
+

@@ -1,0 +1,179 @@
+{
+  "island": {
+    "liveProgress": "实时进度",
+    "requestLabel": "当前请求",
+    "responseTitle": "灵动岛回复",
+    "keepNearby": "把灵动岛留在手边，适合长任务、翻译、审批和随时继续。",
+    "approvalEmpty": "任务正在这里等待你的决定，无需离开灵动岛即可批准或拒绝。",
+    "approvalTitle": "等待审批",
+    "attentionTitle": "请注意",
+    "continueHere": "继续处理",
+    "quickReplyPlaceholder": "直接在灵动岛继续...",
+    "newConversation": "新建对话",
+    "modeTitle": "灵动岛模式",
+    "modeDescription": "你可以直接在这里审批、继续、翻译，或发送一句短回复，不必重新打开完整面板。",
+    "workspaceTitle": "工作区",
+    "workspaceDescription": "只有当你需要更完整的上下文或更长的编辑时，再回到完整工作区。",
+    "lookup": {
+      "title": "浏览器检索结果",
+      "attach": "带入聊天",
+      "dismiss": "忽略"
+    },
+    "decisionTitle": "等待你的决定",
+    "decisionDescription": "当前任务暂停在这里。你可以立刻批准、拒绝，或者先在灵动岛补一句说明再继续。",
+    "hints": {
+      "pending": "有一个决定正在等待你，直接在灵动岛里批准或拒绝即可。",
+      "active": "保持节奏，不必为了短操作重新打开完整工作区。",
+      "idle": "轻量任务尽量留在灵动岛内完成。"
+    },
+    "badges": {
+      "live": "进行中",
+      "latest": "最新"
+    },
+    "status": {
+      "idle": "空闲",
+      "ready": "就绪",
+      "working": "处理中",
+      "pendingApproval": "等待审批",
+      "needsAttention": "需要处理",
+      "completed": "已完成"
+    },
+    "selection": {
+      "title": "已选文本",
+      "dismiss": "关闭选中文本",
+      "charCount": "{count} 字符",
+      "truncated": "已截断",
+      "empty": "没有检测到选中文本。请先在其他应用选中文本，再触发快捷键。",
+      "translateTo": "翻译为 {target}",
+      "translateOptions": "更多翻译选项",
+      "translateRecent": "最近使用",
+      "translatePopular": "常用语种",
+      "translateFavorites": "我的收藏",
+      "translateApply": "翻译",
+      "translateManage": "管理收藏…",
+      "customTarget": "其他语言…",
+      "askPlaceholder": "围绕选中文本提问...",
+      "askSend": "带选中文本提问",
+      "askFooter": "询问选中文本",
+      "configSheet": {
+        "title": "翻译偏好设置",
+        "description": "把你常翻译的目标语言钉在最前。它们会一直出现在翻译菜单顶部，不会被滚出。",
+        "favoriteSection": "收藏的语言",
+        "favoriteHint": "收藏的语言会优先出现在翻译下拉菜单中。",
+        "noFavorites": "还没有收藏。把你最常翻译的目标语言添加到这里。",
+        "addFavorite": "添加",
+        "addFavoritePlaceholder": "例如：Japanese、越南语、拉丁文…",
+        "removeFavorite": "移除 {target}",
+        "moveUp": "上移",
+        "moveDown": "下移",
+        "suggestionsLabel": "建议",
+        "automationSection": "智能联动",
+        "automationHint": "让翻译器在你粘贴、复制或选中文字时主动响应，不再需要手动复制粘贴。",
+        "autoTranslateOnPaste": {
+          "title": "粘贴后自动翻译",
+          "hint": "在输入框里粘贴文本后立刻翻译，不用再点按钮。"
+        },
+        "clipboardSeed": {
+          "title": "打开翻译器时读取剪贴板",
+          "hint": "只在你打开翻译器的瞬间读一次，结果留在本地，不会上传。",
+          "modes": {
+            "ask": {
+              "label": "询问后再使用",
+              "hint": "弹出一条提示，由你决定是否翻译这段。"
+            },
+            "auto": {
+              "label": "自动填入并翻译",
+              "hint": "无需确认，立即翻译你刚才复制的内容。"
+            },
+            "off": {
+              "label": "完全关闭",
+              "hint": "翻译器永远不会读取你的剪贴板。"
+            }
+          }
+        },
+        "historySection": "翻译历史",
+        "historyHint": "最近用过的目标语言会自动记录（最多 3 个），方便下次一键翻译。",
+        "clearHistory": "清除翻译历史",
+        "close": "关闭"
+      },
+      "sources": {
+        "accessibility": "原生选区",
+        "clipboard_fallback": "剪贴板兜底",
+        "unavailable": "未检测到选区"
+      },
+      "actions": {
+        "translate": "翻译",
+        "explain": "解释",
+        "summarize": "总结",
+        "ask": "提问",
+        "search": "搜索",
+        "copy": "复制"
+      }
+    },
+    "translator": {
+      "title": "翻译器",
+      "subtitle": "不进入完整聊天 runtime 的快速翻译",
+      "open": "打开翻译",
+      "close": "返回",
+      "sourceLanguage": "源语言",
+      "targetLanguage": "目标语言",
+      "swap": "交换语言",
+      "inputPlaceholder": "输入或粘贴要翻译的文本...",
+      "characters": "字符",
+      "translate": "翻译",
+      "translating": "翻译中...",
+      "outputLabel": "翻译结果",
+      "outputPlaceholder": "翻译结果会显示在这里。",
+      "speak": "朗读",
+      "speaking": "生成语音...",
+      "speakFailed": "语音生成失败",
+      "speakFailedWithAgent": "{name} 生成语音失败：{error}",
+      "voiceAgent": "语音智能体",
+      "voiceAgentLoading": "正在读取语音智能体...",
+      "voiceAgentUnavailable": "暂无可用语音智能体",
+      "voiceAgentLoadFailed": "读取语音智能体失败",
+      "noVoiceAgent": "暂无可用的语音智能体，请先创建或启用一个文本转语音智能体。",
+      "copy": "复制",
+      "noModel": "当前没有选择本地聊天模型。",
+      "failed": "翻译失败",
+      "auto": "自动",
+      "useAsInput": "用作输入",
+      "popular": "常用",
+      "favorites": "收藏",
+      "recent": "最近",
+      "customPlaceholder": "其他语言...",
+      "customApply": "使用",
+      "phaseIdle": "就绪",
+      "phaseTranslating": "翻译中",
+      "phaseCompleted": "已完成",
+      "phaseFailed": "失败",
+      "languagePair": "{source} → {target}",
+      "dropHint": "松开即可翻译这段文本",
+      "clipboardSeed": {
+        "title": "剪贴板里有内容",
+        "use": "翻译这段",
+        "dismiss": "忽略"
+      },
+      "bridgedSelection": {
+        "title": "检测到新选区",
+        "use": "替换并翻译",
+        "dismiss": "忽略"
+      }
+    },
+    "toolStatus": {
+      "pendingApproval": "正在等待你批准 {name}",
+      "running": "正在执行 {name}",
+      "using": "正在使用 {name}"
+    },
+    "completedDetail": "任务已经完成。灵动岛会先保留这个状态，方便你确认结果。",
+    "approvalActions": {
+      "reject": "拒绝",
+      "approve": "批准执行",
+      "denyAlways": "始终拒绝",
+      "blocking": "正在阻止...",
+      "approveOnce": "允许一次",
+      "approveAlways": "始终允许",
+      "approving": "执行中..."
+    }
+  }
+}

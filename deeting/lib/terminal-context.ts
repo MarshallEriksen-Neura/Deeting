@@ -34,6 +34,22 @@ export interface TerminalContextSnapshot {
   commands: TerminalContextCommand[];
 }
 
+export interface TerminalContextSessionEntry {
+  sessionId: string;
+  title: string;
+  status: "starting" | "ready" | "exited";
+  active: boolean;
+  context: TerminalContextSnapshot;
+}
+
+export interface TerminalContextEnvelope {
+  version: 2;
+  available: boolean;
+  activeSessionId: string | null;
+  capturedAt: string;
+  sessions: TerminalContextSessionEntry[];
+}
+
 const MAX_COMMAND_OUTPUT_BYTES = 24_000;
 const MAX_TOTAL_OUTPUT_BYTES = 72_000;
 const SUMMARY_BYTES = 1_200;
