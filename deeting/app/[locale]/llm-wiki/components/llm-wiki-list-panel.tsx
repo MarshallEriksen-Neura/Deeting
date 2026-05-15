@@ -401,6 +401,13 @@ function formatRelativeTime(dateStr: string): string {
   return date.toLocaleDateString()
 }
 
+function onPressableKeyDown(event: React.KeyboardEvent<HTMLElement>, action: () => void) {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault()
+    action()
+  }
+}
+
 /* ─── Suggestions Tab ───────────────────────────────────────────────── */
 
 function SuggestionsTabContent({
@@ -494,8 +501,12 @@ function SuggestionsTabContent({
               return (
                 <div key={actionKind} className="">
                   {/* Group header */}
-                  <button
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={!isCollapsed}
                     onClick={() => toggleGroup(actionKind)}
+                    onKeyDown={(event) => onPressableKeyDown(event, () => toggleGroup(actionKind))}
                     className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-[var(--panel-bg)]/30 transition-colors"
                   >
                     <div className="flex size-5 items-center justify-center rounded-md bg-[var(--accent-soft)] text-[var(--accent-strong)]">
@@ -522,7 +533,7 @@ function SuggestionsTabContent({
                       </GlassButton>
                     )}
                     {isCollapsed ? <ChevronDown className="size-3 text-[var(--ink)]" /> : <ChevronUp className="size-3 text-[var(--ink)]" />}
-                  </button>
+                  </div>
 
                   {/* Group items */}
                   {!isCollapsed && (
@@ -530,9 +541,13 @@ function SuggestionsTabContent({
                       {group.map((s) => {
                         const isActive = selectedSuggestionId === s.id
                         return (
-                          <button
+                          <div
                             key={s.id}
+                            role="button"
+                            tabIndex={0}
+                            aria-pressed={isActive}
                             onClick={() => setSelectedSuggestionId(s.id)}
+                            onKeyDown={(event) => onPressableKeyDown(event, () => setSelectedSuggestionId(s.id))}
                             className={cn(
                               "flex w-full items-start gap-2.5 px-4 py-3 text-left transition-all duration-150",
                               isActive
@@ -586,7 +601,7 @@ function SuggestionsTabContent({
                                 </GlassButton>
                               </div>
                             </div>
-                          </button>
+                          </div>
                         )
                       })}
                     </div>
