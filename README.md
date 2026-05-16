@@ -12,6 +12,20 @@
     ·
     <a href="./docs/rag-architecture.md">RAG 架构</a>
     ·
+    <a href="./docs/self-evolution-architecture.md">自进化架构</a>
+    ·
+    <a href="./docs/agent-dag-architecture.md">Agent DAG 架构</a>
+    ·
+    <a href="./docs/tool-architecture.md">工具封装架构</a>
+    ·
+    <a href="./docs/memory-architecture.md">记忆系统</a>
+    ·
+    <a href="./docs/security-architecture.md">安全策略</a>
+    ·
+    <a href="./docs/bandit-architecture.md">Bandit 架构</a>
+    ·
+    <a href="./docs/dual-plane-architecture.md">双 Plane 执行</a>
+    ·
     <a href="#快速开始">快速开始</a>
   </p>
 </div>
@@ -173,6 +187,20 @@ Island 承接 recent messages、pending approval、selection context、browser l
 <p align="center"><em>反馈回写让路由贴近真实使用偏好。</em></p>
 
 > 📖 RAG / 上下文编排子系统（Context Orchestrator、三大检索源、context 工具、No Double Lifecycle Rule、selected knowledge 兜底链路）详见 [docs/rag-architecture.md](./docs/rag-architecture.md)。
+>
+> 📖 自进化 / 自调整子系统（Sovereign Charter、TaskFingerprint、6 个决策点、先验半衰减、Bandit 平局拆解、Posterior Signal、Ingress 边界）详见 [docs/self-evolution-architecture.md](./docs/self-evolution-architecture.md)。
+>
+> 📖 Agent DAG 执行模型（4 类节点 / 11 状态、execution graph 持久化、Approval Gate 闸门、Direct/Worker 双 plane、In-Flight Stage 三层状态机、跨进程恢复链路）详见 [docs/agent-dag-architecture.md](./docs/agent-dag-architecture.md)。
+>
+> 📖 工具封装架构（tool catalog 模型可见工具面、capability registry / `search_sdk` 能力总表、`SKILL.md` / `llm-tool.yaml` 双轨封装、skill / MCP / shell 统一执行与审批边界）详见 [docs/tool-architecture.md](./docs/tool-architecture.md)。
+>
+> 📖 记忆系统（多源写入、Write Guard 三档决策、Supersession 取代语义、6 种衰减 profile、Vitality 活力值、Fact Extractor 长期事实抽取、Snapshot 审计）详见 [docs/memory-architecture.md](./docs/memory-architecture.md)。
+>
+> 📖 安全策略（三维度风险模型、operation × target × boundary 分类、Approval Gate、SessionApprovalGrant 会话级授权、BoxLite 沙箱多后端、敏感路径与内网防御）详见 [docs/security-architecture.md](./docs/security-architecture.md)。
+>
+> 📖 Bandit 多臂老虎机（Thompson / UCB / ε-greedy 三策略、路由 / Worker 选择 / 记忆召回三场景、ROUTE_BANDIT_COEFF 平局拆解、Cooldown 故障保护、与 Python 实现位级对齐）详见 [docs/bandit-architecture.md](./docs/bandit-architecture.md)。
+>
+> 📖 双 Plane 执行架构（Direct / Worker 双模、共享 8 步编排流水线、RouteSelectionStep 决策、安全锁清单、Worker 自动委派 vs 模型主动 delegate_task、Workflow 引擎路径、delegated_result envelope）详见 [docs/dual-plane-architecture.md](./docs/dual-plane-architecture.md)。
 
 ## 一个更真实的工作流
 
@@ -332,3 +360,4 @@ Windows 图形化安装器，把主应用以友好的安装路径交付给最终
 认同 `真诚`、`友善`、`团结`、`专业`，欢迎加入 [LinuxDo](https://linux.do/latest)。
 
 Deeting 进展持续更新在：[Deeting 更新说明 / 讨论帖](https://linux.do/t/topic/2070886)
+

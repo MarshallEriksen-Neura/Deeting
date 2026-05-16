@@ -10,6 +10,22 @@
     ·
     <a href="./docs/macos-installation-en.md">macOS Installation</a>
     ·
+    <a href="./docs/rag-architecture.en.md">RAG Architecture</a>
+    ·
+    <a href="./docs/self-evolution-architecture.en.md">Self-Evolution Architecture</a>
+    ·
+    <a href="./docs/agent-dag-architecture.en.md">Agent DAG Architecture</a>
+    ·
+    <a href="./docs/tool-architecture.en.md">Tool Architecture</a>
+    ·
+    <a href="./docs/memory-architecture.en.md">Memory System</a>
+    ·
+    <a href="./docs/security-architecture.en.md">Security Architecture</a>
+    ·
+    <a href="./docs/bandit-architecture.en.md">Bandit Architecture</a>
+    ·
+    <a href="./docs/dual-plane-architecture.en.md">Dual-Plane Execution</a>
+    ·
     <a href="#quick-start">Quick Start</a>
   </p>
 </div>
@@ -170,7 +186,21 @@ All three entry chains share the same runtime. The desktop is always the context
 
 <p align="center"><em>Feedback writes back into routing so it tracks real usage preferences.</em></p>
 
-> 📖 For the RAG / context orchestration subsystem (Context Orchestrator, three retrieval sources, context tools, the No Double Lifecycle Rule, selected-knowledge fallback chain), see [docs/rag-architecture.md](./docs/rag-architecture.md).
+> 📖 For the RAG / context orchestration subsystem (Context Orchestrator, three retrieval sources, context tools, the No Double Lifecycle Rule, selected-knowledge fallback chain), see [docs/rag-architecture.en.md](./docs/rag-architecture.en.md).
+>
+> 📖 For the self-evolution / self-adjustment subsystem (Sovereign Charter, TaskFingerprint, 6 decision points, prior half-decay, bandit tie-breaker, posterior signals, Ingress boundary), see [docs/self-evolution-architecture.en.md](./docs/self-evolution-architecture.en.md).
+>
+> 📖 For the Agent DAG execution model (4 node types / 11 statuses, execution-graph persistence, Approval Gate, Direct/Worker planes, three-layer In-Flight Stage state machine, cross-process recovery path), see [docs/agent-dag-architecture.en.md](./docs/agent-dag-architecture.en.md).
+>
+> 📖 For the tool architecture (model-visible tool catalog, capability registry and `search_sdk`, dual-track `SKILL.md` / `llm-tool.yaml` packaging, and unified execution/approval across skills, MCP tools, and shell execution), see [docs/tool-architecture.en.md](./docs/tool-architecture.en.md).
+>
+> 📖 For the memory system (multi-source writes, three-action Write Guard, Supersession semantics, 6 decay profiles, Vitality scoring, Fact Extractor long-term facts, snapshot audit), see [docs/memory-architecture.en.md](./docs/memory-architecture.en.md).
+>
+> 📖 For the security architecture (three-dimensional risk model, operation × target × boundary classification, Approval Gate, SessionApprovalGrant session-level grants, BoxLite multi-backend sandbox, sensitive paths and private-network defense), see [docs/security-architecture.en.md](./docs/security-architecture.en.md).
+>
+> 📖 For the multi-armed bandit architecture (Thompson / UCB / ε-greedy strategies, routing / worker selection / memory recall scenes, ROUTE_BANDIT_COEFF tie-breaking, cooldown failure protection, bit-aligned with the Python implementation), see [docs/bandit-architecture.en.md](./docs/bandit-architecture.en.md).
+>
+> 📖 For the dual-plane execution architecture (Direct vs Worker modes, shared 8-step orchestration pipeline, RouteSelectionStep decision flow, safety-lock list, Worker auto-delegation vs model-initiated delegate_task, Workflow engine path, delegated_result envelope), see [docs/dual-plane-architecture.en.md](./docs/dual-plane-architecture.en.md).
 
 ## A More Truthful Workflow
 
@@ -295,7 +325,7 @@ Key directories:
 - `im`
 - `sandbox`
 
-> 📖 `desktop_runtime/context_orchestrator/` + `knowledge` + `memory` + `llm_wiki` + `retrieval_kernel` together form the local RAG / context orchestration subsystem. See [docs/rag-architecture.md](./docs/rag-architecture.md).
+> 📖 `desktop_runtime/context_orchestrator/` + `knowledge` + `memory` + `llm_wiki` + `retrieval_kernel` together form the local RAG / context orchestration subsystem. See [docs/rag-architecture.en.md](./docs/rag-architecture.en.md). The companion subsystems for self-adjustment and DAG execution are documented in [docs/self-evolution-architecture.en.md](./docs/self-evolution-architecture.en.md) and [docs/agent-dag-architecture.en.md](./docs/agent-dag-architecture.en.md).
 
 ## Subprojects
 
@@ -330,3 +360,4 @@ Windows graphical installer that packages the main app into a friendlier install
 If you value `sincerity`, `friendliness`, `solidarity`, and `professionalism`, join us at [LinuxDo](https://linux.do/latest).
 
 Deeting updates are posted at: [Deeting update thread / discussion](https://linux.do/t/topic/2070886)
+
