@@ -487,9 +487,11 @@ fn resolve_command_target<'a>(snapshot: &'a Value, target: &str) -> Option<&'a V
             .rev()
             .copied()
             .find(|command| command.get("state").and_then(Value::as_str) == Some("running")),
-        "last_failed_command" | "last_error" => commands.iter().rev().copied().find(|command| {
-            is_failed_or_error_like_command(command)
-        }),
+        "last_failed_command" | "last_error" => commands
+            .iter()
+            .rev()
+            .copied()
+            .find(|command| is_failed_or_error_like_command(command)),
         _ => commands
             .into_iter()
             .find(|command| command.get("id").and_then(Value::as_str) == Some(target)),
@@ -619,7 +621,10 @@ mod tests {
             result["sessions"][1]["summary"]["failed_command_count"],
             json!(1)
         );
-        assert_eq!(result["sessions"][1]["summary"]["has_selection"], json!(true));
+        assert_eq!(
+            result["sessions"][1]["summary"]["has_selection"],
+            json!(true)
+        );
         assert_eq!(
             result["sessions"][1]["summary"]["last_failed_command"]["id"],
             json!("cmd_2")

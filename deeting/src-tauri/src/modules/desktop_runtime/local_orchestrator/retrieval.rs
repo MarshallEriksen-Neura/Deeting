@@ -744,6 +744,11 @@ pub(super) fn build_selected_knowledge_fallback_hits(
     hits
 }
 
+/// Reciprocal rank fusion of lexical (FTS5) and semantic (LanceDB) hits.
+///
+/// RRF is intentionally scale-invariant: FTS5's unbounded `bm25()` score
+/// and LanceDB's [0,1] similarity fuse via rank alone, so we deliberately
+/// skip per-source normalization before calling `reciprocal_rank_fusion`.
 pub(super) fn fuse_selected_knowledge_hits(
     lexical_hits: Vec<LocalKnowledgeSearchHit>,
     semantic_hits: Vec<LocalKnowledgeSearchHit>,

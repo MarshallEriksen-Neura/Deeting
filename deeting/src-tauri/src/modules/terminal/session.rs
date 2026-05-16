@@ -19,8 +19,8 @@ use std::io::{Read, Write};
 #[cfg(target_os = "windows")]
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, MutexGuard};
 use std::sync::Arc;
+use std::sync::{Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
 
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};

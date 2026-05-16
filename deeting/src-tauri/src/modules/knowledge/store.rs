@@ -494,6 +494,14 @@ impl KnowledgeStore {
         )
         .await?;
 
+        // Long-text lexical search lives in SQLite FTS5 rather than the
+        // in-memory BM25 in `retrieval_kernel::ranking` — that path is
+        // sized for asset catalogs (a few hundred short records), not
+        // chunk corpora. SQLite owns the inverted index + `bm25()` in C;
+        // downstream fusion (`fuse_selected_knowledge_hits`) only uses
+        // rank ordering, so the unbounded raw score is discarded.
+        // `unicode61` is fine for mixed CJK/Latin — CJK ends up character
+        // segmented, which matches the FTS5 default for non-ICU builds.
         sqlx::query(&format!(
             r#"
             CREATE VIRTUAL TABLE IF NOT EXISTS {LOCAL_KNOWLEDGE_FTS_TABLE}

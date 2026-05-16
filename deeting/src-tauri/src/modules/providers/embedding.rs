@@ -377,36 +377,64 @@ fn split_text_for_embedding(text: &str, force: bool) -> Vec<String> {
     chunks
 }
 
+/// Combine multiple chunk embeddings into a single vector via weighted
+/// mean + L2 normalization.
+///
+/// Contract:
+/// - `vectors` and `weights` must have the same length; mismatch is an
+///   error rather than a silent zip-truncate.
+/// - `weights` are typically chunk character counts. A zero weight is
+///   honored as "skip this chunk", letting callers opt out without
+///   removing the vector from the input.
+/// - At least one weight must be > 0; otherwise `Validation` is returned
+///   (nothing to average).
+///
+/// On an all-zero merged vector the function skips L2 normalization and
+/// returns the raw (zero) average — a deliberate fallback so downstream
+/// cosine search degrades to "no matches" instead of producing NaNs.
 fn aggregate_chunk_vectors(
     vectors: Vec<Vec<f32>>,
     weights: Vec<usize>,
 ) -> Result<Vec<f32>, ProviderError> {
+    // Contract checks first — zip() below would silently truncate on a
+    // length mismatch and quietly drop data, so fail loudly before any
+    // math runs.
+    if weights.len() != vectors.len() {
+        return Err(ProviderError::Validation(format!(
+            "aggregate_chunk_vectors: weight count {} does not match vector count {}",
+            weights.len(),
+            vectors.len()
+        )));
+    }
     if vectors.is_empty() {
-        return Err(ProviderError::Network(
-            "embedding provider returned empty embedding chunks".to_string(),
+        return Err(ProviderError::Validation(
+            "aggregate_chunk_vectors: no embedding chunks to aggregate".to_string(),
         ));
     }
 
     let dim = vectors[0].len();
     if dim == 0 {
-        return Err(ProviderError::Network(
-            "embedding provider returned empty embedding vector".to_string(),
+        return Err(ProviderError::Validation(
+            "aggregate_chunk_vectors: embedding vector has zero dimension".to_string(),
         ));
     }
     if vectors.iter().any(|vector| vector.len() != dim) {
-        return Err(ProviderError::Network(
-            "embedding provider returned inconsistent dimensions".to_string(),
+        return Err(ProviderError::Validation(format!(
+            "aggregate_chunk_vectors: inconsistent vector dimensions (expected {dim})"
+        )));
+    }
+
+    let total_weight = weights.iter().map(|weight| *weight as f32).sum::<f32>();
+    if total_weight <= f32::EPSILON {
+        return Err(ProviderError::Validation(
+            "aggregate_chunk_vectors: weights must contain at least one positive value".to_string(),
         ));
     }
 
-    let total_weight = weights
-        .iter()
-        .map(|weight| (*weight).max(1) as f32)
-        .sum::<f32>()
-        .max(vectors.len() as f32);
     let mut merged = vec![0.0f32; dim];
     for (vector, weight) in vectors.iter().zip(weights.iter()) {
-        let weight = (*weight).max(1) as f32;
+        // weight == 0 intentionally excludes the chunk from the merge.
+        let weight = *weight as f32;
         for (idx, value) in vector.iter().enumerate() {
             merged[idx] += *value * weight;
         }
@@ -422,6 +450,9 @@ fn aggregate_chunk_vectors(
         .sum::<f32>()
         .sqrt();
     if norm <= f32::EPSILON {
+        // All-zero aggregate; L2 norm is undefined. Returning the raw
+        // (zero) vector makes downstream cosine search return no matches
+        // instead of dividing by ~0 and producing NaNs.
         return Ok(averaged);
     }
     Ok(averaged.into_iter().map(|value| value / norm).collect())
@@ -468,9 +499,11 @@ pub(crate) fn select_embedding_model<'a>(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_platform_embedding_proxy_body, build_platform_embedding_proxy_url,
-        select_embedding_model, split_text_for_embedding, uses_platform_proxy, EmbeddingService,
+        aggregate_chunk_vectors, build_platform_embedding_proxy_body,
+        build_platform_embedding_proxy_url, select_embedding_model, split_text_for_embedding,
+        uses_platform_proxy, EmbeddingService,
     };
+    use crate::modules::providers::error::ProviderError;
     use crate::modules::providers::types::ProviderModel;
     use axum::{
         extract::State as AxumState,
@@ -931,6 +964,38 @@ mod tests {
         let chunks = split_text_for_embedding("abcdefghij", true);
 
         assert_eq!(chunks, vec!["abcde".to_string(), "fghij".to_string()]);
+    }
+
+    #[test]
+    fn aggregate_chunk_vectors_rejects_mismatched_weight_count() {
+        let err = aggregate_chunk_vectors(vec![vec![1.0, 0.0], vec![0.0, 1.0]], vec![1])
+            .expect_err("mismatched weights should be rejected");
+
+        assert!(matches!(err, ProviderError::Validation(_)));
+        assert!(
+            err.to_string().contains("weight count"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn aggregate_chunk_vectors_allows_zero_weight_to_exclude_chunk() {
+        let vector = aggregate_chunk_vectors(vec![vec![1.0, 0.0], vec![0.0, 1.0]], vec![0, 1])
+            .expect("zero-weight chunk should be ignored");
+
+        assert_eq!(vector, vec![0.0, 1.0]);
+    }
+
+    #[test]
+    fn aggregate_chunk_vectors_rejects_all_zero_weights() {
+        let err = aggregate_chunk_vectors(vec![vec![1.0, 0.0], vec![0.0, 1.0]], vec![0, 0])
+            .expect_err("all-zero weights cannot produce an average");
+
+        assert!(matches!(err, ProviderError::Validation(_)));
+        assert!(
+            err.to_string().contains("at least one positive value"),
+            "unexpected error: {err}"
+        );
     }
 
     #[tokio::test]

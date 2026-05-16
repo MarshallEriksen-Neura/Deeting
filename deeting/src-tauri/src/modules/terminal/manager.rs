@@ -114,7 +114,11 @@ impl TerminalManager {
                     .iter()
                     .map(|(session_id, session)| TerminalSessionInfo {
                         session_id: session_id.clone(),
-                        status: if session.is_exited() { "exited" } else { "ready" },
+                        status: if session.is_exited() {
+                            "exited"
+                        } else {
+                            "ready"
+                        },
                     })
                     .collect::<Vec<_>>()
             })

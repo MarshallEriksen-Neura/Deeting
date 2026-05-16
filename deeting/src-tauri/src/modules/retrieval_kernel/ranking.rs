@@ -1,3 +1,18 @@
+//! Cross-cutting ranking primitives for retrieval.
+//!
+//! Two BM25-flavored paths coexist by design:
+//! - `bm25_asset_match_scores` (this module): in-memory BM25 over the
+//!   short asset candidate set returned by LanceDB recall. Needed because
+//!   we tokenize identifier-ish fields (`skill.x`, `pkg_name`) that
+//!   FTS5's `unicode61` tokenizer cannot split, and because callers feed
+//!   the score into `reciprocal_rank_fusion`, which expects [0,1]-
+//!   normalized maps.
+//! - SQLite FTS5 `MATCH` on `knowledge_chunk_fts` (see
+//!   `KnowledgeStore::search_local_knowledge_chunks_internal`): used for
+//!   long-text chunks. SQLite owns the inverted index + `bm25()` in C;
+//!   downstream fusion consumes rank only, so the unbounded raw score
+//!   is intentionally discarded.
+
 use std::collections::{BTreeMap, HashMap};
 
 use serde_json::Value;
