@@ -857,6 +857,7 @@ async fn advance_local_chat_execution_from_graph_state(
         last_capability_snapshot: state.last_capability_snapshot.clone(),
         terminal_context: state.terminal_context.clone(),
         last_response: state.last_response.clone(),
+        selected_knowledge_file_ids: state.selected_knowledge_file_ids.clone(),
     };
     let failed_trace_id = state.trace_id.clone();
     let failed_request_id = state.request_id.clone();

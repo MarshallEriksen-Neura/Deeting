@@ -54,6 +54,7 @@
       "detail": {
         "contextLoaded": "Loaded {count} context items",
         "contextLoadedWithSummary": "Loaded {count} context items · summary included",
+        "contextManifestLoaded": "Context tools ready · {sources} source(s), {tools} tool(s)",
         "knowledgeContextLoading": "Reading {selectedFiles} selected document(s)",
         "knowledgeContextLoaded": "Read {selectedFiles} selected document(s) · extracted {count} excerpt(s)",
         "knowledgeContextLoadedFallback": "Read {selectedFiles} selected document(s) · using {count} fallback excerpt(s)",

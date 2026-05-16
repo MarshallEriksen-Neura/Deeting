@@ -2770,8 +2770,6 @@ mod tests {
     fn capability_bridge_registry_exposes_desktop_official_skill_capabilities() {
         let specs = [
             "skill_registry.refresh",
-            "memory.append",
-            "memory.search",
             "monitor.create",
             "monitor.list",
             "provider_preset.list",
@@ -2795,6 +2793,22 @@ mod tests {
                 assert!(spec.admin_only);
             }
         }
+    }
+
+    #[test]
+    fn capability_bridge_registry_no_longer_exposes_memory_host_bridge() {
+        assert!(
+            crate::modules::capability_control_plane::find_official_skill_capability(
+                "memory.append",
+            )
+            .is_none()
+        );
+        assert!(
+            crate::modules::capability_control_plane::find_official_skill_capability(
+                "memory.search",
+            )
+            .is_none()
+        );
     }
 
     #[test]

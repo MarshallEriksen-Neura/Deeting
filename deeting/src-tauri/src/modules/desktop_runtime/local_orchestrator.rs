@@ -324,7 +324,6 @@ pub async fn execute_local_orchestrated_chat(
         input.request_id.clone(),
         &input,
         messages,
-        capability_id.clone(),
         summary_text.clone(),
         event_tx,
     );
@@ -484,6 +483,7 @@ pub async fn execute_local_orchestrated_chat(
             event_tx: ctx.event_tx.clone(),
             trace_id: Some(trace_id.clone()),
             request_id: input.request_id.clone(),
+            selected_knowledge_file_ids: ctx.selected_knowledge_file_ids.clone(),
         },
         |stage, step, state, code, meta| {
             ctx.emit_status(stage, step, state, code, meta);
@@ -996,18 +996,13 @@ pub async fn execute_local_orchestrated_chat(
                     );
                 }
             }
-            let memory_explore_arm_id = ctx
-                .prefetched_retrievals
-                .semantic_memory
-                .as_ref()
-                .and_then(|r| r.explore_arm_id.clone());
             record_task_learning_bandit_feedback(
                 app_state,
                 ctx.route_decision.as_ref(),
                 &evaluation.outcome,
                 total_latency_ms,
                 &session_id,
-                memory_explore_arm_id.as_deref(),
+                None,
             )
             .await;
             ctx.emit_status(

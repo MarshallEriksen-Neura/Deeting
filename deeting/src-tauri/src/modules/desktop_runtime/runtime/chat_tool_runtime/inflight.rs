@@ -26,6 +26,7 @@ pub(crate) fn build_persisted_chat_runtime_context_from_execution_request(
         last_capability_snapshot: request.execution_policy.capability_snapshot.clone(),
         terminal_context: request.terminal_context.clone(),
         last_response: None,
+        selected_knowledge_file_ids: request.selected_knowledge_file_ids.clone(),
     }
 }
 
@@ -54,6 +55,10 @@ pub(crate) struct PersistedChatToolRuntimeContext {
     #[serde(default)]
     pub(super) terminal_context: Option<serde_json::Value>,
     pub(super) last_response: Option<serde_json::Value>,
+    // Backwards-compat: older persisted contexts pre-date the context
+    // orchestrator manifest, so deserialize as empty when missing.
+    #[serde(default)]
+    pub(super) selected_knowledge_file_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -161,6 +166,7 @@ pub(super) fn runtime_state_from_persisted_context(
         diting_think_consumed: false,
         captured_reasoning: None,
         realtime_emitter: LocalRealtimeToolTraceEmitter::new(None, None, None),
+        selected_knowledge_file_ids: context.selected_knowledge_file_ids,
     }
 }
 
@@ -860,6 +866,7 @@ pub(super) async fn persist_running_tool_execution_runtime(
                 last_capability_snapshot: state.last_capability_snapshot.clone(),
                 terminal_context: state.terminal_context.clone(),
                 last_response: state.last_response.clone(),
+                selected_knowledge_file_ids: state.selected_knowledge_file_ids.clone(),
             }),
             state.session_id.as_str(),
             state.trace_id.as_str(),
@@ -1030,6 +1037,7 @@ pub(crate) async fn persist_suspended_execution_graph_runtime(
                 last_capability_snapshot: suspended.last_capability_snapshot.clone(),
                 terminal_context: suspended.terminal_context.clone(),
                 last_response: suspended.last_response.clone(),
+                selected_knowledge_file_ids: suspended.selected_knowledge_file_ids.clone(),
             }),
             suspended.session_id.as_str(),
             suspended.trace_id.as_str(),
@@ -1135,6 +1143,7 @@ pub(crate) async fn load_suspended_chat_tool_execution_for_resume(
                         last_capability_snapshot: None,
                         terminal_context: None,
                         last_response: None,
+                        selected_knowledge_file_ids: Vec::new(),
                     }
                 })
             });
@@ -1161,6 +1170,7 @@ pub(crate) async fn load_suspended_chat_tool_execution_for_resume(
             last_response: state.last_response.clone(),
             pending_approvals: persisted_pending_approvals,
             execution_graph,
+            selected_knowledge_file_ids: state.selected_knowledge_file_ids.clone(),
         }))
     }
 

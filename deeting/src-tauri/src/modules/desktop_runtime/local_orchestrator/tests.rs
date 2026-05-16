@@ -612,29 +612,37 @@ fn desktop_local_chat_engine_includes_route_selection_before_recipe_and_template
 }
 
 #[test]
-fn desktop_local_chat_engine_groups_retrieval_injections_in_same_layer() {
+fn desktop_local_chat_engine_uses_context_manifest_without_body_injection_steps() {
     let engine = build_desktop_local_chat_engine().expect("engine should build");
     let layers = engine.debug_layers();
 
-    let semantic_index = layers
+    let manifest_index = layers
         .iter()
-        .position(|layer| layer.iter().any(|name| name == "semantic_memory_injection"))
-        .expect("semantic_memory_injection layer");
-    let selected_index = layers
+        .position(|layer| layer.iter().any(|name| name == "context_manifest"))
+        .expect("context_manifest layer");
+    let artifact_index = layers
         .iter()
         .position(|layer| {
             layer
                 .iter()
-                .any(|name| name == "selected_knowledge_injection")
+                .any(|name| name == "generated_artifact_context_injection")
         })
-        .expect("selected_knowledge_injection layer");
-    let asset_index = layers
+        .expect("generated_artifact_context_injection layer");
+    let template_index = layers
         .iter()
-        .position(|layer| layer.iter().any(|name| name == "asset_recall_injection"))
-        .expect("asset_recall_injection layer");
+        .position(|layer| layer.iter().any(|name| name == "template_render"))
+        .expect("template_render layer");
 
-    assert_eq!(semantic_index, selected_index);
-    assert_eq!(selected_index, asset_index);
+    assert!(manifest_index < artifact_index);
+    assert!(manifest_index < template_index);
+    assert!(!layers
+        .iter()
+        .flatten()
+        .any(|name| name == "semantic_memory_injection"));
+    assert!(!layers
+        .iter()
+        .flatten()
+        .any(|name| name == "selected_knowledge_injection"));
 }
 
 #[test]

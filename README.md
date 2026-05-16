@@ -10,6 +10,8 @@
     ·
     <a href="./docs/macos-installation.md">macOS 安装说明</a>
     ·
+    <a href="./docs/rag-architecture.md">RAG 架构</a>
+    ·
     <a href="#快速开始">快速开始</a>
   </p>
 </div>
@@ -240,6 +242,8 @@ Deeting 不是只靠内建功能增长。`skills` / `mcp` 相关模块、`packag
 
 这也是为什么 Deeting 的 README 更适合围绕“桌面端能做什么”来写，而不是围绕某个外部接入渠道来组织。
 
+> 📖 想深入理解 Deeting 的 RAG / 上下文编排子系统（Context Orchestrator、三大检索源、context 工具、No Double Lifecycle Rule、selected knowledge 兜底链路），请直接阅读 [docs/rag-architecture.md](./docs/rag-architecture.md)。
+
 ## 一个更真实的工作流
 
 你可以把 Deeting 理解为下面这条链路：
@@ -368,6 +372,8 @@ bun run desktop:build
 - `sandbox`
 
 这也是为什么 README 不应该只写成“AI 聊天应用”介绍页。它已经明显超出一个普通 chat app 的范围。
+
+> 📖 其中 `desktop_runtime/context_orchestrator/` + `knowledge` + `memory` + `llm_wiki` + `retrieval_kernel` 共同构成本地 RAG / 上下文编排子系统，独立文档见 [docs/rag-architecture.md](./docs/rag-architecture.md)。
 
 ## 子项目说明
 

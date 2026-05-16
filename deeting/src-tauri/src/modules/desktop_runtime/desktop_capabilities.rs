@@ -3,7 +3,6 @@ use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::time::Instant;
 
-use crate::modules::memory::types::{CreateLocalMemoryRequest, LocalMemorySearchQuery};
 use crate::modules::monitor::types::{LocalMonitorListQuery, LocalMonitorTaskCreateRequest};
 use crate::modules::providers::protocols::build_canonical_request_from_value;
 use crate::modules::providers::types::{
@@ -37,18 +36,6 @@ const OFFICIAL_SKILL_CAPABILITIES: &[DesktopOfficialSkillCapabilitySpec] = &[
     DesktopOfficialSkillCapabilitySpec {
         id: "skill_registry.diagnostics",
         kind: DesktopCapabilityKind::SystemAction,
-        callable_from_official_skill: true,
-        admin_only: false,
-    },
-    DesktopOfficialSkillCapabilitySpec {
-        id: "memory.append",
-        kind: DesktopCapabilityKind::DirectCapability,
-        callable_from_official_skill: true,
-        admin_only: false,
-    },
-    DesktopOfficialSkillCapabilitySpec {
-        id: "memory.search",
-        kind: DesktopCapabilityKind::DirectCapability,
         callable_from_official_skill: true,
         admin_only: false,
     },
@@ -151,8 +138,6 @@ pub async fn dispatch_official_skill_capability(
     match spec.id {
         "skill_registry.refresh" => dispatch_skill_registry_refresh(arguments).await.map(Some),
         "skill_registry.diagnostics" => dispatch_skill_registry_diagnostics().await.map(Some),
-        "memory.append" => dispatch_memory_append(arguments).await.map(Some),
-        "memory.search" => dispatch_memory_search(arguments).await.map(Some),
         "monitor.create" => dispatch_monitor_create(arguments).await.map(Some),
         "monitor.list" => dispatch_monitor_list(arguments).await.map(Some),
         "provider_preset.list" => dispatch_provider_preset_list().await.map(Some),
@@ -177,18 +162,6 @@ fn global_app_state_required() -> Result<crate::state::AppState, String> {
 
 fn global_app_handle_required() -> Result<tauri::AppHandle, String> {
     crate::state::global_app_handle().ok_or_else(|| "global app handle is unavailable".to_string())
-}
-
-fn parse_memory_append_request(arguments: &Value) -> Result<CreateLocalMemoryRequest, String> {
-    let mut payload = arguments.clone();
-    if let Value::Object(object) = &mut payload {
-        if object.get("meta_info").is_none() {
-            if let Some(metadata) = object.get("metadata").cloned() {
-                object.insert("meta_info".to_string(), metadata);
-            }
-        }
-    }
-    serde_json::from_value(payload).map_err(|err| err.to_string())
 }
 
 fn parse_provider_preset(arguments: &Value) -> Result<ProviderPreset, String> {
@@ -322,31 +295,6 @@ async fn dispatch_skill_registry_diagnostics() -> Result<Value, String> {
             .await?,
     )
     .map_err(|err| err.to_string())
-}
-
-async fn dispatch_memory_append(arguments: &Value) -> Result<Value, String> {
-    let app_state = global_app_state_required()?;
-    let payload = parse_memory_append_request(arguments)?;
-    let item = app_state
-        .memory
-        .service
-        .append(payload)
-        .await
-        .map_err(|err| err.to_string())?;
-    serde_json::to_value(item).map_err(|err| err.to_string())
-}
-
-async fn dispatch_memory_search(arguments: &Value) -> Result<Value, String> {
-    let app_state = global_app_state_required()?;
-    let payload: LocalMemorySearchQuery =
-        serde_json::from_value(arguments.clone()).map_err(|err| err.to_string())?;
-    let result = app_state
-        .memory
-        .service
-        .search(payload)
-        .await
-        .map_err(|err| err.to_string())?;
-    serde_json::to_value(result).map_err(|err| err.to_string())
 }
 
 async fn dispatch_monitor_create(arguments: &Value) -> Result<Value, String> {

@@ -685,6 +685,10 @@ pub(crate) struct LocalExecutionRequest {
     pub(crate) event_tx: Option<UnboundedSender<String>>,
     pub(crate) trace_id: Option<String>,
     pub(crate) request_id: Option<String>,
+    // Selected knowledge file IDs from the chat workflow context, used as the
+    // fallback list when the model calls `context_search` with selected scope
+    // but omits `filters.selected_file_ids`.
+    pub(crate) selected_knowledge_file_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -831,6 +835,7 @@ where
         request.event_tx,
         request.trace_id.as_deref(),
         request.request_id.as_deref(),
+        request.selected_knowledge_file_ids.clone(),
     )
     .await?;
     let delegated_execution_tree = delegated_execution.as_ref().map(|execution| {

@@ -21,6 +21,11 @@ const RETRIEVAL_FUSION_WEIGHT: f64 = 48.0;
 const SEMANTIC_SCORE_FLOOR: f64 = 0.30;
 const MIN_RANK_SCORE: f64 = 8.0;
 const SEARCH_RESULT_FORMAT_VERSION: &str = "sdk_control_plane.v1";
+const LEGACY_OFFICIAL_MEMORY_SKILL_ID: &str = "official.skills.memory";
+const LEGACY_OFFICIAL_MEMORY_TOOL_NAME: &str = "search_knowledge";
+const LEGACY_OFFICIAL_MEMORY_CALLABLE_NAME: &str = "skill.official.skills.memory.search_knowledge";
+const LEGACY_OFFICIAL_MEMORY_CAPABILITY_ID: &str =
+    "skill_tool::official.skills.memory::search_knowledge";
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) enum SearchSdkDetailLevel {
@@ -156,7 +161,7 @@ pub(crate) async fn build_capability_search_result_bundle_with_feedback(
         }
     }
     let registry = build_capability_registry(mcp_store).await;
-    let mut registry_entries = registry.entries.clone();
+    let mut registry_entries = filter_legacy_official_memory_entries(registry.entries.clone());
     registry_entries.extend(
         build_memory_fallback_registry_entries(
             mcp_store,
@@ -284,6 +289,7 @@ async fn build_memory_fallback_registry_entries(
 
     memory_assets
         .into_iter()
+        .filter(|asset| !is_legacy_official_memory_skill_asset(asset))
         .filter_map(|asset| {
             let asset_type = asset
                 .get("asset_type")
@@ -336,6 +342,9 @@ pub(crate) async fn build_tool_schema_lookup_result(
 
     let registry = build_capability_registry(mcp_store).await;
     let Some(entry) = registry.entries.into_iter().find(|entry| {
+        if is_legacy_official_memory_skill_entry(entry) {
+            return false;
+        }
         entry
             .asset
             .get("name")
@@ -376,6 +385,52 @@ pub(crate) async fn build_tool_schema_lookup_result(
     });
     merge_object(&mut result, contract);
     Ok(result)
+}
+
+fn filter_legacy_official_memory_entries(
+    entries: Vec<CapabilityRegistryEntry>,
+) -> Vec<CapabilityRegistryEntry> {
+    entries
+        .into_iter()
+        .filter(|entry| !is_legacy_official_memory_skill_entry(entry))
+        .collect()
+}
+
+fn is_legacy_official_memory_skill_entry(entry: &CapabilityRegistryEntry) -> bool {
+    is_legacy_official_memory_skill_asset(&entry.asset)
+}
+
+fn is_legacy_official_memory_skill_asset(asset: &Value) -> bool {
+    let id = asset.get("id").and_then(Value::as_str).unwrap_or_default();
+    let name = asset
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let pkg_name = asset
+        .get("pkg_name")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let metadata = asset.get("metadata");
+    let skill_id = metadata
+        .and_then(|value| value.get("skill_id"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let tool_name = metadata
+        .and_then(|value| value.get("tool_name"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let callable_name = metadata
+        .and_then(|value| value.get("callable_name"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+
+    id == LEGACY_OFFICIAL_MEMORY_CAPABILITY_ID
+        || name == LEGACY_OFFICIAL_MEMORY_CALLABLE_NAME
+        || callable_name == LEGACY_OFFICIAL_MEMORY_CALLABLE_NAME
+        || (skill_id == LEGACY_OFFICIAL_MEMORY_SKILL_ID
+            && tool_name == LEGACY_OFFICIAL_MEMORY_TOOL_NAME)
+        || (pkg_name == LEGACY_OFFICIAL_MEMORY_SKILL_ID
+            && tool_name == LEGACY_OFFICIAL_MEMORY_TOOL_NAME)
 }
 
 fn build_search_result_payload(
@@ -2842,6 +2897,26 @@ mod tests {
     use crate::modules::code_mode::core_tool_contracts::desktop_runtime_core_tools;
     use crate::modules::mcp::commands::runtime::tool_resolution::ToolAvailabilityClass;
 
+    fn core_tool_entry(name: &str) -> CapabilityRegistryEntry {
+        let asset = desktop_runtime_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("{name} core tool should exist"))
+            .as_catalog_asset();
+
+        CapabilityRegistryEntry {
+            asset,
+            availability: RegistryAvailability {
+                class: ToolAvailabilityClass::CallableDirect,
+                install_required: false,
+                activation_required: false,
+                recommended_action: "execute",
+                status_reason: "core_runtime_tool",
+            },
+            tool_contract_source: None,
+        }
+    }
+
     #[test]
     fn dedupe_ranked_capabilities_keeps_highest_ranked_entry_per_name() {
         let deduped = dedupe_ranked_capabilities(vec![
@@ -2874,6 +2949,38 @@ mod tests {
         );
         assert_eq!(deduped[1].value["capability_id"], json!("tool.search_web"));
         assert_eq!(deduped[2].value["capability_id"], json!("assistant.unique"));
+    }
+
+    #[test]
+    fn legacy_official_memory_skill_entries_are_hidden_from_discovery() {
+        let stale_memory_entry = CapabilityRegistryEntry {
+            asset: json!({
+                "id": "skill_tool::official.skills.memory::search_knowledge",
+                "name": "skill.official.skills.memory.search_knowledge",
+                "description": "Search personal and system knowledge base.",
+                "asset_type": "skill_tool",
+                "source_type": "builtin",
+                "metadata": {
+                    "skill_id": "official.skills.memory",
+                    "tool_name": "search_knowledge"
+                }
+            }),
+            availability: RegistryAvailability {
+                class: ToolAvailabilityClass::CallableDirect,
+                install_required: false,
+                activation_required: false,
+                recommended_action: "execute",
+                status_reason: "ready_in_local_runtime",
+            },
+            tool_contract_source: None,
+        };
+        let context_entry = core_tool_entry("context_search");
+
+        let filtered =
+            filter_legacy_official_memory_entries(vec![stale_memory_entry, context_entry]);
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].asset["name"], json!("context_search"));
     }
 
     #[test]
@@ -3531,33 +3638,7 @@ mod tests {
             tool_contract_source: None,
         };
 
-        let memory_entry = CapabilityRegistryEntry {
-            asset: json!({
-                "id": "skill_tool::official.skills.memory::search_knowledge",
-                "name": "skill.official.skills.memory.search_knowledge",
-                "description": "Search personal and system knowledge base.",
-                "asset_type": "skill_tool",
-                "source_type": "builtin",
-                "metadata": {
-                    "skill_id": "official.skills.memory",
-                    "tool_name": "search_knowledge",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "query": {"type": "string", "description": "Search query"}
-                        }
-                    }
-                }
-            }),
-            availability: RegistryAvailability {
-                class: ToolAvailabilityClass::CallableDirect,
-                install_required: false,
-                activation_required: false,
-                recommended_action: "execute",
-                status_reason: "ready_in_local_runtime",
-            },
-            tool_contract_source: None,
-        };
+        let context_entry = core_tool_entry("context_search");
 
         let web_entry = CapabilityRegistryEntry {
             asset: json!({
@@ -3589,7 +3670,7 @@ mod tests {
             &profile.normalized,
             &[
                 shell_entry.asset.clone(),
-                memory_entry.asset.clone(),
+                context_entry.asset.clone(),
                 web_entry.asset.clone(),
             ],
         );
@@ -3609,8 +3690,8 @@ mod tests {
         )
         .map(|item| item.score)
         .unwrap_or_default();
-        let memory_rank = rank_registry_entry_with_feedback(
-            memory_entry,
+        let context_rank = rank_registry_entry_with_feedback(
+            context_entry,
             &profile,
             &SearchFeedbackContext::default(),
             &retrieval_scores,
@@ -3627,8 +3708,8 @@ mod tests {
         .unwrap_or_default();
 
         assert!(
-            shell_rank > memory_rank,
-            "shell={shell_rank}, memory={memory_rank}"
+            shell_rank > context_rank,
+            "shell={shell_rank}, context_search={context_rank}"
         );
         assert!(shell_rank > web_rank, "shell={shell_rank}, web={web_rank}");
     }
@@ -3685,34 +3766,14 @@ mod tests {
             tool_contract_source: None,
         };
 
-        let memory_entry = CapabilityRegistryEntry {
-            asset: json!({
-                "id": "skill_tool::official.skills.memory::search_knowledge",
-                "name": "skill.official.skills.memory.search_knowledge",
-                "description": "Search personal and system knowledge base.",
-                "asset_type": "skill_tool",
-                "source_type": "builtin",
-                "metadata": {
-                    "skill_id": "official.skills.memory",
-                    "tool_name": "search_knowledge"
-                }
-            }),
-            availability: RegistryAvailability {
-                class: ToolAvailabilityClass::CallableDirect,
-                install_required: false,
-                activation_required: false,
-                recommended_action: "execute",
-                status_reason: "ready_in_local_runtime",
-            },
-            tool_contract_source: None,
-        };
+        let context_entry = core_tool_entry("context_search");
 
         let bm25 = bm25_asset_match_scores(
             &profile.normalized,
             &[
                 web_entry.asset.clone(),
                 shell_entry.asset.clone(),
-                memory_entry.asset.clone(),
+                context_entry.asset.clone(),
             ],
         );
         let structured = std::collections::HashMap::new();
@@ -3739,8 +3800,8 @@ mod tests {
         )
         .map(|item| item.score)
         .unwrap_or_default();
-        let memory_rank = rank_registry_entry_with_feedback(
-            memory_entry,
+        let context_rank = rank_registry_entry_with_feedback(
+            context_entry,
             &profile,
             &SearchFeedbackContext::default(),
             &retrieval_scores,
@@ -3750,43 +3811,16 @@ mod tests {
 
         assert!(web_rank > shell_rank, "web={web_rank}, shell={shell_rank}");
         assert!(
-            web_rank > memory_rank,
-            "web={web_rank}, memory={memory_rank}"
+            web_rank > context_rank,
+            "web={web_rank}, context_search={context_rank}"
         );
     }
 
     #[test]
-    fn rank_registry_entry_prefers_memory_tools_for_memory_queries() {
+    fn rank_registry_entry_prefers_context_search_for_memory_queries() {
         let profile = QueryProfile::from_query("帮我查一下 memory 里我之前记住的内容");
 
-        let memory_entry = CapabilityRegistryEntry {
-            asset: json!({
-                "id": "skill_tool::official.skills.memory::search_knowledge",
-                "name": "skill.official.skills.memory.search_knowledge",
-                "description": "Search personal and system knowledge base.",
-                "asset_type": "skill_tool",
-                "source_type": "builtin",
-                "metadata": {
-                    "skill_id": "official.skills.memory",
-                    "tool_name": "search_knowledge",
-                    "permission_scope": ["memory_read"],
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "query": {"type": "string", "description": "Search query"}
-                        }
-                    }
-                }
-            }),
-            availability: RegistryAvailability {
-                class: ToolAvailabilityClass::CallableDirect,
-                install_required: false,
-                activation_required: false,
-                recommended_action: "execute",
-                status_reason: "ready_in_local_runtime",
-            },
-            tool_contract_source: None,
-        };
+        let context_entry = core_tool_entry("context_search");
 
         let shell_entry = CapabilityRegistryEntry {
             asset: json!({
@@ -3833,7 +3867,7 @@ mod tests {
         let bm25 = bm25_asset_match_scores(
             &profile.normalized,
             &[
-                memory_entry.asset.clone(),
+                context_entry.asset.clone(),
                 shell_entry.asset.clone(),
                 web_entry.asset.clone(),
             ],
@@ -3846,13 +3880,13 @@ mod tests {
             fused: reciprocal_rank_fusion(&[&bm25, &structured]),
         };
 
-        let memory_rank = rank_registry_entry_with_feedback(
-            memory_entry,
+        let context_rank = rank_registry_entry_with_feedback(
+            context_entry,
             &profile,
             &SearchFeedbackContext::default(),
             &retrieval_scores,
         )
-        .expect("memory rank")
+        .expect("context_search rank")
         .score;
         let shell_rank = rank_registry_entry_with_feedback(
             shell_entry,
@@ -3872,12 +3906,12 @@ mod tests {
         .unwrap_or_default();
 
         assert!(
-            memory_rank > shell_rank,
-            "memory={memory_rank}, shell={shell_rank}"
+            context_rank > shell_rank,
+            "context_search={context_rank}, shell={shell_rank}"
         );
         assert!(
-            memory_rank > web_rank,
-            "memory={memory_rank}, web={web_rank}"
+            context_rank > web_rank,
+            "context_search={context_rank}, web={web_rank}"
         );
     }
 

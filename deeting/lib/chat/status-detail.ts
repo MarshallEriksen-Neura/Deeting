@@ -17,6 +17,15 @@ export function resolveStatusDetail(
         ? t("status.detail.contextLoadedWithSummary", { count })
         : t("status.detail.contextLoaded", { count })
     }
+    case "context.manifest.loaded": {
+      const sources = Array.isArray(meta?.available_sources)
+        ? meta.available_sources.length
+        : 0
+      const tools = Array.isArray(meta?.available_tools)
+        ? meta.available_tools.length
+        : 0
+      return t("status.detail.contextManifestLoaded", { sources, tools })
+    }
     case "knowledge.context.loading": {
       const selectedFiles = Number(meta?.selected_files ?? 0)
       return t("status.detail.knowledgeContextLoading", { selectedFiles })

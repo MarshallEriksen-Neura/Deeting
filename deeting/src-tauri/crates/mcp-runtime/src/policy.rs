@@ -19,6 +19,10 @@ pub const ATTACH_CAPABILITY_TOOL_NAME: &str = "attach_capability";
 pub const DETACH_CAPABILITY_TOOL_NAME: &str = "detach_capability";
 pub const SYS_SUBMIT_ONBOARDING_REQUEST_TOOL_NAME: &str = "sys_submit_onboarding_request";
 pub const REFRESH_SKILL_INDEX_TOOL_NAME: &str = "refresh_skill_index";
+pub const CONTEXT_SEARCH_TOOL_NAME: &str = "context_search";
+pub const CONTEXT_OPEN_TOOL_NAME: &str = "context_open";
+pub const CONTEXT_EXPAND_TOOL_NAME: &str = "context_expand";
+pub const CONTEXT_SUMMARIZE_EVIDENCE_TOOL_NAME: &str = "context_summarize_evidence";
 
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
@@ -141,6 +145,10 @@ pub fn resident_capability_control_tool_names() -> Vec<String> {
         "terminal_context_read",
         "terminal_context_pack",
         "terminal_write_input",
+        CONTEXT_SEARCH_TOOL_NAME,
+        CONTEXT_OPEN_TOOL_NAME,
+        CONTEXT_EXPAND_TOOL_NAME,
+        CONTEXT_SUMMARIZE_EVIDENCE_TOOL_NAME,
     ]
     .into_iter()
     .map(str::to_string)
@@ -239,6 +247,10 @@ pub fn full_execution_tool_names() -> Vec<String> {
         "terminal_context_read",
         "terminal_context_pack",
         "terminal_write_input",
+        CONTEXT_SEARCH_TOOL_NAME,
+        CONTEXT_OPEN_TOOL_NAME,
+        CONTEXT_EXPAND_TOOL_NAME,
+        CONTEXT_SUMMARIZE_EVIDENCE_TOOL_NAME,
         SYS_SUBMIT_ONBOARDING_REQUEST_TOOL_NAME,
         REFRESH_SKILL_INDEX_TOOL_NAME,
     ]
@@ -307,6 +319,30 @@ mod tests {
             meta.get("prefer_workflow_runtime").and_then(Value::as_bool),
             Some(true)
         );
+    }
+
+    #[test]
+    fn resident_policy_exposes_context_tools() {
+        let tools = resident_capability_control_tool_names();
+
+        assert!(tools.iter().any(|name| name == CONTEXT_SEARCH_TOOL_NAME));
+        assert!(tools.iter().any(|name| name == CONTEXT_OPEN_TOOL_NAME));
+        assert!(tools.iter().any(|name| name == CONTEXT_EXPAND_TOOL_NAME));
+        assert!(tools
+            .iter()
+            .any(|name| name == CONTEXT_SUMMARIZE_EVIDENCE_TOOL_NAME));
+    }
+
+    #[test]
+    fn full_execution_policy_exposes_context_tools() {
+        let tools = full_execution_tool_names();
+
+        assert!(tools.iter().any(|name| name == CONTEXT_SEARCH_TOOL_NAME));
+        assert!(tools.iter().any(|name| name == CONTEXT_OPEN_TOOL_NAME));
+        assert!(tools.iter().any(|name| name == CONTEXT_EXPAND_TOOL_NAME));
+        assert!(tools
+            .iter()
+            .any(|name| name == CONTEXT_SUMMARIZE_EVIDENCE_TOOL_NAME));
     }
 
     #[test]

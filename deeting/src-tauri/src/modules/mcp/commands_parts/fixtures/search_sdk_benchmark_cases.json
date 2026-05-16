@@ -20,7 +20,7 @@
   {
     "query": "帮我查一下之前记住的内容",
     "embedding": [0.0, 0.0, 1.0, 0.0, 0.0],
-    "expected_name": "skill.official.skills.memory.search_knowledge",
+    "expected_name": "context_search",
     "expected_group": "capabilities",
     "expected_intent": "general_lookup",
     "expected_domain": "memory",

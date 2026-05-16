@@ -23,6 +23,10 @@ pub(crate) struct SuspendedChatToolExecution {
     pub(super) last_response: Option<serde_json::Value>,
     pub(super) pending_approvals: Vec<super::inflight::PersistedPendingApproval>,
     pub(super) execution_graph: serde_json::Value,
+    // Carries the workflow-supplied selected knowledge file ids so that the
+    // context tool fallback (used by `context_search` with `scope: "selected"`
+    // but no `filters.selected_file_ids`) still works after suspend/resume.
+    pub(super) selected_knowledge_file_ids: Vec<String>,
 }
 
 impl SuspendedChatToolExecution {
@@ -72,6 +76,7 @@ impl SuspendedChatToolExecution {
             last_response: state.last_response.clone(),
             pending_approvals: Vec::new(),
             execution_graph,
+            selected_knowledge_file_ids: state.selected_knowledge_file_ids.clone(),
         }
     }
 
@@ -103,6 +108,7 @@ impl SuspendedChatToolExecution {
                 Some(self.trace_id.as_str()),
                 self.request_id.as_deref(),
             ),
+            selected_knowledge_file_ids: self.selected_knowledge_file_ids,
         }
     }
 

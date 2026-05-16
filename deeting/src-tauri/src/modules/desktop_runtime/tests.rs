@@ -2,7 +2,7 @@
 fn desktop_capability_lookup_is_available() {
     let spec =
         crate::modules::desktop_runtime::desktop_capabilities::find_official_skill_capability(
-            "memory.append",
+            "skill_registry.refresh",
         );
     assert!(spec.is_some());
 }

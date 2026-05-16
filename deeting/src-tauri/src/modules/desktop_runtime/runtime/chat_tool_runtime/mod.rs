@@ -25,6 +25,9 @@ use crate::modules::custom_task_agents::types::{
     CreateCustomTaskAgentRequest, CustomTaskAgentPreviewRequest,
 };
 use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUNDS_CONFIG_KEY};
+use crate::modules::desktop_runtime::context_orchestrator::{
+    execute_context_tool, is_context_tool,
+};
 use crate::modules::desktop_runtime::runtime::execution_plane::{
     DelegatedExecutionAction, DelegatedExecutionChildRecord,
 };
@@ -282,6 +285,10 @@ struct LocalChatToolRuntimeState {
     terminal_context: Option<serde_json::Value>,
     last_response: Option<serde_json::Value>,
     realtime_emitter: LocalRealtimeToolTraceEmitter,
+    // Selected knowledge file IDs supplied by the workflow context manifest,
+    // used as a fallback when the model calls `context_search` with
+    // `scope: "selected"` but omits `filters.selected_file_ids`.
+    selected_knowledge_file_ids: Vec<String>,
 }
 
 struct LocalChatToolRuntimeOutput {
@@ -334,6 +341,7 @@ pub(crate) async fn run_local_chat_complete_with_tools(
     event_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
     trace_id: Option<&str>,
     request_id: Option<&str>,
+    selected_knowledge_file_ids: Vec<String>,
 ) -> Result<serde_json::Value, String> {
     let configured_max_rounds = app_state
         .mcp
@@ -399,6 +407,7 @@ pub(crate) async fn run_local_chat_complete_with_tools(
             Some(trace_id.as_str()),
             request_id,
         ),
+        selected_knowledge_file_ids,
     };
     continue_local_chat_complete_with_tools(app, app_state, state)
         .await
@@ -519,6 +528,7 @@ async fn continue_local_chat_complete_with_tools(
                 Some(state.trace_id.as_str()),
                 state.request_id.as_deref(),
             ),
+            selected_knowledge_file_ids: state.selected_knowledge_file_ids.clone(),
         };
         match process_chat_tool_calls(
             app,
@@ -1311,6 +1321,7 @@ async fn process_chat_tool_calls(
                 last_response: state.last_response.clone(),
                 diting_think_consumed: state.diting_think_consumed,
                 captured_reasoning: state.captured_reasoning.clone(),
+                selected_knowledge_file_ids: state.selected_knowledge_file_ids.clone(),
                 realtime_emitter: LocalRealtimeToolTraceEmitter::new(
                     None,
                     Some(state.trace_id.as_str()),
@@ -1359,6 +1370,46 @@ async fn process_chat_tool_calls(
                         Some(call_id.as_str()),
                         &tool_name,
                         "TERMINAL_CONTEXT_FAILED",
+                        err,
+                    );
+                }
+            }
+        } else if is_context_tool(&tool_name) {
+            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
+            match execute_context_tool(
+                app_state,
+                &tool_name,
+                &call.arguments,
+                &state.selected_knowledge_file_ids,
+            )
+            .await
+            {
+                Ok(result) => {
+                    synthesized = true;
+                    let meta = serde_json::json!({
+                        "id": call_id.as_str(),
+                        "name": tool_name,
+                        "status": "success",
+                        "result": result,
+                    });
+                    let mut streamed_blocks = Vec::new();
+                    append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                    realtime_emitter.emit_blocks(streamed_blocks);
+                    tool_call_meta.push(meta);
+                    results.push(format!(
+                        "Context tool result:\n{}",
+                        serde_json::to_string_pretty(&result).unwrap_or_else(|_| "{}".to_string())
+                    ));
+                }
+                Err(err) => {
+                    synthesized = true;
+                    push_local_tool_call_error_meta(
+                        &mut tool_call_meta,
+                        &mut results,
+                        realtime_emitter,
+                        Some(call_id.as_str()),
+                        &tool_name,
+                        "CONTEXT_TOOL_FAILED",
                         err,
                     );
                 }

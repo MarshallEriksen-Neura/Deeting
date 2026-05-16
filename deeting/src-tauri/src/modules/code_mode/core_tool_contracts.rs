@@ -1640,12 +1640,156 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
         terminal_context_read_contract(),
         terminal_context_pack_contract(),
         terminal_write_input_contract(),
+        context_search_contract(),
+        context_open_contract(),
+        context_expand_contract(),
+        context_summarize_evidence_contract(),
         build_shell_execute_core_tool_contract(),
         inspect_generated_artifact_contract(),
         patch_generated_artifact_contract(),
         write_docx_contract(),
         write_pptx_contract(),
     ]
+}
+
+fn context_source_schema(include_auto: bool) -> Value {
+    let enum_values = if include_auto {
+        json!(["auto", "memory", "llm_wiki", "knowledge"])
+    } else {
+        json!(["memory", "llm_wiki", "knowledge"])
+    };
+    json!({
+        "type": "string",
+        "enum": enum_values,
+        "description": "Context source to route through. The context layer routes only; source services own ranking and lifecycle semantics."
+    })
+}
+
+fn context_envelope_output_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "format_version": {"type": "string"},
+            "tool": {"type": "string"},
+            "source": {"type": "string"},
+            "query": {"type": ["string", "null"]},
+            "id": {"type": ["string", "null"]},
+            "envelope": {"type": "object"},
+            "envelopes": {"type": "array"},
+            "errors": {"type": "array"}
+        },
+        "additionalProperties": true
+    })
+}
+
+fn context_tool_contract(
+    name: &'static str,
+    description: &'static str,
+    input_schema: Value,
+    example_arguments: Value,
+) -> CoreToolContract {
+    CoreToolContract {
+        name,
+        description,
+        input_schema,
+        output_schema: context_envelope_output_schema(),
+        permission_scope: &["context_read", "local_runtime"],
+        read_only: true,
+        mutating: false,
+        risk_level: "LOW",
+        example_arguments,
+    }
+}
+
+fn context_search_contract() -> CoreToolContract {
+    context_tool_contract(
+        "context_search",
+        "Search local context sources and return normalized evidence envelopes. Use this when the manifest lists relevant memory, LLM Wiki, or local knowledge but the prompt does not include body chunks. Scores are source-native: memory is already lifecycle-reranked by MemoryService, LLM Wiki uses corpus relevance, and knowledge uses KnowledgeStore relevance.",
+        json!({
+            "type": "object",
+            "properties": {
+                "source": context_source_schema(true),
+                "query": {"type": "string", "description": "Natural-language evidence query."},
+                "scope": {
+                    "type": "string",
+                    "enum": ["selected", "all", "folder", "workspace", "session"],
+                    "description": "Source-local search scope. For selected knowledge, pass selected file ids in filters."
+                },
+                "limit": {"type": "integer", "minimum": 1, "maximum": 12, "default": 6},
+                "include_neighbors": {"type": "boolean", "description": "Hint that nearby chunks may be needed. Use context_expand for actual expansion."},
+                "filters": {
+                    "type": "object",
+                    "description": "Optional source-specific filters such as selected_file_ids, file_ids, category, source, or tags.",
+                    "additionalProperties": true
+                }
+            },
+            "required": ["query"],
+            "additionalProperties": true
+        }),
+        json!({"source": "knowledge", "query": "pricing assumptions", "scope": "selected", "limit": 6, "filters": {"selected_file_ids": ["file-1"]}}),
+    )
+}
+
+fn context_open_contract() -> CoreToolContract {
+    context_tool_contract(
+        "context_open",
+        "Open one source-specific context item by id and return a normalized evidence envelope. Use ids returned by context_search; knowledge ids are file_id:chunk_index locators.",
+        json!({
+            "type": "object",
+            "properties": {
+                "source_type": context_source_schema(false),
+                "source": context_source_schema(false),
+                "id": {"type": "string", "description": "Source-specific id returned by context_search."},
+                "window": {"type": "integer", "minimum": 0, "maximum": 10, "default": 1},
+                "file_id": {"type": "string", "description": "Optional knowledge file id when id is not a file_id:chunk_index locator."},
+                "chunk_index": {"type": "integer", "description": "Optional knowledge chunk index."},
+                "query": {"type": "string", "description": "Optional LLM Wiki query hint when reopening a wiki hit."}
+            },
+            "required": ["source_type", "id"],
+            "additionalProperties": true
+        }),
+        json!({"source_type": "knowledge", "id": "file-1:3", "window": 1}),
+    )
+}
+
+fn context_expand_contract() -> CoreToolContract {
+    context_tool_contract(
+        "context_expand",
+        "Expand around a context evidence item and return neighboring source material without changing source scores. Knowledge expansion opens neighboring chunks around file_id:chunk_index.",
+        json!({
+            "type": "object",
+            "properties": {
+                "source_type": context_source_schema(false),
+                "source": context_source_schema(false),
+                "id": {"type": "string", "description": "Source-specific id returned by context_search."},
+                "window": {"type": "integer", "minimum": 1, "maximum": 10, "default": 2},
+                "file_id": {"type": "string", "description": "Optional knowledge file id when id is not a file_id:chunk_index locator."},
+                "chunk_index": {"type": "integer", "description": "Optional knowledge chunk index."},
+                "query": {"type": "string", "description": "Optional LLM Wiki query hint."}
+            },
+            "required": ["source_type", "id"],
+            "additionalProperties": true
+        }),
+        json!({"source_type": "knowledge", "id": "file-1:3", "window": 2}),
+    )
+}
+
+fn context_summarize_evidence_contract() -> CoreToolContract {
+    context_tool_contract(
+        "context_summarize_evidence",
+        "Deterministically compress returned evidence envelopes for a bounded follow-up answer. This preserves source refs and score semantics and does not act as a hidden answer generator.",
+        json!({
+            "type": "object",
+            "properties": {
+                "envelope": {"type": "object", "description": "One context evidence envelope."},
+                "envelopes": {"type": "array", "description": "Multiple context evidence envelopes."},
+                "max_items": {"type": "integer", "minimum": 1, "maximum": 20, "default": 8},
+                "max_chars_per_item": {"type": "integer", "minimum": 120, "maximum": 2000, "default": 500}
+            },
+            "additionalProperties": true
+        }),
+        json!({"envelopes": [], "max_items": 6, "max_chars_per_item": 500}),
+    )
 }
 
 fn terminal_context_peek_contract() -> CoreToolContract {
@@ -2313,6 +2457,45 @@ mod tests {
             tool.permission_scope,
             &["terminal_context", "local_runtime"]
         );
+    }
+
+    #[test]
+    fn core_tool_registry_includes_context_tools_as_low_risk_read_only() {
+        let tools = desktop_runtime_core_tools();
+
+        for name in [
+            "context_search",
+            "context_open",
+            "context_expand",
+            "context_summarize_evidence",
+        ] {
+            let tool = tools
+                .iter()
+                .find(|tool| tool.name == name)
+                .unwrap_or_else(|| panic!("{name} core tool should exist"));
+            assert!(tool.read_only, "{name} should be read-only");
+            assert!(!tool.mutating, "{name} should not mutate state");
+            assert_eq!(tool.risk_level, "LOW");
+            assert_eq!(tool.permission_scope, &["context_read", "local_runtime"]);
+        }
+    }
+
+    #[test]
+    fn context_search_contract_exposes_source_native_score_guidance() {
+        let tool = desktop_runtime_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == "context_search")
+            .expect("context_search core tool should exist");
+
+        assert!(tool.description.contains("source-native"));
+        assert!(tool.description.contains("MemoryService"));
+        assert!(tool
+            .input_schema
+            .get("properties")
+            .and_then(|value| value.get("source"))
+            .and_then(|value| value.get("enum"))
+            .and_then(Value::as_array)
+            .is_some_and(|items| items.iter().any(|item| item == "auto")));
     }
 
     #[test]

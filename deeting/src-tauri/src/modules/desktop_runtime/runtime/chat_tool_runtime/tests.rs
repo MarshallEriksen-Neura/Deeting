@@ -879,6 +879,7 @@ fn build_max_rounds_exceeded_response_appends_visible_notice() {
             Some("trace-max-rounds-1"),
             None,
         ),
+        selected_knowledge_file_ids: Vec::new(),
     };
 
     let response = build_max_rounds_exceeded_response(&state);
@@ -957,6 +958,7 @@ fn rewind_round_for_post_approval_continuation_does_not_consume_user_round_budge
             Some("trace-approval-round-1"),
             None,
         ),
+        selected_knowledge_file_ids: Vec::new(),
     };
 
     rewind_round_for_post_approval_continuation(&mut state);
@@ -1174,6 +1176,7 @@ fn suspended_execution_keeps_remaining_pending_approvals_after_one_is_approved()
             ],
             "events": []
         }),
+        selected_knowledge_file_ids: Vec::new(),
     };
 
     let remaining_call_ids = suspended.sync_remaining_pending_approvals("approval-1");
@@ -1307,6 +1310,7 @@ fn sync_remaining_pending_approvals_prefers_token_bound_graph_identity() {
             ],
             "events": []
         }),
+        selected_knowledge_file_ids: Vec::new(),
     };
 
     mark_approval_gate_approving(&mut suspended, Some("approval-1"), Some("call-da3d"));

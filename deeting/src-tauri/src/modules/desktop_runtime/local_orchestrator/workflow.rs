@@ -20,10 +20,7 @@ use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
 use mcp_transport::gateway::GeneratedArtifactContext;
 
-use super::retrieval::{
-    ContextRetrievalPrefetchStep, PrefetchedRetrievals, SelectedKnowledgeInjectionStep,
-    SemanticMemoryInjectionStep,
-};
+use super::retrieval::ContextManifestStep;
 use super::LocalOrchestratorInput;
 
 const LOCAL_DELTA_CHUNK_CHARS: usize = 64;
@@ -477,7 +474,6 @@ pub(crate) enum ContextPatch {
         embedding: Option<Vec<f32>>,
         attempted: bool,
     },
-    SetPrefetchedRetrievals(PrefetchedRetrievals),
     EmitStatus(StatusPatch),
 }
 
@@ -751,9 +747,7 @@ pub(super) fn build_desktop_local_chat_engine(
     LocalOrchestrationEngine::new(vec![
         Box::new(SummaryInjectionStep),
         Box::new(PersonaPromptInjectionStep),
-        Box::new(ContextRetrievalPrefetchStep),
-        Box::new(SemanticMemoryInjectionStep),
-        Box::new(SelectedKnowledgeInjectionStep),
+        Box::new(ContextManifestStep),
         Box::new(GeneratedArtifactContextInjectionStep),
         Box::new(RouteSelectionStep),
         Box::new(SkillRecipeInjectionStep),
@@ -774,7 +768,6 @@ pub(super) struct LocalWorkflowContext {
     pub(super) status_stream: bool,
     pub(super) started_at: Instant,
     pub(super) event_tx: Option<UnboundedSender<String>>,
-    pub(super) capability_id: Option<String>,
     pub(super) explicit_task_agent_id: Option<String>,
     pub(super) summary_text: Option<String>,
     pub(super) messages: Vec<LocalChatInputMessage>,
@@ -797,7 +790,6 @@ pub(super) struct LocalWorkflowContext {
     pub(super) task_fingerprint: Option<TaskFingerprint>,
     pub(super) request_query_embedding: Option<Vec<f32>>,
     pub(super) request_query_embedding_attempted: bool,
-    pub(super) prefetched_retrievals: PrefetchedRetrievals,
     pub(super) locale: Option<String>,
 }
 
@@ -808,7 +800,6 @@ impl LocalWorkflowContext {
         request_id: Option<String>,
         input: &LocalOrchestratorInput,
         messages: Vec<LocalChatInputMessage>,
-        capability_id: Option<String>,
         summary_text: Option<String>,
         event_tx: Option<UnboundedSender<String>>,
     ) -> Self {
@@ -823,7 +814,6 @@ impl LocalWorkflowContext {
             status_stream: input.status_stream,
             started_at: Instant::now(),
             event_tx,
-            capability_id,
             explicit_task_agent_id: input.explicit_task_agent_id.clone(),
             summary_text,
             messages,
@@ -844,7 +834,6 @@ impl LocalWorkflowContext {
             task_fingerprint: None,
             request_query_embedding: None,
             request_query_embedding_attempted: false,
-            prefetched_retrievals: PrefetchedRetrievals::default(),
             locale: input.locale.clone(),
         }
     }
@@ -1068,9 +1057,6 @@ impl LocalWorkflowContext {
                 self.request_query_embedding = embedding;
                 self.request_query_embedding_attempted = attempted;
             }
-            ContextPatch::SetPrefetchedRetrievals(prefetched_retrievals) => {
-                self.prefetched_retrievals = prefetched_retrievals;
-            }
             ContextPatch::EmitStatus(status) => {
                 self.emit_status(
                     &status.stage,
@@ -1219,7 +1205,6 @@ fn context_patch_conflict_key(patch: &ContextPatch) -> Option<&'static str> {
         ContextPatch::SetSelectedPromptVariant(_) => Some("set_selected_prompt_variant"),
         ContextPatch::SetTaskFingerprint(_) => Some("set_task_fingerprint"),
         ContextPatch::SetRequestQueryEmbedding { .. } => Some("set_request_query_embedding"),
-        ContextPatch::SetPrefetchedRetrievals(_) => Some("set_prefetched_retrievals"),
         ContextPatch::PrependMessages(_) | ContextPatch::EmitStatus(_) => None,
     }
 }
@@ -1406,7 +1391,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for GeneratedArtifactContextInjecti
     }
 
     fn depends_on(&self) -> &'static [&'static str] {
-        &["selected_knowledge_injection"]
+        &["context_manifest"]
     }
 
     fn execute<'a>(
@@ -1619,7 +1604,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for TemplateRenderStep {
         &[
             "summary_injection",
             "persona_prompt_injection",
-            "semantic_memory_injection",
+            "context_manifest",
             "route_selection",
             "skill_recipe_injection",
             "prompt_variant_selection",
