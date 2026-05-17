@@ -6,6 +6,7 @@ use crate::modules::desktop_runtime::context_orchestrator::trace::ContextTrace;
 
 pub const CONTEXT_TOOL_NAMES: &[&str] = &[
     "context_search",
+    "context_search_multi",
     "context_open",
     "context_expand",
     "context_summarize_evidence",
@@ -165,6 +166,7 @@ pub fn render_context_manifest_prompt(manifest: &ContextManifest) -> Option<Stri
         ));
         lines.push("Context tool strategy: search before using document or wiki evidence; open the strongest hit before citing it; expand when adjacent chunks are needed; summarize only to reduce already-returned evidence.".to_string());
         lines.push("Query crafting: before calling `context_search`, rewrite the user's wording into a search-friendly form — replace pronouns with specific entities, expand acronyms or jargon, and split multi-intent questions into separate targeted queries. Vague queries usually return `coverage_signals.confidence: ambiguous` envelopes that force a re-search anyway, so spend the effort up front.".to_string());
+        lines.push("Multi-query fanout: when one query is unlikely to capture all relevant evidence (broad topics, synonyms, term ambiguity) OR when an earlier `context_search` returned `coverage_signals.confidence: ambiguous`, call `context_search_multi` with 2-5 semantically distinct rewrites of the same intent. The runtime concurrently retrieves from one source per query and merges results via Reciprocal Rank Fusion. Pick rewrites that differ in vocabulary or perspective, not surface paraphrases. Fanout is intra-source only — choose `source: memory | llm_wiki | knowledge`, not auto.".to_string());
         lines.push("Source-local filters: memory supports filters.session_id, capability_id, category, source, tags; llm_wiki supports filters.scope, doc_id, relative_path, relative_path_prefix; knowledge supports filters.selected_file_ids/file_ids for selected document search.".to_string());
         lines.push("Evidence envelopes include a `coverage_signals` object describing the score distribution. Read `coverage_signals.confidence` before acting:".to_string());
         lines.push("- `strong`: the top hit clearly dominates; answer with that evidence and cite source_refs.".to_string());

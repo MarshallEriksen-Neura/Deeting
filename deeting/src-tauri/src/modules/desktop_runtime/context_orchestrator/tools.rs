@@ -1,3 +1,4 @@
+use futures_util::future::join_all;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -10,6 +11,7 @@ use crate::modules::desktop_runtime::context_orchestrator::envelope::{
     ContextNextAction, ContextSourceRef, ContextSourceType,
 };
 use crate::modules::desktop_runtime::context_orchestrator::fsm::CONTEXT_TOOL_NAMES;
+use crate::modules::desktop_runtime::context_orchestrator::fusion::{rrf_fuse, DEFAULT_RRF_K};
 use crate::modules::desktop_runtime::context_orchestrator::trace::ContextTrace;
 use crate::modules::knowledge::types::{
     LocalKnowledgeChunk, LocalKnowledgeFile, LocalKnowledgeSearchHit,
@@ -42,6 +44,9 @@ pub async fn execute_context_tool(
         "context_search" => {
             execute_context_search(app_state, arguments, context_selected_file_ids).await
         }
+        "context_search_multi" => {
+            execute_context_search_multi(app_state, arguments, context_selected_file_ids).await
+        }
         "context_open" => execute_context_open(app_state, arguments).await,
         "context_expand" => execute_context_expand(app_state, arguments).await,
         "context_summarize_evidence" => execute_context_summarize_evidence(arguments),
@@ -66,6 +71,22 @@ struct ContextSearchArgs {
     limit: Option<usize>,
     #[serde(default)]
     include_neighbors: Option<bool>,
+    #[serde(default)]
+    filters: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ContextSearchMultiArgs {
+    /// Required: which single source to fan out across. `auto` is rejected
+    /// because RRF fusion is intra-source only — mixing memory/wiki/knowledge
+    /// scores would violate the No Double Lifecycle Rule.
+    source: String,
+    /// 2-5 semantically distinct rewrites of the same intent.
+    queries: Vec<String>,
+    #[serde(default)]
+    scope: Option<String>,
+    #[serde(default)]
+    limit: Option<usize>,
     #[serde(default)]
     filters: Option<Value>,
 }
@@ -247,6 +268,149 @@ async fn search_source(
             .await
         }
     }
+}
+
+async fn execute_context_search_multi(
+    app_state: &AppState,
+    arguments: &Value,
+    context_selected_file_ids: &[String],
+) -> Result<Value, String> {
+    let args: ContextSearchMultiArgs =
+        serde_json::from_value(arguments.clone()).map_err(|err| err.to_string())?;
+
+    let source_str = args.source.trim();
+    if source_str.is_empty() || source_str.eq_ignore_ascii_case("auto") {
+        return Err("context_search_multi requires an explicit source (memory|llm_wiki|knowledge); auto is rejected because RRF fusion is intra-source only".to_string());
+    }
+    let source_type = parse_source_type(source_str)?;
+
+    let queries: Vec<String> = args
+        .queries
+        .iter()
+        .map(|q| q.trim().to_string())
+        .filter(|q| !q.is_empty())
+        .collect();
+    if queries.len() < 2 {
+        return Err("context_search_multi requires at least 2 non-empty queries; for a single query call context_search instead".to_string());
+    }
+    if queries.len() > 5 {
+        return Err("context_search_multi accepts at most 5 queries".to_string());
+    }
+
+    let limit = args.limit.unwrap_or(6).clamp(1, 12);
+    let scope = args.scope.as_deref().unwrap_or("all");
+    let per_query_limit = limit.saturating_mul(2).min(20);
+
+    let futures = queries.iter().map(|query| {
+        search_source(
+            app_state,
+            source_type,
+            query,
+            scope,
+            per_query_limit,
+            args.filters.as_ref(),
+            context_selected_file_ids,
+        )
+    });
+    let results: Vec<Result<ContextEvidenceEnvelope, String>> = join_all(futures).await;
+
+    let mut envelopes: Vec<ContextEvidenceEnvelope> = Vec::with_capacity(results.len());
+    let mut errors: Vec<Value> = Vec::new();
+    for (index, result) in results.into_iter().enumerate() {
+        match result {
+            Ok(env) => envelopes.push(env),
+            Err(error) => errors.push(json!({
+                "query_index": index,
+                "query": queries.get(index),
+                "error": error,
+            })),
+        }
+    }
+    if envelopes.is_empty() {
+        return Err(format!(
+            "context_search_multi: all {} queries against {} failed",
+            queries.len(),
+            source_type.as_str()
+        ));
+    }
+
+    let per_query_counts: Vec<usize> = envelopes.iter().map(|env| env.items.len()).collect();
+    let base_score_semantics = envelopes[0].score_semantics.clone();
+
+    let fused = rrf_fuse(&envelopes, DEFAULT_RRF_K, limit);
+    let fused_count = fused.len();
+
+    let items: Vec<ContextEvidenceItem> = fused
+        .into_iter()
+        .map(|fitem| {
+            let mut item = fitem.item;
+            let appearances = fitem
+                .appearances
+                .iter()
+                .map(|appearance| {
+                    json!({
+                        "query_index": appearance.query_index,
+                        "query": queries.get(appearance.query_index),
+                        "rank": appearance.rank,
+                        "source_score": appearance.source_score,
+                    })
+                })
+                .collect::<Vec<_>>();
+            if let Some(obj) = item.score_breakdown.as_object_mut() {
+                obj.insert("fused_rrf_score".to_string(), json!(fitem.fused_rrf_score));
+                obj.insert("rrf_appearances".to_string(), json!(appearances));
+            }
+            item
+        })
+        .collect();
+
+    let signals = ContextCoverageSignals::from_items(&items);
+    let next_action = next_action_for_items(&items);
+
+    let trace = ContextTrace::default().record(
+        "retrieve_multi",
+        json!({
+            "source_type": source_type.as_str(),
+            "queries": queries,
+            "per_query_envelope_counts": per_query_counts,
+            "per_query_limit": per_query_limit,
+            "fused_count": fused_count,
+            "fusion_method": "rrf",
+            "rrf_k": DEFAULT_RRF_K,
+            "errors": errors,
+            "confidence": signals.confidence,
+            "top_score": signals.top_score,
+            "score_gap_ratio": signals.score_gap_ratio,
+        }),
+    );
+
+    let envelope = ContextEvidenceEnvelope::new(
+        source_type,
+        queries.join(" | "),
+        items,
+        format!(
+            "{} (RRF-fused across {} queries; item.score remains source-native, fused_rrf_score lives in score_breakdown)",
+            base_score_semantics,
+            queries.len()
+        ),
+        next_action,
+        trace,
+    );
+
+    Ok(json!({
+        "format_version": "context_evidence.v1",
+        "tool": "context_search_multi",
+        "source": source_type.as_str(),
+        "queries": queries,
+        "envelope": envelope_value(envelope)?,
+        "errors": errors,
+        "fusion": {
+            "method": "rrf",
+            "k_constant": DEFAULT_RRF_K,
+            "per_query_envelope_counts": per_query_counts,
+            "per_query_limit": per_query_limit,
+        }
+    }))
 }
 
 async fn execute_context_open(app_state: &AppState, arguments: &Value) -> Result<Value, String> {

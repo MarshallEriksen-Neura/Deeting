@@ -1,6 +1,7 @@
 pub mod adapters;
 pub mod envelope;
 pub mod fsm;
+pub mod fusion;
 pub mod policy;
 pub mod tools;
 pub mod trace;

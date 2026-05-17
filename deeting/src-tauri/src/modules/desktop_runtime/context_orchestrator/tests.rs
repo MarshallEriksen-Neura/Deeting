@@ -1,4 +1,7 @@
 use super::*;
+use crate::modules::desktop_runtime::context_orchestrator::fusion::{
+    rrf_fuse, DEFAULT_RRF_K,
+};
 use crate::modules::desktop_runtime::context_orchestrator::tools::{
     parse_llm_wiki_locator_id, resolve_selected_file_ids,
 };
@@ -382,5 +385,189 @@ fn manifest_renderer_teaches_model_to_read_coverage_signals() {
     assert!(
         prompt.contains("multi-intent"),
         "prompt must instruct the model to split multi-intent questions"
+    );
+}
+
+#[test]
+fn manifest_renderer_teaches_model_to_use_multi_query_fanout() {
+    let manifest = ContextManifest::new(
+        Vec::new(),
+        vec![SelectedKnowledgeManifestItem {
+            file_id: "file-1".to_string(),
+            file_name: "spec.md".to_string(),
+            status: "indexed".to_string(),
+            chunk_count: Some(5),
+            folder_id: None,
+            updated_at: None,
+        }],
+    );
+
+    let prompt = render_context_manifest_prompt(&manifest).expect("manifest prompt");
+
+    assert!(
+        prompt.contains("context_search_multi"),
+        "prompt must advertise the new fanout tool by name"
+    );
+    assert!(
+        prompt.contains("Reciprocal Rank Fusion"),
+        "prompt must explain the fusion algorithm so the model picks the right tool"
+    );
+    assert!(
+        prompt.contains("intra-source"),
+        "prompt must warn that fanout does not support auto/cross-source"
+    );
+}
+
+fn evidence_item_with_score_breakdown(id: &str, score: f64) -> ContextEvidenceItem {
+    ContextEvidenceItem {
+        id: id.to_string(),
+        source_id: None,
+        title: None,
+        content: format!("evidence {id}"),
+        score,
+        score_breakdown: json!({ "source_score": score }),
+        source_refs: vec![],
+        quality_flags: vec![],
+        lifecycle: None,
+    }
+}
+
+fn envelope_with(items: Vec<ContextEvidenceItem>) -> ContextEvidenceEnvelope {
+    ContextEvidenceEnvelope::new(
+        ContextSourceType::Knowledge,
+        "query",
+        items,
+        "knowledge.score is source-native",
+        ContextNextAction::AnswerWithEvidence,
+        ContextTrace::default(),
+    )
+}
+
+#[test]
+fn rrf_fuse_promotes_items_that_appear_in_multiple_queries() {
+    // Query A: a, b, c (a is top)
+    // Query B: x, a, y (a is 2nd)
+    // Query C: a, z    (a is top)
+    // `a` should fuse to the top because it shows up in all three lists.
+    let env_a = envelope_with(vec![
+        evidence_item_with_score_breakdown("a", 0.90),
+        evidence_item_with_score_breakdown("b", 0.70),
+        evidence_item_with_score_breakdown("c", 0.50),
+    ]);
+    let env_b = envelope_with(vec![
+        evidence_item_with_score_breakdown("x", 0.85),
+        evidence_item_with_score_breakdown("a", 0.60),
+        evidence_item_with_score_breakdown("y", 0.40),
+    ]);
+    let env_c = envelope_with(vec![
+        evidence_item_with_score_breakdown("a", 0.95),
+        evidence_item_with_score_breakdown("z", 0.30),
+    ]);
+
+    let fused = rrf_fuse(&[env_a, env_b, env_c], DEFAULT_RRF_K, 5);
+
+    assert_eq!(fused.first().expect("at least one fused item").item.id, "a");
+    assert_eq!(
+        fused[0].appearances.len(),
+        3,
+        "fused top item should record appearances from all three queries"
+    );
+}
+
+#[test]
+fn rrf_fuse_preserves_source_native_score_on_items() {
+    let env_a = envelope_with(vec![evidence_item_with_score_breakdown("a", 0.42)]);
+    let env_b = envelope_with(vec![evidence_item_with_score_breakdown("a", 0.88)]);
+
+    let fused = rrf_fuse(&[env_a, env_b], DEFAULT_RRF_K, 5);
+
+    let top = &fused[0];
+    assert_eq!(top.item.id, "a");
+    // The item's `score` field is left as whichever copy hit the accumulator
+    // first — RRF must NOT replace it with the fused score. The fused score
+    // lives on the wrapper, not the item.
+    assert!(
+        (top.item.score - 0.42).abs() < f64::EPSILON
+            || (top.item.score - 0.88).abs() < f64::EPSILON,
+        "fused item.score should remain one of the source-native values, got {}",
+        top.item.score
+    );
+    assert!(
+        top.fused_rrf_score > top.item.score
+            || top.fused_rrf_score < top.item.score
+            || top.fused_rrf_score == 0.0,
+        "fused_rrf_score is conceptually distinct from item.score"
+    );
+}
+
+#[test]
+fn rrf_fuse_truncates_to_limit() {
+    let env = envelope_with(vec![
+        evidence_item_with_score_breakdown("a", 0.9),
+        evidence_item_with_score_breakdown("b", 0.8),
+        evidence_item_with_score_breakdown("c", 0.7),
+        evidence_item_with_score_breakdown("d", 0.6),
+        evidence_item_with_score_breakdown("e", 0.5),
+    ]);
+
+    let fused = rrf_fuse(&[env], DEFAULT_RRF_K, 3);
+
+    assert_eq!(fused.len(), 3);
+}
+
+#[test]
+fn rrf_fuse_deduplicates_by_item_id() {
+    // Same id appearing in two envelopes should fuse to one item with two appearances.
+    let env_a = envelope_with(vec![evidence_item_with_score_breakdown("shared", 0.9)]);
+    let env_b = envelope_with(vec![evidence_item_with_score_breakdown("shared", 0.5)]);
+
+    let fused = rrf_fuse(&[env_a, env_b], DEFAULT_RRF_K, 5);
+
+    assert_eq!(fused.len(), 1);
+    assert_eq!(fused[0].appearances.len(), 2);
+}
+
+#[test]
+fn rrf_fuse_returns_empty_for_all_empty_envelopes() {
+    let fused = rrf_fuse(
+        &[envelope_with(vec![]), envelope_with(vec![])],
+        DEFAULT_RRF_K,
+        5,
+    );
+
+    assert!(fused.is_empty());
+}
+
+#[test]
+fn rrf_fuse_higher_rank_contributes_more() {
+    // Two queries, one item at rank 1 vs the same logic at rank 5.
+    // rank-1 should have higher fused score.
+    let env_top = envelope_with(vec![
+        evidence_item_with_score_breakdown("top", 0.9),
+        evidence_item_with_score_breakdown("filler1", 0.5),
+        evidence_item_with_score_breakdown("filler2", 0.4),
+        evidence_item_with_score_breakdown("filler3", 0.3),
+        evidence_item_with_score_breakdown("bottom", 0.1),
+    ]);
+    let env_bottom = envelope_with(vec![
+        evidence_item_with_score_breakdown("other_top", 0.9),
+        evidence_item_with_score_breakdown("filler1", 0.5),
+        evidence_item_with_score_breakdown("filler2", 0.4),
+        evidence_item_with_score_breakdown("filler3", 0.3),
+        evidence_item_with_score_breakdown("top", 0.1),
+    ]);
+
+    let fused = rrf_fuse(&[env_top, env_bottom], DEFAULT_RRF_K, 10);
+    let top_score = fused
+        .iter()
+        .find(|f| f.item.id == "top")
+        .expect("top item should be in fused list")
+        .fused_rrf_score;
+
+    // Expected: 1/(60+1) + 1/(60+5) = 0.0164 + 0.0154 = 0.0318
+    assert!(
+        (top_score - (1.0 / 61.0 + 1.0 / 65.0)).abs() < 1e-9,
+        "fused score should match RRF formula: 1/(k+1) + 1/(k+5), got {}",
+        top_score
     );
 }

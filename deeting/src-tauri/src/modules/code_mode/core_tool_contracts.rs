@@ -1641,6 +1641,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
         terminal_context_pack_contract(),
         terminal_write_input_contract(),
         context_search_contract(),
+        context_search_multi_contract(),
         context_open_contract(),
         context_expand_contract(),
         context_summarize_evidence_contract(),
@@ -1727,6 +1728,40 @@ fn context_search_contract() -> CoreToolContract {
             "additionalProperties": true
         }),
         json!({"source": "knowledge", "query": "pricing assumptions", "scope": "selected", "limit": 6, "filters": {"selected_file_ids": ["file-1"]}}),
+    )
+}
+
+fn context_search_multi_contract() -> CoreToolContract {
+    context_tool_contract(
+        "context_search_multi",
+        "Run multiple semantically distinct rewrites of the same intent against ONE source concurrently, then merge results with Reciprocal Rank Fusion (RRF). Use when (a) the topic is broad or has synonyms, (b) one term might miss adjacent jargon, or (c) an earlier context_search returned coverage_signals.confidence: ambiguous. Each query goes through the source's native BM25/semantic/RRF pipeline; this tool then RRF-fuses across queries. item.score remains source-native; fused_rrf_score is recorded in score_breakdown. Auto source is intentionally rejected — fusion is intra-source only so cross-source score comparison is impossible.",
+        json!({
+            "type": "object",
+            "properties": {
+                "source": context_source_schema(false),
+                "queries": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 2,
+                    "maxItems": 5,
+                    "description": "2-5 semantically distinct rewrites. Pick variants that differ in vocabulary or perspective, not surface paraphrases."
+                },
+                "scope": {
+                    "type": "string",
+                    "enum": ["selected", "all", "folder", "workspace", "session"],
+                    "description": "Same scope semantics as context_search."
+                },
+                "limit": {"type": "integer", "minimum": 1, "maximum": 12, "default": 6, "description": "Number of items in the final fused envelope. Each per-query retrieval internally fetches up to 2x this to give RRF overlap material."},
+                "filters": {
+                    "type": "object",
+                    "description": "Same filter semantics as context_search. Filters apply uniformly to every query.",
+                    "additionalProperties": true
+                }
+            },
+            "required": ["source", "queries"],
+            "additionalProperties": true
+        }),
+        json!({"source": "knowledge", "queries": ["vector database choice", "embedding storage engine", "knowledge base indexing"], "limit": 6}),
     )
 }
 
@@ -2465,6 +2500,7 @@ mod tests {
 
         for name in [
             "context_search",
+            "context_search_multi",
             "context_open",
             "context_expand",
             "context_summarize_evidence",
