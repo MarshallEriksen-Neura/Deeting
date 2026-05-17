@@ -1705,12 +1705,16 @@ fn context_tool_contract(
 fn context_search_contract() -> CoreToolContract {
     context_tool_contract(
         "context_search",
-        "Search local context sources and return normalized evidence envelopes. Use this when the manifest lists relevant memory, LLM Wiki, or local knowledge but the prompt does not include body chunks. Scores are source-native: memory is already lifecycle-reranked by MemoryService, LLM Wiki uses corpus relevance, and knowledge uses KnowledgeStore relevance.",
+        "Search local context sources and return normalized evidence envelopes. Use this when the manifest lists relevant memory, LLM Wiki, or local knowledge but the prompt does not include body chunks. Scores are source-native: memory is already lifecycle-reranked by MemoryService, LLM Wiki uses corpus relevance, and knowledge uses KnowledgeStore relevance. Envelopes may include shared coverage_signals, source_coverage_confidence, evidence_grade, and a recommended_next_action; use those before answering.",
         json!({
             "type": "object",
             "properties": {
                 "source": context_source_schema(true),
                 "query": {"type": "string", "description": "Natural-language evidence query."},
+                "search_attempt": {"type": "integer", "minimum": 1, "description": "Optional monotonic counter for retry / rewrite attempts. Include it when you are refining a search."},
+                "original_query": {"type": "string", "description": "Optional original user wording before rewrite."},
+                "rewritten_query": {"type": "string", "description": "Optional search-friendly rewrite actually being sent to the retriever."},
+                "rewrite_reason": {"type": "string", "description": "Optional short explanation of why the query was rewritten or retried."},
                 "scope": {
                     "type": "string",
                     "enum": ["selected", "all", "folder", "workspace", "session"],
@@ -1734,7 +1738,7 @@ fn context_search_contract() -> CoreToolContract {
 fn context_search_multi_contract() -> CoreToolContract {
     context_tool_contract(
         "context_search_multi",
-        "Run multiple semantically distinct rewrites of the same intent against ONE source concurrently, then merge results with Reciprocal Rank Fusion (RRF). Use when (a) the topic is broad or has synonyms, (b) one term might miss adjacent jargon, or (c) an earlier context_search returned coverage_signals.confidence: ambiguous. Each query goes through the source's native BM25/semantic/RRF pipeline; this tool then RRF-fuses across queries. item.score remains source-native; fused_rrf_score is recorded in score_breakdown. Auto source is intentionally rejected — fusion is intra-source only so cross-source score comparison is impossible.",
+        "Run multiple semantically distinct rewrites of the same intent against ONE source concurrently, then merge results with Reciprocal Rank Fusion (RRF). Use when (a) the topic is broad or has synonyms, (b) one term might miss adjacent jargon, or (c) an earlier context_search returned coverage_signals.confidence: ambiguous. Each query goes through the source's native BM25/semantic/RRF pipeline; this tool then RRF-fuses across queries. item.score remains source-native; fused_rrf_score is recorded in score_breakdown. Auto source is intentionally rejected — fusion is intra-source only so cross-source score comparison is impossible. The result also includes per-query trace details so you can see which rewrite was useful.",
         json!({
             "type": "object",
             "properties": {
@@ -1746,6 +1750,9 @@ fn context_search_multi_contract() -> CoreToolContract {
                     "maxItems": 5,
                     "description": "2-5 semantically distinct rewrites. Pick variants that differ in vocabulary or perspective, not surface paraphrases."
                 },
+                "search_attempt": {"type": "integer", "minimum": 1, "description": "Optional monotonic counter for the multi-query retry attempt."},
+                "original_query": {"type": "string", "description": "Optional original user wording before generating the rewrites in queries[] ."},
+                "rewrite_reason": {"type": "string", "description": "Optional short explanation of why multi-query fanout was necessary."},
                 "scope": {
                     "type": "string",
                     "enum": ["selected", "all", "folder", "workspace", "session"],

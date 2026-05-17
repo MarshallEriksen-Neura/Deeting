@@ -49,6 +49,72 @@ pub enum ContextNextAction {
     AskClarifyingQuestion,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceCoverageReason {
+    NeedsOpenSource,
+    SingleMemoryOnly,
+    SelectedScopeFallbackUsed,
+    WikiScopeTooBroad,
+    KnowledgeChunkQualityLow,
+    NoSourceRefs,
+    OnlySparseEvidence,
+    AmbiguousScoreShape,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SourceCoverageConfidence {
+    pub confidence: ContextConfidence,
+    #[serde(default)]
+    pub reasons: Vec<SourceCoverageReason>,
+    pub recommended_next_action: ContextNextAction,
+}
+
+impl SourceCoverageConfidence {
+    pub fn new(
+        confidence: ContextConfidence,
+        reasons: Vec<SourceCoverageReason>,
+        recommended_next_action: ContextNextAction,
+    ) -> Self {
+        Self {
+            confidence,
+            reasons,
+            recommended_next_action,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EvidenceGradeVerdict {
+    Sufficient,
+    Partial,
+    Insufficient,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EvidenceGrade {
+    pub verdict: EvidenceGradeVerdict,
+    #[serde(default)]
+    pub reasons: Vec<String>,
+    #[serde(default)]
+    pub missing_aspects: Vec<String>,
+}
+
+impl EvidenceGrade {
+    pub fn new(
+        verdict: EvidenceGradeVerdict,
+        reasons: Vec<String>,
+        missing_aspects: Vec<String>,
+    ) -> Self {
+        Self {
+            verdict,
+            reasons,
+            missing_aspects,
+        }
+    }
+}
+
 /// Shape-based confidence label derived from the score distribution of a
 /// single envelope. **Purely descriptive** — does not rescore items, does
 /// not compare across sources, does not embed source-specific thresholds.
@@ -237,6 +303,10 @@ pub struct ContextEvidenceEnvelope {
     pub coverage: ContextCoverage,
     #[serde(default)]
     pub coverage_signals: ContextCoverageSignals,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_coverage_confidence: Option<SourceCoverageConfidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_grade: Option<EvidenceGrade>,
     pub score_semantics: String,
     pub recommended_next_action: ContextNextAction,
     pub trace: crate::modules::desktop_runtime::context_orchestrator::trace::ContextTrace,
@@ -259,10 +329,25 @@ impl ContextEvidenceEnvelope {
             items,
             coverage,
             coverage_signals,
+            source_coverage_confidence: None,
+            evidence_grade: None,
             score_semantics: score_semantics.into(),
             recommended_next_action,
             trace,
         }
+    }
+
+    pub fn with_source_coverage_confidence(
+        mut self,
+        source_coverage_confidence: SourceCoverageConfidence,
+    ) -> Self {
+        self.source_coverage_confidence = Some(source_coverage_confidence);
+        self
+    }
+
+    pub fn with_evidence_grade(mut self, evidence_grade: EvidenceGrade) -> Self {
+        self.evidence_grade = Some(evidence_grade);
+        self
     }
 
     pub fn source_scores(&self) -> Vec<f64> {

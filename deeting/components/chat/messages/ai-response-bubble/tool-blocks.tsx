@@ -119,7 +119,34 @@ type ContextEvidenceInsight = {
   source: string | null;
   query: string | null;
   coverage: string | null;
+  sharedConfidence: string | null;
   recommendedNextAction: string | null;
+  sourceCoverageConfidence: {
+    confidence: string | null;
+    reasons: string[];
+    recommendedNextAction: string | null;
+  } | null;
+  evidenceGrade: {
+    verdict: string | null;
+    reasons: string[];
+    missingAspects: string[];
+  } | null;
+  envelopeSummaries: Array<{
+    sourceType: string | null;
+    coverage: string | null;
+    sharedConfidence: string | null;
+    recommendedNextAction: string | null;
+    sourceCoverageConfidence: {
+      confidence: string | null;
+      reasons: string[];
+      recommendedNextAction: string | null;
+    } | null;
+    evidenceGrade: {
+      verdict: string | null;
+      reasons: string[];
+      missingAspects: string[];
+    } | null;
+  }>;
   itemCount: number;
   errors: string[];
   items: ContextEvidenceItemPreview[];
@@ -266,6 +293,41 @@ function extractContextEvidenceInsight(value: unknown): ContextEvidenceInsight |
     .map(toRecord)
     .filter((item): item is Record<string, unknown> => Boolean(item));
   const summaryItems = Array.isArray(root?.items) ? root.items : [];
+  const envelopeSummaries =
+    formatVersion === "context_evidence_summary.v1"
+      ? []
+      : envelopes.map((envelope) => {
+          const sourceCoverageConfidence = toRecord(
+            envelope.source_coverage_confidence,
+          );
+          const evidenceGrade = toRecord(envelope.evidence_grade);
+          return {
+            sourceType: asTrimmedString(envelope.source_type),
+            coverage: asTrimmedString(envelope.coverage),
+            sharedConfidence: asTrimmedString(
+              toRecord(envelope.coverage_signals)?.confidence,
+            ),
+            recommendedNextAction: asTrimmedString(
+              envelope.recommended_next_action,
+            ),
+            sourceCoverageConfidence: sourceCoverageConfidence
+              ? {
+                  confidence: asTrimmedString(sourceCoverageConfidence.confidence),
+                  reasons: toStringArray(sourceCoverageConfidence.reasons),
+                  recommendedNextAction: asTrimmedString(
+                    sourceCoverageConfidence.recommended_next_action,
+                  ),
+                }
+              : null,
+            evidenceGrade: evidenceGrade
+              ? {
+                  verdict: asTrimmedString(evidenceGrade.verdict),
+                  reasons: toStringArray(evidenceGrade.reasons),
+                  missingAspects: toStringArray(evidenceGrade.missing_aspects),
+                }
+              : null,
+          };
+        });
   const items =
     formatVersion === "context_evidence_summary.v1"
       ? summaryItems.flatMap((item) => normalizeContextEvidenceItem(item, null))
@@ -279,6 +341,7 @@ function extractContextEvidenceInsight(value: unknown): ContextEvidenceInsight |
         });
 
   const firstEnvelope = envelopes[0] ?? null;
+  const firstSummary = envelopeSummaries[0] ?? null;
   const errors = Array.isArray(root?.errors)
     ? root.errors
         .map((item) => {
@@ -296,7 +359,11 @@ function extractContextEvidenceInsight(value: unknown): ContextEvidenceInsight |
     source: asTrimmedString(root?.source) ?? asTrimmedString(firstEnvelope?.source_type),
     query: asTrimmedString(root?.query) ?? asTrimmedString(firstEnvelope?.query),
     coverage: asTrimmedString(firstEnvelope?.coverage),
+    sharedConfidence: firstSummary?.sharedConfidence ?? null,
     recommendedNextAction: asTrimmedString(firstEnvelope?.recommended_next_action),
+    sourceCoverageConfidence: firstSummary?.sourceCoverageConfidence ?? null,
+    evidenceGrade: firstSummary?.evidenceGrade ?? null,
+    envelopeSummaries,
     itemCount: items.length,
     errors,
     items: items.slice(0, 6),
@@ -341,6 +408,74 @@ function toStringArray(value: unknown): string[] {
   return value
     .map((item) => (typeof item === "string" ? item.trim() : ""))
     .filter((item) => item.length > 0);
+}
+
+function humanizeContextAction(value: string | null): string | null {
+  switch (value) {
+    case "answer_with_evidence":
+      return "可基于证据回答";
+    case "search_again":
+      return "建议重新检索";
+    case "open_source":
+      return "需要打开来源";
+    case "expand_context":
+      return "建议扩展上下文";
+    case "ask_clarifying_question":
+      return "建议先澄清问题";
+    default:
+      return value;
+  }
+}
+
+function humanizeContextConfidence(value: string | null): string | null {
+  switch (value) {
+    case "strong":
+      return "strong";
+    case "mixed":
+      return "mixed";
+    case "ambiguous":
+      return "ambiguous";
+    case "empty":
+      return "empty";
+    default:
+      return value;
+  }
+}
+
+function humanizeSourceCoverageReason(value: string): string {
+  switch (value) {
+    case "needs_open_source":
+      return "当前证据需要先打开来源再判断";
+    case "single_memory_only":
+      return "当前只有单条记忆命中";
+    case "selected_scope_fallback_used":
+      return "本次检索使用了 selected scope 回退";
+    case "wiki_scope_too_broad":
+      return "Wiki 命中范围过宽，需要继续收窄";
+    case "knowledge_chunk_quality_low":
+      return "知识片段质量偏弱，建议扩展上下文";
+    case "no_source_refs":
+      return "当前结果缺少可引用的 source refs";
+    case "only_sparse_evidence":
+      return "返回证据过稀疏";
+    case "ambiguous_score_shape":
+      return "分数形状模糊，说明查询可能过泛";
+    default:
+      return value;
+  }
+}
+
+function humanizeEvidenceGradeVerdict(value: string | null): string | null {
+  switch (value) {
+    case "sufficient":
+      return "sufficient";
+    case "partial":
+      return "partial";
+    case "insufficient":
+      return "insufficient";
+    default:
+      return value;
+  }
 }
 
 function extractToolOutcomeInsight(
@@ -1313,6 +1448,7 @@ function RuntimeToolTimeline({
 }
 
 function ContextEvidenceCard({ insight }: { insight: ContextEvidenceInsight }) {
+  const nextActionLabel = humanizeContextAction(insight.recommendedNextAction);
   const header = [
     insight.source ? `source: ${insight.source}` : null,
     insight.query ? `query: ${insight.query}` : null,
@@ -1325,12 +1461,65 @@ function ContextEvidenceCard({ insight }: { insight: ContextEvidenceInsight }) {
         <Badge variant="outline" className="h-5 rounded-full px-2 text-[10px] font-semibold uppercase tracking-wider">
           Context Evidence
         </Badge>
+        {insight.sharedConfidence ? (
+          <Badge variant="outline" className="h-5 rounded-full px-2 text-[10px] font-semibold uppercase tracking-wider">
+            {`confidence: ${humanizeContextConfidence(insight.sharedConfidence)}`}
+          </Badge>
+        ) : null}
+        {nextActionLabel ? (
+          <Badge variant="outline" className="h-5 rounded-full px-2 text-[10px] font-semibold tracking-wider">
+            {nextActionLabel}
+          </Badge>
+        ) : null}
         {header.map((item) => (
           <span key={item} className="font-mono text-[10px] text-[var(--ink-3)]">
             {item}
           </span>
         ))}
       </div>
+      {insight.envelopeSummaries.length > 0 ? (
+        <div className="mb-3 grid gap-2">
+          {insight.envelopeSummaries.map((summary, index) => (
+            <div
+              key={`${summary.sourceType || "context"}-${index}`}
+              className="rounded-md border border-[var(--hairline)] bg-background/40 p-2"
+            >
+              <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                {summary.sourceType ? (
+                  <span className="font-mono text-[var(--ink)]">{summary.sourceType}</span>
+                ) : null}
+                {summary.sharedConfidence ? (
+                  <span className="rounded border border-[var(--hairline)] px-1.5 py-0.5 text-[var(--ink-3)]">
+                    {`shared ${humanizeContextConfidence(summary.sharedConfidence)}`}
+                  </span>
+                ) : null}
+                {summary.recommendedNextAction ? (
+                  <span className="rounded border border-[var(--hairline)] px-1.5 py-0.5 text-[var(--ink-3)]">
+                    {humanizeContextAction(summary.recommendedNextAction)}
+                  </span>
+                ) : null}
+                {summary.evidenceGrade?.verdict ? (
+                  <span className="rounded border border-[var(--hairline)] px-1.5 py-0.5 text-[var(--ink-3)]">
+                    {`grade ${humanizeEvidenceGradeVerdict(summary.evidenceGrade.verdict)}`}
+                  </span>
+                ) : null}
+              </div>
+              {summary.sourceCoverageConfidence?.reasons.length ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {summary.sourceCoverageConfidence.reasons.map((reason) => (
+                    <span
+                      key={`${summary.sourceType || "context"}-${reason}`}
+                      className="rounded border border-[var(--hairline)] px-1.5 py-0.5 text-[10px] text-[var(--ink-3)]"
+                    >
+                      {humanizeSourceCoverageReason(reason)}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
       {insight.items.length > 0 ? (
         <div className="space-y-2">
           {insight.items.map((item) => (
@@ -1363,6 +1552,56 @@ function ContextEvidenceCard({ insight }: { insight: ContextEvidenceInsight }) {
       ) : (
         <div className="text-xs text-[var(--ink-3)]">No evidence items returned</div>
       )}
+      {insight.sourceCoverageConfidence?.reasons.length ? (
+        <div className="mt-3 rounded-md border border-[var(--hairline)] bg-background/40 p-2">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--ink-3)]">
+            Source Coverage
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {insight.sourceCoverageConfidence.reasons.map((reason) => (
+              <span
+                key={reason}
+                className="rounded border border-[var(--hairline)] px-1.5 py-0.5 text-[10px] text-[var(--ink-3)]"
+              >
+                {humanizeSourceCoverageReason(reason)}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {insight.evidenceGrade ? (
+        <div className="mt-3 rounded-md border border-[var(--hairline)] bg-background/40 p-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--ink-3)]">
+              Evidence Grade
+            </span>
+            {insight.evidenceGrade.verdict ? (
+              <span className="rounded border border-[var(--hairline)] px-1.5 py-0.5 text-[10px] text-[var(--ink-3)]">
+                {humanizeEvidenceGradeVerdict(insight.evidenceGrade.verdict)}
+              </span>
+            ) : null}
+          </div>
+          {insight.evidenceGrade.reasons.length > 0 ? (
+            <div className="mt-2 space-y-1 text-xs text-[var(--ink-2)]">
+              {insight.evidenceGrade.reasons.map((reason) => (
+                <div key={reason}>{reason}</div>
+              ))}
+            </div>
+          ) : null}
+          {insight.evidenceGrade.missingAspects.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {insight.evidenceGrade.missingAspects.map((aspect) => (
+                <span
+                  key={aspect}
+                  className="rounded border border-[var(--hairline)] px-1.5 py-0.5 text-[10px] text-[var(--ink-3)]"
+                >
+                  {aspect}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {insight.errors.length > 0 ? (
         <div className="mt-2 space-y-1 text-xs text-amber-700 dark:text-amber-300">
           {insight.errors.map((error) => (

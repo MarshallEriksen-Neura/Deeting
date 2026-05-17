@@ -222,6 +222,40 @@ Available context tools: context_search, context_open, context_expand, context_s
 - `include_neighbors` 只是展开意图提示，`context_search` 仍只返回检索命中；需要邻近 chunk 时继续调用 `context_expand`
 - source-local filters：Memory 支持 `session_id` / `capability_id` / `category` / `source` / `tags`；LLM Wiki 支持 `scope` / `doc_id` / `relative_path` / `relative_path_prefix`；Knowledge 支持 `selected_file_ids` / `file_ids`
 
+### context_search_multi
+
+```jsonc
+{
+  "source": "memory | llm_wiki | knowledge",   // 必填,**不支持 auto**
+  "queries": ["query1", "query2", "query3"],   // 2-5 条语义不同的改写
+  "scope": "selected | all | folder | workspace | session",
+  "limit": 6,
+  "filters": { /* 同 context_search */ }
+}
+```
+
+行为:
+
+- **N 条 query 并发**(`futures_util::future::join_all`),每条 query 走源原生 BM25+RRF+语义检索,每条 query 内部取 `min(limit*2, 20)` 条 candidate 为 fusion 留余地
+- **RRF 二次融合**:`fused_score = Σ 1/(60 + rank_in_query_i)`,常数 `k=60`(Cormack et al. 2009)
+- 输出**单个 envelope**,items 按 fused_rrf_score 降序排列,truncate 到 `limit`
+- 每个 item 的 `score_breakdown` 新增两个字段:
+  - `fused_rrf_score`: f64
+  - `rrf_appearances`: `[{query_index, query, rank, source_score}, ...]`
+- **item.score 保持源原生**,RRF 分数**只**写在 `score_breakdown.fused_rrf_score`,不污染原 score
+- 工具返回顶层多一个 `fusion: { method, k_constant, per_query_envelope_counts, per_query_limit }` 字段便于排查
+- 任一 query 失败不阻断整体执行,失败信息收集到 `errors[]`;全部失败才报错
+
+**何时调用 context_search_multi**(manifest prompt 会教模型):
+
+- 主题宽泛或多同义词(如"性能"可以是 latency / throughput / memory footprint)
+- 多视角问题(如"对比新老 auth")
+- 上一次 `context_search` 返回 `coverage_signals.confidence: ambiguous`
+
+**为什么不支持 `source: auto`**:RRF 融合的前提是被融合的 ranking 来自**同一打分尺度**。三源的 score_semantics 不同(memory.vitality vs llm_wiki.lexical+semantic vs knowledge.BM25),跨源 RRF 等于隐式做了源间归一,违反 No Double Lifecycle Rule。`auto` 模式有自己的工具(`context_search` source=auto),三源独立 envelope 各自返回。
+
+实现见 [`fusion.rs::rrf_fuse`](../deeting/src-tauri/src/modules/desktop_runtime/context_orchestrator/fusion.rs) 和 [`tools.rs::execute_context_search_multi`](../deeting/src-tauri/src/modules/desktop_runtime/context_orchestrator/tools.rs)。
+
 ### context_open
 
 ```jsonc
@@ -283,6 +317,8 @@ pub struct ContextEvidenceEnvelope {
     pub items: Vec<ContextEvidenceItem>,
     pub coverage: ContextCoverage,                 // empty / sparse / focused / broad（按 item 数量分桶）
     pub coverage_signals: ContextCoverageSignals,  // 分数分布的形状统计 + confidence 离散标签
+    pub source_coverage_confidence: Option<SourceCoverageConfidence>, // 源特定置信度理由
+    pub evidence_grade: Option<EvidenceGrade>,     // 问题 vs 证据是否真的够用
     pub score_semantics: String,                   // 源原生评分语义说明
     pub recommended_next_action: ContextNextAction,// answer_with_evidence / search_again / open_source / ...
     pub trace: ContextTrace,
@@ -333,7 +369,27 @@ pub enum ContextConfidence {
 - ✅ 它回答的是：「这次返回的分数形状像什么样？」
 - ❌ 它**不**回答：「这条源的证据够不够下结论？」
 
-后者属于源特定（source-specific）层的职责。如果未来要加 `needs_open_source` / `single_memory_only` / `selected_scope_fallback_used` 这类带源语义的 confidence 信号，应当**追加**在 `coverage_signals` 之外（例如 `coverage_signals.reasons: Vec<String>`），而不是替换或污染这层通用统计。
+后者现在由 envelope 上新增的两层承担：
+
+```rust
+pub struct SourceCoverageConfidence {
+    pub confidence: ContextConfidence,
+    pub reasons: Vec<SourceCoverageReason>,
+    pub recommended_next_action: ContextNextAction,
+}
+
+pub struct EvidenceGrade {
+    pub verdict: EvidenceGradeVerdict, // sufficient / partial / insufficient
+    pub reasons: Vec<String>,
+    pub missing_aspects: Vec<String>,
+}
+```
+
+其中：
+
+- `source_coverage_confidence` 负责源特定判断，例如 `single_memory_only`、`wiki_scope_too_broad`、`selected_scope_fallback_used`、`knowledge_chunk_quality_low`
+- `evidence_grade` 负责问题与证据是否匹配，例如「对比类问题只有 1 条命中」「片段过短」「缺少 source_refs」
+- `recommended_next_action` 现在会综合 shared shape、source-specific reasons 和 evidence grade，再决定是 `search_again` / `open_source` / `expand_context` / `answer_with_evidence`
 
 模型行为的引导通过 [§8 Manifest 文案](../deeting/src-tauri/src/modules/desktop_runtime/context_orchestrator/fsm.rs) 实现，会告诉模型：
 
@@ -341,8 +397,10 @@ pub enum ContextConfidence {
 - `confidence: ambiguous` → 改写更具体的 query 再 `context_search`
 - `confidence: mixed` → 考虑 `context_expand` 拿邻居，或 `context_open` 看 top 命中
 - `confidence: empty` → 换 query / 换源 / 反问用户，不要编
+- 如果 `source_coverage_confidence.reasons` 指向 source-specific blocker，即使 shared shape 看起来强，也先 follow `recommended_next_action`
+- 如果 `evidence_grade.verdict` 是 `partial` / `insufficient`，必须继续检索、打开来源或扩展上下文，不允许无引用地强答
 
-trace 里会同步写入 `confidence` / `top_score` / `score_gap_ratio` / `flatness`，方便复盘"模型为什么决定再查一次"。
+trace 里会同步写入 `confidence` / `top_score` / `score_gap_ratio` / `flatness` / `source_coverage_confidence` / `evidence_grade` / `search_attempt` / `original_query` / `rewritten_query` / `rewrite_reason`，方便复盘"模型为什么决定再查一次"。
 
 工具返回时再包一层格式版本号：
 

@@ -1,6 +1,7 @@
 use futures_util::future::join_all;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::collections::BTreeSet;
 
 use crate::modules::desktop_runtime::context_orchestrator::adapters::knowledge::KnowledgeContextAdapter;
 use crate::modules::desktop_runtime::context_orchestrator::adapters::llm_wiki::LlmWikiContextAdapter;
@@ -8,7 +9,8 @@ use crate::modules::desktop_runtime::context_orchestrator::adapters::memory::Mem
 use crate::modules::desktop_runtime::context_orchestrator::adapters::ContextSourceAdapter;
 use crate::modules::desktop_runtime::context_orchestrator::envelope::{
     ContextConfidence, ContextCoverageSignals, ContextEvidenceEnvelope, ContextEvidenceItem,
-    ContextNextAction, ContextSourceRef, ContextSourceType,
+    ContextNextAction, ContextSourceRef, ContextSourceType, EvidenceGrade, EvidenceGradeVerdict,
+    SourceCoverageConfidence, SourceCoverageReason,
 };
 use crate::modules::desktop_runtime::context_orchestrator::fsm::CONTEXT_TOOL_NAMES;
 use crate::modules::desktop_runtime::context_orchestrator::fusion::{rrf_fuse, DEFAULT_RRF_K};
@@ -66,6 +68,14 @@ struct ContextSearchArgs {
     source: Option<String>,
     query: String,
     #[serde(default)]
+    search_attempt: Option<usize>,
+    #[serde(default)]
+    original_query: Option<String>,
+    #[serde(default)]
+    rewritten_query: Option<String>,
+    #[serde(default)]
+    rewrite_reason: Option<String>,
+    #[serde(default)]
     scope: Option<String>,
     #[serde(default)]
     limit: Option<usize>,
@@ -83,6 +93,12 @@ struct ContextSearchMultiArgs {
     source: String,
     /// 2-5 semantically distinct rewrites of the same intent.
     queries: Vec<String>,
+    #[serde(default)]
+    search_attempt: Option<usize>,
+    #[serde(default)]
+    original_query: Option<String>,
+    #[serde(default)]
+    rewrite_reason: Option<String>,
     #[serde(default)]
     scope: Option<String>,
     #[serde(default)]
@@ -130,7 +146,7 @@ impl MemoryContextSearchFilters {
 }
 
 #[derive(Debug, Clone, Default)]
-struct LlmWikiContextSearchFilters {
+pub(crate) struct LlmWikiContextSearchFilters {
     scope: Option<String>,
     doc_id: Option<String>,
     relative_path: Option<String>,
@@ -144,6 +160,46 @@ impl LlmWikiContextSearchFilters {
             "doc_id": self.doc_id,
             "relative_path": self.relative_path,
             "relative_path_prefix": self.relative_path_prefix,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct SearchTraceHints {
+    search_attempt: Option<usize>,
+    original_query: Option<String>,
+    rewritten_query: Option<String>,
+    rewrite_reason: Option<String>,
+}
+
+impl SearchTraceHints {
+    fn from_search_args(args: &ContextSearchArgs, query: &str) -> Self {
+        Self {
+            search_attempt: args.search_attempt,
+            original_query: args.original_query.clone(),
+            rewritten_query: args
+                .rewritten_query
+                .clone()
+                .or_else(|| Some(query.to_string())),
+            rewrite_reason: args.rewrite_reason.clone(),
+        }
+    }
+
+    fn from_search_multi_args(args: &ContextSearchMultiArgs) -> Self {
+        Self {
+            search_attempt: args.search_attempt,
+            original_query: args.original_query.clone(),
+            rewritten_query: None,
+            rewrite_reason: args.rewrite_reason.clone(),
+        }
+    }
+
+    fn as_trace_json(&self) -> Value {
+        json!({
+            "search_attempt": self.search_attempt,
+            "original_query": self.original_query,
+            "rewritten_query": self.rewritten_query,
+            "rewrite_reason": self.rewrite_reason,
         })
     }
 }
@@ -163,6 +219,7 @@ async fn execute_context_search(
     let source_request = parse_source_request(args.source.as_deref())?;
     let scope = args.scope.as_deref().unwrap_or("all");
     let include_neighbors = args.include_neighbors.unwrap_or(false);
+    let trace_hints = SearchTraceHints::from_search_args(&args, &query);
 
     match source_request {
         ContextSourceRequest::Source(source_type) => {
@@ -174,6 +231,7 @@ async fn execute_context_search(
                 limit,
                 args.filters.as_ref(),
                 context_selected_file_ids,
+                trace_hints.clone(),
             )
             .await?;
             let value = envelope_value(envelope)?;
@@ -197,6 +255,7 @@ async fn execute_context_search(
                     limit,
                     args.filters.as_ref(),
                     context_selected_file_ids,
+                    trace_hints.clone(),
                 ),
                 search_source(
                     app_state,
@@ -206,6 +265,7 @@ async fn execute_context_search(
                     limit,
                     args.filters.as_ref(),
                     context_selected_file_ids,
+                    trace_hints.clone(),
                 ),
                 search_source(
                     app_state,
@@ -215,6 +275,7 @@ async fn execute_context_search(
                     limit,
                     args.filters.as_ref(),
                     context_selected_file_ids,
+                    trace_hints.clone(),
                 ),
             );
             let mut envelopes = Vec::new();
@@ -252,10 +313,15 @@ async fn search_source(
     limit: usize,
     filters: Option<&Value>,
     context_selected_file_ids: &[String],
+    trace_hints: SearchTraceHints,
 ) -> Result<ContextEvidenceEnvelope, String> {
     match source_type {
-        ContextSourceType::Memory => search_memory(app_state, query, limit, filters).await,
-        ContextSourceType::LlmWiki => search_llm_wiki(app_state, query, limit, filters).await,
+        ContextSourceType::Memory => {
+            search_memory(app_state, query, limit, filters, &trace_hints).await
+        }
+        ContextSourceType::LlmWiki => {
+            search_llm_wiki(app_state, query, limit, filters, &trace_hints).await
+        }
         ContextSourceType::Knowledge => {
             search_knowledge(
                 app_state,
@@ -264,6 +330,7 @@ async fn search_source(
                 limit,
                 filters,
                 context_selected_file_ids,
+                &trace_hints,
             )
             .await
         }
@@ -300,8 +367,14 @@ async fn execute_context_search_multi(
     let limit = args.limit.unwrap_or(6).clamp(1, 12);
     let scope = args.scope.as_deref().unwrap_or("all");
     let per_query_limit = limit.saturating_mul(2).min(20);
+    let base_trace_hints = SearchTraceHints::from_search_multi_args(&args);
 
-    let futures = queries.iter().map(|query| {
+    let futures = queries.iter().enumerate().map(|(index, query)| {
+        let mut trace_hints = base_trace_hints.clone();
+        trace_hints.rewritten_query = Some(query.clone());
+        trace_hints.search_attempt = base_trace_hints
+            .search_attempt
+            .map(|attempt| attempt + index);
         search_source(
             app_state,
             source_type,
@@ -310,6 +383,7 @@ async fn execute_context_search_multi(
             per_query_limit,
             args.filters.as_ref(),
             context_selected_file_ids,
+            trace_hints,
         )
     });
     let results: Vec<Result<ContextEvidenceEnvelope, String>> = join_all(futures).await;
@@ -336,6 +410,22 @@ async fn execute_context_search_multi(
 
     let per_query_counts: Vec<usize> = envelopes.iter().map(|env| env.items.len()).collect();
     let base_score_semantics = envelopes[0].score_semantics.clone();
+    let per_query_trace_details: Vec<Value> = envelopes
+        .iter()
+        .enumerate()
+        .map(|(index, envelope)| {
+            json!({
+                "query_index": index,
+                "query": queries.get(index),
+                "item_count": envelope.items.len(),
+                "coverage": envelope.coverage,
+                "shared_confidence": envelope.coverage_signals.confidence,
+                "recommended_next_action": envelope.recommended_next_action,
+                "source_coverage_confidence": envelope.source_coverage_confidence,
+                "evidence_grade": envelope.evidence_grade,
+            })
+        })
+        .collect();
 
     let fused = rrf_fuse(&envelopes, DEFAULT_RRF_K, limit);
     let fused_count = fused.len();
@@ -365,13 +455,24 @@ async fn execute_context_search_multi(
         .collect();
 
     let signals = ContextCoverageSignals::from_items(&items);
-    let next_action = next_action_for_items(&items);
+    let source_coverage_confidence = match source_type {
+        ContextSourceType::Memory => evaluate_memory_source_confidence(&items),
+        ContextSourceType::LlmWiki => {
+            evaluate_llm_wiki_source_confidence(&items, &LlmWikiContextSearchFilters::default())
+        }
+        ContextSourceType::Knowledge => evaluate_knowledge_source_confidence(&items, false, false),
+    };
+    let evidence_grade = evaluate_evidence_grade(&queries.join(" | "), &items);
+    let next_action =
+        next_action_for_confidence(&signals, &source_coverage_confidence, &evidence_grade);
 
     let trace = ContextTrace::default().record(
         "retrieve_multi",
         json!({
             "source_type": source_type.as_str(),
             "queries": queries,
+            "search_trace": base_trace_hints.as_trace_json(),
+            "per_query_trace_details": per_query_trace_details,
             "per_query_envelope_counts": per_query_counts,
             "per_query_limit": per_query_limit,
             "fused_count": fused_count,
@@ -381,6 +482,8 @@ async fn execute_context_search_multi(
             "confidence": signals.confidence,
             "top_score": signals.top_score,
             "score_gap_ratio": signals.score_gap_ratio,
+            "source_coverage_confidence": source_coverage_confidence,
+            "evidence_grade": evidence_grade,
         }),
     );
 
@@ -395,7 +498,9 @@ async fn execute_context_search_multi(
         ),
         next_action,
         trace,
-    );
+    )
+    .with_source_coverage_confidence(source_coverage_confidence)
+    .with_evidence_grade(evidence_grade);
 
     Ok(json!({
         "format_version": "context_evidence.v1",
@@ -404,6 +509,7 @@ async fn execute_context_search_multi(
         "queries": queries,
         "envelope": envelope_value(envelope)?,
         "errors": errors,
+        "per_query_trace_details": per_query_trace_details,
         "fusion": {
             "method": "rrf",
             "k_constant": DEFAULT_RRF_K,
@@ -546,6 +652,7 @@ async fn search_memory(
     query: &str,
     limit: usize,
     filters: Option<&Value>,
+    trace_hints: &SearchTraceHints,
 ) -> Result<ContextEvidenceEnvelope, String> {
     let adapter = MemoryContextAdapter;
     let applied_filters = memory_search_filters(filters);
@@ -569,7 +676,10 @@ async fn search_memory(
         result.items.into_iter().map(memory_search_item).collect();
     let count = items.len();
     let signals = ContextCoverageSignals::from_items(&items);
-    let next_action = next_action_for_items(&items);
+    let source_coverage_confidence = evaluate_memory_source_confidence(&items);
+    let evidence_grade = evaluate_evidence_grade(query, &items);
+    let next_action =
+        next_action_for_confidence(&signals, &source_coverage_confidence, &evidence_grade);
     let trace = ContextTrace::default().record(
         "retrieve",
         json!({
@@ -584,6 +694,9 @@ async fn search_memory(
             "top_score": signals.top_score,
             "score_gap_ratio": signals.score_gap_ratio,
             "flatness": signals.flatness,
+            "source_coverage_confidence": source_coverage_confidence,
+            "evidence_grade": evidence_grade,
+            "search_trace": trace_hints.as_trace_json(),
         }),
     );
     Ok(ContextEvidenceEnvelope::new(
@@ -593,7 +706,9 @@ async fn search_memory(
         adapter.score_semantics(),
         next_action,
         trace,
-    ))
+    )
+    .with_source_coverage_confidence(source_coverage_confidence)
+    .with_evidence_grade(evidence_grade))
 }
 
 async fn open_memory(app_state: &AppState, id: &str) -> Result<ContextEvidenceEnvelope, String> {
@@ -628,6 +743,7 @@ async fn search_llm_wiki(
     query: &str,
     limit: usize,
     filters: Option<&Value>,
+    trace_hints: &SearchTraceHints,
 ) -> Result<ContextEvidenceEnvelope, String> {
     let adapter = LlmWikiContextAdapter;
     let applied_filters = llm_wiki_search_filters(filters);
@@ -646,7 +762,10 @@ async fn search_llm_wiki(
     let items: Vec<ContextEvidenceItem> = result.hits.into_iter().map(llm_wiki_hit).collect();
     let count = items.len();
     let signals = ContextCoverageSignals::from_items(&items);
-    let next_action = next_action_for_items(&items);
+    let source_coverage_confidence = evaluate_llm_wiki_source_confidence(&items, &applied_filters);
+    let evidence_grade = evaluate_evidence_grade(query, &items);
+    let next_action =
+        next_action_for_confidence(&signals, &source_coverage_confidence, &evidence_grade);
     let trace = ContextTrace::default().record(
         "retrieve",
         json!({
@@ -659,6 +778,9 @@ async fn search_llm_wiki(
             "top_score": signals.top_score,
             "score_gap_ratio": signals.score_gap_ratio,
             "flatness": signals.flatness,
+            "source_coverage_confidence": source_coverage_confidence,
+            "evidence_grade": evidence_grade,
+            "search_trace": trace_hints.as_trace_json(),
         }),
     );
     Ok(ContextEvidenceEnvelope::new(
@@ -668,7 +790,9 @@ async fn search_llm_wiki(
         adapter.score_semantics(),
         next_action,
         trace,
-    ))
+    )
+    .with_source_coverage_confidence(source_coverage_confidence)
+    .with_evidence_grade(evidence_grade))
 }
 
 async fn open_llm_wiki(
@@ -711,6 +835,7 @@ async fn search_knowledge(
     limit: usize,
     filters: Option<&Value>,
     context_selected_file_ids: &[String],
+    trace_hints: &SearchTraceHints,
 ) -> Result<ContextEvidenceEnvelope, String> {
     let adapter = KnowledgeContextAdapter;
     let filter_file_ids = filter_selected_knowledge_file_ids(filters);
@@ -744,7 +869,11 @@ async fn search_knowledge(
     let items: Vec<ContextEvidenceItem> = hits.into_iter().map(knowledge_hit).collect();
     let count = items.len();
     let signals = ContextCoverageSignals::from_items(&items);
-    let next_action = next_action_for_items(&items);
+    let source_coverage_confidence =
+        evaluate_knowledge_source_confidence(&items, want_selected_scope, used_context_fallback);
+    let evidence_grade = evaluate_evidence_grade(query, &items);
+    let next_action =
+        next_action_for_confidence(&signals, &source_coverage_confidence, &evidence_grade);
     let trace = ContextTrace::default().record(
         "retrieve",
         json!({
@@ -759,6 +888,9 @@ async fn search_knowledge(
             "top_score": signals.top_score,
             "score_gap_ratio": signals.score_gap_ratio,
             "flatness": signals.flatness,
+            "source_coverage_confidence": source_coverage_confidence,
+            "evidence_grade": evidence_grade,
+            "search_trace": trace_hints.as_trace_json(),
         }),
     );
     Ok(ContextEvidenceEnvelope::new(
@@ -768,7 +900,9 @@ async fn search_knowledge(
         adapter.score_semantics(),
         next_action,
         trace,
-    ))
+    )
+    .with_source_coverage_confidence(source_coverage_confidence)
+    .with_evidence_grade(evidence_grade))
 }
 
 async fn open_knowledge(
@@ -1284,21 +1418,6 @@ fn next_action_for_count(count: usize) -> ContextNextAction {
     }
 }
 
-/// Choose the recommended next action for a *search* result by inspecting
-/// the shared score-distribution baseline, not just the item count.
-///
-/// - Empty hits → search again.
-/// - Flat distribution (`ContextConfidence::Ambiguous`) → search again with
-///   a refined query, because every hit looks equally relevant which usually
-///   means the query was too generic.
-/// - Sparse hits (<= 2) → ask the model to open the source for more context.
-/// - Otherwise → answer with the evidence.
-///
-/// This helper does **not** rescore items and is deliberately source-agnostic
-/// for now. It reads the descriptive signals already computed by
-/// `ContextCoverageSignals::from_items` and maps them to an action
-/// recommendation. Source-specific coverage confidence can be added later on
-/// top of this baseline; it should not be folded into this helper.
 fn next_action_for_items(items: &[ContextEvidenceItem]) -> ContextNextAction {
     let signals = ContextCoverageSignals::from_items(items);
     if signals.item_count == 0 {
@@ -1311,6 +1430,368 @@ fn next_action_for_items(items: &[ContextEvidenceItem]) -> ContextNextAction {
         return ContextNextAction::OpenSource;
     }
     ContextNextAction::AnswerWithEvidence
+}
+
+pub(crate) fn next_action_for_confidence(
+    shared: &ContextCoverageSignals,
+    source_coverage_confidence: &SourceCoverageConfidence,
+    evidence_grade: &EvidenceGrade,
+) -> ContextNextAction {
+    let baseline = match shared.confidence {
+        ContextConfidence::Empty => ContextNextAction::SearchAgain,
+        _ => next_action_for_items_from_signals(shared),
+    };
+
+    if !source_coverage_confidence.reasons.is_empty()
+        && source_coverage_confidence.recommended_next_action
+            != ContextNextAction::AnswerWithEvidence
+    {
+        return source_coverage_confidence.recommended_next_action;
+    }
+
+    match evidence_grade.verdict {
+        EvidenceGradeVerdict::Insufficient => {
+            if shared.item_count == 0 {
+                ContextNextAction::SearchAgain
+            } else if baseline == ContextNextAction::AnswerWithEvidence {
+                ContextNextAction::OpenSource
+            } else {
+                baseline
+            }
+        }
+        EvidenceGradeVerdict::Partial => {
+            if baseline == ContextNextAction::AnswerWithEvidence {
+                if shared.item_count <= 2 {
+                    ContextNextAction::OpenSource
+                } else {
+                    ContextNextAction::SearchAgain
+                }
+            } else {
+                baseline
+            }
+        }
+        EvidenceGradeVerdict::Sufficient => baseline,
+    }
+}
+
+fn next_action_for_items_from_signals(signals: &ContextCoverageSignals) -> ContextNextAction {
+    if signals.item_count == 0 {
+        return ContextNextAction::SearchAgain;
+    }
+    if matches!(signals.confidence, ContextConfidence::Ambiguous) {
+        return ContextNextAction::SearchAgain;
+    }
+    if signals.item_count <= 2 {
+        return ContextNextAction::OpenSource;
+    }
+    ContextNextAction::AnswerWithEvidence
+}
+
+pub(crate) fn evaluate_memory_source_confidence(
+    items: &[ContextEvidenceItem],
+) -> SourceCoverageConfidence {
+    let signals = ContextCoverageSignals::from_items(items);
+    let mut reasons = Vec::new();
+    let mut next_action = next_action_for_items(items);
+
+    if signals.item_count == 0 {
+        return SourceCoverageConfidence::new(
+            ContextConfidence::Empty,
+            reasons,
+            ContextNextAction::SearchAgain,
+        );
+    }
+    if items.iter().all(|item| item.source_refs.is_empty()) {
+        reasons.push(SourceCoverageReason::NoSourceRefs);
+        next_action = ContextNextAction::SearchAgain;
+    }
+    if matches!(signals.confidence, ContextConfidence::Ambiguous) {
+        reasons.push(SourceCoverageReason::AmbiguousScoreShape);
+        next_action = ContextNextAction::SearchAgain;
+    }
+    if signals.item_count == 1 {
+        reasons.push(SourceCoverageReason::SingleMemoryOnly);
+        reasons.push(SourceCoverageReason::OnlySparseEvidence);
+        next_action = ContextNextAction::OpenSource;
+    } else if signals.item_count == 2 {
+        reasons.push(SourceCoverageReason::OnlySparseEvidence);
+        next_action = ContextNextAction::OpenSource;
+    }
+
+    let confidence = if reasons.is_empty() {
+        ContextConfidence::Strong
+    } else if matches!(signals.confidence, ContextConfidence::Ambiguous) {
+        ContextConfidence::Ambiguous
+    } else {
+        ContextConfidence::Mixed
+    };
+    SourceCoverageConfidence::new(confidence, reasons, next_action)
+}
+
+pub(crate) fn evaluate_llm_wiki_source_confidence(
+    items: &[ContextEvidenceItem],
+    filters: &LlmWikiContextSearchFilters,
+) -> SourceCoverageConfidence {
+    let signals = ContextCoverageSignals::from_items(items);
+    let mut reasons = Vec::new();
+    let mut next_action = next_action_for_items(items);
+
+    if signals.item_count == 0 {
+        return SourceCoverageConfidence::new(
+            ContextConfidence::Empty,
+            reasons,
+            ContextNextAction::SearchAgain,
+        );
+    }
+    if items.iter().all(|item| item.source_refs.is_empty()) {
+        reasons.push(SourceCoverageReason::NoSourceRefs);
+        next_action = ContextNextAction::SearchAgain;
+    }
+    if matches!(signals.confidence, ContextConfidence::Ambiguous) {
+        reasons.push(SourceCoverageReason::AmbiguousScoreShape);
+        next_action = ContextNextAction::SearchAgain;
+    }
+    if signals.item_count <= 2 {
+        reasons.push(SourceCoverageReason::OnlySparseEvidence);
+        next_action = ContextNextAction::OpenSource;
+    }
+
+    let unique_doc_ids = items
+        .iter()
+        .filter_map(|item| item.source_id.clone())
+        .collect::<BTreeSet<_>>();
+    let has_narrow_scope = filters.doc_id.is_some()
+        || filters.relative_path.is_some()
+        || filters.relative_path_prefix.is_some();
+    if !has_narrow_scope && unique_doc_ids.len() > 2 {
+        reasons.push(SourceCoverageReason::WikiScopeTooBroad);
+        next_action = ContextNextAction::OpenSource;
+    }
+
+    let confidence = if reasons.is_empty() {
+        ContextConfidence::Strong
+    } else if matches!(signals.confidence, ContextConfidence::Ambiguous) {
+        ContextConfidence::Ambiguous
+    } else {
+        ContextConfidence::Mixed
+    };
+    SourceCoverageConfidence::new(confidence, reasons, next_action)
+}
+
+pub(crate) fn evaluate_knowledge_source_confidence(
+    items: &[ContextEvidenceItem],
+    want_selected_scope: bool,
+    used_context_fallback: bool,
+) -> SourceCoverageConfidence {
+    let signals = ContextCoverageSignals::from_items(items);
+    let mut reasons = Vec::new();
+    let mut next_action = next_action_for_items(items);
+
+    if signals.item_count == 0 {
+        return SourceCoverageConfidence::new(
+            ContextConfidence::Empty,
+            reasons,
+            ContextNextAction::SearchAgain,
+        );
+    }
+    if items.iter().all(|item| item.source_refs.is_empty()) {
+        reasons.push(SourceCoverageReason::NoSourceRefs);
+        next_action = ContextNextAction::SearchAgain;
+    }
+    if matches!(signals.confidence, ContextConfidence::Ambiguous) {
+        reasons.push(SourceCoverageReason::AmbiguousScoreShape);
+        next_action = ContextNextAction::SearchAgain;
+    }
+    if want_selected_scope && used_context_fallback {
+        reasons.push(SourceCoverageReason::SelectedScopeFallbackUsed);
+        next_action = ContextNextAction::OpenSource;
+    }
+    let low_quality = items.iter().take(3).any(|item| {
+        item.quality_flags.iter().any(|flag| {
+            matches!(
+                flag.as_str(),
+                "short_chunk"
+                    | "noisy_chunk"
+                    | "type:table"
+                    | "type:list"
+                    | "type:code"
+                    | "type:quote"
+                    | "type:mixed"
+            )
+        })
+    });
+    if low_quality {
+        reasons.push(SourceCoverageReason::KnowledgeChunkQualityLow);
+        next_action = ContextNextAction::ExpandContext;
+    }
+    if signals.item_count <= 2 {
+        reasons.push(SourceCoverageReason::OnlySparseEvidence);
+        if next_action == ContextNextAction::AnswerWithEvidence {
+            next_action = ContextNextAction::OpenSource;
+        }
+    }
+
+    let confidence = if reasons.is_empty() {
+        ContextConfidence::Strong
+    } else if matches!(signals.confidence, ContextConfidence::Ambiguous) {
+        ContextConfidence::Ambiguous
+    } else {
+        ContextConfidence::Mixed
+    };
+    SourceCoverageConfidence::new(confidence, reasons, next_action)
+}
+
+pub(crate) fn evaluate_evidence_grade(query: &str, items: &[ContextEvidenceItem]) -> EvidenceGrade {
+    let mut reasons = Vec::new();
+    let mut missing_aspects = Vec::new();
+    let normalized_query = query.to_ascii_lowercase();
+
+    if items.is_empty() {
+        return EvidenceGrade::new(
+            EvidenceGradeVerdict::Insufficient,
+            vec!["No evidence items were returned.".to_string()],
+            vec!["matching evidence".to_string()],
+        );
+    }
+
+    let total_source_refs: usize = items.iter().map(|item| item.source_refs.len()).sum();
+    if total_source_refs == 0 {
+        return EvidenceGrade::new(
+            EvidenceGradeVerdict::Insufficient,
+            vec!["Returned items do not expose source_refs for citation.".to_string()],
+            vec!["citable source references".to_string()],
+        );
+    }
+
+    let weak_quality_count = items
+        .iter()
+        .take(3)
+        .filter(|item| {
+            item.quality_flags
+                .iter()
+                .any(|flag| matches!(flag.as_str(), "short_chunk" | "noisy_chunk"))
+        })
+        .count();
+    if weak_quality_count > 0 {
+        reasons.push("Top evidence contains low-quality or noisy chunks.".to_string());
+        missing_aspects.push("cleaner supporting chunks".to_string());
+    }
+
+    let short_item_count = items
+        .iter()
+        .take(3)
+        .filter(|item| item.content.trim().chars().count() < 80)
+        .count();
+    if short_item_count >= 2 {
+        reasons.push(
+            "Top evidence snippets are too short to safely ground a final claim.".to_string(),
+        );
+        missing_aspects.push("longer source passages".to_string());
+    }
+
+    let unique_contents = items
+        .iter()
+        .take(3)
+        .map(|item| {
+            item.content
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect::<BTreeSet<_>>();
+    if items.len().min(3) >= 2 && unique_contents.len() < items.len().min(3) {
+        reasons.push("Top evidence is duplicated across returned items.".to_string());
+        missing_aspects.push("independent supporting evidence".to_string());
+    }
+
+    let comparison_intent = query_mentions_any(
+        &normalized_query,
+        &[
+            "compare",
+            "comparison",
+            "vs",
+            "versus",
+            "difference",
+            "对比",
+            "区别",
+        ],
+    );
+    if comparison_intent {
+        let distinct_items = items
+            .iter()
+            .take(4)
+            .map(|item| item.id.clone())
+            .collect::<BTreeSet<_>>();
+        if distinct_items.len() < 2 {
+            reasons.push(
+                "Comparison-style query returned fewer than two distinct evidence items."
+                    .to_string(),
+            );
+            missing_aspects.push("a second comparable source".to_string());
+        }
+    }
+
+    let chronology_intent = query_mentions_any(
+        &normalized_query,
+        &[
+            "timeline",
+            "history",
+            "chronology",
+            "before",
+            "after",
+            "when",
+            "时间线",
+            "历史",
+            "什么时候",
+            "先后",
+        ],
+    );
+    if chronology_intent && items.len() < 2 {
+        reasons.push(
+            "Chronology-style query needs more than one time-bearing evidence item.".to_string(),
+        );
+        missing_aspects.push("timeline or date-bearing evidence".to_string());
+    }
+
+    let count_intent = query_mentions_any(
+        &normalized_query,
+        &["how many", "count", "number of", "数量", "多少", "几"],
+    );
+    if count_intent && items.len() < 2 {
+        reasons.push(
+            "Count-style query needs broader supporting evidence than a single hit.".to_string(),
+        );
+        missing_aspects.push("multiple count-supporting items".to_string());
+    }
+
+    let exact_fact_intent = query_mentions_any(
+        &normalized_query,
+        &[
+            "exact", "exactly", "specific", "quote", "precise", "原文", "准确", "具体",
+        ],
+    );
+    if exact_fact_intent && short_item_count > 0 {
+        reasons.push(
+            "Exact-fact query needs fuller quoted context than the current snippets.".to_string(),
+        );
+        missing_aspects.push("fuller source quotations".to_string());
+    }
+
+    if missing_aspects.is_empty() {
+        EvidenceGrade::new(
+            EvidenceGradeVerdict::Sufficient,
+            vec!["Evidence includes citable source refs and no deterministic weak-signal blockers were detected.".to_string()],
+            Vec::new(),
+        )
+    } else if items.len() == 1 || total_source_refs == 1 {
+        EvidenceGrade::new(EvidenceGradeVerdict::Insufficient, reasons, missing_aspects)
+    } else {
+        EvidenceGrade::new(EvidenceGradeVerdict::Partial, reasons, missing_aspects)
+    }
+}
+
+fn query_mentions_any(query: &str, terms: &[&str]) -> bool {
+    terms.iter().any(|term| query.contains(term))
 }
 
 fn envelope_value(envelope: ContextEvidenceEnvelope) -> Result<Value, String> {

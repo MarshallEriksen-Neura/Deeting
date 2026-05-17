@@ -1,9 +1,10 @@
 use super::*;
-use crate::modules::desktop_runtime::context_orchestrator::fusion::{
-    rrf_fuse, DEFAULT_RRF_K,
-};
+use crate::modules::desktop_runtime::context_orchestrator::fusion::{rrf_fuse, DEFAULT_RRF_K};
 use crate::modules::desktop_runtime::context_orchestrator::tools::{
-    parse_llm_wiki_locator_id, resolve_selected_file_ids,
+    evaluate_evidence_grade, evaluate_knowledge_source_confidence,
+    evaluate_llm_wiki_source_confidence, evaluate_memory_source_confidence,
+    next_action_for_confidence, parse_llm_wiki_locator_id, resolve_selected_file_ids,
+    LlmWikiContextSearchFilters,
 };
 use serde_json::json;
 
@@ -19,6 +20,17 @@ fn evidence_item(id: &str, score: f64) -> ContextEvidenceItem {
         quality_flags: vec![],
         lifecycle: None,
     }
+}
+
+fn evidence_item_with_ref(id: &str, score: f64) -> ContextEvidenceItem {
+    let mut item = evidence_item(id, score);
+    item.source_refs = vec![ContextSourceRef {
+        source_type: ContextSourceType::Knowledge,
+        id: id.to_string(),
+        label: Some(format!("ref-{id}")),
+        locator: None,
+    }];
+    item
 }
 
 #[test]
@@ -314,6 +326,128 @@ fn envelope_records_coverage_signals_alongside_count_coverage() {
 }
 
 #[test]
+fn envelope_deserializes_without_optional_confidence_fields() {
+    let payload = json!({
+        "source_type": "knowledge",
+        "query": "vector db",
+        "items": [],
+        "coverage": "empty",
+        "coverage_signals": {
+            "item_count": 0,
+            "confidence": "empty"
+        },
+        "score_semantics": "knowledge.score is source-native",
+        "recommended_next_action": "search_again",
+        "trace": { "events": [] }
+    });
+
+    let envelope: ContextEvidenceEnvelope =
+        serde_json::from_value(payload).expect("backward-compatible envelope json");
+
+    assert!(envelope.source_coverage_confidence.is_none());
+    assert!(envelope.evidence_grade.is_none());
+    assert_eq!(
+        envelope.coverage_signals.confidence,
+        ContextConfidence::Empty
+    );
+}
+
+#[test]
+fn memory_source_confidence_marks_single_memory_only() {
+    let confidence = evaluate_memory_source_confidence(&[evidence_item_with_ref("memory-1", 0.82)]);
+
+    assert_eq!(confidence.confidence, ContextConfidence::Mixed);
+    assert_eq!(
+        confidence.recommended_next_action,
+        ContextNextAction::OpenSource
+    );
+    assert!(confidence
+        .reasons
+        .contains(&SourceCoverageReason::SingleMemoryOnly));
+    assert!(confidence
+        .reasons
+        .contains(&SourceCoverageReason::OnlySparseEvidence));
+}
+
+#[test]
+fn llm_wiki_source_confidence_marks_broad_scope_hits() {
+    let mut item_a = evidence_item_with_ref("doc-a:0", 0.72);
+    item_a.source_id = Some("doc-a".to_string());
+    let mut item_b = evidence_item_with_ref("doc-b:0", 0.70);
+    item_b.source_id = Some("doc-b".to_string());
+    let mut item_c = evidence_item_with_ref("doc-c:0", 0.69);
+    item_c.source_id = Some("doc-c".to_string());
+
+    let confidence = evaluate_llm_wiki_source_confidence(
+        &[item_a, item_b, item_c],
+        &LlmWikiContextSearchFilters::default(),
+    );
+
+    assert_eq!(
+        confidence.recommended_next_action,
+        ContextNextAction::OpenSource
+    );
+    assert!(confidence
+        .reasons
+        .contains(&SourceCoverageReason::WikiScopeTooBroad));
+}
+
+#[test]
+fn knowledge_source_confidence_detects_selected_scope_fallback_and_quality() {
+    let mut item = evidence_item_with_ref("file-1:0", 0.91);
+    item.quality_flags = vec!["short_chunk".to_string()];
+
+    let confidence = evaluate_knowledge_source_confidence(&[item], true, true);
+
+    assert!(confidence
+        .reasons
+        .contains(&SourceCoverageReason::SelectedScopeFallbackUsed));
+    assert!(confidence
+        .reasons
+        .contains(&SourceCoverageReason::KnowledgeChunkQualityLow));
+    assert_ne!(
+        confidence.recommended_next_action,
+        ContextNextAction::AnswerWithEvidence
+    );
+}
+
+#[test]
+fn evidence_grade_marks_single_item_comparison_as_insufficient() {
+    let grade = evaluate_evidence_grade(
+        "compare Rust and Python performance",
+        &[evidence_item_with_ref("a", 0.9)],
+    );
+
+    assert_eq!(grade.verdict, EvidenceGradeVerdict::Insufficient);
+    assert!(!grade.missing_aspects.is_empty());
+}
+
+#[test]
+fn next_action_prefers_source_specific_blocker_over_shared_strong_shape() {
+    let items = vec![
+        evidence_item_with_ref("a", 0.92),
+        evidence_item_with_ref("b", 0.40),
+        evidence_item_with_ref("c", 0.21),
+    ];
+    let shared = ContextCoverageSignals::from_items(&items);
+    let source = SourceCoverageConfidence::new(
+        ContextConfidence::Mixed,
+        vec![SourceCoverageReason::SelectedScopeFallbackUsed],
+        ContextNextAction::OpenSource,
+    );
+    let grade = EvidenceGrade::new(
+        EvidenceGradeVerdict::Sufficient,
+        vec!["enough refs".to_string()],
+        Vec::new(),
+    );
+
+    let next_action = next_action_for_confidence(&shared, &source, &grade);
+
+    assert_eq!(shared.confidence, ContextConfidence::Strong);
+    assert_eq!(next_action, ContextNextAction::OpenSource);
+}
+
+#[test]
 fn routing_policy_preserves_coverage_signals() {
     let policy = ContextRoutingPolicy::default();
     let envelope = ContextEvidenceEnvelope::new(
@@ -377,6 +511,18 @@ fn manifest_renderer_teaches_model_to_read_coverage_signals() {
     assert!(
         prompt.contains("recommended_next_action"),
         "prompt must remind the model to obey recommended_next_action"
+    );
+    assert!(
+        prompt.contains("source_coverage_confidence"),
+        "prompt must teach the model about source-specific confidence"
+    );
+    assert!(
+        prompt.contains("evidence_grade"),
+        "prompt must teach the model about evidence grading"
+    );
+    assert!(
+        prompt.contains("source_refs"),
+        "prompt must require source_refs-based grounded answers"
     );
     assert!(
         prompt.contains("Query crafting"),

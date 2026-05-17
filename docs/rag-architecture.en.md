@@ -271,6 +271,9 @@ pub struct ContextEvidenceEnvelope {
     pub query: String,
     pub items: Vec<ContextEvidenceItem>,
     pub coverage: ContextCoverage,                 // empty / sparse / focused / broad
+    pub coverage_signals: ContextCoverageSignals,  // shared score-shape baseline
+    pub source_coverage_confidence: Option<SourceCoverageConfidence>,
+    pub evidence_grade: Option<EvidenceGrade>,
     pub score_semantics: String,                   // source-native score semantics
     pub recommended_next_action: ContextNextAction,// answer_with_evidence / search_again / open_source / ...
     pub trace: ContextTrace,
@@ -303,6 +306,20 @@ The tool wraps it with a format version:
 
 `auto` mode uses `envelopes: [...]` + `errors: [...]` instead.
 
+`coverage_signals` remains the shared, source-agnostic shape baseline. The newer
+`source_coverage_confidence` and `evidence_grade` layers sit above it:
+
+- `source_coverage_confidence` explains source-specific blockers such as
+  `single_memory_only`, `wiki_scope_too_broad`, or
+  `selected_scope_fallback_used`
+- `evidence_grade` evaluates whether the returned evidence actually answers the
+  question, including `missing_aspects`
+- `recommended_next_action` now combines all three layers instead of looking at
+  score shape alone
+
+Retrieval traces also record `search_attempt`, `original_query`,
+`rewritten_query`, and `rewrite_reason` so search-again loops are explainable.
+
 ## 11. Frontend integration
 
 ### Status events
@@ -325,7 +342,11 @@ To preserve compatibility with persisted older conversations, the frontend **kee
 
 ### Evidence card rendering
 
-`status-rail.tsx` is currently a transitional progress indicator. Generalized envelope-based evidence cards (covering all three sources) are pending Step 6 in [`refactor plan`](../.omx/plans/2026-05-16-context-orchestrator-refactor.md).
+`status-rail.tsx` is currently a transitional progress indicator. The main
+tool-result evidence card now renders shared confidence, source-specific
+reasons, evidence-grade verdicts, and plain-language next actions while
+remaining backward-compatible with older persisted envelopes that lack the new
+fields.
 
 ## 12. File map
 
