@@ -963,6 +963,10 @@ async fn execute_builtin_callable(
                 SearchLocalLlmWikiCorpusRequest {
                     query: query.to_string(),
                     limit,
+                    scope: None,
+                    doc_id: None,
+                    relative_path: None,
+                    relative_path_prefix: None,
                 },
             )
             .await?;

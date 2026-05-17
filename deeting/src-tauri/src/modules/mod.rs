@@ -25,6 +25,7 @@ pub mod mcp;
 pub mod memory;
 pub mod monitor;
 pub mod providers;
+pub mod rag_eval;
 pub mod relay;
 pub mod render_runtime;
 pub mod retrieval_kernel;

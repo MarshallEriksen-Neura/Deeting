@@ -206,32 +206,44 @@ Available context tools: context_search, context_open, context_expand, context_s
   "limit": 6,
   "include_neighbors": false,
   "filters": {
-    "selected_file_ids": ["file-abc"]                 // knowledge scope=selected 时使用
+    "selected_file_ids": ["file-abc"],                // knowledge scope=selected 时使用
+    "category": "preference",                        // memory source-local filter
+    "doc_id": "llm_wiki_doc::abc",                   // llm_wiki source-local filter
+    "relative_path_prefix": "wiki/analyses"          // llm_wiki source-local filter
   }
 }
 ```
 
 行为：
 
-- `source: "auto"` → 并行查三源，分别返回三个 envelope（不归一）
+- `source: "auto"` → 并发查三源，分别返回三个 envelope（不归一）
 - `source: "memory" | "llm_wiki" | "knowledge"` → 仅查该源
 - `scope: "selected"` + 缺省 `filters.selected_file_ids` → 自动回落到工作流注入的 selected knowledge files（见 §9）
+- `include_neighbors` 只是展开意图提示，`context_search` 仍只返回检索命中；需要邻近 chunk 时继续调用 `context_expand`
+- source-local filters：Memory 支持 `session_id` / `capability_id` / `category` / `source` / `tags`；LLM Wiki 支持 `scope` / `doc_id` / `relative_path` / `relative_path_prefix`；Knowledge 支持 `selected_file_ids` / `file_ids`
 
 ### context_open
 
 ```jsonc
 {
   "source_type": "memory | llm_wiki | knowledge",
-  "id": "string",          // memory: memory id；knowledge: "fileId:chunkIndex"
+  "id": "string",          // memory: memory id；llm_wiki: "docId:chunkIndex"；knowledge: "fileId:chunkIndex"
+  "doc_id": "string",      // llm_wiki 时可单独传
   "file_id": "string",     // knowledge 时可单独传
   "chunk_index": 0,        // knowledge 时可单独传
   "window": 1              // 取邻居数（chunk 上下展开）
 }
 ```
 
+行为：
+
+- `memory` → 按 memory id 直接打开本地记忆
+- `llm_wiki` → 按 `doc_id + chunk_index` 精确打开 Wiki chunk；`id` 可用 `doc_id:chunk_index` 形式
+- `knowledge` → 按 `file_id + chunk_index` 精确打开知识文件 chunk；`id` 可用 `file_id:chunk_index` 形式
+
 ### context_expand
 
-与 `context_open` 同 schema，语义是"扩大窗口"。当前实现复用 open 的内部逻辑，只是默认 `window` 更大。
+与 `context_open` 同 schema，语义是"扩大窗口"。当前实现对 `knowledge` 与 `llm_wiki` 会打开焦点 chunk 附近的邻居 chunk；对 `memory` 则仍是按单条 memory id 打开。
 
 ### context_summarize_evidence
 
@@ -269,7 +281,8 @@ pub struct ContextEvidenceEnvelope {
     pub source_type: ContextSourceType,            // memory / llm_wiki / knowledge
     pub query: String,
     pub items: Vec<ContextEvidenceItem>,
-    pub coverage: ContextCoverage,                 // empty / sparse / focused / broad
+    pub coverage: ContextCoverage,                 // empty / sparse / focused / broad（按 item 数量分桶）
+    pub coverage_signals: ContextCoverageSignals,  // 分数分布的形状统计 + confidence 离散标签
     pub score_semantics: String,                   // 源原生评分语义说明
     pub recommended_next_action: ContextNextAction,// answer_with_evidence / search_again / open_source / ...
     pub trace: ContextTrace,
@@ -287,6 +300,49 @@ pub struct ContextEvidenceItem {
     pub lifecycle: Option<serde_json::Value>,
 }
 ```
+
+### 10.1 Coverage Signals（分数分布形状）
+
+`coverage_signals` 由 [`ContextCoverageSignals::from_items`](../deeting/src-tauri/src/modules/desktop_runtime/context_orchestrator/envelope.rs) 在构造 envelope 时自动计算，只读 `item.score`，不写任何分数 —— 是 envelope 自带的**描述性统计**，不是评分层。
+
+```rust
+pub struct ContextCoverageSignals {
+    pub item_count: usize,
+    pub top_score: Option<f64>,        // 最高分
+    pub second_score: Option<f64>,     // 次高分
+    pub score_gap: Option<f64>,        // top - second
+    pub score_gap_ratio: Option<f64>,  // (top - second) / top
+    pub score_mean: Option<f64>,
+    pub score_stddev: Option<f64>,
+    pub flatness: Option<f64>,         // stddev / mean，变异系数
+    pub confidence: ContextConfidence, // 离散标签
+}
+
+pub enum ContextConfidence {
+    Empty,      // 0 命中
+    Strong,     // top 明显领先：score_gap_ratio >= 0.30
+    Ambiguous,  // 分布平坦：item_count >= 3 且 flatness < 0.10
+    Mixed,      // 其他（稀疏、渐降、单条等）
+}
+```
+
+**阈值是纯形状的**：`score_gap_ratio` 是比值，`flatness` 是变异系数，都不带量纲，对任何分数尺度（0-1 / 0-100 / 任意单调评分）通用。这是为什么这些阈值可以**跨源共用**而不违反 No Double Lifecycle Rule —— 它们没有把不同源的分数归一到同一尺度，而是只看各源**自己分布的形状**。
+
+**这一层是"通用基线"**：
+
+- ✅ 它回答的是：「这次返回的分数形状像什么样？」
+- ❌ 它**不**回答：「这条源的证据够不够下结论？」
+
+后者属于源特定（source-specific）层的职责。如果未来要加 `needs_open_source` / `single_memory_only` / `selected_scope_fallback_used` 这类带源语义的 confidence 信号，应当**追加**在 `coverage_signals` 之外（例如 `coverage_signals.reasons: Vec<String>`），而不是替换或污染这层通用统计。
+
+模型行为的引导通过 [§8 Manifest 文案](../deeting/src-tauri/src/modules/desktop_runtime/context_orchestrator/fsm.rs) 实现，会告诉模型：
+
+- `confidence: strong` → 直接答 + 引用 source_refs
+- `confidence: ambiguous` → 改写更具体的 query 再 `context_search`
+- `confidence: mixed` → 考虑 `context_expand` 拿邻居，或 `context_open` 看 top 命中
+- `confidence: empty` → 换 query / 换源 / 反问用户，不要编
+
+trace 里会同步写入 `confidence` / `top_score` / `score_gap_ratio` / `flatness`，方便复盘"模型为什么决定再查一次"。
 
 工具返回时再包一层格式版本号：
 
@@ -454,3 +510,4 @@ A：放在源所在模块内部（如 `knowledge/reranker.rs`），让 Knowledge
 - Retrieval Kernel 模块：[`deeting/src-tauri/src/modules/retrieval_kernel/`](../deeting/src-tauri/src/modules/retrieval_kernel/)
 - 桌面 runtime 主权宪章（设计哲学）：[`deeting/src-tauri/src/modules/desktop_runtime/runtime/AGENTS.md`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/AGENTS.md)
 - Workflow 引擎：[`deeting/src-tauri/src/modules/desktop_runtime/local_orchestrator/workflow.rs`](../deeting/src-tauri/src/modules/desktop_runtime/local_orchestrator/workflow.rs)
+- **RAG 评测**:[`docs/rag-eval.md`](./rag-eval.md) —— 用 recall@k / MRR 量化每次 RAG 改动的回归与提升

@@ -103,6 +103,28 @@ type ShellExecutionInsight = {
   warnings: string[];
 };
 
+type ContextEvidenceItemPreview = {
+  id: string;
+  title: string | null;
+  sourceType: string | null;
+  score: number | null;
+  scoreSemantics: string | null;
+  content: string;
+  refs: string[];
+};
+
+type ContextEvidenceInsight = {
+  formatVersion: "context_evidence.v1" | "context_evidence_summary.v1";
+  tool: string | null;
+  source: string | null;
+  query: string | null;
+  coverage: string | null;
+  recommendedNextAction: string | null;
+  itemCount: number;
+  errors: string[];
+  items: ContextEvidenceItemPreview[];
+};
+
 type LocalCodeSnippetInsight = {
   language: string | null;
   image: string | null;
@@ -228,6 +250,90 @@ function asTrimmedString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0
     ? value.trim()
     : null;
+}
+
+function extractContextEvidenceInsight(value: unknown): ContextEvidenceInsight | null {
+  const root = toRecord(value);
+  const formatVersion = asTrimmedString(root?.format_version);
+  if (
+    formatVersion !== "context_evidence.v1" &&
+    formatVersion !== "context_evidence_summary.v1"
+  ) {
+    return null;
+  }
+
+  const envelopes = [root?.envelope, ...(Array.isArray(root?.envelopes) ? root.envelopes : [])]
+    .map(toRecord)
+    .filter((item): item is Record<string, unknown> => Boolean(item));
+  const summaryItems = Array.isArray(root?.items) ? root.items : [];
+  const items =
+    formatVersion === "context_evidence_summary.v1"
+      ? summaryItems.flatMap((item) => normalizeContextEvidenceItem(item, null))
+      : envelopes.flatMap((envelope) => {
+          const scoreSemantics = asTrimmedString(envelope.score_semantics);
+          const sourceType = asTrimmedString(envelope.source_type);
+          const rawItems = Array.isArray(envelope.items) ? envelope.items : [];
+          return rawItems.flatMap((item) =>
+            normalizeContextEvidenceItem(item, scoreSemantics, sourceType),
+          );
+        });
+
+  const firstEnvelope = envelopes[0] ?? null;
+  const errors = Array.isArray(root?.errors)
+    ? root.errors
+        .map((item) => {
+          const error = toRecord(item);
+          const source = asTrimmedString(error?.source_type);
+          const message = asTrimmedString(error?.error);
+          return [source, message].filter(Boolean).join(": ");
+        })
+        .filter((item) => item.length > 0)
+    : [];
+
+  return {
+    formatVersion,
+    tool: asTrimmedString(root?.tool),
+    source: asTrimmedString(root?.source) ?? asTrimmedString(firstEnvelope?.source_type),
+    query: asTrimmedString(root?.query) ?? asTrimmedString(firstEnvelope?.query),
+    coverage: asTrimmedString(firstEnvelope?.coverage),
+    recommendedNextAction: asTrimmedString(firstEnvelope?.recommended_next_action),
+    itemCount: items.length,
+    errors,
+    items: items.slice(0, 6),
+  };
+}
+
+function normalizeContextEvidenceItem(
+  value: unknown,
+  fallbackScoreSemantics: string | null,
+  fallbackSourceType?: string | null,
+): ContextEvidenceItemPreview[] {
+  const item = toRecord(value);
+  if (!item) return [];
+  const sourceType =
+    asTrimmedString(item.source_type) ?? fallbackSourceType ?? null;
+  const refs = Array.isArray(item.source_refs)
+    ? item.source_refs
+        .map((ref) => {
+          const sourceRef = toRecord(ref);
+          return (
+            asTrimmedString(sourceRef?.label) ?? asTrimmedString(sourceRef?.id)
+          );
+        })
+        .filter((ref): ref is string => Boolean(ref))
+    : [];
+  return [
+    {
+      id: asTrimmedString(item.id) ?? "context-item",
+      title: asTrimmedString(item.title),
+      sourceType,
+      score: toNumber(item.score),
+      scoreSemantics:
+        asTrimmedString(item.score_semantics) ?? fallbackScoreSemantics,
+      content: asTrimmedString(item.content) ?? "",
+      refs,
+    },
+  ];
 }
 
 function toStringArray(value: unknown): string[] {
@@ -1206,6 +1312,68 @@ function RuntimeToolTimeline({
   );
 }
 
+function ContextEvidenceCard({ insight }: { insight: ContextEvidenceInsight }) {
+  const header = [
+    insight.source ? `source: ${insight.source}` : null,
+    insight.query ? `query: ${insight.query}` : null,
+    insight.coverage ? `coverage: ${insight.coverage}` : null,
+  ].filter(Boolean);
+
+  return (
+    <div className="rounded-lg border border-[var(--hairline)] bg-[var(--panel-bg)] p-3">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <Badge variant="outline" className="h-5 rounded-full px-2 text-[10px] font-semibold uppercase tracking-wider">
+          Context Evidence
+        </Badge>
+        {header.map((item) => (
+          <span key={item} className="font-mono text-[10px] text-[var(--ink-3)]">
+            {item}
+          </span>
+        ))}
+      </div>
+      {insight.items.length > 0 ? (
+        <div className="space-y-2">
+          {insight.items.map((item) => (
+            <div key={`${item.sourceType || "context"}-${item.id}`} className="rounded-md border border-[var(--hairline)] bg-background/60 p-2">
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold text-[var(--ink)]">
+                  {item.title || item.id}
+                </span>
+                {item.sourceType ? <span className="font-mono text-[10px] text-[var(--ink-3)]">{item.sourceType}</span> : null}
+                {item.score !== null ? <span className="font-mono text-[10px] text-[var(--ink-3)]">score {item.score.toFixed(3)}</span> : null}
+              </div>
+              {item.content ? <p className="line-clamp-3 text-xs leading-5 text-[var(--ink-2)]">{item.content}</p> : null}
+              {item.refs.length > 0 || item.scoreSemantics ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {item.refs.slice(0, 3).map((ref) => (
+                    <span key={ref} className="rounded border border-[var(--hairline)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--ink-3)]">
+                      {ref}
+                    </span>
+                  ))}
+                  {item.scoreSemantics ? (
+                    <span className="rounded border border-[var(--hairline)] px-1.5 py-0.5 text-[10px] text-[var(--ink-3)]">
+                      {item.scoreSemantics}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-xs text-[var(--ink-3)]">No evidence items returned</div>
+      )}
+      {insight.errors.length > 0 ? (
+        <div className="mt-2 space-y-1 text-xs text-amber-700 dark:text-amber-300">
+          {insight.errors.map((error) => (
+            <div key={error}>{error}</div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export const ToolCallBlock = memo<{
   messageId?: string;
   callId?: string;
@@ -1302,6 +1470,10 @@ export const ToolCallBlock = memo<{
         resultBlock?.result,
       ),
     [resultBlock?.toolName, name, resultBlock?.result],
+  );
+  const contextEvidenceInsight = useMemo(
+    () => extractContextEvidenceInsight(resultBlock?.result),
+    [resultBlock?.result],
   );
   const visualState = useMemo(
     () => resolveToolVisualState(status, resultBlock),
@@ -1632,6 +1804,11 @@ export const ToolCallBlock = memo<{
                   <ShellExecutionResultCard insight={shellExecutionInsight} />
                   <ToolDebugPanel debug={resultBlock?.debug} />
                 </div>
+              ) : contextEvidenceInsight ? (
+                <div className="space-y-3">
+                  <ContextEvidenceCard insight={contextEvidenceInsight} />
+                  <ToolDebugPanel debug={resultBlock?.debug} />
+                </div>
               ) : hasUi ? (
                 <div className="space-y-3">
                   {uiRenderItems.map(({ block: uiBlock, key }) => (
@@ -1861,6 +2038,10 @@ export const ToolResultBlock = memo<{
     () => extractLocalCodeSnippetInsight(name, result),
     [name, result],
   );
+  const contextEvidenceInsight = useMemo(
+    () => extractContextEvidenceInsight(result),
+    [result],
+  );
   const content = useMemo(() => formatObjectAsMarkdown(result), [result]);
   const preview = useMemo(() => {
     const shellPreview = shellExecutionInsight
@@ -1938,6 +2119,8 @@ export const ToolResultBlock = memo<{
                 <LocalCodeSnippetResultCard insight={localCodeSnippetInsight} />
               ) : shellExecutionInsight ? (
                 <ShellExecutionResultCard insight={shellExecutionInsight} />
+              ) : contextEvidenceInsight ? (
+                <ContextEvidenceCard insight={contextEvidenceInsight} />
               ) : content ? (
                 <div className="space-y-3">
                   {preview ? (

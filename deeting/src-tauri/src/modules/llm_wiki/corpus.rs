@@ -4,9 +4,10 @@ use crate::state::AppState;
 
 use super::store::{
     bootstrap_corpus as bootstrap_corpus_store, clear_legacy_projection_assets,
-    load_corpus_status as load_corpus_status_store, rebuild_projection_assets,
-    reconcile_corpus as reconcile_corpus_store, search_corpus as search_corpus_store,
-    workspace_id_from_path,
+    load_corpus_status as load_corpus_status_store, open_corpus_chunks as open_corpus_chunks_store,
+    rebuild_projection_assets, reconcile_corpus as reconcile_corpus_store,
+    search_corpus as search_corpus_store, workspace_id_from_path, LlmWikiQueryHit,
+    LlmWikiSearchFilters,
 };
 use super::types::{LocalLlmWikiCorpusSearchHit, LocalLlmWikiCorpusStatus};
 
@@ -78,6 +79,7 @@ pub(crate) async fn search_corpus(
     workspace_path: &Path,
     query: &str,
     limit: usize,
+    filters: Option<&LlmWikiSearchFilters>,
 ) -> Result<Vec<LocalLlmWikiCorpusSearchHit>, String> {
     let workspace_id = workspace_id_from_path(workspace_path);
     let hits = search_corpus_store(
@@ -86,24 +88,40 @@ pub(crate) async fn search_corpus(
         workspace_id.as_str(),
         query,
         limit,
+        filters,
     )
     .await
     .map_err(|err| err.to_string())?;
-    Ok(hits
-        .into_iter()
-        .map(|hit| LocalLlmWikiCorpusSearchHit {
-            asset_id: hit.chunk_id,
-            doc_id: hit.doc_id,
-            chunk_index: hit.chunk_index,
-            relative_path: hit.relative_path,
-            title: hit.title,
-            scope: hit.scope,
-            summary: hit.snippet,
-            lexical_score: hit.lexical_score,
-            semantic_score: hit.semantic_score,
-            score: hit.final_score,
-        })
-        .collect())
+    Ok(hits.into_iter().map(query_hit_to_search_hit).collect())
+}
+
+pub(crate) async fn open_corpus_chunks(
+    store: &crate::modules::mcp::store::McpStore,
+    workspace_path: &Path,
+    doc_id: &str,
+    chunk_index: Option<i64>,
+    window: i64,
+) -> Result<Vec<LocalLlmWikiCorpusSearchHit>, String> {
+    let workspace_id = workspace_id_from_path(workspace_path);
+    let hits = open_corpus_chunks_store(store, workspace_id.as_str(), doc_id, chunk_index, window)
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(hits.into_iter().map(query_hit_to_search_hit).collect())
+}
+
+fn query_hit_to_search_hit(hit: LlmWikiQueryHit) -> LocalLlmWikiCorpusSearchHit {
+    LocalLlmWikiCorpusSearchHit {
+        asset_id: hit.chunk_id,
+        doc_id: hit.doc_id,
+        chunk_index: hit.chunk_index,
+        relative_path: hit.relative_path,
+        title: hit.title,
+        scope: hit.scope,
+        summary: hit.snippet,
+        lexical_score: hit.lexical_score,
+        semantic_score: hit.semantic_score,
+        score: hit.final_score,
+    }
 }
 
 #[cfg(test)]

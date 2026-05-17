@@ -29,8 +29,11 @@ use super::config::{
     LLM_WIKI_MODE_ADOPT_EXISTING_FOLDER, LLM_WIKI_MODE_MANAGED_WORKSPACE, READ_SCOPE_WHOLE_VAULT,
     WRITE_SCOPE_MANAGED_WORKSPACE,
 };
-use super::corpus::{bootstrap_corpus, load_corpus_status, reconcile_corpus, search_corpus};
+use super::corpus::{
+    bootstrap_corpus, load_corpus_status, open_corpus_chunks, reconcile_corpus, search_corpus,
+};
 use super::scan::{inspect_workspace, scan_vault};
+use super::store::LlmWikiSearchFilters;
 use super::templates::{build_bootstrap_files, build_recommended_agent_prompt};
 use super::types::{
     BootstrapLocalLlmWikiWorkspaceResult, CommitLocalLlmWikiCandidateRequest,
@@ -296,7 +299,44 @@ pub async fn search_local_llm_wiki_corpus(
     let vault_root = normalize_vault_root(&binding.vault_root)?;
     let workspace_path = resolve_workspace_path(&vault_root, &binding.workspace_relative_path);
     let limit = payload.limit.unwrap_or(6).clamp(1, 12);
-    let hits = search_corpus(app_state, &workspace_path, &payload.query, limit).await?;
+    let filters = LlmWikiSearchFilters {
+        scope: payload.scope,
+        doc_id: payload.doc_id,
+        relative_path: payload.relative_path,
+        relative_path_prefix: payload.relative_path_prefix,
+    };
+    let hits = search_corpus(
+        app_state,
+        &workspace_path,
+        &payload.query,
+        limit,
+        Some(&filters),
+    )
+    .await?;
+    Ok(SearchLocalLlmWikiCorpusResult { hits })
+}
+
+pub async fn open_local_llm_wiki_corpus_chunks(
+    app_state: &AppState,
+    doc_id: &str,
+    chunk_index: Option<i64>,
+    window: i64,
+) -> Result<SearchLocalLlmWikiCorpusResult, String> {
+    let binding = load_binding(app_state.mcp.store.as_ref())
+        .await
+        .map_err(|err| err.to_string())?
+        .ok_or_else(|| "llm wiki binding has not been configured yet".to_string())?;
+
+    let vault_root = normalize_vault_root(&binding.vault_root)?;
+    let workspace_path = resolve_workspace_path(&vault_root, &binding.workspace_relative_path);
+    let hits = open_corpus_chunks(
+        app_state.mcp.store.as_ref(),
+        &workspace_path,
+        doc_id,
+        chunk_index,
+        window,
+    )
+    .await?;
     Ok(SearchLocalLlmWikiCorpusResult { hits })
 }
 

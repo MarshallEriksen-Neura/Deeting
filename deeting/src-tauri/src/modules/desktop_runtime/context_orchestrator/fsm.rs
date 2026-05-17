@@ -163,6 +163,15 @@ pub fn render_context_manifest_prompt(manifest: &ContextManifest) -> Option<Stri
             "Available context tools: {}.",
             manifest.available_tools.join(", ")
         ));
+        lines.push("Context tool strategy: search before using document or wiki evidence; open the strongest hit before citing it; expand when adjacent chunks are needed; summarize only to reduce already-returned evidence.".to_string());
+        lines.push("Query crafting: before calling `context_search`, rewrite the user's wording into a search-friendly form — replace pronouns with specific entities, expand acronyms or jargon, and split multi-intent questions into separate targeted queries. Vague queries usually return `coverage_signals.confidence: ambiguous` envelopes that force a re-search anyway, so spend the effort up front.".to_string());
+        lines.push("Source-local filters: memory supports filters.session_id, capability_id, category, source, tags; llm_wiki supports filters.scope, doc_id, relative_path, relative_path_prefix; knowledge supports filters.selected_file_ids/file_ids for selected document search.".to_string());
+        lines.push("Evidence envelopes include a `coverage_signals` object describing the score distribution. Read `coverage_signals.confidence` before acting:".to_string());
+        lines.push("- `strong`: the top hit clearly dominates; answer with that evidence and cite source_refs.".to_string());
+        lines.push("- `ambiguous`: hits are similarly scored, which usually means the query is too generic — call `context_search` again with a more specific or technical reformulation instead of answering from these hits.".to_string());
+        lines.push("- `mixed`: results are sparse or middling; consider `context_expand` for neighbors or `context_open` on the top hit before deciding to answer.".to_string());
+        lines.push("- `empty`: nothing matched; try a different query, switch sources, or ask the user a clarifying question instead of guessing.".to_string());
+        lines.push("Also respect `recommended_next_action` — when it says `search_again`, do not answer from the current evidence.".to_string());
     }
 
     Some(lines.join("\n"))

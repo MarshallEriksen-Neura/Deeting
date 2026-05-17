@@ -2285,7 +2285,7 @@ dependencies = [
 
 [[package]]
 name = "deeting"
-version = "0.1.2-6"
+version = "0.1.2-7"
 dependencies = [
  "aes-gcm",
  "arrow-array",

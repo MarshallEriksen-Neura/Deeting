@@ -6,8 +6,8 @@ use crate::modules::desktop_runtime::context_orchestrator::adapters::llm_wiki::L
 use crate::modules::desktop_runtime::context_orchestrator::adapters::memory::MemoryContextAdapter;
 use crate::modules::desktop_runtime::context_orchestrator::adapters::ContextSourceAdapter;
 use crate::modules::desktop_runtime::context_orchestrator::envelope::{
-    ContextEvidenceEnvelope, ContextEvidenceItem, ContextNextAction, ContextSourceRef,
-    ContextSourceType,
+    ContextConfidence, ContextCoverageSignals, ContextEvidenceEnvelope, ContextEvidenceItem,
+    ContextNextAction, ContextSourceRef, ContextSourceType,
 };
 use crate::modules::desktop_runtime::context_orchestrator::fsm::CONTEXT_TOOL_NAMES;
 use crate::modules::desktop_runtime::context_orchestrator::trace::ContextTrace;
@@ -15,7 +15,9 @@ use crate::modules::knowledge::types::{
     LocalKnowledgeChunk, LocalKnowledgeFile, LocalKnowledgeSearchHit,
     LocalUserDocumentChunkListQuery,
 };
-use crate::modules::llm_wiki::service::search_local_llm_wiki_corpus;
+use crate::modules::llm_wiki::service::{
+    open_local_llm_wiki_corpus_chunks, search_local_llm_wiki_corpus,
+};
 use crate::modules::llm_wiki::types::{
     LocalLlmWikiCorpusSearchHit, SearchLocalLlmWikiCorpusRequest,
 };
@@ -80,9 +82,49 @@ struct ContextOpenArgs {
     #[serde(default)]
     file_id: Option<String>,
     #[serde(default)]
-    chunk_index: Option<i64>,
+    doc_id: Option<String>,
     #[serde(default)]
-    query: Option<String>,
+    chunk_index: Option<i64>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct MemoryContextSearchFilters {
+    session_id: Option<String>,
+    capability_id: Option<String>,
+    category: Option<String>,
+    source: Option<String>,
+    tags: Option<Vec<String>>,
+}
+
+impl MemoryContextSearchFilters {
+    fn as_trace_value(&self) -> Value {
+        json!({
+            "session_id": self.session_id,
+            "capability_id": self.capability_id,
+            "category": self.category,
+            "source": self.source,
+            "tags": self.tags,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct LlmWikiContextSearchFilters {
+    scope: Option<String>,
+    doc_id: Option<String>,
+    relative_path: Option<String>,
+    relative_path_prefix: Option<String>,
+}
+
+impl LlmWikiContextSearchFilters {
+    fn as_trace_value(&self) -> Value {
+        json!({
+            "scope": self.scope,
+            "doc_id": self.doc_id,
+            "relative_path": self.relative_path,
+            "relative_path_prefix": self.relative_path_prefix,
+        })
+    }
 }
 
 async fn execute_context_search(
@@ -124,24 +166,43 @@ async fn execute_context_search(
             }))
         }
         ContextSourceRequest::Auto => {
-            let mut envelopes = Vec::new();
             let mut errors = Vec::new();
-            for source_type in [
-                ContextSourceType::Memory,
-                ContextSourceType::LlmWiki,
-                ContextSourceType::Knowledge,
-            ] {
-                match search_source(
+            let (memory, llm_wiki, knowledge) = tokio::join!(
+                search_source(
                     app_state,
-                    source_type,
+                    ContextSourceType::Memory,
                     &query,
                     scope,
                     limit,
                     args.filters.as_ref(),
                     context_selected_file_ids,
-                )
-                .await
-                {
+                ),
+                search_source(
+                    app_state,
+                    ContextSourceType::LlmWiki,
+                    &query,
+                    scope,
+                    limit,
+                    args.filters.as_ref(),
+                    context_selected_file_ids,
+                ),
+                search_source(
+                    app_state,
+                    ContextSourceType::Knowledge,
+                    &query,
+                    scope,
+                    limit,
+                    args.filters.as_ref(),
+                    context_selected_file_ids,
+                ),
+            );
+            let mut envelopes = Vec::new();
+            for (source_type, result) in [
+                (ContextSourceType::Memory, memory),
+                (ContextSourceType::LlmWiki, llm_wiki),
+                (ContextSourceType::Knowledge, knowledge),
+            ] {
+                match result {
                     Ok(envelope) => envelopes.push(envelope_value(envelope)?),
                     Err(error) => errors.push(json!({
                         "source_type": source_type.as_str(),
@@ -172,8 +233,8 @@ async fn search_source(
     context_selected_file_ids: &[String],
 ) -> Result<ContextEvidenceEnvelope, String> {
     match source_type {
-        ContextSourceType::Memory => search_memory(app_state, query, limit).await,
-        ContextSourceType::LlmWiki => search_llm_wiki(app_state, query, limit).await,
+        ContextSourceType::Memory => search_memory(app_state, query, limit, filters).await,
+        ContextSourceType::LlmWiki => search_llm_wiki(app_state, query, limit, filters).await,
         ContextSourceType::Knowledge => {
             search_knowledge(
                 app_state,
@@ -202,7 +263,16 @@ async fn execute_context_open(app_state: &AppState, arguments: &Value) -> Result
     let window = args.window.unwrap_or(1).clamp(0, 10);
     let envelope = match source_type {
         ContextSourceType::Memory => open_memory(app_state, &id).await?,
-        ContextSourceType::LlmWiki => open_llm_wiki(app_state, &id, args.query.as_deref()).await?,
+        ContextSourceType::LlmWiki => {
+            open_llm_wiki(
+                app_state,
+                &id,
+                args.doc_id.as_deref(),
+                args.chunk_index,
+                window,
+            )
+            .await?
+        }
         ContextSourceType::Knowledge => {
             open_knowledge(
                 app_state,
@@ -248,7 +318,16 @@ async fn execute_context_expand(app_state: &AppState, arguments: &Value) -> Resu
             .await?
         }
         ContextSourceType::Memory => open_memory(app_state, &id).await?,
-        ContextSourceType::LlmWiki => open_llm_wiki(app_state, &id, args.query.as_deref()).await?,
+        ContextSourceType::LlmWiki => {
+            open_llm_wiki(
+                app_state,
+                &id,
+                args.doc_id.as_deref(),
+                args.chunk_index,
+                window,
+            )
+            .await?
+        }
     };
     Ok(json!({
         "format_version": "context_evidence.v1",
@@ -302,23 +381,31 @@ async fn search_memory(
     app_state: &AppState,
     query: &str,
     limit: usize,
+    filters: Option<&Value>,
 ) -> Result<ContextEvidenceEnvelope, String> {
     let adapter = MemoryContextAdapter;
+    let applied_filters = memory_search_filters(filters);
     let result = app_state
         .memory
         .service
         .search(LocalMemorySearchQuery {
             query: query.to_string(),
             limit: Some(limit),
-            session_id: None,
-            capability_id: None,
-            category: None,
-            source: None,
-            tags: None,
+            session_id: applied_filters.session_id.clone(),
+            capability_id: applied_filters.capability_id.clone(),
+            category: applied_filters.category.clone(),
+            source: applied_filters.source.clone(),
+            tags: applied_filters.tags.clone(),
         })
         .await
         .map_err(|err| err.to_string())?;
-    let count = result.items.len();
+    let explore_item_id = result.explore_item_id.clone();
+    let explore_arm_id = result.explore_arm_id.clone();
+    let items: Vec<ContextEvidenceItem> =
+        result.items.into_iter().map(memory_search_item).collect();
+    let count = items.len();
+    let signals = ContextCoverageSignals::from_items(&items);
+    let next_action = next_action_for_items(&items);
     let trace = ContextTrace::default().record(
         "retrieve",
         json!({
@@ -326,16 +413,21 @@ async fn search_memory(
             "query": query,
             "returned": count,
             "score_owner": "MemoryService",
-            "explore_item_id": result.explore_item_id,
-            "explore_arm_id": result.explore_arm_id,
+            "applied_filters": applied_filters.as_trace_value(),
+            "explore_item_id": explore_item_id,
+            "explore_arm_id": explore_arm_id,
+            "confidence": signals.confidence,
+            "top_score": signals.top_score,
+            "score_gap_ratio": signals.score_gap_ratio,
+            "flatness": signals.flatness,
         }),
     );
     Ok(ContextEvidenceEnvelope::new(
         ContextSourceType::Memory,
         query,
-        result.items.into_iter().map(memory_search_item).collect(),
+        items,
         adapter.score_semantics(),
-        next_action_for_count(count),
+        next_action,
         trace,
     ))
 }
@@ -371,17 +463,26 @@ async fn search_llm_wiki(
     app_state: &AppState,
     query: &str,
     limit: usize,
+    filters: Option<&Value>,
 ) -> Result<ContextEvidenceEnvelope, String> {
     let adapter = LlmWikiContextAdapter;
+    let applied_filters = llm_wiki_search_filters(filters);
     let result = search_local_llm_wiki_corpus(
         app_state,
         SearchLocalLlmWikiCorpusRequest {
             query: query.to_string(),
             limit: Some(limit),
+            scope: applied_filters.scope.clone(),
+            doc_id: applied_filters.doc_id.clone(),
+            relative_path: applied_filters.relative_path.clone(),
+            relative_path_prefix: applied_filters.relative_path_prefix.clone(),
         },
     )
     .await?;
-    let count = result.hits.len();
+    let items: Vec<ContextEvidenceItem> = result.hits.into_iter().map(llm_wiki_hit).collect();
+    let count = items.len();
+    let signals = ContextCoverageSignals::from_items(&items);
+    let next_action = next_action_for_items(&items);
     let trace = ContextTrace::default().record(
         "retrieve",
         json!({
@@ -389,14 +490,19 @@ async fn search_llm_wiki(
             "query": query,
             "returned": count,
             "score_owner": "llm_wiki",
+            "applied_filters": applied_filters.as_trace_value(),
+            "confidence": signals.confidence,
+            "top_score": signals.top_score,
+            "score_gap_ratio": signals.score_gap_ratio,
+            "flatness": signals.flatness,
         }),
     );
     Ok(ContextEvidenceEnvelope::new(
         ContextSourceType::LlmWiki,
         query,
-        result.hits.into_iter().map(llm_wiki_hit).collect(),
+        items,
         adapter.score_semantics(),
-        next_action_for_count(count),
+        next_action,
         trace,
     ))
 }
@@ -404,13 +510,34 @@ async fn search_llm_wiki(
 async fn open_llm_wiki(
     app_state: &AppState,
     id: &str,
-    query_hint: Option<&str>,
+    doc_id_arg: Option<&str>,
+    chunk_index_arg: Option<i64>,
+    window: i64,
 ) -> Result<ContextEvidenceEnvelope, String> {
-    let query = query_hint
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or(id);
-    search_llm_wiki(app_state, query, 1).await
+    let adapter = LlmWikiContextAdapter;
+    let (doc_id, chunk_index) = resolve_llm_wiki_locator(id, doc_id_arg, chunk_index_arg)?;
+    let result = open_local_llm_wiki_corpus_chunks(app_state, &doc_id, chunk_index, window).await?;
+    let count = result.hits.len();
+    let trace = ContextTrace::default().record(
+        "open_source",
+        json!({
+            "source_type": adapter.source_type().as_str(),
+            "id": id,
+            "doc_id": doc_id,
+            "chunk_index": chunk_index,
+            "window": window,
+            "returned": count,
+            "score_owner": "llm_wiki",
+        }),
+    );
+    Ok(ContextEvidenceEnvelope::new(
+        ContextSourceType::LlmWiki,
+        id,
+        result.hits.into_iter().map(llm_wiki_hit).collect(),
+        adapter.score_semantics(),
+        next_action_for_count(count),
+        trace,
+    ))
 }
 
 async fn search_knowledge(
@@ -450,7 +577,10 @@ async fn search_knowledge(
             .await
     }
     .map_err(|err| err.to_string())?;
-    let count = hits.len();
+    let items: Vec<ContextEvidenceItem> = hits.into_iter().map(knowledge_hit).collect();
+    let count = items.len();
+    let signals = ContextCoverageSignals::from_items(&items);
+    let next_action = next_action_for_items(&items);
     let trace = ContextTrace::default().record(
         "retrieve",
         json!({
@@ -461,14 +591,18 @@ async fn search_knowledge(
             "returned": count,
             "score_owner": "KnowledgeStore",
             "used_context_fallback": used_context_fallback,
+            "confidence": signals.confidence,
+            "top_score": signals.top_score,
+            "score_gap_ratio": signals.score_gap_ratio,
+            "flatness": signals.flatness,
         }),
     );
     Ok(ContextEvidenceEnvelope::new(
         ContextSourceType::Knowledge,
         query,
-        hits.into_iter().map(knowledge_hit).collect(),
+        items,
         adapter.score_semantics(),
-        next_action_for_count(count),
+        next_action,
         trace,
     ))
 }
@@ -797,6 +931,101 @@ fn parse_source_type(source: &str) -> Result<ContextSourceType, String> {
     }
 }
 
+fn memory_search_filters(filters: Option<&Value>) -> MemoryContextSearchFilters {
+    MemoryContextSearchFilters {
+        session_id: filter_string(filters, &["session_id", "sessionId"]),
+        capability_id: filter_string(filters, &["capability_id", "capabilityId"]),
+        category: filter_string(filters, &["category"]),
+        source: filter_string(filters, &["source"]),
+        tags: filter_string_array(filters, &["tags", "tag"]),
+    }
+}
+
+fn llm_wiki_search_filters(filters: Option<&Value>) -> LlmWikiContextSearchFilters {
+    LlmWikiContextSearchFilters {
+        scope: filter_string(filters, &["scope", "wiki_scope", "wikiScope"]),
+        doc_id: filter_string(filters, &["doc_id", "docId", "document_id", "documentId"]),
+        relative_path: filter_string(filters, &["relative_path", "relativePath", "path"]),
+        relative_path_prefix: filter_string(
+            filters,
+            &[
+                "relative_path_prefix",
+                "relativePathPrefix",
+                "path_prefix",
+                "pathPrefix",
+                "folder",
+            ],
+        ),
+    }
+}
+
+fn filter_string(filters: Option<&Value>, keys: &[&str]) -> Option<String> {
+    let filters = filters?;
+    keys.iter()
+        .find_map(|key| filters.get(*key).and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn filter_string_array(filters: Option<&Value>, keys: &[&str]) -> Option<Vec<String>> {
+    let filters = filters?;
+    let values = keys.iter().find_map(|key| filters.get(*key))?;
+    let items = if let Some(array) = values.as_array() {
+        array
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    } else if let Some(value) = values.as_str() {
+        value
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    if items.is_empty() {
+        None
+    } else {
+        Some(items)
+    }
+}
+
+fn resolve_llm_wiki_locator(
+    id: &str,
+    doc_id_arg: Option<&str>,
+    chunk_index_arg: Option<i64>,
+) -> Result<(String, Option<i64>), String> {
+    let doc_id = doc_id_arg
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    if let Some(doc_id) = doc_id {
+        return Ok((doc_id, chunk_index_arg));
+    }
+
+    if let Some((doc_id, index)) = parse_llm_wiki_locator_id(id) {
+        return Ok((doc_id, Some(index)));
+    }
+
+    Ok((id.trim().to_string(), chunk_index_arg))
+}
+
+pub(super) fn parse_llm_wiki_locator_id(id: &str) -> Option<(String, i64)> {
+    let (doc_id, index) = id.rsplit_once(':')?;
+    let doc_id = doc_id.trim();
+    if doc_id.is_empty() {
+        return None;
+    }
+    let index = index.trim().parse::<i64>().ok()?;
+    Some((doc_id.to_string(), index.max(0)))
+}
+
 fn filter_selected_knowledge_file_ids(filters: Option<&Value>) -> Vec<String> {
     let Some(filters) = filters else {
         return Vec::new();
@@ -889,6 +1118,35 @@ fn next_action_for_count(count: usize) -> ContextNextAction {
     } else {
         ContextNextAction::AnswerWithEvidence
     }
+}
+
+/// Choose the recommended next action for a *search* result by inspecting
+/// the shared score-distribution baseline, not just the item count.
+///
+/// - Empty hits → search again.
+/// - Flat distribution (`ContextConfidence::Ambiguous`) → search again with
+///   a refined query, because every hit looks equally relevant which usually
+///   means the query was too generic.
+/// - Sparse hits (<= 2) → ask the model to open the source for more context.
+/// - Otherwise → answer with the evidence.
+///
+/// This helper does **not** rescore items and is deliberately source-agnostic
+/// for now. It reads the descriptive signals already computed by
+/// `ContextCoverageSignals::from_items` and maps them to an action
+/// recommendation. Source-specific coverage confidence can be added later on
+/// top of this baseline; it should not be folded into this helper.
+fn next_action_for_items(items: &[ContextEvidenceItem]) -> ContextNextAction {
+    let signals = ContextCoverageSignals::from_items(items);
+    if signals.item_count == 0 {
+        return ContextNextAction::SearchAgain;
+    }
+    if matches!(signals.confidence, ContextConfidence::Ambiguous) {
+        return ContextNextAction::SearchAgain;
+    }
+    if signals.item_count <= 2 {
+        return ContextNextAction::OpenSource;
+    }
+    ContextNextAction::AnswerWithEvidence
 }
 
 fn envelope_value(envelope: ContextEvidenceEnvelope) -> Result<Value, String> {

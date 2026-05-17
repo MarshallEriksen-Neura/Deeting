@@ -1716,10 +1716,10 @@ fn context_search_contract() -> CoreToolContract {
                     "description": "Source-local search scope. For selected knowledge, pass selected file ids in filters."
                 },
                 "limit": {"type": "integer", "minimum": 1, "maximum": 12, "default": 6},
-                "include_neighbors": {"type": "boolean", "description": "Hint that nearby chunks may be needed. Use context_expand for actual expansion."},
+                "include_neighbors": {"type": "boolean", "description": "Hint that nearby chunks may be needed. Use context_expand for actual expansion; context_search itself returns ranked source-native hits only."},
                 "filters": {
                     "type": "object",
-                    "description": "Optional source-specific filters such as selected_file_ids, file_ids, category, source, or tags.",
+                    "description": "Optional source-specific filters. Memory supports session_id, capability_id, category, source, tags. LLM Wiki supports scope, doc_id, relative_path, relative_path_prefix. Knowledge supports selected_file_ids/file_ids for selected document search.",
                     "additionalProperties": true
                 }
             },
@@ -1733,7 +1733,7 @@ fn context_search_contract() -> CoreToolContract {
 fn context_open_contract() -> CoreToolContract {
     context_tool_contract(
         "context_open",
-        "Open one source-specific context item by id and return a normalized evidence envelope. Use ids returned by context_search; knowledge ids are file_id:chunk_index locators.",
+        "Open one source-specific context item by id and return a normalized evidence envelope. Use ids returned by context_search; knowledge ids are file_id:chunk_index locators and LLM Wiki ids are doc_id:chunk_index locators.",
         json!({
             "type": "object",
             "properties": {
@@ -1741,9 +1741,9 @@ fn context_open_contract() -> CoreToolContract {
                 "source": context_source_schema(false),
                 "id": {"type": "string", "description": "Source-specific id returned by context_search."},
                 "window": {"type": "integer", "minimum": 0, "maximum": 10, "default": 1},
+                "doc_id": {"type": "string", "description": "Optional LLM Wiki document id when id is not a doc_id:chunk_index locator."},
                 "file_id": {"type": "string", "description": "Optional knowledge file id when id is not a file_id:chunk_index locator."},
-                "chunk_index": {"type": "integer", "description": "Optional knowledge chunk index."},
-                "query": {"type": "string", "description": "Optional LLM Wiki query hint when reopening a wiki hit."}
+                "chunk_index": {"type": "integer", "description": "Optional knowledge or LLM Wiki chunk index."}
             },
             "required": ["source_type", "id"],
             "additionalProperties": true
@@ -1755,7 +1755,7 @@ fn context_open_contract() -> CoreToolContract {
 fn context_expand_contract() -> CoreToolContract {
     context_tool_contract(
         "context_expand",
-        "Expand around a context evidence item and return neighboring source material without changing source scores. Knowledge expansion opens neighboring chunks around file_id:chunk_index.",
+        "Expand around a context evidence item and return neighboring source material without changing source search scores. Knowledge expands neighboring chunks around file_id:chunk_index; LLM Wiki expands neighboring chunks around doc_id:chunk_index.",
         json!({
             "type": "object",
             "properties": {
@@ -1763,9 +1763,9 @@ fn context_expand_contract() -> CoreToolContract {
                 "source": context_source_schema(false),
                 "id": {"type": "string", "description": "Source-specific id returned by context_search."},
                 "window": {"type": "integer", "minimum": 1, "maximum": 10, "default": 2},
+                "doc_id": {"type": "string", "description": "Optional LLM Wiki document id when id is not a doc_id:chunk_index locator."},
                 "file_id": {"type": "string", "description": "Optional knowledge file id when id is not a file_id:chunk_index locator."},
-                "chunk_index": {"type": "integer", "description": "Optional knowledge chunk index."},
-                "query": {"type": "string", "description": "Optional LLM Wiki query hint."}
+                "chunk_index": {"type": "integer", "description": "Optional knowledge or LLM Wiki chunk index."}
             },
             "required": ["source_type", "id"],
             "additionalProperties": true
@@ -2489,6 +2489,9 @@ mod tests {
 
         assert!(tool.description.contains("source-native"));
         assert!(tool.description.contains("MemoryService"));
+        assert!(tool.input_schema["properties"]["filters"]["description"]
+            .as_str()
+            .is_some_and(|description| description.contains("LLM Wiki supports scope")));
         assert!(tool
             .input_schema
             .get("properties")

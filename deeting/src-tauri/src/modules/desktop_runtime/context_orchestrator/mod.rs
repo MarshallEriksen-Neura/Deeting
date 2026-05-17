@@ -6,8 +6,8 @@ pub mod tools;
 pub mod trace;
 
 pub use envelope::{
-    ContextCoverage, ContextEvidenceEnvelope, ContextEvidenceItem, ContextNextAction,
-    ContextSourceRef, ContextSourceType,
+    ContextConfidence, ContextCoverage, ContextCoverageSignals, ContextEvidenceEnvelope,
+    ContextEvidenceItem, ContextNextAction, ContextSourceRef, ContextSourceType,
 };
 pub use fsm::{
     render_context_manifest_prompt, ContextManifest, ContextOrchestrator, ContextOrchestratorState,

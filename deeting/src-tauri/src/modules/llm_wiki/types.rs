@@ -219,6 +219,14 @@ pub struct ReconcileLocalLlmWikiCorpusResult {
 pub struct SearchLocalLlmWikiCorpusRequest {
     pub query: String,
     pub limit: Option<usize>,
+    #[serde(default)]
+    pub scope: Option<String>,
+    #[serde(default)]
+    pub doc_id: Option<String>,
+    #[serde(default)]
+    pub relative_path: Option<String>,
+    #[serde(default)]
+    pub relative_path_prefix: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

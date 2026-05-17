@@ -68,6 +68,43 @@ pub(crate) struct LlmWikiQueryHit {
     pub final_score: f64,
 }
 
+#[derive(Debug, Clone, Default)]
+pub(crate) struct LlmWikiSearchFilters {
+    pub scope: Option<String>,
+    pub doc_id: Option<String>,
+    pub relative_path: Option<String>,
+    pub relative_path_prefix: Option<String>,
+}
+
+impl LlmWikiSearchFilters {
+    fn normalized_scope(&self) -> Option<&str> {
+        normalize_filter_value(self.scope.as_deref())
+    }
+
+    fn normalized_doc_id(&self) -> Option<&str> {
+        normalize_filter_value(self.doc_id.as_deref())
+    }
+
+    fn normalized_relative_path(&self) -> Option<&str> {
+        normalize_filter_value(self.relative_path.as_deref())
+    }
+
+    fn normalized_relative_path_prefix(&self) -> Option<String> {
+        normalize_filter_value(self.relative_path_prefix.as_deref()).map(|value| {
+            let normalized = value.replace('\\', "/").trim_matches('/').to_string();
+            if normalized.is_empty() {
+                String::new()
+            } else {
+                format!("{normalized}/%")
+            }
+        })
+    }
+}
+
+fn normalize_filter_value(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct CorpusSyncResult {
     pub indexed_files: i64,
@@ -607,6 +644,7 @@ pub(crate) async fn search_corpus(
     workspace_id: &str,
     query: &str,
     limit: usize,
+    filters: Option<&LlmWikiSearchFilters>,
 ) -> Result<Vec<LlmWikiQueryHit>, McpError> {
     let normalized_workspace_id = workspace_id.trim();
     let normalized_query = query.trim();
@@ -633,6 +671,10 @@ pub(crate) async fn search_corpus(
               AND llm_wiki_document_fts MATCH ?
               AND d.deleted_at IS NULL
               AND d.index_status = ?
+              AND (? IS NULL OR d.scope = ?)
+              AND (? IS NULL OR d.doc_id = ?)
+              AND (? IS NULL OR d.relative_path = ?)
+              AND (? IS NULL OR d.relative_path LIKE ?)
             ORDER BY lexical_rank
             LIMIT ?;
             "#,
@@ -640,6 +682,14 @@ pub(crate) async fn search_corpus(
         .bind(normalized_workspace_id)
         .bind(fts_query)
         .bind(INDEX_STATUS_INDEXED)
+        .bind(filters.and_then(LlmWikiSearchFilters::normalized_scope))
+        .bind(filters.and_then(LlmWikiSearchFilters::normalized_scope))
+        .bind(filters.and_then(LlmWikiSearchFilters::normalized_doc_id))
+        .bind(filters.and_then(LlmWikiSearchFilters::normalized_doc_id))
+        .bind(filters.and_then(LlmWikiSearchFilters::normalized_relative_path))
+        .bind(filters.and_then(LlmWikiSearchFilters::normalized_relative_path))
+        .bind(filters.and_then(LlmWikiSearchFilters::normalized_relative_path_prefix))
+        .bind(filters.and_then(LlmWikiSearchFilters::normalized_relative_path_prefix))
         .bind(limit.clamp(1, 12) as i64)
         .fetch_all(&store.pool)
         .await
@@ -723,6 +773,9 @@ pub(crate) async fn search_corpus(
         }
 
         if let Some(candidate) = load_query_hit_for_chunk(store, &chunk_id).await? {
+            if !llm_wiki_hit_matches_filters(&candidate, filters) {
+                continue;
+            }
             candidates.insert(
                 chunk_id,
                 LlmWikiQueryHit {
@@ -745,6 +798,129 @@ pub(crate) async fn search_corpus(
     });
     results.truncate(limit.clamp(1, 12));
     Ok(results)
+}
+
+fn llm_wiki_hit_matches_filters(
+    hit: &LlmWikiQueryHit,
+    filters: Option<&LlmWikiSearchFilters>,
+) -> bool {
+    let Some(filters) = filters else {
+        return true;
+    };
+    if let Some(scope) = filters.normalized_scope() {
+        if hit.scope != scope {
+            return false;
+        }
+    }
+    if let Some(doc_id) = filters.normalized_doc_id() {
+        if hit.doc_id != doc_id {
+            return false;
+        }
+    }
+    if let Some(relative_path) = filters.normalized_relative_path() {
+        if hit.relative_path != relative_path {
+            return false;
+        }
+    }
+    if let Some(prefix) = normalize_filter_value(filters.relative_path_prefix.as_deref()) {
+        let prefix = prefix.replace('\\', "/").trim_matches('/').to_string();
+        if !prefix.is_empty()
+            && hit.relative_path != prefix
+            && !hit.relative_path.starts_with(&format!("{prefix}/"))
+        {
+            return false;
+        }
+    }
+    true
+}
+
+pub(crate) async fn open_corpus_chunks(
+    store: &McpStore,
+    workspace_id: &str,
+    doc_id: &str,
+    chunk_index: Option<i64>,
+    window: i64,
+) -> Result<Vec<LlmWikiQueryHit>, McpError> {
+    let normalized_workspace_id = workspace_id.trim();
+    let normalized_doc_id = doc_id.trim();
+    if normalized_workspace_id.is_empty() || normalized_doc_id.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let window = window.clamp(0, 10);
+    let (min_index, max_index, limit) = if let Some(index) = chunk_index {
+        let focus = index.max(0);
+        (
+            Some(focus.saturating_sub(window)),
+            Some(focus.saturating_add(window)),
+            window.saturating_mul(2).saturating_add(1).clamp(1, 100),
+        )
+    } else {
+        (None, None, window.max(1).clamp(1, 100))
+    };
+
+    let rows = sqlx::query(
+        r#"
+        SELECT
+          d.doc_id,
+          d.relative_path,
+          d.title,
+          d.scope,
+          c.chunk_id,
+          c.chunk_index,
+          c.text_content
+        FROM llm_wiki_chunk c
+        INNER JOIN llm_wiki_document d ON d.doc_id = c.doc_id
+        WHERE c.workspace_id = ?
+          AND c.doc_id = ?
+          AND (? IS NULL OR c.chunk_index >= ?)
+          AND (? IS NULL OR c.chunk_index <= ?)
+          AND d.deleted_at IS NULL
+          AND d.index_status = ?
+        ORDER BY c.chunk_index ASC
+        LIMIT ?;
+        "#,
+    )
+    .bind(normalized_workspace_id)
+    .bind(normalized_doc_id)
+    .bind(min_index)
+    .bind(min_index)
+    .bind(max_index)
+    .bind(max_index)
+    .bind(INDEX_STATUS_INDEXED)
+    .bind(limit)
+    .fetch_all(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let row_chunk_index = row.try_get::<i64, _>("chunk_index").unwrap_or(0).max(0);
+            let distance = chunk_index
+                .map(|focus| (row_chunk_index - focus.max(0)).abs())
+                .unwrap_or(0);
+            let open_score = if distance == 0 {
+                1.0
+            } else {
+                1.0 / (distance as f64 + 1.0)
+            };
+            LlmWikiQueryHit {
+                doc_id: row.try_get::<String, _>("doc_id").unwrap_or_default(),
+                chunk_id: row.try_get::<String, _>("chunk_id").unwrap_or_default(),
+                chunk_index: row_chunk_index,
+                relative_path: row
+                    .try_get::<String, _>("relative_path")
+                    .unwrap_or_default(),
+                title: row.try_get::<String, _>("title").unwrap_or_default(),
+                scope: row.try_get::<String, _>("scope").unwrap_or_default(),
+                snippet: row.try_get::<String, _>("text_content").unwrap_or_default(),
+                lexical_score: 0.0,
+                semantic_score: 0.0,
+                final_score: open_score,
+            }
+        })
+        .collect())
 }
 
 pub(crate) async fn list_preview_hits(

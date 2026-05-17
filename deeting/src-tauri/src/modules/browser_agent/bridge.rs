@@ -379,6 +379,10 @@ async fn search_browser_lookup_wiki(
         crate::modules::llm_wiki::types::SearchLocalLlmWikiCorpusRequest {
             query: query_text.to_string(),
             limit: Some(5),
+            scope: None,
+            doc_id: None,
+            relative_path: None,
+            relative_path_prefix: None,
         },
     )
     .await?;

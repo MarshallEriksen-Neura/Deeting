@@ -163,9 +163,9 @@ resolve_provider_tool_name_for_execution(emit_name) → 反查回 canonical "mon
 
 | 工具 | 作用 |
 |---|---|
-| `context_search` | 跨源检索（auto / memory / llm_wiki / knowledge），返回 evidence envelope |
-| `context_open` | 按 id 打开单条命中（knowledge id 形如 `file_id:chunk_index`）|
-| `context_expand` | 知识 chunk 邻域扩展 |
+| `context_search` | 跨源检索（auto 并发查 memory / llm_wiki / knowledge），返回 evidence envelope |
+| `context_open` | 按 id 打开单条命中（knowledge id 形如 `file_id:chunk_index`，LLM Wiki id 形如 `doc_id:chunk_index`）|
+| `context_expand` | Knowledge / LLM Wiki chunk 邻域扩展 |
 | `context_summarize_evidence` | 保留 source_refs 的确定性压缩 |
 
 详见 [rag-architecture.md](./rag-architecture.md)。

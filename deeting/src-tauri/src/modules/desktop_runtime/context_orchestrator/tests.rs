@@ -1,5 +1,7 @@
 use super::*;
-use crate::modules::desktop_runtime::context_orchestrator::tools::resolve_selected_file_ids;
+use crate::modules::desktop_runtime::context_orchestrator::tools::{
+    parse_llm_wiki_locator_id, resolve_selected_file_ids,
+};
 use serde_json::json;
 
 fn evidence_item(id: &str, score: f64) -> ContextEvidenceItem {
@@ -134,6 +136,16 @@ fn manifest_renderer_includes_selected_scope_invocation_instruction() {
         prompt.contains("context_open"),
         "prompt must mention context_open for opening specific chunks"
     );
+    assert!(
+        prompt.contains("Context tool strategy"),
+        "prompt must include a stable context tool invocation strategy"
+    );
+    assert!(
+        prompt.contains(
+            "llm_wiki supports filters.scope, doc_id, relative_path, relative_path_prefix"
+        ),
+        "prompt must document source-local LLM Wiki filters"
+    );
 }
 
 #[test]
@@ -182,5 +194,193 @@ fn resolve_selected_file_ids_returns_empty_when_not_selected_scope_and_filter_em
     assert!(
         resolved.is_empty(),
         "non-selected scope must not implicitly scope to context-provided ids"
+    );
+}
+
+#[test]
+fn parse_llm_wiki_locator_id_uses_last_colon_for_chunk_index() {
+    let parsed = parse_llm_wiki_locator_id("llm_wiki_doc::abc123:4");
+
+    assert_eq!(parsed, Some(("llm_wiki_doc::abc123".to_string(), 4)));
+}
+
+#[test]
+fn parse_llm_wiki_locator_id_rejects_non_numeric_suffix() {
+    let parsed = parse_llm_wiki_locator_id("llm_wiki_doc::abc123");
+
+    assert!(parsed.is_none());
+}
+
+#[test]
+fn coverage_signals_empty_for_zero_items() {
+    let signals = ContextCoverageSignals::from_items(&[]);
+
+    assert_eq!(signals.item_count, 0);
+    assert_eq!(signals.confidence, ContextConfidence::Empty);
+    assert!(signals.top_score.is_none());
+    assert!(signals.score_gap.is_none());
+    assert!(signals.flatness.is_none());
+}
+
+#[test]
+fn coverage_signals_strong_when_top_score_dominates() {
+    let items = vec![
+        evidence_item("a", 0.92),
+        evidence_item("b", 0.45),
+        evidence_item("c", 0.30),
+    ];
+
+    let signals = ContextCoverageSignals::from_items(&items);
+
+    assert_eq!(signals.confidence, ContextConfidence::Strong);
+    assert_eq!(signals.top_score, Some(0.92));
+    assert_eq!(signals.second_score, Some(0.45));
+    let gap_ratio = signals.score_gap_ratio.expect("gap ratio");
+    assert!(
+        gap_ratio >= 0.30,
+        "gap ratio {gap_ratio} must clear the strong threshold"
+    );
+}
+
+#[test]
+fn coverage_signals_ambiguous_when_distribution_is_flat() {
+    let items = vec![
+        evidence_item("a", 0.50),
+        evidence_item("b", 0.49),
+        evidence_item("c", 0.48),
+        evidence_item("d", 0.49),
+    ];
+
+    let signals = ContextCoverageSignals::from_items(&items);
+
+    assert_eq!(signals.confidence, ContextConfidence::Ambiguous);
+    let flatness = signals.flatness.expect("flatness");
+    assert!(
+        flatness < 0.10,
+        "flatness {flatness} must be below the ambiguous threshold"
+    );
+}
+
+#[test]
+fn coverage_signals_mixed_for_single_item() {
+    let items = vec![evidence_item("solo", 0.42)];
+
+    let signals = ContextCoverageSignals::from_items(&items);
+
+    assert_eq!(signals.item_count, 1);
+    assert_eq!(signals.confidence, ContextConfidence::Mixed);
+    assert_eq!(signals.top_score, Some(0.42));
+    assert!(signals.second_score.is_none());
+    assert!(signals.score_gap.is_none());
+}
+
+#[test]
+fn coverage_signals_mixed_when_decline_is_gradual() {
+    let items = vec![
+        evidence_item("a", 0.55),
+        evidence_item("b", 0.50),
+        evidence_item("c", 0.45),
+        evidence_item("d", 0.40),
+        evidence_item("e", 0.35),
+    ];
+
+    let signals = ContextCoverageSignals::from_items(&items);
+
+    // Gap ratio ~9% — not strong. Flatness ~14% — not ambiguous either.
+    assert_eq!(signals.confidence, ContextConfidence::Mixed);
+}
+
+#[test]
+fn envelope_records_coverage_signals_alongside_count_coverage() {
+    let envelope = ContextEvidenceEnvelope::new(
+        ContextSourceType::Knowledge,
+        "vector db",
+        vec![
+            evidence_item("a", 0.90),
+            evidence_item("b", 0.30),
+            evidence_item("c", 0.25),
+        ],
+        "knowledge.score is evidence relevance from FTS/BM25, semantic search, RRF",
+        ContextNextAction::AnswerWithEvidence,
+        ContextTrace::default(),
+    );
+
+    assert_eq!(envelope.coverage, ContextCoverage::Focused);
+    assert_eq!(envelope.confidence(), ContextConfidence::Strong);
+    assert_eq!(envelope.coverage_signals.item_count, 3);
+}
+
+#[test]
+fn routing_policy_preserves_coverage_signals() {
+    let policy = ContextRoutingPolicy::default();
+    let envelope = ContextEvidenceEnvelope::new(
+        ContextSourceType::LlmWiki,
+        "flat query",
+        vec![
+            evidence_item("a", 0.50),
+            evidence_item("b", 0.49),
+            evidence_item("c", 0.48),
+        ],
+        "llm_wiki score semantics",
+        ContextNextAction::AnswerWithEvidence,
+        ContextTrace::default(),
+    );
+    let before = envelope.coverage_signals.clone();
+
+    let routed = policy.route_envelope(envelope);
+
+    assert_eq!(
+        routed.coverage_signals, before,
+        "No Double Lifecycle Rule: routing must not mutate signals"
+    );
+}
+
+#[test]
+fn manifest_renderer_teaches_model_to_read_coverage_signals() {
+    let manifest = ContextManifest::new(
+        Vec::new(),
+        vec![SelectedKnowledgeManifestItem {
+            file_id: "file-1".to_string(),
+            file_name: "spec.md".to_string(),
+            status: "indexed".to_string(),
+            chunk_count: Some(5),
+            folder_id: None,
+            updated_at: None,
+        }],
+    );
+
+    let prompt = render_context_manifest_prompt(&manifest).expect("manifest prompt");
+
+    assert!(
+        prompt.contains("coverage_signals"),
+        "prompt must mention coverage_signals so the model knows it exists"
+    );
+    assert!(
+        prompt.contains("`strong`"),
+        "prompt must describe the strong confidence branch"
+    );
+    assert!(
+        prompt.contains("`ambiguous`"),
+        "prompt must describe the ambiguous confidence branch"
+    );
+    assert!(
+        prompt.contains("`mixed`"),
+        "prompt must describe the mixed confidence branch"
+    );
+    assert!(
+        prompt.contains("`empty`"),
+        "prompt must describe the empty confidence branch"
+    );
+    assert!(
+        prompt.contains("recommended_next_action"),
+        "prompt must remind the model to obey recommended_next_action"
+    );
+    assert!(
+        prompt.contains("Query crafting"),
+        "prompt must teach the model to rewrite queries before searching"
+    );
+    assert!(
+        prompt.contains("multi-intent"),
+        "prompt must instruct the model to split multi-intent questions"
     );
 }
