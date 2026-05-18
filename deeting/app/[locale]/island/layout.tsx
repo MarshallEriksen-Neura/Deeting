@@ -9,6 +9,7 @@ import {
 
 const ISLAND_MESSAGE_NAMESPACES: readonly StaticMessageNamespace[] = [
   "common",
+  "chat",
   "island",
 ]
 

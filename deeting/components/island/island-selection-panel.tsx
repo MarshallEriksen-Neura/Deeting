@@ -202,7 +202,7 @@ export function IslandSelectionPanel({
             </div>
             <div className="h-px min-w-4 flex-1 bg-foreground/8" />
             <div className="shrink-0 text-[10px] text-foreground/42">
-              {t(`island.selection.sources.${selection.source}`)} ·{" "}
+              {t(`selection.sources.${selection.source}`)} ·{" "}
               {t("selection.charCount", {
                 count: selection.charCount,
               })}
@@ -448,7 +448,7 @@ export function IslandSelectionPanel({
               >
                 <Icon className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">
-                  {t(`island.selection.actions.${action.labelKey}`)}
+                  {t(`selection.actions.${action.labelKey}`)}
                 </span>
               </button>
             );

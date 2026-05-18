@@ -32,6 +32,7 @@ describe("island route", () => {
     jest.clearAllMocks()
     mockLoadStaticLocaleMessages.mockResolvedValue({
       common: { ok: "ok" },
+      chat: { codeBlock: { copy: "Copy" } },
       island: { title: "Island" },
     })
   })
@@ -47,13 +48,14 @@ describe("island route", () => {
     expect(mockSetRequestLocale).toHaveBeenCalledWith("en")
     expect(mockLoadStaticLocaleMessages).toHaveBeenCalledWith("en", {
       desktopExport: true,
-      namespaces: ["common", "island"],
+      namespaces: ["common", "chat", "island"],
     })
     expect(mockNextIntlProvider).toHaveBeenCalledWith(
       expect.objectContaining({
         locale: "en",
         messages: {
           common: { ok: "ok" },
+          chat: { codeBlock: { copy: "Copy" } },
           island: { title: "Island" },
         },
       }),
