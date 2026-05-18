@@ -31,6 +31,10 @@
 </div>
 
 <p align="center">
+  <img src="./docs/images/readme/landing_page.png" alt="Deeting landing page" width="100%" />
+</p>
+
+<p align="center">
   <img alt="Release badge" src="./docs/images/readme/badge-release.svg" />
   <img alt="Open source badge" src="./docs/images/readme/badge-open-source.svg" />
   <img alt="Platform badge" src="./docs/images/readme/badge-platform.svg" />
@@ -73,6 +77,12 @@ Deeting 把这些边界收回桌面端处理。
 
 基于 `Next.js 16 + React 19 + Tauri 2 + Rust` 构建。桌面端承接 AI 对话、工具路由、运行时编排和本地能力接入，同时保留现代 Web UI 的灵活性。
 
+<p align="center">
+  <img src="./docs/images/readme/chat_page.png" alt="Deeting chat page" width="100%" />
+</p>
+
+<p align="center"><em>主聊天工作台：对话、工具、知识、记忆、终端在同一现场协作。</em></p>
+
 ### 2. AI Gateway 与运行时编排
 
 Rust 后端拆出 `desktop_runtime`、`execution`、`skills`、`mcp`、`providers`、`workflow` 等模块,承接工具调用、技能执行、模型路由和本地编排。
@@ -80,6 +90,12 @@ Rust 后端拆出 `desktop_runtime`、`execution`、`skills`、`mcp`、`provider
 ### 3. 终端上下文进入聊天链路
 
 聊天页面接入真实终端。请求级附带 terminal context，由模型按需读取。协议层支持命令边界、上下文快照、右键发送到 AI。
+
+<p align="center">
+  <img src="./docs/images/readme/chat_with_terminal.png" alt="Deeting chat with terminal context" width="100%" />
+</p>
+
+<p align="center"><em>聊天与终端共享同一上下文，模型直接看到 shell 现场。</em></p>
 
 ### 4. 本地知识与 LLM Wiki
 

@@ -31,6 +31,10 @@
 </div>
 
 <p align="center">
+  <img src="./docs/images/readme/landing_page.png" alt="Deeting landing page" width="100%" />
+</p>
+
+<p align="center">
   <img alt="Release badge" src="./docs/images/readme/badge-release.svg" />
   <img alt="Open source badge" src="./docs/images/readme/badge-open-source.svg" />
   <img alt="Platform badge" src="./docs/images/readme/badge-platform.svg" />
@@ -73,6 +77,12 @@ Deeting pulls those boundaries back into the desktop.
 
 Built on `Next.js 16 + React 19 + Tauri 2 + Rust`. The desktop app owns conversation, tool routing, runtime orchestration, and local capability access, while keeping a modern web UI.
 
+<p align="center">
+  <img src="./docs/images/readme/chat_page.png" alt="Deeting chat page" width="100%" />
+</p>
+
+<p align="center"><em>The main chat workstation: conversation, tools, knowledge, memory, and terminal collaborate on the same surface.</em></p>
+
 ### 2. AI gateway and runtime orchestration
 
 The Rust backend exposes `desktop_runtime`, `execution`, `skills`, `mcp`, `providers`, `workflow`, and related modules to handle tool execution, skill invocation, model routing, and local orchestration.
@@ -80,6 +90,12 @@ The Rust backend exposes `desktop_runtime`, `execution`, `skills`, `mcp`, `provi
 ### 3. Terminal context inside the chat loop
 
 The chat route embeds a real terminal. Each request can attach terminal context that the model reads on demand. The terminal protocol layer supports command boundaries, context snapshots, and send-to-AI actions.
+
+<p align="center">
+  <img src="./docs/images/readme/chat_with_terminal.png" alt="Deeting chat with terminal context" width="100%" />
+</p>
+
+<p align="center"><em>Chat and terminal share the same context, so the model sees the live shell surface directly.</em></p>
 
 ### 4. Local knowledge and LLM Wiki
 
