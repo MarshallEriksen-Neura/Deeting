@@ -32,6 +32,10 @@ async function listLocalPresets() {
   return await invoke<LocalProviderPreset[]>("list_local_provider_presets");
 }
 
+async function getProviderMarketFilePath() {
+  return await invoke<string>("get_local_provider_market_file_path");
+}
+
 function buildHubStats(providers: ProviderCard[]): ProviderHubResponse["stats"] {
   return {
     total: providers.length,
@@ -98,6 +102,7 @@ export const desktopProviderService: IProviderService = {
   getHub: async (params) => {
     return await buildLocalHub(params);
   },
+  getProviderMarketFilePath,
   getDetail: async (slug) => {
     const hub = await buildLocalHub();
     const detail = hub.providers.find((provider) => provider.slug === slug);

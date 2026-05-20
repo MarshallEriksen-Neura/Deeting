@@ -27,7 +27,7 @@ tools:
       required: ["candidate"]
 
   - name: build_provider_registry_handoff
-    description: "Build explicit get_unified_schema, verify_provider_template, and save_provider_to_marketplace payloads from a provider preset candidate."
+    description: "Build explicit get_unified_schema, verify_provider_template, and save_local_provider_preset payloads from a provider preset candidate."
     parameters:
       type: object
       properties:

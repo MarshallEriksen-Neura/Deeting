@@ -6,7 +6,11 @@ import {
   CheckCircle2,
   ChevronRight,
   Cloud,
+  Copy,
+  FileJson,
+  FolderOpen,
   Monitor,
+  RefreshCw,
   Search,
   ServerCog,
   ShieldCheck,
@@ -21,6 +25,7 @@ import { Input } from "@/components/ui/shadcn/input";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { ProviderIcon } from "@/components/models/provider-icon";
 import { useProviderHub } from "@/hooks/use-providers";
+import { usePlatform } from "@/lib/platform/provider";
 import { cn } from "@/lib/utils";
 import type { ProviderCard } from "@/lib/api/providers";
 import type { ProviderPresetConfig } from "@/components/providers/connect-provider-drawer";
@@ -422,11 +427,14 @@ function ProviderInspector({
 
 export function ProviderMarketPage() {
   const t = useTranslations("providers.market");
+  const { provider } = usePlatform();
   const [selectedTab, setSelectedTab] = React.useState<MarketTab>("all");
   const [query, setQuery] = React.useState("");
   const [selectedSlug, setSelectedSlug] = React.useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [selectedPreset, setSelectedPreset] = React.useState<ProviderPresetConfig | null>(null);
+  const [marketFilePath, setMarketFilePath] = React.useState<string | null>(null);
+  const [copiedPath, setCopiedPath] = React.useState(false);
 
   const params = React.useMemo(() => {
     const p: {
@@ -442,6 +450,21 @@ export function ProviderMarketPage() {
   }, [query, selectedTab]);
 
   const { providers, stats, isLoading, mutate } = useProviderHub(params);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    provider
+      .getProviderMarketFilePath?.()
+      .then((path) => {
+        if (!cancelled) setMarketFilePath(path);
+      })
+      .catch(() => {
+        if (!cancelled) setMarketFilePath(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [provider]);
 
   React.useEffect(() => {
     if (!providers.length) {
@@ -478,6 +501,29 @@ export function ProviderMarketPage() {
     await mutate();
   }, [mutate]);
 
+  const handleCopyMarketPath = React.useCallback(async () => {
+    if (!marketFilePath) return;
+    await navigator.clipboard?.writeText(marketFilePath);
+    setCopiedPath(true);
+    window.setTimeout(() => setCopiedPath(false), 1600);
+  }, [marketFilePath]);
+
+  const handleOpenMarketFile = React.useCallback(async () => {
+    if (!marketFilePath) return;
+    const { openPath } = await import("@tauri-apps/plugin-opener");
+    await openPath(marketFilePath);
+  }, [marketFilePath]);
+
+  const handleRevealMarketFile = React.useCallback(async () => {
+    if (!marketFilePath) return;
+    const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
+    await revealItemInDir(marketFilePath);
+  }, [marketFilePath]);
+
+  const handleReloadMarketFile = React.useCallback(async () => {
+    await mutate();
+  }, [mutate]);
+
   const categories: Array<{ id: MarketTab; label: string; icon: React.ComponentType<{ className?: string }>; count?: number }> = [
     { id: "all", label: t("tabs.all"), icon: Store, count: stats?.total },
     { id: "platform", label: t("tabs.platform"), icon: ShieldCheck, count: stats?.by_category?.platform },
@@ -500,6 +546,50 @@ export function ProviderMarketPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          {marketFilePath && (
+            <div className="flex h-9 max-w-[420px] items-center gap-1 rounded-[11px] border border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-2 text-[12px] text-[var(--ink-2)] shadow-[var(--elev-inset-hi)]">
+              <button
+                type="button"
+                title={marketFilePath}
+                onClick={handleOpenMarketFile}
+                className="flex min-w-0 flex-1 items-center gap-2 rounded-[8px] px-1.5 py-1.5 transition-colors hover:bg-[var(--panel-bg)]"
+              >
+                <FileJson className="size-3.5 shrink-0 text-[var(--accent-strong)]" />
+                <span className="shrink-0 font-medium">{t("localFile.label")}</span>
+                <span className="min-w-0 truncate font-mono text-[11px] text-[var(--ink-3)]">
+                  {marketFilePath}
+                </span>
+              </button>
+              <button
+                type="button"
+                title={t("localFile.copy")}
+                onClick={handleCopyMarketPath}
+                className="flex size-7 shrink-0 items-center justify-center rounded-[8px] transition-colors hover:bg-[var(--panel-bg)]"
+              >
+                {copiedPath ? (
+                  <CheckCircle2 className="size-3.5 text-[var(--ok)]" />
+                ) : (
+                  <Copy className="size-3.5 text-[var(--ink-4)]" />
+                )}
+              </button>
+              <button
+                type="button"
+                title={t("localFile.reveal")}
+                onClick={handleRevealMarketFile}
+                className="flex size-7 shrink-0 items-center justify-center rounded-[8px] transition-colors hover:bg-[var(--panel-bg)]"
+              >
+                <FolderOpen className="size-3.5 text-[var(--ink-4)]" />
+              </button>
+              <button
+                type="button"
+                title={t("localFile.reload")}
+                onClick={handleReloadMarketFile}
+                className="flex size-7 shrink-0 items-center justify-center rounded-[8px] transition-colors hover:bg-[var(--panel-bg)]"
+              >
+                <RefreshCw className="size-3.5 text-[var(--ink-4)]" />
+              </button>
+            </div>
+          )}
           <div className="relative w-[320px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--ink-4)]" />
             <Input

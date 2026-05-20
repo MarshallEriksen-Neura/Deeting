@@ -3,10 +3,15 @@ use serde_json::json;
 use sqlx::Row;
 use uuid::Uuid;
 
+fn isolated_provider_market_file_path() -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("deeting-provider-market-{}.json", Uuid::new_v4()))
+}
+
 async fn init_store() -> ProviderStore {
     let store = ProviderStore::new("sqlite::memory:")
         .await
-        .expect("failed to create provider store");
+        .expect("failed to create provider store")
+        .with_provider_market_file(isolated_provider_market_file_path());
     store.init().await.expect("provider init failed");
     store
 }
@@ -355,7 +360,8 @@ async fn update_user_secretary_persists_provider_model_id() {
 async fn init_migrates_legacy_provider_models_before_index_creation() {
     let store = ProviderStore::new("sqlite::memory:")
         .await
-        .expect("failed to create provider store");
+        .expect("failed to create provider store")
+        .with_provider_market_file(isolated_provider_market_file_path());
 
     sqlx::query(
         "CREATE TABLE provider_models (
@@ -389,10 +395,11 @@ async fn init_migrates_legacy_provider_models_before_index_creation() {
 }
 
 #[tokio::test]
-async fn init_rebuilds_provider_presets_without_legacy_columns() {
+async fn init_drops_provider_presets_table() {
     let store = ProviderStore::new("sqlite::memory:")
         .await
-        .expect("failed to create provider store");
+        .expect("failed to create provider store")
+        .with_provider_market_file(isolated_provider_market_file_path());
 
     sqlx::query(
         "CREATE TABLE provider_presets (
@@ -424,46 +431,44 @@ async fn init_rebuilds_provider_presets_without_legacy_columns() {
     store
         .init()
         .await
-        .expect("provider init should rebuild provider_presets");
+        .expect("provider init should drop provider_presets");
 
-    let columns = sqlx::query("PRAGMA table_info(provider_presets)")
-        .fetch_all(&store.pool)
-        .await
-        .expect("failed to inspect provider_presets");
-    let names: Vec<String> = columns
-        .iter()
-        .filter_map(|row| row.try_get::<String, _>("name").ok())
-        .collect();
+    let table = sqlx::query(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'provider_presets'",
+    )
+    .fetch_optional(&store.pool)
+    .await
+    .expect("failed to inspect provider_presets");
 
-    assert!(names.iter().any(|name| name == "protocol_profiles"));
-    assert!(!names.iter().any(|name| name == "template_engine"));
-    assert!(!names.iter().any(|name| name == "response_transform"));
-    assert!(!names.iter().any(|name| name == "default_headers"));
-    assert!(!names.iter().any(|name| name == "default_params"));
-    assert!(!names.iter().any(|name| name == "capability_configs"));
+    assert!(table.is_none());
 }
 
 #[tokio::test]
 async fn init_backfills_anthropic_protocol_meta_for_official_instances() {
     let store = ProviderStore::new("sqlite::memory:")
         .await
-        .expect("failed to create provider store");
+        .expect("failed to create provider store")
+        .with_provider_market_file(isolated_provider_market_file_path());
 
-    sqlx::query(
-        "CREATE TABLE provider_presets (
-            slug TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            provider TEXT NOT NULL,
-            base_url TEXT NOT NULL,
-            icon TEXT,
-            auth_type TEXT NOT NULL DEFAULT 'api_key',
-            auth_config TEXT NOT NULL DEFAULT '{}',
-            is_active BOOLEAN DEFAULT 1
-        )",
-    )
-    .execute(&store.pool)
-    .await
-    .expect("failed to create provider_presets");
+    store
+        .replace_presets(vec![crate::modules::providers::types::ProviderPreset {
+            slug: "anthropic".to_string(),
+            name: "Anthropic".to_string(),
+            provider: "anthropic".to_string(),
+            base_url: "https://api.anthropic.com".to_string(),
+            icon: None,
+            theme_color: None,
+            category: Some("cloud".to_string()),
+            url_template: None,
+            auth_type: "api_key".to_string(),
+            auth_config: json!({}),
+            protocol_schema_version: None,
+            protocol_profiles: json!({}),
+            version: 1,
+            is_active: true,
+        }])
+        .await
+        .expect("replace presets");
 
     sqlx::query(
         "CREATE TABLE provider_instances (
@@ -482,14 +487,6 @@ async fn init_backfills_anthropic_protocol_meta_for_official_instances() {
     .execute(&store.pool)
     .await
     .expect("failed to create provider_instances");
-
-    sqlx::query(
-        "INSERT INTO provider_presets (slug, name, provider, base_url, icon, auth_type, auth_config, is_active)
-         VALUES ('anthropic', 'Anthropic', 'anthropic', 'https://api.anthropic.com', NULL, 'api_key', '{}', 1)",
-    )
-    .execute(&store.pool)
-    .await
-    .expect("insert preset");
 
     let now = now_rfc3339().expect("time");
     let missing_protocol_id = Uuid::new_v4().to_string();

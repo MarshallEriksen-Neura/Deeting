@@ -15,6 +15,7 @@ use crate::modules::providers::store::utils::{normalize_secret, now_rfc3339};
 use log::warn;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions, SqliteRow};
 use sqlx::Row;
+use std::path::PathBuf;
 use std::str::FromStr;
 
 #[derive(Debug, Clone)]
@@ -33,6 +34,7 @@ pub struct ProviderStore {
     /// serialization to avoid SQLite single-writer contention.
     pub write_pool: SqlitePool,
     secret_store: SecretStore,
+    provider_market_file_path: Option<PathBuf>,
 }
 
 pub const PROVIDER_KEYCHAIN_SERVICE: &str = "deeting.provider";
@@ -78,6 +80,7 @@ impl ProviderStore {
             pool,
             write_pool,
             secret_store,
+            provider_market_file_path: None,
         })
     }
 
@@ -95,7 +98,18 @@ impl ProviderStore {
             pool,
             write_pool,
             secret_store,
+            provider_market_file_path: None,
         })
+    }
+
+    #[cfg(test)]
+    pub fn with_provider_market_file(mut self, path: PathBuf) -> Self {
+        self.provider_market_file_path = Some(path);
+        self
+    }
+
+    pub(crate) fn provider_market_file_path(&self) -> Option<&std::path::Path> {
+        self.provider_market_file_path.as_deref()
     }
 
     pub(crate) async fn begin_write(
@@ -105,26 +119,9 @@ impl ProviderStore {
     }
 
     pub async fn init(&self) -> Result<(), ProviderError> {
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS provider_presets (
-                slug TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                provider TEXT NOT NULL,
-                base_url TEXT NOT NULL,
-                icon TEXT,
-                theme_color TEXT,
-                category TEXT,
-                url_template TEXT,
-                auth_type TEXT NOT NULL DEFAULT 'api_key',
-                auth_config TEXT NOT NULL DEFAULT '{}',
-                protocol_schema_version TEXT,
-                protocol_profiles TEXT NOT NULL DEFAULT '{}',
-                version INTEGER NOT NULL DEFAULT 1,
-                is_active BOOLEAN DEFAULT 1
-            )",
-        )
-        .execute(&self.write_pool)
-        .await?;
+        sqlx::query("DROP TABLE IF EXISTS provider_presets")
+            .execute(&self.write_pool)
+            .await?;
 
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS provider_instances (
@@ -146,19 +143,6 @@ impl ProviderStore {
         .execute(&self.write_pool)
         .await?;
 
-        self.ensure_column(
-            "provider_presets",
-            "protocol_schema_version",
-            "ALTER TABLE provider_presets ADD COLUMN protocol_schema_version TEXT",
-        )
-        .await?;
-        self.ensure_column(
-            "provider_presets",
-            "protocol_profiles",
-            "ALTER TABLE provider_presets ADD COLUMN protocol_profiles TEXT NOT NULL DEFAULT '{}'",
-        )
-        .await?;
-        self.migrate_provider_presets_v2_cleanup().await?;
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS provider_credentials (
                 id TEXT PRIMARY KEY,
@@ -301,42 +285,6 @@ impl ProviderStore {
             "provider_instances",
             "updated_at",
             "ALTER TABLE provider_instances ADD COLUMN updated_at TEXT",
-        )
-        .await?;
-        self.ensure_column(
-            "provider_presets",
-            "theme_color",
-            "ALTER TABLE provider_presets ADD COLUMN theme_color TEXT",
-        )
-        .await?;
-        self.ensure_column(
-            "provider_presets",
-            "category",
-            "ALTER TABLE provider_presets ADD COLUMN category TEXT",
-        )
-        .await?;
-        self.ensure_column(
-            "provider_presets",
-            "url_template",
-            "ALTER TABLE provider_presets ADD COLUMN url_template TEXT",
-        )
-        .await?;
-        self.ensure_column(
-            "provider_presets",
-            "auth_type",
-            "ALTER TABLE provider_presets ADD COLUMN auth_type TEXT NOT NULL DEFAULT 'api_key'",
-        )
-        .await?;
-        self.ensure_column(
-            "provider_presets",
-            "auth_config",
-            "ALTER TABLE provider_presets ADD COLUMN auth_config TEXT NOT NULL DEFAULT '{}'",
-        )
-        .await?;
-        self.ensure_column(
-            "provider_presets",
-            "version",
-            "ALTER TABLE provider_presets ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
         )
         .await?;
         self.ensure_column(
@@ -564,73 +512,6 @@ impl ProviderStore {
         self.normalize_model_capability_data().await?;
         self.migrate_legacy_secrets_to_keychain().await?;
 
-        Ok(())
-    }
-
-    async fn migrate_provider_presets_v2_cleanup(&self) -> Result<(), ProviderError> {
-        let rows = sqlx::query("PRAGMA table_info(provider_presets)")
-            .fetch_all(&self.pool)
-            .await?;
-        let column_names: Vec<String> = rows
-            .iter()
-            .filter_map(|row| row.try_get::<String, _>("name").ok())
-            .collect();
-        let has_legacy_columns = column_names.iter().any(|name| {
-            matches!(
-                name.as_str(),
-                "template_engine"
-                    | "response_transform"
-                    | "default_headers"
-                    | "default_params"
-                    | "capability_configs"
-            )
-        });
-        if !has_legacy_columns {
-            return Ok(());
-        }
-
-        let mut tx = self.begin_write().await?;
-        sqlx::query(
-            "CREATE TABLE provider_presets_v2 (
-                slug TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                provider TEXT NOT NULL,
-                base_url TEXT NOT NULL,
-                icon TEXT,
-                theme_color TEXT,
-                category TEXT,
-                url_template TEXT,
-                auth_type TEXT NOT NULL DEFAULT 'api_key',
-                auth_config TEXT NOT NULL DEFAULT '{}',
-                protocol_schema_version TEXT,
-                protocol_profiles TEXT NOT NULL DEFAULT '{}',
-                version INTEGER NOT NULL DEFAULT 1,
-                is_active BOOLEAN DEFAULT 1
-            )",
-        )
-        .execute(&mut *tx)
-        .await?;
-        sqlx::query(
-            "INSERT INTO provider_presets_v2 (
-                slug, name, provider, base_url, icon, theme_color, category, url_template,
-                auth_type, auth_config, protocol_schema_version, protocol_profiles,
-                version, is_active
-            )
-            SELECT
-                slug, name, provider, base_url, icon, theme_color, category, url_template,
-                auth_type, auth_config, protocol_schema_version, protocol_profiles,
-                version, is_active
-            FROM provider_presets",
-        )
-        .execute(&mut *tx)
-        .await?;
-        sqlx::query("DROP TABLE provider_presets")
-            .execute(&mut *tx)
-            .await?;
-        sqlx::query("ALTER TABLE provider_presets_v2 RENAME TO provider_presets")
-            .execute(&mut *tx)
-            .await?;
-        tx.commit().await?;
         Ok(())
     }
 

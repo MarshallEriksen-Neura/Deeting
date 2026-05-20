@@ -281,6 +281,14 @@ export async function exportCreditsRechargeOrdersCsv(params?: {
 
 /** Platform models available for credits (desktop sync / model picker). */
 export async function fetchCreditsModels(): Promise<CreditsPlatformModelsResponse> {
+  if (
+    typeof window !== "undefined" &&
+    process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
+    ("__TAURI__" in window || "__TAURI_INTERNALS__" in window)
+  ) {
+    return { models: [] }
+  }
+
   const data = await request<CreditsPlatformModelsResponse>({
     url: `${CREDITS_BASE}/models`,
     method: "GET",

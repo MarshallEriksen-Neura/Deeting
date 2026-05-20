@@ -15,6 +15,12 @@
         "title": "Connect {name}",
         "description": "Continue to configure and connect {name}."
       },
+      "localFile": {
+        "label": "Local file",
+        "copy": "Copy file path",
+        "reveal": "Reveal in folder",
+        "reload": "Reload file"
+      },
       "grid": {
         "loading": "Loading providers...",
         "emptyTitle": "No providers found",

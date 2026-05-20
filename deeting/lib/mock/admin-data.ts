@@ -276,25 +276,6 @@ export const mockProviderCredentials: MockProviderCredential[] = [
   { id: uuid(), instance_name: "Moonshot AI", alias: "moonshot-key", secret_ref: "sk-****...j0k1", weight: 10, priority: 1, is_active: false },
 ]
 
-// ─── Provider Presets ───────────────────────────────────────
-export interface MockProviderPreset {
-  id: string
-  slug: string
-  name: string
-  description: string
-  status: "active" | "inactive"
-  icon: string
-}
-
-export const mockProviderPresets: MockProviderPreset[] = [
-  { id: uuid(), slug: "openai", name: "OpenAI", description: "GPT-4o, GPT-4o-mini, DALL-E, Whisper", status: "active", icon: "openai" },
-  { id: uuid(), slug: "anthropic", name: "Anthropic", description: "Claude 3 Opus, Sonnet, Haiku", status: "active", icon: "anthropic" },
-  { id: uuid(), slug: "google", name: "Google AI", description: "Gemini Pro, Gemini Ultra", status: "active", icon: "google" },
-  { id: uuid(), slug: "deepseek", name: "DeepSeek", description: "DeepSeek V3, DeepSeek Coder", status: "active", icon: "deepseek" },
-  { id: uuid(), slug: "moonshot", name: "Moonshot", description: "Kimi, Moonshot V1", status: "inactive", icon: "moonshot" },
-  { id: uuid(), slug: "zhipu", name: "Zhipu AI", description: "GLM-4, CodeGeeX", status: "inactive", icon: "zhipu" },
-]
-
 // ─── Skills ─────────────────────────────────────────────────
 export interface MockSkill {
   id: string

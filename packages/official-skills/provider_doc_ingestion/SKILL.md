@@ -36,7 +36,7 @@ This skill is the ingestion lane. It does not publish provider presets by itself
 - `build_provider_registry_handoff` returns:
   - `handoff.get_unified_schema`
   - `handoff.verify_provider_template`
-  - `handoff.save_provider_to_marketplace`
+  - `handoff.save_local_provider_preset`
 - The intended downstream flow is:
   1. `collect_provider_doc_evidence`
   2. external or model-assisted extraction into `ProviderExtractionReport`
@@ -44,4 +44,4 @@ This skill is the ingestion lane. It does not publish provider presets by itself
   4. `score_provider_candidate_readiness`
   5. handoff to `provider_registry.get_unified_schema`
   6. handoff to `provider_registry.verify_provider_template`
-  7. publish only after verification succeeds
+  7. write to the local provider market file only after verification succeeds

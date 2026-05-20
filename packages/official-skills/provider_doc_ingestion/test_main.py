@@ -149,7 +149,7 @@ class ProviderDocIngestionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             "api/v1/chat/completions",
-            candidate["provider_registry_handoff"]["save_provider_to_marketplace"]["protocol_profiles"]["chat"]["transport"]["path"],
+            candidate["provider_registry_handoff"]["save_local_provider_preset"]["protocol_profiles"]["chat"]["transport"]["path"],
         )
 
     async def test_score_provider_candidate_readiness_reports_gaps(self):
@@ -253,7 +253,7 @@ class ProviderDocIngestionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             "api/v1/chat/completions",
-            handoff["handoff"]["save_provider_to_marketplace"]["protocol_profiles"]["chat"]["transport"]["path"],
+            handoff["handoff"]["save_local_provider_preset"]["protocol_profiles"]["chat"]["transport"]["path"],
         )
 
     async def test_handle_input_dispatches_candidate_tool(self):

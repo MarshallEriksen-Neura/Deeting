@@ -224,7 +224,7 @@ export function clearAuthTokenForDesktop(): void {
   setDesktopConfig(DESKTOP_CONFIG_KEYS.authToken, "").catch(() => {});
 }
 
-/** Trigger platform models sync in Tauri (fire-and-forget). Call after login or on startup. */
+/** Compatibility no-op for the removed cloud platform-model sync path. */
 export function syncPlatformModelsForDesktop(): void {
   if (!isTauriRuntime()) return;
   import("@tauri-apps/api/core")

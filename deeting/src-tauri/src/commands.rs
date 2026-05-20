@@ -205,6 +205,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::custom_task_agents::commands::import_external_task_agents,
         // Provider Commands
         crate::modules::providers::commands::list_local_provider_presets,
+        crate::modules::providers::commands::get_local_provider_market_file_path,
         crate::modules::providers::commands::get_local_user_secretary,
         crate::modules::providers::commands::update_local_user_secretary,
         crate::modules::providers::commands::get_local_user_embedding_config,

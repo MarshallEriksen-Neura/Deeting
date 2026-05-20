@@ -99,7 +99,7 @@ fn parse_voice_runtime_mode(value: &str) -> Option<VoiceRuntimeMode> {
         "openai" | "openai_tts" | "openai_compat" | "openai_compat_tts" | "custom" | "voice" => {
             Some(VoiceRuntimeMode::OpenAiTts)
         }
-        "minimax_tts" => Some(VoiceRuntimeMode::MiniMaxTts),
+        "minimax" | "minimax_tts" => Some(VoiceRuntimeMode::MiniMaxTts),
         "volcengine" | "volcengine_tts" | "volcengine_openspeech_tts" | "openspeech_tts" => {
             Some(VoiceRuntimeMode::VolcengineTts)
         }

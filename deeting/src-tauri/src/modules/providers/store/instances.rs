@@ -261,27 +261,29 @@ impl ProviderStore {
         instance_id: &str,
     ) -> Result<Option<crate::modules::providers::store::ProviderConnection>, ProviderError> {
         let instance_row = sqlx::query(
-            "SELECT i.base_url, i.meta,
-                    COALESCE(i.credential_source, 'local') AS credential_source,
-                    p.provider AS preset_provider
-             FROM provider_instances i
-             LEFT JOIN provider_presets p ON p.slug = i.preset_slug
-             WHERE i.id = ?",
+            "SELECT base_url, preset_slug, meta,
+                    COALESCE(credential_source, 'local') AS credential_source
+             FROM provider_instances
+             WHERE id = ?",
         )
         .bind(instance_id)
         .fetch_optional(&self.pool)
         .await?;
 
-        let (base_url, meta, credential_source, preset_provider) = match instance_row {
+        let (base_url, preset_slug, meta, credential_source) = match instance_row {
             Some(row) => (
                 row.try_get::<String, _>("base_url")?,
+                row.try_get::<String, _>("preset_slug")?,
                 parse_json_object_text(row.try_get::<Option<String>, _>("meta")?),
                 row.try_get::<String, _>("credential_source")
                     .unwrap_or_else(|_| "local".to_string()),
-                row.try_get::<Option<String>, _>("preset_provider")?,
             ),
             None => return Ok(None),
         };
+        let preset_provider = self
+            .get_preset(&preset_slug)
+            .await?
+            .map(|preset| preset.provider);
         let protocol = resolve_instance_protocol(
             meta.get("protocol").and_then(|value| value.as_str()),
             preset_provider.as_deref(),
@@ -335,9 +337,8 @@ impl ProviderStore {
         &self,
     ) -> Result<(), ProviderError> {
         let rows = sqlx::query(
-            "SELECT i.id, i.base_url, i.meta, p.provider AS preset_provider
-             FROM provider_instances i
-             LEFT JOIN provider_presets p ON p.slug = i.preset_slug",
+            "SELECT id, preset_slug, base_url, meta
+             FROM provider_instances",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -346,14 +347,23 @@ impl ProviderStore {
             return Ok(());
         }
 
+        let mut repairs = Vec::with_capacity(rows.len());
+        for row in rows {
+            let instance_id: String = row.try_get("id")?;
+            let preset_slug: String = row.try_get("preset_slug")?;
+            let base_url: String = row.try_get("base_url")?;
+            let preset_provider = self
+                .get_preset(&preset_slug)
+                .await?
+                .map(|preset| preset.provider);
+            let meta = parse_json_object_text(row.try_get::<Option<String>, _>("meta")?);
+            repairs.push((instance_id, base_url, preset_provider, meta));
+        }
+
         let now = now_rfc3339()?;
         let mut tx = self.begin_write().await?;
 
-        for row in rows {
-            let instance_id: String = row.try_get("id")?;
-            let base_url: String = row.try_get("base_url")?;
-            let preset_provider = row.try_get::<Option<String>, _>("preset_provider")?;
-            let mut meta = parse_json_object_text(row.try_get::<Option<String>, _>("meta")?);
+        for (instance_id, base_url, preset_provider, mut meta) in repairs {
             let stored_protocol = meta.get("protocol").and_then(|value| value.as_str());
             let repaired_protocol = repair_instance_protocol_for_persistence(
                 stored_protocol,

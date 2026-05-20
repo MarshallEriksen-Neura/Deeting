@@ -26,7 +26,6 @@ import {
   ServerCog,
   Settings,
   ShieldCheck,
-  SlidersHorizontal,
   Store,
   Users,
 } from "lucide-react";
@@ -122,7 +121,6 @@ const NAV_GROUPS: NavGroup[] = [
     id: "admin",
     titleKey: "nav.admin",
     items: [
-      { id: "admin-provider-presets", href: "/admin/provider-presets", labelKey: "nav.providerPresets", icon: SlidersHorizontal, adminOnly: true },
       { id: "admin-users", href: "/admin/users", labelKey: "nav.userManagement", icon: Users, adminOnly: true },
     ],
   },];

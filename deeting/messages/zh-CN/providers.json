@@ -15,6 +15,12 @@
         "title": "连接 {name}",
         "description": "继续配置并接入 {name} 模型服务。"
       },
+      "localFile": {
+        "label": "本地文件",
+        "copy": "复制文件路径",
+        "reveal": "在文件夹中显示",
+        "reload": "重新加载文件"
+      },
       "grid": {
         "loading": "加载服务商中…",
         "emptyTitle": "未找到服务商",

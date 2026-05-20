@@ -2,5 +2,5 @@
 
 export default async function AdminPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale } = await params
-  redirect({ href: "/admin/provider-presets", locale })
+  redirect({ href: "/admin/users", locale })
 }

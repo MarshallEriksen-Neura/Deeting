@@ -13,7 +13,6 @@ import {
   fetchAdminPendingReviewCounts,
   fetchAdminProviderInstances,
   fetchAdminProviderCredentials,
-  fetchAdminProviderPresets,
   fetchAdminSkills,
   fetchAdminNotifications,
   type AdminUserItem,
@@ -240,18 +239,6 @@ export async function serverFetchAdminProviderCredentials(instanceId: string) {
     return await fetchAdminProviderCredentials(instanceId)
   } catch (error) {
     console.error("Failed to fetch admin provider credentials:", error)
-    return { items: [], total: 0 }
-  }
-}
-
-/**
- * 服务端获取服务提供商预设
- */
-export async function serverFetchAdminProviderPresets() {
-  try {
-    return await fetchAdminProviderPresets()
-  } catch (error) {
-    console.error("Failed to fetch admin provider presets:", error)
     return { items: [], total: 0 }
   }
 }

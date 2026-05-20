@@ -1,0 +1,657 @@
+{
+  "presets": [
+    {
+      "slug": "openai",
+      "name": "OpenAI",
+      "provider": "openai",
+      "base_url": "https://api.openai.com",
+      "icon": "https://openai.com/favicon.ico",
+      "theme_color": "#10A37F",
+      "category": "cloud api",
+      "url_template": "https://platform.openai.com/docs",
+      "auth_type": "bearer",
+      "auth_config": {},
+      "protocol_schema_version": "desktop_local_unified_v1",
+      "protocol_profiles": {
+        "chat": {
+          "metadata": {
+            "protocol": "openai"
+          },
+          "transport": {
+            "method": "POST",
+            "path": "v1/chat/completions"
+          }
+        },
+        "embedding": {
+          "metadata": {
+            "protocol": "openai"
+          },
+          "transport": {
+            "method": "POST",
+            "path": "v1/embeddings"
+          }
+        }
+      },
+      "version": 1,
+      "is_active": true
+    },
+    {
+      "slug": "anthropic",
+      "name": "Anthropic",
+      "provider": "anthropic",
+      "base_url": "https://api.anthropic.com",
+      "icon": "https://www.anthropic.com/favicon.ico",
+      "theme_color": "#D97757",
+      "category": "cloud api",
+      "url_template": "https://docs.anthropic.com",
+      "auth_type": "api_key",
+      "auth_config": {},
+      "protocol_schema_version": "desktop_local_unified_v1",
+      "protocol_profiles": {
+        "chat": {
+          "metadata": {
+            "protocol": "anthropic"
+          },
+          "transport": {
+            "method": "POST",
+            "path": "v1/messages"
+          }
+        }
+      },
+      "version": 1,
+      "is_active": true
+    },
+    {
+      "slug": "google-gemini",
+      "name": "Google Gemini",
+      "provider": "google",
+      "base_url": "https://generativelanguage.googleapis.com",
+      "icon": "lucide:sparkles",
+      "theme_color": "#4285F4",
+      "category": "cloud api",
+      "url_template": "https://ai.google.dev",
+      "auth_type": "api_key",
+      "auth_config": {},
+      "protocol_schema_version": "desktop_local_unified_v1",
+      "protocol_profiles": {
+        "chat": {
+          "metadata": {
+            "protocol": "google_gemini"
+          },
+          "transport": {
+            "method": "POST",
+            "path": "v1beta/models/{{model}}:generateContent"
+          }
+        }
+      },
+      "version": 1,
+      "is_active": true
+    },
+    {
+      "slug": "deepseek",
+      "name": "DeepSeek",
+      "provider": "openai",
+      "base_url": "https://api.deepseek.com/v1",
+      "icon": "lucide:brain",
+      "theme_color": "#4F7CFF",
+      "category": "cloud api",
+      "url_template": "https://api-docs.deepseek.com",
+      "auth_type": "bearer",
+      "auth_config": {},
+      "protocol_schema_version": "desktop_local_unified_v1",
+      "protocol_profiles": {
+        "chat": {
+          "metadata": {
+            "protocol": "openai"
+          },
+          "transport": {
+            "method": "POST",
+            "path": "chat/completions"
+          }
+        }
+      },
+      "version": 1,
+      "is_active": true
+    },
+    {
+      "slug": "volcengine-ark",
+      "name": "Volcengine Ark",
+      "provider": "volcengine",
+      "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+      "icon": "lucide:cpu",
+      "theme_color": "#1677FF",
+      "category": "llm",
+      "url_template": "https://www.volcengine.com/docs/82379",
+      "auth_type": "bearer",
+      "auth_config": {},
+      "protocol_schema_version": "2026-03-07",
+      "protocol_profiles": {
+        "chat": {
+          "auth": {
+            "config": {},
+            "auth_policy": "inherit"
+          },
+          "errors": {
+            "error_decoder": null
+          },
+          "stream": {
+            "stream_decoder": {
+              "name": "openai_chat_sse",
+              "config": {}
+            },
+            "stream_options_mapping": {}
+          },
+          "request": {
+            "request_builder": null,
+            "template_engine": "openai_compat",
+            "request_template": {
+              "model": null,
+              "stream": null,
+              "messages": null,
+              "max_tokens": null,
+              "temperature": null
+            }
+          },
+          "version": 1,
+          "defaults": {
+            "body": {},
+            "query": {},
+            "headers": {}
+          },
+          "features": {
+            "supports_tools": true,
+            "supports_messages": true,
+            "supports_json_mode": true,
+            "supports_reasoning": false,
+            "supports_input_items": false
+          },
+          "metadata": {
+            "protocol": "openai_chat",
+            "async_config": {},
+            "protocol_family": "openai_chat"
+          },
+          "provider": "volcengine",
+          "response": {
+            "decoder": {
+              "name": "openai_chat",
+              "config": {}
+            },
+            "output_mapping": {},
+            "response_template": {}
+          },
+          "transport": {
+            "path": "chat/completions",
+            "method": "POST",
+            "query_template": {},
+            "header_template": {}
+          },
+          "capability": "chat",
+          "profile_id": "volcengine:chat:openai_chat",
+          "schema_version": "2026-03-07",
+          "protocol_family": "openai_chat",
+          "runtime_version": "v2"
+        },
+        "embedding": {
+          "auth": {
+            "config": {},
+            "auth_policy": "inherit"
+          },
+          "errors": {
+            "error_decoder": null
+          },
+          "stream": {
+            "stream_decoder": {
+              "name": "openai_chat_sse",
+              "config": {}
+            },
+            "stream_options_mapping": {}
+          },
+          "request": {
+            "request_builder": null,
+            "template_engine": "openai_compat",
+            "request_template": {
+              "model": null,
+              "input": null
+            }
+          },
+          "version": 1,
+          "defaults": {
+            "body": {},
+            "query": {},
+            "headers": {}
+          },
+          "features": {
+            "supports_tools": false,
+            "supports_messages": false,
+            "supports_json_mode": true,
+            "supports_reasoning": false,
+            "supports_input_items": false
+          },
+          "metadata": {
+            "protocol": "openai_chat",
+            "async_config": {},
+            "protocol_family": "openai_chat"
+          },
+          "provider": "volcengine",
+          "response": {
+            "decoder": {
+              "name": "openai_chat",
+              "config": {}
+            },
+            "output_mapping": {},
+            "response_template": {}
+          },
+          "transport": {
+            "path": "embeddings",
+            "method": "POST",
+            "query_template": {},
+            "header_template": {}
+          },
+          "capability": "embedding",
+          "profile_id": "volcengine:embedding:openai_chat",
+          "schema_version": "2026-03-07",
+          "protocol_family": "openai_chat",
+          "runtime_version": "v2"
+        },
+        "image_generation": {
+          "auth": {
+            "config": {},
+            "auth_policy": "inherit"
+          },
+          "errors": {
+            "error_decoder": null
+          },
+          "stream": {
+            "stream_decoder": {
+              "name": "openai_chat_sse",
+              "config": {}
+            },
+            "stream_options_mapping": {}
+          },
+          "request": {
+            "request_builder": null,
+            "template_engine": "openai_compat",
+            "request_template": {
+              "model": null,
+              "prompt": null,
+              "n": null
+            }
+          },
+          "version": 1,
+          "defaults": {
+            "body": {},
+            "query": {},
+            "headers": {}
+          },
+          "features": {
+            "supports_tools": false,
+            "supports_messages": false,
+            "supports_json_mode": true,
+            "supports_reasoning": false,
+            "supports_input_items": false
+          },
+          "metadata": {
+            "protocol": "openai_chat",
+            "async_config": {},
+            "protocol_family": "openai_chat"
+          },
+          "provider": "volcengine",
+          "response": {
+            "decoder": {
+              "name": "openai_chat",
+              "config": {}
+            },
+            "output_mapping": {},
+            "response_template": {}
+          },
+          "transport": {
+            "path": "images/generations",
+            "method": "POST",
+            "query_template": {},
+            "header_template": {}
+          },
+          "capability": "image_generation",
+          "profile_id": "volcengine:image_generation:openai_chat",
+          "schema_version": "2026-03-07",
+          "protocol_family": "openai_chat",
+          "runtime_version": "v2"
+        }
+      },
+      "version": 1,
+      "is_active": true
+    },
+    {
+      "slug": "volcengine-openspeech-tts",
+      "name": "Volcengine OpenSpeech TTS",
+      "provider": "volcengine",
+      "base_url": "https://openspeech.bytedance.com",
+      "icon": "lucide:cpu",
+      "theme_color": "#1E40AF",
+      "category": "cloud api",
+      "url_template": "https://www.volcengine.com/docs/6561",
+      "auth_type": "api_key",
+      "auth_config": {
+        "header": "X-Api-Key"
+      },
+      "protocol_schema_version": "2026-03-07",
+      "protocol_profiles": {
+        "text_to_speech": {
+          "auth": {
+            "config": {},
+            "auth_policy": "inherit"
+          },
+          "errors": {
+            "error_decoder": null
+          },
+          "stream": {
+            "stream_decoder": {
+              "name": "openai_chat_sse",
+              "config": {}
+            },
+            "stream_options_mapping": {}
+          },
+          "request": {
+            "request_builder": null,
+            "template_engine": "openai_compat",
+            "request_template": {
+              "model": null,
+              "input": null,
+              "voice": null,
+              "response_format": null
+            }
+          },
+          "version": 1,
+          "defaults": {
+            "body": {},
+            "query": {},
+            "headers": {}
+          },
+          "features": {
+            "supports_tools": false,
+            "supports_messages": false,
+            "supports_json_mode": true,
+            "supports_reasoning": false,
+            "supports_input_items": false
+          },
+          "metadata": {
+            "protocol": "volcengine_openspeech_tts",
+            "async_config": {},
+            "protocol_family": "openai_chat"
+          },
+          "provider": "volcengine",
+          "response": {
+            "decoder": {
+              "name": "openai_chat",
+              "config": {}
+            },
+            "output_mapping": {},
+            "response_template": {}
+          },
+          "transport": {
+            "path": "api/v3/tts/unidirectional",
+            "method": "POST",
+            "query_template": {},
+            "header_template": {}
+          },
+          "capability": "text_to_speech",
+          "profile_id": "volcengine:text_to_speech:openai_chat",
+          "schema_version": "2026-03-07",
+          "protocol_family": "openai_chat",
+          "runtime_version": "v2"
+        }
+      },
+      "version": 1,
+      "is_active": true
+    },
+    {
+      "slug": "minimax-tts",
+      "name": "MiniMax TTS",
+      "provider": "minimax",
+      "base_url": "https://api.minimaxi.com",
+      "icon": "lucide:cpu",
+      "theme_color": "#1E40AF",
+      "category": "cloud api",
+      "url_template": "https://platform.minimaxi.com/docs",
+      "auth_type": "bearer",
+      "auth_config": {},
+      "protocol_schema_version": "2026-03-07",
+      "protocol_profiles": {
+        "text_to_speech": {
+          "auth": {
+            "config": {},
+            "auth_policy": "inherit"
+          },
+          "errors": {
+            "error_decoder": null
+          },
+          "stream": {
+            "stream_decoder": {
+              "name": "openai_chat_sse",
+              "config": {}
+            },
+            "stream_options_mapping": {}
+          },
+          "request": {
+            "request_builder": null,
+            "template_engine": "openai_compat",
+            "request_template": {
+              "model": null,
+              "input": null,
+              "voice": null,
+              "response_format": null
+            }
+          },
+          "version": 1,
+          "defaults": {
+            "body": {},
+            "query": {},
+            "headers": {}
+          },
+          "features": {
+            "supports_tools": false,
+            "supports_messages": false,
+            "supports_json_mode": true,
+            "supports_reasoning": false,
+            "supports_input_items": false
+          },
+          "metadata": {
+            "protocol": "minimax_tts",
+            "async_config": {},
+            "protocol_family": "openai_chat"
+          },
+          "provider": "minimax",
+          "response": {
+            "decoder": {
+              "name": "openai_chat",
+              "config": {}
+            },
+            "output_mapping": {},
+            "response_template": {}
+          },
+          "transport": {
+            "path": "v1/t2a_v2",
+            "method": "POST",
+            "query_template": {},
+            "header_template": {}
+          },
+          "capability": "text_to_speech",
+          "profile_id": "minimax:text_to_speech:openai_chat",
+          "schema_version": "2026-03-07",
+          "protocol_family": "openai_chat",
+          "runtime_version": "v2"
+        }
+      },
+      "version": 1,
+      "is_active": true
+    },
+    {
+      "slug": "openai-tts",
+      "name": "OpenAI TTS",
+      "provider": "openai",
+      "base_url": "https://api.openai.com/v1",
+      "icon": "lucide:cpu",
+      "theme_color": "#1E40AF",
+      "category": "cloud api",
+      "url_template": "https://platform.openai.com/docs/api-reference/audio/createSpeech",
+      "auth_type": "bearer",
+      "auth_config": {},
+      "protocol_schema_version": "2026-03-07",
+      "protocol_profiles": {
+        "text_to_speech": {
+          "auth": {
+            "config": {},
+            "auth_policy": "inherit"
+          },
+          "errors": {
+            "error_decoder": null
+          },
+          "stream": {
+            "stream_decoder": {
+              "name": "openai_chat_sse",
+              "config": {}
+            },
+            "stream_options_mapping": {}
+          },
+          "request": {
+            "request_builder": null,
+            "template_engine": "openai_compat",
+            "request_template": {
+              "model": null,
+              "input": null,
+              "voice": null,
+              "response_format": null,
+              "speed": null
+            }
+          },
+          "version": 1,
+          "defaults": {
+            "body": {},
+            "query": {},
+            "headers": {}
+          },
+          "features": {
+            "supports_tools": false,
+            "supports_messages": false,
+            "supports_json_mode": true,
+            "supports_reasoning": false,
+            "supports_input_items": false
+          },
+          "metadata": {
+            "protocol": "openai_chat",
+            "async_config": {},
+            "protocol_family": "openai_chat"
+          },
+          "provider": "openai",
+          "response": {
+            "decoder": {
+              "name": "openai_chat",
+              "config": {}
+            },
+            "output_mapping": {},
+            "response_template": {}
+          },
+          "transport": {
+            "path": "audio/speech",
+            "method": "POST",
+            "query_template": {},
+            "header_template": {}
+          },
+          "capability": "text_to_speech",
+          "profile_id": "openai:text_to_speech:openai_chat",
+          "schema_version": "2026-03-07",
+          "protocol_family": "openai_chat",
+          "runtime_version": "v2"
+        }
+      },
+      "version": 1,
+      "is_active": true
+    },
+    {
+      "slug": "openrouter",
+      "name": "OpenRouter",
+      "provider": "openai",
+      "base_url": "https://openrouter.ai/api",
+      "icon": "https://openrouter.ai/favicon.ico",
+      "theme_color": "#111827",
+      "category": "cloud api",
+      "url_template": "https://openrouter.ai/docs",
+      "auth_type": "bearer",
+      "auth_config": {},
+      "protocol_schema_version": "desktop_local_unified_v1",
+      "protocol_profiles": {
+        "chat": {
+          "metadata": {
+            "protocol": "openai"
+          },
+          "transport": {
+            "method": "POST",
+            "path": "v1/chat/completions"
+          }
+        }
+      },
+      "version": 1,
+      "is_active": true
+    },
+    {
+      "slug": "ollama",
+      "name": "Ollama",
+      "provider": "openai",
+      "base_url": "http://localhost:11434",
+      "icon": "lucide:monitor",
+      "theme_color": "#64748B",
+      "category": "local hosted",
+      "url_template": "https://github.com/ollama/ollama/blob/main/docs/openai.md",
+      "auth_type": "none",
+      "auth_config": {},
+      "protocol_schema_version": "desktop_local_unified_v1",
+      "protocol_profiles": {
+        "chat": {
+          "metadata": {
+            "protocol": "openai"
+          },
+          "transport": {
+            "method": "POST",
+            "path": "v1/chat/completions"
+          }
+        },
+        "embedding": {
+          "metadata": {
+            "protocol": "openai"
+          },
+          "transport": {
+            "method": "POST",
+            "path": "v1/embeddings"
+          }
+        }
+      },
+      "version": 1,
+      "is_active": true
+    },
+    {
+      "slug": "custom",
+      "name": "Custom OpenAI Compatible",
+      "provider": "openai",
+      "base_url": "",
+      "icon": "lucide:server",
+      "theme_color": "#0A84FF",
+      "category": "custom",
+      "url_template": null,
+      "auth_type": "bearer",
+      "auth_config": {},
+      "protocol_schema_version": "desktop_local_unified_v1",
+      "protocol_profiles": {
+        "chat": {
+          "metadata": {
+            "protocol": "openai"
+          },
+          "transport": {
+            "method": "POST",
+            "path": "v1/chat/completions"
+          }
+        }
+      },
+      "version": 1,
+      "is_active": true
+    }
+  ]
+}

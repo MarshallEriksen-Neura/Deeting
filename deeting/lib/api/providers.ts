@@ -2,7 +2,6 @@ import { z } from "zod"
 import { ApiError, request } from "@/lib/http"
 
 const PROVIDERS_BASE = "/api/v1/providers"
-const PROVIDER_PRESETS_SYNC_BASE = "/api/v1/admin/provider-presets"
 
 // =====================
 // Schema Definitions
@@ -57,25 +56,6 @@ export const ProviderHubResponseSchema = z.object({
 export type ProviderHubStats = z.infer<typeof ProviderHubStatsSchema>
 export type ProviderHubResponse = z.infer<typeof ProviderHubResponseSchema>
 
-export const ProviderPresetSyncSchema = z.object({
-  id: z.string().uuid().nullable().optional(),
-  slug: z.string(),
-  name: z.string(),
-  provider: z.string(),
-  category: z.string().nullable().optional(),
-  base_url: z.string().nullable().optional(),
-  url_template: z.string().nullable().optional(),
-  theme_color: z.string().nullable().optional(),
-  icon: z.string().nullable().optional(),
-  auth_type: z.string().nullable().optional(),
-  auth_config: z.record(z.string(), z.unknown()).default({}),
-  protocol_schema_version: z.string().nullable().optional(),
-  protocol_profiles: z.record(z.string(), z.unknown()).default({}),
-  version: z.preprocess(safeNumber, z.number()).optional().default(1),
-  is_active: z.boolean().default(true),
-})
-
-export type ProviderPresetSync = z.infer<typeof ProviderPresetSyncSchema>
 // Provider Verify Schemas
 export const ProviderVerifyRequestSchema = z.object({
   preset_slug: z.string(),
@@ -302,14 +282,6 @@ export async function fetchProviderDetail(slug: string): Promise<ProviderCard> {
     method: "GET",
   })
   return ProviderCardSchema.parse(data)
-}
-
-export async function fetchProviderPresetConfigs(): Promise<ProviderPresetSync[]> {
-  const data = await request<unknown>({
-    url: PROVIDER_PRESETS_SYNC_BASE,
-    method: "GET",
-  })
-  return z.array(ProviderPresetSyncSchema).parse(data)
 }
 
 export async function verifyProvider(

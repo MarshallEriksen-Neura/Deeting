@@ -87,18 +87,6 @@ const OFFICIAL_SKILL_CAPABILITIES: &[DesktopOfficialSkillCapabilitySpec] = &[
         callable_from_official_skill: true,
         admin_only: false,
     },
-    DesktopOfficialSkillCapabilitySpec {
-        id: "cloud.provider_preset.list",
-        kind: DesktopCapabilityKind::DirectCapability,
-        callable_from_official_skill: true,
-        admin_only: true,
-    },
-    DesktopOfficialSkillCapabilitySpec {
-        id: "cloud.provider_preset.upsert",
-        kind: DesktopCapabilityKind::DirectCapability,
-        callable_from_official_skill: true,
-        admin_only: true,
-    },
 ];
 
 #[derive(Debug, Clone, Deserialize)]
@@ -146,10 +134,6 @@ pub async fn dispatch_official_skill_capability(
         "provider.template.verify" => dispatch_provider_template_verify(arguments).await.map(Some),
         "web.fetch" => dispatch_web_fetch(arguments).await.map(Some),
         "assistant.onboarding.submit" => dispatch_assistant_onboarding_submit(arguments)
-            .await
-            .map(Some),
-        "cloud.provider_preset.list" => dispatch_cloud_provider_preset_list().await.map(Some),
-        "cloud.provider_preset.upsert" => dispatch_cloud_provider_preset_upsert(arguments)
             .await
             .map(Some),
         _ => Ok(None),
@@ -206,7 +190,7 @@ pub(crate) fn desktop_user_can_access_restricted_asset(
     user: Option<&DesktopCurrentUserInfo>,
     restricted: bool,
     allowed_roles: &[String],
-    id_hint: Option<&str>,
+    _id_hint: Option<&str>,
 ) -> bool {
     if !restricted {
         return true;
@@ -225,12 +209,6 @@ pub(crate) fn desktop_user_can_access_restricted_asset(
         .collect::<Vec<_>>();
 
     if allowed.iter().any(|role| role == "admin") {
-        if matches!(
-            id_hint,
-            Some("cloud.provider_preset.list") | Some("cloud.provider_preset.upsert")
-        ) {
-            return false;
-        }
         return current_user
             .permission_flags
             .iter()
@@ -261,10 +239,7 @@ async fn desktop_current_user_info() -> Result<DesktopCurrentUserInfo, String> {
 
 async fn ensure_desktop_admin_role(capability_id: &str) -> Result<(), String> {
     let current_user = desktop_current_user_info().await?;
-    let allowed = match capability_id {
-        "cloud.provider_preset.list" | "cloud.provider_preset.upsert" => current_user.is_superuser,
-        _ => true,
-    };
+    let allowed = current_user.is_superuser;
     if allowed {
         Ok(())
     } else {
@@ -358,61 +333,6 @@ async fn dispatch_provider_preset_upsert(arguments: &Value) -> Result<Value, Str
         "updated": updated,
         "preset": preset,
     }))
-}
-
-async fn dispatch_cloud_provider_preset_list() -> Result<Value, String> {
-    let app_state = global_app_state_required()?;
-    let base_url = desktop_cloud_base_url(&app_state).await?;
-    let token = desktop_auth_token(&app_state).await?;
-    let response = reqwest::Client::new()
-        .get(format!("{}/api/v1/admin/provider-presets", base_url))
-        .header("Authorization", format!("Bearer {}", token))
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!(
-            "admin/provider-presets returned {}: {}",
-            status.as_u16(),
-            body
-        ));
-    }
-    response
-        .json::<Value>()
-        .await
-        .map_err(|err| err.to_string())
-}
-
-async fn dispatch_cloud_provider_preset_upsert(arguments: &Value) -> Result<Value, String> {
-    let app_state = global_app_state_required()?;
-    let base_url = desktop_cloud_base_url(&app_state).await?;
-    let token = desktop_auth_token(&app_state).await?;
-    let preset = parse_provider_preset(arguments)?;
-    let response = reqwest::Client::new()
-        .post(format!(
-            "{}/api/v1/admin/provider-presets/upsert-from-desktop",
-            base_url
-        ))
-        .header("Authorization", format!("Bearer {}", token))
-        .json(&json!({ "preset": preset }))
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!(
-            "admin/provider-presets/upsert-from-desktop returned {}: {}",
-            status.as_u16(),
-            body
-        ));
-    }
-    response
-        .json::<Value>()
-        .await
-        .map_err(|err| err.to_string())
 }
 
 async fn dispatch_provider_verify(arguments: &Value) -> Result<Value, String> {
@@ -953,23 +873,6 @@ mod tests {
             true,
             &[String::from("admin")],
             Some("official.skills.provider_registry"),
-        ));
-    }
-
-    #[test]
-    fn cloud_provider_presets_remain_hidden_for_non_superuser_admins() {
-        let mut permission_flags = HashMap::new();
-        permission_flags.insert("can_manage_providers".to_string(), 1);
-        let user = DesktopCurrentUserInfo {
-            is_superuser: false,
-            permission_flags,
-        };
-
-        assert!(!desktop_user_can_access_restricted_asset(
-            Some(&user),
-            true,
-            &[String::from("admin")],
-            Some("cloud.provider_preset.upsert"),
         ));
     }
 }

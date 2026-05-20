@@ -26,6 +26,7 @@ export interface IModelService {
 
 export interface IProviderService {
   getHub(params?: { category?: string; q?: string; include_public?: boolean }): Promise<ProviderHubResponse>;
+  getProviderMarketFilePath?(): Promise<string | null>;
   getDetail(slug: string): Promise<ProviderCard>;
   verify(payload: ProviderVerifyRequest): Promise<ProviderVerifyResponse>;
   createInstance(payload: ProviderInstanceCreate): Promise<ProviderInstanceResponse>;

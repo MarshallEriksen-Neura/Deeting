@@ -198,7 +198,7 @@ def _unified_schema_for_capability(capability: str) -> Dict[str, Any]:
         },
         "notes": [
             "Desktop chat/provider routing is now owned by the local runtime.",
-            "save_provider_to_marketplace uploads presets to the cloud provider preset registry.",
+            "save_local_provider_preset writes presets to the local provider market file.",
         ],
     }
 
@@ -211,7 +211,7 @@ async def verify_provider_template(**kwargs) -> Dict[str, Any]:
         return deeting.call_tool("provider.template.verify", **kwargs)
     return {"status": "error", "message": "SDK not found"}
 
-async def save_provider_to_marketplace(**kwargs) -> Dict[str, Any]:
+async def save_local_provider_preset(**kwargs) -> Dict[str, Any]:
     if deeting:
         normalized_base_url, normalized_protocol_profiles = _normalize_protocol_profiles(
             str(kwargs.get("provider") or ""),
@@ -234,7 +234,7 @@ async def save_provider_to_marketplace(**kwargs) -> Dict[str, Any]:
             "version": kwargs.get("version", 1),
             "is_active": kwargs.get("is_active", True),
         }
-        return deeting.call_tool("cloud.provider_preset.upsert", preset=preset)
+        return deeting.call_tool("provider_preset.upsert", preset=preset)
     return {"status": "error", "message": "SDK not found"}
 
 async def handle_input():
@@ -249,8 +249,8 @@ async def handle_input():
             result = await get_unified_schema(**args)
         elif method == "verify_provider_template":
             result = await verify_provider_template(**args)
-        elif method == "save_provider_to_marketplace":
-            result = await save_provider_to_marketplace(**args)
+        elif method == "save_local_provider_preset":
+            result = await save_local_provider_preset(**args)
         else:
             result = {"error": f"Unknown method: {method}"}
         print(json.dumps(result, ensure_ascii=False))

@@ -6,6 +6,7 @@ pub mod embedding;
 pub mod error;
 pub mod model_guard;
 pub mod protocols;
+pub mod provider_market_file;
 pub mod request_runtime;
 pub mod response_transformer;
 pub mod store;

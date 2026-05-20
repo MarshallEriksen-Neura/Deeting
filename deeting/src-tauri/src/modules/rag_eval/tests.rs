@@ -83,11 +83,7 @@ fn aggregate_computes_mean_recall_and_mrr() {
     let c1 = case("q1", &["c1"]);
     let c2 = case("q2", &["c2"]);
     let r1 = evaluate_case(&c1, &[item("c1", 0.9)], &[1, 5]);
-    let r2 = evaluate_case(
-        &c2,
-        &[item("other", 0.5), item("c2", 0.4)],
-        &[1, 5],
-    );
+    let r2 = evaluate_case(&c2, &[item("other", 0.5), item("c2", 0.4)], &[1, 5]);
 
     let report = aggregate(vec![r1, r2], &[1, 5]);
 

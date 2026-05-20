@@ -229,7 +229,7 @@ def _build_provider_registry_handoff(
                 capability,
             ),
         },
-        "save_provider_to_marketplace": {
+        "save_local_provider_preset": {
             "slug": candidate.get("slug"),
             "name": candidate.get("name"),
             "provider": candidate.get("provider"),

@@ -2776,8 +2776,6 @@ mod tests {
             "provider_preset.upsert",
             "provider.verify",
             "provider.template.verify",
-            "cloud.provider_preset.list",
-            "cloud.provider_preset.upsert",
         ];
 
         for capability_id in specs {
@@ -2789,9 +2787,7 @@ mod tests {
             });
             assert_eq!(spec.id, capability_id);
             assert!(spec.callable_from_official_skill);
-            if capability_id.starts_with("cloud.") {
-                assert!(spec.admin_only);
-            }
+            assert!(!spec.admin_only);
         }
     }
 

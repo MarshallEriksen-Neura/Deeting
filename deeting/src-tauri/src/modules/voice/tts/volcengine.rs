@@ -194,11 +194,9 @@ pub(crate) async fn request_text_to_speech(
     if base_url.is_empty() {
         return Err("Volcengine TTS base_url is required".to_string());
     }
-    let access_key = trim_secret(context.connection.secret_key.as_deref())
-        .ok_or_else(|| "Volcengine TTS requires an access key credential".to_string())?;
-    let app_id = resolve_app_id(context).ok_or_else(|| {
-        "Volcengine TTS requires app_id in provider instance metadata".to_string()
-    })?;
+    let api_key_or_access_key = trim_secret(context.connection.secret_key.as_deref())
+        .ok_or_else(|| "Volcengine TTS requires an API key credential".to_string())?;
+    let app_id = resolve_app_id(context);
     let resource_id = resolve_resource_id(context).ok_or_else(|| {
         "Volcengine TTS requires resource_id from provider model metadata or model_id".to_string()
     })?;
@@ -206,7 +204,7 @@ pub(crate) async fn request_text_to_speech(
         "{}/api/v3/tts/unidirectional",
         base_url.trim_end_matches('/')
     );
-    let body = build_request_body(request, &app_id);
+    let body = build_request_body(request, app_id.as_deref().unwrap_or("deeting"));
 
     let client = crate::modules::desktop_config::network::build_proxy_aware_reqwest_client(
         app_state.mcp.store.as_ref(),
@@ -215,8 +213,6 @@ pub(crate) async fn request_text_to_speech(
     let mut builder = client
         .post(url)
         .header("Content-Type", "application/json")
-        .header("X-Api-App-Id", app_id.as_str())
-        .header("X-Api-Access-Key", access_key)
         .header("X-Api-Resource-Id", resource_id.as_str())
         .header(
             "X-Api-Request-Id",
@@ -226,6 +222,13 @@ pub(crate) async fn request_text_to_speech(
                 .map(str::to_string)
                 .unwrap_or_else(|| Uuid::new_v4().to_string()),
         );
+    if let Some(app_id) = app_id.as_deref() {
+        builder = builder
+            .header("X-Api-App-Id", app_id)
+            .header("X-Api-Access-Key", api_key_or_access_key);
+    } else {
+        builder = builder.header("X-Api-Key", api_key_or_access_key);
+    }
     if let Some(trace_id) = trace_id.map(str::trim).filter(|value| !value.is_empty()) {
         builder = builder.header("X-Trace-Id", trace_id);
     }

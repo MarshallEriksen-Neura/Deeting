@@ -19,12 +19,12 @@ class _FakeDeeting:
         return {"ok": True}
 
 
-class SaveProviderToMarketplaceTests(unittest.IsolatedAsyncioTestCase):
-    async def test_save_provider_to_marketplace_targets_cloud_upsert(self):
+class SaveLocalProviderPresetTests(unittest.IsolatedAsyncioTestCase):
+    async def test_save_local_provider_preset_targets_local_upsert(self):
         fake = _FakeDeeting()
         provider_registry_main.deeting = fake
 
-        result = await provider_registry_main.save_provider_to_marketplace(
+        result = await provider_registry_main.save_local_provider_preset(
             slug="volcengine-ark",
             name="Volcengine Ark",
             provider="volcengine",
@@ -33,13 +33,13 @@ class SaveProviderToMarketplaceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual({"ok": True}, result)
         self.assertEqual(1, len(fake.calls))
-        self.assertEqual("cloud.provider_preset.upsert", fake.calls[0][0])
+        self.assertEqual("provider_preset.upsert", fake.calls[0][0])
 
-    async def test_save_provider_to_marketplace_infers_chat_path_for_root_openai_host(self):
+    async def test_save_local_provider_preset_infers_chat_path_for_root_openai_host(self):
         fake = _FakeDeeting()
         provider_registry_main.deeting = fake
 
-        await provider_registry_main.save_provider_to_marketplace(
+        await provider_registry_main.save_local_provider_preset(
             slug="openai-root",
             name="OpenAI Root",
             provider="openai",
@@ -53,11 +53,11 @@ class SaveProviderToMarketplaceTests(unittest.IsolatedAsyncioTestCase):
             preset["protocol_profiles"]["chat"]["transport"]["path"],
         )
 
-    async def test_save_provider_to_marketplace_splits_full_chat_endpoint(self):
+    async def test_save_local_provider_preset_splits_full_chat_endpoint(self):
         fake = _FakeDeeting()
         provider_registry_main.deeting = fake
 
-        await provider_registry_main.save_provider_to_marketplace(
+        await provider_registry_main.save_local_provider_preset(
             slug="openai-endpoint",
             name="OpenAI Endpoint",
             provider="openai",
@@ -71,11 +71,11 @@ class SaveProviderToMarketplaceTests(unittest.IsolatedAsyncioTestCase):
             preset["protocol_profiles"]["chat"]["transport"]["path"],
         )
 
-    async def test_save_provider_to_marketplace_keeps_versioned_base_without_duplicating_v1(self):
+    async def test_save_local_provider_preset_keeps_versioned_base_without_duplicating_v1(self):
         fake = _FakeDeeting()
         provider_registry_main.deeting = fake
 
-        await provider_registry_main.save_provider_to_marketplace(
+        await provider_registry_main.save_local_provider_preset(
             slug="volcengine-ark",
             name="Volcengine Ark",
             provider="volcengine",

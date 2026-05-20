@@ -368,6 +368,11 @@ pub async fn list_local_provider_presets(
 }
 
 #[tauri::command]
+pub async fn get_local_provider_market_file_path() -> Result<String, String> {
+    crate::modules::providers::provider_market_file::provider_market_file_path_string()
+}
+
+#[tauri::command]
 pub async fn get_local_user_secretary(state: State<'_, AppState>) -> Result<UserSecretary, String> {
     state
         .providers
@@ -978,8 +983,9 @@ pub async fn record_local_bandit_feedback(
         .map_err(|e| e.to_string())
 }
 
-/// Sync platform (credits) models from GET /api/v1/credits/models into local platform instances.
-/// Groups models by provider_slug and creates/updates one local instance per provider.
+/// Compatibility hook for older callers that used to sync platform credits models
+/// from the cloud. The desktop market now refreshes provider presets from the
+/// local editable provider-market file and does not call /api/v1/credits/models.
 #[tauri::command]
 pub async fn sync_platform_models(
     state: State<'_, AppState>,
@@ -989,201 +995,13 @@ pub async fn sync_platform_models(
 
 /// Inner implementation callable from both Tauri command and background tasks.
 pub async fn sync_platform_models_impl(state: &AppState) -> Result<Vec<ProviderModel>, String> {
-    use crate::modules::providers::store::CHAT_UPSTREAM_PATH;
-    use std::collections::HashMap;
-
-    let base_url = state.mcp.transport.cloud_base_url.read().await.clone();
-    let base_url = base_url.trim().trim_end_matches('/');
-    if base_url.is_empty() {
-        return Err("cloud API base URL not configured".to_string());
-    }
-    let url = format!("{}/api/v1/credits/models", base_url);
-
-    let client = crate::modules::desktop_config::network::build_proxy_aware_reqwest_client(
-        state.mcp.store.as_ref(),
-    )
-    .await?;
-    let mut request = client.get(&url);
-    if let Some(token) = state
-        .mcp
-        .store
-        .get_desktop_config("auth.token")
-        .await
-        .ok()
-        .flatten()
-    {
-        let token = token.trim();
-        if !token.is_empty() {
-            request = request.header("Authorization", format!("Bearer {}", token));
-        }
-    }
-
-    let response = request.send().await.map_err(|e| e.to_string())?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        let preview = if body.len() > 200 {
-            body.chars().take(200).collect::<String>()
-        } else {
-            body
-        };
-        return Err(format!(
-            "credits/models returned {}: {}",
-            status.as_u16(),
-            preview
-        ));
-    }
-    let body: Value = response.json().await.map_err(|e| e.to_string())?;
-    let models_json = body
-        .get("models")
-        .and_then(|m| m.as_array())
-        .ok_or_else(|| "credits/models response missing models array".to_string())?;
-
-    if models_json.is_empty() {
-        return Ok(vec![]);
-    }
-
-    // Group models by provider_slug
-    let mut grouped: HashMap<String, (String, Vec<&Value>)> = HashMap::new();
-    for m in models_json {
-        let slug = m
-            .get("provider_slug")
-            .and_then(|v| v.as_str())
-            .unwrap_or("platform")
-            .to_string();
-        let name = m
-            .get("provider_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Platform")
-            .to_string();
-        grouped
-            .entry(slug)
-            .or_insert_with(|| (name, Vec::new()))
-            .1
-            .push(m);
-    }
-
-    let instances = state
+    state
         .providers
         .store
-        .list_instances()
+        .list_presets()
         .await
         .map_err(|e| e.to_string())?;
-
-    let now = uuid::Uuid::nil();
-    let mut all_synced: Vec<ProviderModel> = Vec::new();
-
-    for (slug, (provider_name, group_models)) in &grouped {
-        // Find or create a platform instance for this provider slug
-        let platform_instance = instances.iter().find(|i| {
-            i.credential_source.eq_ignore_ascii_case("platform")
-                && i.preset_slug.eq_ignore_ascii_case(slug)
-        });
-
-        let instance_id = match platform_instance {
-            Some(inst) => inst.id,
-            None => {
-                let created = state
-                    .providers
-                    .store
-                    .create_instance(CreateInstanceRequest {
-                        preset_slug: slug.clone(),
-                        name: format!("{} (Platform)", provider_name),
-                        base_url: "https://platform".to_string(),
-                        chat_transport_path: None,
-                        description: Some("Models billed via platform credits".to_string()),
-                        icon: None,
-                        priority: Some(0),
-                        protocol: None,
-                        model_prefix: None,
-                        auto_append_v1: None,
-                        resource_name: None,
-                        deployment_name: None,
-                        api_version: None,
-                        project_id: None,
-                        region: None,
-                        app_id: None,
-                        is_local: Some(false),
-                        credential_source: Some("platform".to_string()),
-                        secret_key: None,
-                    })
-                    .await
-                    .map_err(|e| e.to_string())?;
-                created.id
-            }
-        };
-
-        let models: Vec<ProviderModel> = group_models
-            .iter()
-            .filter_map(|m| {
-                let model_id = m
-                    .get("model_id")
-                    .or_else(|| m.get("id"))?
-                    .as_str()?
-                    .to_string();
-                let display_name = m
-                    .get("display_name")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let capabilities: Vec<String> = m
-                    .get("capabilities")
-                    .and_then(|c| c.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_else(|| vec!["chat".to_string()]);
-                let pricing = m
-                    .get("pricing")
-                    .cloned()
-                    .unwrap_or(Value::Object(serde_json::Map::new()));
-                Some(ProviderModel {
-                    id: now,
-                    instance_id,
-                    model_id,
-                    unified_model_id: None,
-                    display_name,
-                    capabilities,
-                    upstream_path: CHAT_UPSTREAM_PATH.to_string(),
-                    pricing_config: pricing,
-                    limit_config: Value::Object(serde_json::Map::new()),
-                    tokenizer_config: Value::Object(serde_json::Map::new()),
-                    routing_config: Value::Object(serde_json::Map::new()),
-                    config_override: Value::Object(serde_json::Map::new()),
-                    source: "platform".to_string(),
-                    extra_meta: Value::Object(serde_json::Map::new()),
-                    weight: 100,
-                    priority: 0,
-                    is_active: true,
-                    synced_at: None,
-                    created_at: None,
-                    updated_at: None,
-                })
-            })
-            .collect();
-
-        if models.is_empty() {
-            continue;
-        }
-
-        state
-            .providers
-            .store
-            .sync_models(&instance_id.to_string(), models)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let synced = state
-            .providers
-            .store
-            .list_models(Some(instance_id.to_string()), None)
-            .await
-            .map_err(|e| e.to_string())?;
-        all_synced.extend(synced);
-    }
-
-    Ok(all_synced)
+    Ok(vec![])
 }
 
 async fn fetch_model_ids_from_upstream(

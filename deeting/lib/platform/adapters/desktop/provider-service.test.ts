@@ -10,7 +10,6 @@ jest.mock("@tauri-apps/api/core", () => ({
 jest.mock("@/lib/api/providers", () => ({
   fetchProviderHub: jest.fn(),
   fetchProviderDetail: jest.fn(),
-  fetchProviderPresetConfigs: jest.fn(),
 }))
 
 describe("desktopProviderService", () => {
@@ -18,7 +17,6 @@ describe("desktopProviderService", () => {
     mockInvoke.mockReset()
     ;(providerApi.fetchProviderHub as jest.Mock).mockReset()
     ;(providerApi.fetchProviderDetail as jest.Mock).mockReset()
-    ;(providerApi.fetchProviderPresetConfigs as jest.Mock).mockReset()
   })
 
   it("reads the provider hub only from the local desktop registry", async () => {
@@ -52,7 +50,6 @@ describe("desktopProviderService", () => {
     const result = await desktopProviderService.getHub({ include_public: true })
 
     expect(providerApi.fetchProviderHub).not.toHaveBeenCalled()
-    expect(providerApi.fetchProviderPresetConfigs).not.toHaveBeenCalled()
     expect(mockInvoke).toHaveBeenCalledWith("list_local_provider_presets")
     expect(mockInvoke).toHaveBeenCalledWith("list_local_provider_instances")
     expect(result.providers[0]?.slug).toBe("openai")
@@ -92,7 +89,6 @@ describe("desktopProviderService", () => {
 
     const result = await desktopProviderService.getHub({ include_public: true })
 
-    expect(providerApi.fetchProviderPresetConfigs).not.toHaveBeenCalled()
     expect(mockInvoke).not.toHaveBeenCalledWith("replace_local_provider_presets", expect.anything())
     expect(result.providers[0]?.slug).toBe("volcengine-ark")
     expect(warnSpy).not.toHaveBeenCalled()
@@ -134,5 +130,14 @@ describe("desktopProviderService", () => {
     expect(result.slug).toBe("volcengine-ark")
     expect(result.name).toBe("Volcengine Ark")
     expect(result.provider).toBe("volcengine")
+  })
+
+  it("exposes the editable local provider market file path", async () => {
+    mockInvoke.mockResolvedValue("C:\\Users\\timeline\\AppData\\Roaming\\deeting\\provider-market-presets.json")
+
+    const result = await desktopProviderService.getProviderMarketFilePath?.()
+
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_provider_market_file_path")
+    expect(result).toContain("provider-market-presets.json")
   })
 })

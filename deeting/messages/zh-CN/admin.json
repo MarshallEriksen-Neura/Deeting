@@ -11,16 +11,12 @@
       "reviewAssistants": "审核助手",
       "manageUsers": "用户管理",
       "viewMonitoring": "查看监控",
-      "createPreset": "新建 Preset",
       "moduleMeta": {
-        "users": "访问与权限",
-        "providerPresets": "协议与路由模板"
+        "users": "访问与权限"
       },
       "surfaceStats": {
         "coreModules": "核心后台模块",
         "coreModulesHint": "当前已接线的核心管理入口",
-        "presetWorkflow": "Preset 工作流",
-        "presetWorkflowHint": "支持新增、编辑、删除与本地验证",
         "userControls": "用户控制面",
         "userControlsHint": "管理员账号与权限管理入口",
         "ready": "已就绪",
@@ -551,10 +547,6 @@
         "failed": "加载 Provider 实例失败",
         "noData": "暂无 Provider 实例"
       }
-    },
-    "providerPresets": {
-      "title": "Provider 预设",
-      "description": "管理预设的 Provider 配置"
     },
     "providerCredentials": {
       "title": "Provider 凭证",
@@ -1244,153 +1236,6 @@
           "model": "模型",
           "errorCode": "错误码",
           "message": "信息"
-        }
-      }
-    },
-    "providerPresetsPage": {
-      "consoleLabel": "Provider 注册表",
-      "consoleTitle": "Provider 预设控制台",
-      "managementHint": "从这里进入预设编辑页，管理员可以直接修改配置并验证请求。",
-      "status": {
-        "active": "启用",
-        "inactive": "停用"
-      },
-      "actions": {
-        "edit": "编辑",
-        "create": "新建 Preset"
-      },
-      "stats": {
-        "totalPresets": "Preset 总数",
-        "activePresets": "启用中的 Preset",
-        "capabilityProfiles": "能力配置总数",
-        "customProviders": "自定义 / 非标准 Provider"
-      },
-      "filters": {
-        "status": "状态",
-        "provider": "Provider"
-      },
-      "table": {
-        "headers": {
-          "preset": "Preset",
-          "provider": "Provider",
-          "capabilities": "能力",
-          "endpoint": "Endpoint",
-          "schema": "Schema",
-          "updated": "更新时间",
-          "status": "状态"
-        }
-      },
-      "feedback": {
-        "deleted": "已删除 preset：{slug}",
-        "deleteFailed": "删除 preset 失败"
-      },
-      "deleteConfirm": {
-        "title": "删除 Provider Preset",
-        "description": "确认删除 preset「{name}」吗？如果它仍被 provider instance 引用，系统会阻止删除。"
-      },
-      "card": {
-        "unnamedPreset": "未命名预设",
-        "unknownProvider": "未知 Provider"
-      },
-      "empty": {
-        "loading": "正在加载 Provider 预设...",
-        "failed": "加载 Provider 预设失败",
-        "noData": "暂无 Provider 预设"
-      }
-    },
-    "providerPresetsEditor": {
-      "title": "编辑 Provider 预设",
-      "description": "修改 preset 配置，并使用临时 API Key 验证骨架请求",
-      "createTitle": "新建 Provider Preset",
-      "createDescription": "先建立一个可管理的 preset 骨架，再进入完整编辑与验证流程。",
-      "status": {
-        "active": "启用",
-        "inactive": "停用"
-      },
-      "mode": {
-        "create": "创建模式",
-        "edit": "编辑模式"
-      },
-      "sections": {
-        "basic": "基础信息",
-        "basicHint": "维护 preset 的基本识别信息与同步元数据。",
-        "auth": "鉴权配置",
-        "authHint": "这里只保存鉴权规则，不保存真实 API Key。",
-        "protocolProfiles": "Protocol Profiles",
-        "protocolProfilesHint": "支持完整 JSON 编辑；服务端会把简化配置归一化为运行时 profile。",
-        "verify": "本地验证",
-        "verifyHint": "输入临时 API Key，不落库，直接按当前草稿骨架请求调用上游。",
-        "summary": "工作台摘要",
-        "summaryHint": "当前草稿的关键信息、状态和入口摘要。",
-        "preview": "草稿预览",
-        "previewHint": "保存前查看将要提交到后台的 payload。"
-      },
-      "fields": {
-        "slug": "Slug",
-        "name": "名称",
-        "provider": "Provider",
-        "category": "分类",
-        "baseUrl": "Base URL",
-        "urlTemplate": "URL 模板",
-        "themeColor": "主题色",
-        "icon": "图标",
-        "version": "版本",
-        "active": "启用",
-        "authType": "鉴权方式",
-        "authConfig": "鉴权配置 JSON",
-        "protocolSchemaVersion": "Protocol Schema Version",
-        "protocolProfiles": "Protocol Profiles JSON",
-        "protocolProfilesHelp": "当前可识别 capability: {capabilities}"
-      },
-      "actions": {
-        "verify": "验证骨架请求",
-        "formatJson": "格式化 JSON",
-        "createAndOpen": "创建并进入工作台"
-      },
-      "summary": {
-        "name": "当前名称",
-        "provider": "当前 Provider",
-        "updated": "最近更新时间",
-        "endpoint": "当前 Endpoint",
-        "notSaved": "尚未保存"
-      },
-      "authConfigHint": "仅保存鉴权规则，例如 header 名称、auth policy，不保存真实密钥。",
-      "deleteConfirm": {
-        "title": "删除 Provider Preset",
-        "description": "确认删除「{name}」吗？若存在引用它的 provider instance，系统会拒绝删除。"
-      },
-      "feedback": {
-        "saved": "Provider preset 已保存",
-        "created": "Provider preset 已创建",
-        "saveFailed": "保存失败",
-        "createFailed": "创建失败",
-        "deleted": "Provider preset 已删除",
-        "deleteFailed": "删除失败",
-        "loadFailed": "加载 preset 失败",
-        "invalidJson": "JSON 配置无效，请先修正",
-        "invalidVersion": "版本号必须是大于等于 1 的整数",
-        "requiredFields": "名称、Provider、Base URL 为必填项"
-      },
-      "verify": {
-        "fields": {
-          "capability": "验证能力",
-          "model": "测试模型",
-          "apiKey": "临时 API Key",
-          "prompt": "测试 Prompt"
-        },
-        "placeholders": {
-          "model": "例如：doubao-1-5-lite-32k-250115",
-          "apiKey": "仅本次验证使用，不会保存"
-        },
-        "apiKeyHint": "该 Key 仅用于本地验证，不会写入 preset 或数据库。",
-        "feedback": {
-          "missingInputs": "请填写临时 API Key 和测试模型",
-          "saveFirst": "先保存这个 preset，再执行真实上游验证。",
-          "failed": "验证失败"
-        },
-        "result": {
-          "request": "渲染后的请求",
-          "response": "响应预览：{status}"
         }
       }
     },
