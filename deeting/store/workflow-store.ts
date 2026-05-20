@@ -121,13 +121,19 @@ export const useWorkflowStore = create<WorkflowState>()(
       },
 
       setRunDetail: (detail) => {
+        const current = get()
         const view = deriveView(detail.run.status)
         const activePhaseId = findActivePhaseId(detail.steps)
         const resultFocusPhaseId = findResultFocusPhaseId(detail.run.status, detail.steps)
         const failureFocusPhaseId = findFailureFocusPhaseId(detail.run.status, detail.steps)
         const focusPhaseId = resultFocusPhaseId ?? failureFocusPhaseId ?? activePhaseId
-        const expandedPhaseIds = new Set(get().expandedPhaseIds)
+        const expandedPhaseIds = new Set(current.expandedPhaseIds)
         if (focusPhaseId) expandedPhaseIds.add(focusPhaseId)
+        const isSameRun = current.run?.id === detail.run.id
+        const proposalVersionChanged =
+          current.run?.proposal_version !== detail.run.proposal_version
+        const shouldSyncProposal =
+          !isSameRun || proposalVersionChanged || !current.proposalDirty
         set({
           runId: detail.run.id,
           run: detail.run,
@@ -140,6 +146,12 @@ export const useWorkflowStore = create<WorkflowState>()(
           expandedPhaseIds,
           error: detail.run.error,
           approvalPending: detail.run.status === "waiting_approval",
+          ...(shouldSyncProposal
+            ? {
+                editedProposal: detail.run.proposal_text,
+                proposalDirty: false,
+              }
+            : {}),
         })
       },
 

@@ -190,6 +190,47 @@ pub(crate) async fn update_workflow_step_result(
     Ok(())
 }
 
+pub(crate) async fn update_workflow_step_failure(
+    store: &McpStore,
+    id: &str,
+    error: &str,
+    output_artifact_refs: &[String],
+    worker_trace_summary: Option<&str>,
+    completed_at: &str,
+) -> Result<(), McpError> {
+    ensure_schema(store).await?;
+    let now = now_rfc3339()?;
+    let artifact_json = serialize_json(output_artifact_refs)?;
+    let result = sqlx::query(&format!(
+        r#"
+        UPDATE {WORKFLOW_STEP_RUN_TABLE}
+        SET status = 'failed',
+            error = ?,
+            output_artifact_refs = ?,
+            worker_trace_summary = ?,
+            completed_at = ?,
+            updated_at = ?
+        WHERE id = ?
+        "#
+    ))
+    .bind(error.trim())
+    .bind(artifact_json)
+    .bind(worker_trace_summary)
+    .bind(completed_at)
+    .bind(&now)
+    .bind(id.trim())
+    .execute(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    if result.rows_affected() == 0 {
+        return Err(McpError::NotFound(
+            "workflow step run not found".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 fn row_to_workflow_step_run(row: &SqliteRow) -> Result<WorkflowStepRun, McpError> {
     Ok(WorkflowStepRun {
         id: row

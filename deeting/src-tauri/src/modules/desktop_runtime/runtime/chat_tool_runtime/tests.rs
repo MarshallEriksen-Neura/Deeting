@@ -864,6 +864,7 @@ fn build_max_rounds_exceeded_response_appends_visible_notice() {
         captured_reasoning: None,
         last_capability_snapshot: None,
         terminal_context: None,
+        workflow_context: None,
         last_response: Some(serde_json::json!({
             "content": "Shell step finished.",
             "tool_calls": [
@@ -952,6 +953,7 @@ fn rewind_round_for_post_approval_continuation_does_not_consume_user_round_budge
         captured_reasoning: None,
         last_capability_snapshot: None,
         terminal_context: None,
+        workflow_context: None,
         last_response: None,
         realtime_emitter: LocalRealtimeToolTraceEmitter::new(
             None,
@@ -1080,6 +1082,7 @@ fn suspended_execution_keeps_remaining_pending_approvals_after_one_is_approved()
         runtime_metrics: RuntimeMetricsAccumulator::default(),
         last_capability_snapshot: None,
         terminal_context: None,
+        workflow_context: None,
         last_response: None,
         pending_approvals: vec![
             PersistedPendingApproval {
@@ -1214,6 +1217,7 @@ fn sync_remaining_pending_approvals_prefers_token_bound_graph_identity() {
         runtime_metrics: RuntimeMetricsAccumulator::default(),
         last_capability_snapshot: None,
         terminal_context: None,
+        workflow_context: None,
         last_response: None,
         pending_approvals: vec![
             PersistedPendingApproval {

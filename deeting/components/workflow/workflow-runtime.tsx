@@ -1,8 +1,10 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import { useWorkflowStore } from "@/store/workflow-store"
+import { useChatStore } from "@/store/chat-store"
+import { matchesChatModelSelectionValue } from "@/lib/api/models"
 import {
   generateWorkflowProposal,
   regenerateWorkflowProposal,
@@ -37,12 +39,22 @@ export function WorkflowRuntime({
   onClose,
 }: WorkflowRuntimeProps) {
   const store = useWorkflowStore()
+  const chatModelSelection = useChatStore((state) => state.config.model)
+  const chatModels = useChatStore((state) => state.models)
   const [phaseContext, setPhaseContext] = useState<WorkflowPhaseContext | null>(null)
+  const selectedChatModel = useMemo(
+    () => chatModels.find((model) => matchesChatModelSelectionValue(model, chatModelSelection)),
+    [chatModels, chatModelSelection],
+  )
+  const workflowExecutionModel = useMemo(() => ({
+    execution_model_id: selectedChatModel?.id ?? chatModelSelection ?? null,
+    execution_provider_model_id: selectedChatModel?.provider_model_id ?? chatModelSelection ?? null,
+  }), [chatModelSelection, selectedChatModel])
 
   useEffect(() => {
     if (!initialRunId) return
     const runId = initialRunId.trim()
-    if (!runId || store.runId === runId) return
+    if (!runId || (store.runId === runId && store.run)) return
 
     let cancelled = false
 
@@ -64,6 +76,42 @@ export function WorkflowRuntime({
 
     return () => {
       cancelled = true
+    }
+  }, [initialRunId, store.run, store.runId, store.setError, store.setRunDetail])
+
+  useEffect(() => {
+    const activeRunId = store.runId ?? initialRunId
+    if (!activeRunId) return
+    let cancelled = false
+    let unlisten: (() => void) | null = null
+
+    async function subscribe() {
+      try {
+        const { listen } = await import("@tauri-apps/api/event")
+        unlisten = await listen<{ run_id?: string; runId?: string }>(
+          "workflow:run-updated",
+          async (event) => {
+            const updatedRunId = event.payload?.run_id ?? event.payload?.runId
+            if (!updatedRunId || updatedRunId !== activeRunId || cancelled) return
+            try {
+              const detail = await getWorkflowRunStatus(updatedRunId)
+              if (!cancelled) store.setRunDetail(detail)
+            } catch (err) {
+              if (!cancelled) {
+                store.setError(err instanceof Error ? err.message : String(err))
+              }
+            }
+          },
+        )
+      } catch {
+        // Non-Tauri web previews do not expose the event bridge.
+      }
+    }
+
+    void subscribe()
+    return () => {
+      cancelled = true
+      unlisten?.()
     }
   }, [initialRunId, store.runId, store.setError, store.setRunDetail])
 
@@ -95,7 +143,7 @@ export function WorkflowRuntime({
     store.setLoading(true)
     store.setError(null)
     try {
-      const run = await generateWorkflowProposal({ goal, hints })
+      const run = await generateWorkflowProposal({ goal, hints, ...workflowExecutionModel })
       store.setRun(run)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -104,7 +152,7 @@ export function WorkflowRuntime({
     } finally {
       store.setLoading(false)
     }
-  }, [])
+  }, [store, workflowExecutionModel])
 
   // --- Editor: update phases ---
   const handlePhasesChange = useCallback((phases: PlanPhaseData[]) => {
@@ -125,6 +173,8 @@ export function WorkflowRuntime({
           proposalText: store.editedProposal,
           proposalDirty: store.proposalDirty,
           requestId: `workflow-${Date.now()}`,
+          executionModelId: workflowExecutionModel.execution_model_id,
+          executionProviderModelId: workflowExecutionModel.execution_provider_model_id,
         },
         {
           onEvent: (event) => {
@@ -142,30 +192,30 @@ export function WorkflowRuntime({
     } finally {
       store.setLoading(false)
     }
-  }, [store])
+  }, [store, workflowExecutionModel])
 
   // --- Editor: regenerate ---
   const handleRegenerate = useCallback(async () => {
     if (!store.runId) return
     try {
-      const run = await regenerateWorkflowProposal({ run_id: store.runId })
+      const run = await regenerateWorkflowProposal({ run_id: store.runId, ...workflowExecutionModel })
       store.setRun(run)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err))
     }
-  }, [store.runId])
+  }, [store.runId, store.setRun, workflowExecutionModel])
 
   // --- Execution: rerun phase ---
   const handleRerunPhase = useCallback(async (phaseId: string) => {
     if (!store.runId) return
     try {
-      const run = await rerunPhase({ run_id: store.runId, phase_id: phaseId })
+      const run = await rerunPhase({ run_id: store.runId, phase_id: phaseId, ...workflowExecutionModel })
       store.setRun(run)
       toast.success(`Phase ${phaseId} queued for rerun`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err))
     }
-  }, [store.runId])
+  }, [store.runId, store.setRun, workflowExecutionModel])
 
   const handleResumeWorkflow = useCallback(async () => {
     if (!store.runId) return

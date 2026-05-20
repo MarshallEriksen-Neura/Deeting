@@ -44,6 +44,8 @@ export interface WorkflowCompileAndStartStreamRequest {
   proposalText?: string | null
   proposalDirty?: boolean
   requestId?: string
+  executionModelId?: string | null
+  executionProviderModelId?: string | null
 }
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -137,6 +139,8 @@ export async function streamWorkflowCompileAndStart(
     proposalText: payload.proposalText ?? null,
     proposalDirty: payload.proposalDirty ?? false,
     requestId: payload.requestId,
+    executionModelId: payload.executionModelId ?? null,
+    executionProviderModelId: payload.executionProviderModelId ?? null,
   })
 
   await new Promise<void>((resolve, reject) => {

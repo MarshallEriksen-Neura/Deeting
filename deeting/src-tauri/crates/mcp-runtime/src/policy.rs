@@ -145,6 +145,10 @@ pub fn resident_capability_control_tool_names() -> Vec<String> {
         "terminal_context_read",
         "terminal_context_pack",
         "terminal_write_input",
+        "workflow_plan_peek",
+        "workflow_plan_read",
+        "workflow_plan_update",
+        "workflow_plan_compile",
         CONTEXT_SEARCH_TOOL_NAME,
         CONTEXT_OPEN_TOOL_NAME,
         CONTEXT_EXPAND_TOOL_NAME,
@@ -247,6 +251,10 @@ pub fn full_execution_tool_names() -> Vec<String> {
         "terminal_context_read",
         "terminal_context_pack",
         "terminal_write_input",
+        "workflow_plan_peek",
+        "workflow_plan_read",
+        "workflow_plan_update",
+        "workflow_plan_compile",
         CONTEXT_SEARCH_TOOL_NAME,
         CONTEXT_OPEN_TOOL_NAME,
         CONTEXT_EXPAND_TOOL_NAME,
@@ -376,6 +384,10 @@ mod tests {
             policy.allowed_tool_names,
             vec![
                 "activate_skill".to_string(),
+                "context_expand".to_string(),
+                "context_open".to_string(),
+                "context_search".to_string(),
+                "context_summarize_evidence".to_string(),
                 "exa".to_string(),
                 "fetch_page".to_string(),
                 "read_skill_resource".to_string(),
@@ -386,6 +398,10 @@ mod tests {
                 "terminal_context_peek".to_string(),
                 "terminal_context_read".to_string(),
                 "terminal_write_input".to_string(),
+                "workflow_plan_compile".to_string(),
+                "workflow_plan_peek".to_string(),
+                "workflow_plan_read".to_string(),
+                "workflow_plan_update".to_string(),
             ]
         );
     }
@@ -467,6 +483,14 @@ mod tests {
                 "terminal_context_read".to_string(),
                 "terminal_context_pack".to_string(),
                 "terminal_write_input".to_string(),
+                "workflow_plan_peek".to_string(),
+                "workflow_plan_read".to_string(),
+                "workflow_plan_update".to_string(),
+                "workflow_plan_compile".to_string(),
+                CONTEXT_SEARCH_TOOL_NAME.to_string(),
+                CONTEXT_OPEN_TOOL_NAME.to_string(),
+                CONTEXT_EXPAND_TOOL_NAME.to_string(),
+                CONTEXT_SUMMARIZE_EVIDENCE_TOOL_NAME.to_string(),
             ]
         );
     }
@@ -482,12 +506,20 @@ mod tests {
             policy.allowed_tool_names,
             vec![
                 ACTIVATE_SKILL_TOOL_NAME.to_string(),
+                CONTEXT_EXPAND_TOOL_NAME.to_string(),
+                CONTEXT_OPEN_TOOL_NAME.to_string(),
+                CONTEXT_SEARCH_TOOL_NAME.to_string(),
+                CONTEXT_SUMMARIZE_EVIDENCE_TOOL_NAME.to_string(),
                 READ_SKILL_RESOURCE_TOOL_NAME.to_string(),
                 SEARCH_SDK_TOOL_NAME.to_string(),
                 "terminal_context_pack".to_string(),
                 "terminal_context_peek".to_string(),
                 "terminal_context_read".to_string(),
                 "terminal_write_input".to_string(),
+                "workflow_plan_compile".to_string(),
+                "workflow_plan_peek".to_string(),
+                "workflow_plan_read".to_string(),
+                "workflow_plan_update".to_string(),
             ]
         );
     }

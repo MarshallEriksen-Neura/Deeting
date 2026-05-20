@@ -253,10 +253,10 @@ export function buildWorkflowReceiptBlocks(run: WorkflowRun, steps: WorkflowStep
   const resultPayload = buildWorkflowResultPayload(run, steps)
   const statusText =
     run.status === "completed"
-      ? "Workflow completed."
+      ? "工作流已完成。"
       : run.status === "awaiting_plan_edit"
-        ? "Workflow paused for review."
-        : "Workflow needs recovery."
+        ? "工作流已暂停，等待你确认下一步。"
+        : "工作流需要处理。"
   const summary = resultPayload.summary ?? resultPayload.error ?? run.goal
 
   return [

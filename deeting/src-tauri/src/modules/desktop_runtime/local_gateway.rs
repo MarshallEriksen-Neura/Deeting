@@ -79,6 +79,10 @@ struct LocalWorkflowCompileAndStartRequest {
     proposal_dirty: Option<bool>,
     #[serde(default, alias = "requestId")]
     request_id: Option<String>,
+    #[serde(default, alias = "executionModelId")]
+    execution_model_id: Option<String>,
+    #[serde(default, alias = "executionProviderModelId")]
+    execution_provider_model_id: Option<String>,
 }
 
 fn build_approval_status_payload(trace_id: &str, request_id: Option<&str>) -> serde_json::Value {
@@ -230,9 +234,27 @@ async fn workflow_compile_and_start_handler(
             "request_id": request_id,
         }));
 
-        if payload.proposal_dirty.unwrap_or(false) {
+        let proposal_with_execution_model = payload.proposal_text.as_ref().map(|proposal_text| {
+            crate::modules::workflow::service::apply_execution_model_to_default_worker_refs(
+                proposal_text.clone(),
+                payload.execution_model_id.as_deref(),
+                payload.execution_provider_model_id.as_deref(),
+            )
+        });
+        let proposal_changed_by_execution_model = match (
+            payload.proposal_text.as_deref(),
+            proposal_with_execution_model.as_deref(),
+        ) {
+            (Some(original), Some(updated)) => original != updated,
+            _ => false,
+        };
+
+        if payload.proposal_dirty.unwrap_or(false) || proposal_changed_by_execution_model {
             match normalize_optional_string(payload.proposal_text.as_deref()) {
-                Some(proposal_text) => {
+                Some(_) => {
+                    let proposal_text = proposal_with_execution_model
+                        .clone()
+                        .unwrap_or_else(|| payload.proposal_text.clone().unwrap_or_default());
                     let update = UpdateProposalRequest {
                         run_id: normalized_run_id.clone(),
                         proposal_text,
@@ -808,6 +830,11 @@ fn map_request_to_orchestrator_input(
         .as_ref()
         .and_then(|metadata| metadata.get("terminal_context"))
         .cloned();
+    let workflow_context = payload
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get("workflow_context"))
+        .cloned();
     let session_id = normalize_optional_string(payload.session_id.as_deref())
         .ok_or_else(|| "session_id is required for desktop local chat".to_string())?;
     let stream = payload.stream.unwrap_or(true);
@@ -841,6 +868,7 @@ fn map_request_to_orchestrator_input(
         reasoning_enabled: payload.reasoning_enabled,
         reasoning_effort: normalize_optional_string(payload.reasoning_effort.as_deref()),
         terminal_context,
+        workflow_context,
         request_id: normalize_optional_string(payload.request_id.as_deref()),
         stream,
         status_stream,

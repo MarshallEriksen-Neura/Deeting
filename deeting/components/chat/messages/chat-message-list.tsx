@@ -31,6 +31,22 @@ function getPersistedKnowledgeContextStatus(message: Message) {
   }
 }
 
+function isWorkflowAssistantMessage(message: Message) {
+  if (message.role !== "assistant") return false
+  if (
+    message.metaInfo?.workflow_live ||
+    message.metaInfo?.workflow_plan ||
+    message.metaInfo?.workflow_receipt
+  ) {
+    return true
+  }
+  return Boolean(
+    message.blocks?.some(
+      (block) => block.type === "ui" && block.viewType.startsWith("workflow.")
+    )
+  )
+}
+
 interface ChatMessageListProps {
   messages: Message[]
   agent?: ChatAssistant
@@ -121,7 +137,10 @@ export function ChatMessageList({
   // 计算最后一条助手消息的 ID
   const lastAssistantId = React.useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
-      if (messages[i]?.role === "assistant") return messages[i]?.id
+      const message = messages[i]
+      if (message?.role === "assistant" && !isWorkflowAssistantMessage(message)) {
+        return message.id
+      }
     }
     return undefined
   }, [messages])

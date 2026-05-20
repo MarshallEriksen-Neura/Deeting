@@ -1640,6 +1640,10 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
         terminal_context_read_contract(),
         terminal_context_pack_contract(),
         terminal_write_input_contract(),
+        workflow_plan_peek_contract(),
+        workflow_plan_read_contract(),
+        workflow_plan_update_contract(),
+        workflow_plan_compile_contract(),
         context_search_contract(),
         context_search_multi_contract(),
         context_open_contract(),
@@ -2000,6 +2004,142 @@ fn terminal_write_input_contract() -> CoreToolContract {
         mutating: true,
         risk_level: "LOW",
         example_arguments: json!({"text": "bun test deeting/components/terminal", "append_space": false}),
+    }
+}
+
+fn workflow_plan_peek_contract() -> CoreToolContract {
+    CoreToolContract {
+        name: "workflow_plan_peek",
+        description: "Read a lightweight index of the workflow plan attached to this chat request, or list recent workflow runs when no plan is attached. Use this before answering questions about the current plan, phases, workflow status, or whether a plan can be edited.",
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "run_id": {
+                    "type": "string",
+                    "description": "Optional workflow run id. Omit to use the request-attached workflow context."
+                }
+            }
+        }),
+        output_schema: json!({
+            "type": "object",
+            "properties": {
+                "available": {"type": "boolean"},
+                "current_run": {"type": ["object", "null"]},
+                "recent_runs": {"type": "array"}
+            },
+            "required": ["available"]
+        }),
+        permission_scope: &["workflow_plan", "local_runtime"],
+        read_only: true,
+        mutating: false,
+        risk_level: "LOW",
+        example_arguments: json!({}),
+    }
+}
+
+fn workflow_plan_read_contract() -> CoreToolContract {
+    CoreToolContract {
+        name: "workflow_plan_read",
+        description: "Read the current workflow plan proposal, compiled snapshot, step statuses, or events. Call workflow_plan_peek first unless you already have a run_id. This is read-only.",
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "run_id": {
+                    "type": "string",
+                    "description": "Optional workflow run id. Omit to use the request-attached workflow context."
+                },
+                "target": {
+                    "type": "string",
+                    "enum": ["all", "proposal", "snapshot", "steps", "events"],
+                    "description": "Which workflow plan surface to read."
+                }
+            }
+        }),
+        output_schema: json!({
+            "type": "object",
+            "properties": {
+                "available": {"type": "boolean"},
+                "run": {"type": "object"},
+                "target": {"type": "string"},
+                "proposal_text": {"type": "string"},
+                "snapshot_json": {},
+                "steps": {"type": "array"},
+                "events": {"type": "array"}
+            },
+            "required": ["available", "run", "target"]
+        }),
+        permission_scope: &["workflow_plan", "local_runtime"],
+        read_only: true,
+        mutating: false,
+        risk_level: "LOW",
+        example_arguments: json!({"target": "proposal"}),
+    }
+}
+
+fn workflow_plan_update_contract() -> CoreToolContract {
+    CoreToolContract {
+        name: "workflow_plan_update",
+        description: "Replace the draft proposal text for a workflow run without starting execution. Use this only when the user asks to modify the current task plan. This bumps the proposal version, invalidates the compiled snapshot, and leaves execution under user control.",
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "run_id": {
+                    "type": "string",
+                    "description": "Optional workflow run id. Omit to use the request-attached workflow context."
+                },
+                "proposal_text": {
+                    "type": "string",
+                    "description": "Full replacement Workflow Proposal markdown."
+                }
+            },
+            "required": ["proposal_text"]
+        }),
+        output_schema: json!({
+            "type": "object",
+            "properties": {
+                "ok": {"type": "boolean"},
+                "run": {"type": "object"},
+                "proposal_version": {"type": "integer"},
+                "status": {"type": "string"},
+                "compiled": {"type": "boolean"}
+            },
+            "required": ["ok", "run", "proposal_version", "status", "compiled"]
+        }),
+        permission_scope: &["workflow_plan", "local_runtime"],
+        read_only: false,
+        mutating: true,
+        risk_level: "LOW",
+        example_arguments: json!({"proposal_text": "# Workflow Proposal\n\nTitle: Revised plan\nGoal: ...\n\n## Phase 1: Research\n- Worker: direct_llm:default\n- Goal: ..."}),
+    }
+}
+
+fn workflow_plan_compile_contract() -> CoreToolContract {
+    CoreToolContract {
+        name: "workflow_plan_compile",
+        description: "Compile the current workflow proposal and return structured compiler errors or the executable snapshot. This validates the plan but does not start workflow execution.",
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "run_id": {
+                    "type": "string",
+                    "description": "Optional workflow run id. Omit to use the request-attached workflow context."
+                }
+            }
+        }),
+        output_schema: json!({
+            "type": "object",
+            "properties": {
+                "ok": {"type": "boolean"},
+                "run": {"type": "object"},
+                "compile_result": {"type": "object"}
+            },
+            "required": ["ok", "run", "compile_result"]
+        }),
+        permission_scope: &["workflow_plan", "local_runtime"],
+        read_only: false,
+        mutating: true,
+        risk_level: "LOW",
+        example_arguments: json!({}),
     }
 }
 

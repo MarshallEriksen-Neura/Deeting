@@ -447,6 +447,10 @@ pub struct CompileResult {
 pub struct GenerateProposalRequest {
     pub goal: String,
     pub hints: Option<String>,
+    #[serde(default, alias = "executionModelId")]
+    pub execution_model_id: Option<String>,
+    #[serde(default, alias = "executionProviderModelId")]
+    pub execution_provider_model_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -459,6 +463,10 @@ pub struct UpdateProposalRequest {
 pub struct RegenerateProposalRequest {
     pub run_id: String,
     pub feedback: Option<String>,
+    #[serde(default, alias = "executionModelId")]
+    pub execution_model_id: Option<String>,
+    #[serde(default, alias = "executionProviderModelId")]
+    pub execution_provider_model_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -702,6 +710,10 @@ pub struct RerunPhaseRequest {
     pub run_id: String,
     pub phase_id: String,
     pub updated_goal: Option<String>,
+    #[serde(default, alias = "executionModelId")]
+    pub execution_model_id: Option<String>,
+    #[serde(default, alias = "executionProviderModelId")]
+    pub execution_provider_model_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -721,6 +733,10 @@ pub struct QuickWorkflowRequest {
     pub worker_ref: Option<String>,
     pub inject_into_chat: bool,
     pub user_notes: Option<String>,
+    #[serde(default, alias = "executionModelId")]
+    pub execution_model_id: Option<String>,
+    #[serde(default, alias = "executionProviderModelId")]
+    pub execution_provider_model_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) worker_task_packet: Option<WorkerTaskPacket>,
 }

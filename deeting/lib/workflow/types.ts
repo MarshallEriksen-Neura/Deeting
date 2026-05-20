@@ -242,6 +242,8 @@ export interface ParsedProposal {
 export interface GenerateProposalRequest {
   goal: string
   hints?: string | null
+  execution_model_id?: string | null
+  execution_provider_model_id?: string | null
 }
 
 export interface UpdateProposalRequest {
@@ -252,6 +254,8 @@ export interface UpdateProposalRequest {
 export interface RegenerateProposalRequest {
   run_id: string
   feedback?: string | null
+  execution_model_id?: string | null
+  execution_provider_model_id?: string | null
 }
 
 export interface ApproveWorkflowRequest {
@@ -274,6 +278,8 @@ export interface RerunPhaseRequest {
   run_id: string
   phase_id: string
   updated_goal?: string | null
+  execution_model_id?: string | null
+  execution_provider_model_id?: string | null
 }
 
 export interface EditRemainingPhasesRequest {
@@ -298,6 +304,8 @@ export interface QuickWorkflowRequest {
   goal: string
   worker_ref?: string | null
   inject_into_chat: boolean
+  execution_model_id?: string | null
+  execution_provider_model_id?: string | null
 }
 
 export interface QuickWorkflowResult {

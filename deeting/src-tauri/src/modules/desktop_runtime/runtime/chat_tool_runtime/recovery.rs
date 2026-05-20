@@ -856,6 +856,7 @@ async fn advance_local_chat_execution_from_graph_state(
         runtime_metrics: state.runtime_metrics.clone(),
         last_capability_snapshot: state.last_capability_snapshot.clone(),
         terminal_context: state.terminal_context.clone(),
+        workflow_context: state.workflow_context.clone(),
         last_response: state.last_response.clone(),
         selected_knowledge_file_ids: state.selected_knowledge_file_ids.clone(),
     };

@@ -85,6 +85,35 @@ pub(crate) async fn persist_generated_proposal(
     Ok(run)
 }
 
+pub(crate) fn direct_llm_worker_ref_for_execution_model(
+    execution_model_id: Option<&str>,
+    execution_provider_model_id: Option<&str>,
+) -> Option<String> {
+    execution_provider_model_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            execution_model_id
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+        })
+        .map(|value| format!("direct_llm:{value}"))
+}
+
+pub(crate) fn apply_execution_model_to_default_worker_refs(
+    proposal_text: String,
+    execution_model_id: Option<&str>,
+    execution_provider_model_id: Option<&str>,
+) -> String {
+    let Some(worker_ref) =
+        direct_llm_worker_ref_for_execution_model(execution_model_id, execution_provider_model_id)
+    else {
+        return proposal_text;
+    };
+
+    proposal_text.replace("direct_llm:default", &worker_ref)
+}
+
 pub(crate) async fn update_existing_proposal(
     store: &McpStore,
     run_id: &str,
@@ -346,6 +375,11 @@ pub(crate) async fn generate_proposal_workflow(
     let title: String = payload.goal.chars().take(80).collect();
     let proposal_text =
         proposal::generate_proposal(app_state, &payload.goal, payload.hints.as_deref()).await?;
+    let proposal_text = apply_execution_model_to_default_worker_refs(
+        proposal_text,
+        payload.execution_model_id.as_deref(),
+        payload.execution_provider_model_id.as_deref(),
+    );
     persist_generated_proposal(
         store,
         app_data_dir,
@@ -369,6 +403,11 @@ pub(crate) async fn regenerate_proposal_workflow(
         .ok_or_else(|| "workflow run not found".to_string())?;
     let proposal_text =
         proposal::generate_proposal(app_state, &run.goal, payload.feedback.as_deref()).await?;
+    let proposal_text = apply_execution_model_to_default_worker_refs(
+        proposal_text,
+        payload.execution_model_id.as_deref(),
+        payload.execution_provider_model_id.as_deref(),
+    );
     regenerate_existing_proposal(store, &payload.run_id, app_data_dir, proposal_text).await
 }
 
@@ -465,11 +504,16 @@ pub(crate) async fn prepare_quick_workflow_run(
         return Err("quick workflow goal is required".to_string());
     }
 
+    let model_worker_ref = direct_llm_worker_ref_for_execution_model(
+        req.execution_model_id.as_deref(),
+        req.execution_provider_model_id.as_deref(),
+    );
     let worker_ref = req
         .worker_ref
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
+        .or(model_worker_ref.as_deref())
         .unwrap_or("direct_llm:default");
     let title = goal.chars().take(80).collect::<String>();
     let proposal_text = build_quick_workflow_proposal_text(
@@ -927,6 +971,15 @@ async fn rerun_phase_with_store(
         .iter_mut()
         .find(|phase| phase.phase_id == phase_id)
         .ok_or_else(|| format!("Phase '{}' not found in snapshot", phase_id))?;
+
+    if phase.worker_ref.trim() == "direct_llm:default" {
+        if let Some(worker_ref) = direct_llm_worker_ref_for_execution_model(
+            req.execution_model_id.as_deref(),
+            req.execution_provider_model_id.as_deref(),
+        ) {
+            phase.worker_ref = worker_ref;
+        }
+    }
 
     if let Some(updated_goal) = req
         .updated_goal
@@ -2652,6 +2705,8 @@ Goal: Produce a useful output
                 run_id: run.id.clone(),
                 phase_id: "phase-2".to_string(),
                 updated_goal: None,
+                execution_model_id: None,
+                execution_provider_model_id: None,
             },
         )
         .await
@@ -2688,6 +2743,8 @@ Goal: Produce a useful output
                 run_id: run.id.clone(),
                 phase_id: "phase-999".to_string(),
                 updated_goal: None,
+                execution_model_id: None,
+                execution_provider_model_id: None,
             },
         )
         .await

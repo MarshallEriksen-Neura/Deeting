@@ -34,6 +34,7 @@
   },
   "execution": {
     "title": "Execution",
+    "needsDecisionTitle": "Needs your decision",
     "cancel": "Cancel",
     "progress": "Progress",
     "phaseOf": "Phase {current}/{total}",
@@ -44,6 +45,12 @@
     "cancelled": "Cancelled",
     "waitingApproval": "Waiting for approval",
     "awaitingEdit": "Awaiting edit",
+    "needsDecision": "Needs action",
+    "decisionPanelTitle": "This phase needs attention",
+    "decisionPanelDescription": "The current phase did not finish cleanly. Rerun this phase, or confirm that the workflow should continue with the remaining phases.",
+    "blockedPhase": "Blocked phase",
+    "fixByRerun": "Rerun this phase",
+    "continueAnyway": "Continue remaining phases",
     "continue": "Continue execution",
     "pending": "Pending",
     "rerunPhase": "Rerun",
@@ -69,6 +76,9 @@
   "result": {
     "summary": "Summary",
     "artifacts": "Artifacts",
+    "primaryOutput": "Primary output",
+    "loadingArtifacts": "Loading phase output...",
+    "emptyArtifacts": "This phase only created file placeholders and no readable content. Rerun the phase, or ask AI to write a result from the current context.",
     "trace": "Trace",
     "viewFullContext": "View full context",
     "noResults": "No results yet"

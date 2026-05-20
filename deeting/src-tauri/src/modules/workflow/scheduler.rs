@@ -11,7 +11,7 @@ use crate::modules::workflow::types::{
     CreateWorkflowArtifactRequest, CreateWorkflowCheckpointRequest, CreateWorkflowEventRequest,
     CreateWorkflowStepRunRequest, ExecutionSnapshot, PhaseOutcome, ResultPacket,
     RevalidationDecision, WorkerExecutionInput, WorkflowArtifactKind, WorkflowProgress,
-    WorkflowRun, WorkflowRunStatus, WorkflowStepStatus, WorkflowStepType,
+    WorkflowRun, WorkflowRunStatus, WorkflowStepRun, WorkflowStepStatus, WorkflowStepType,
 };
 use crate::modules::workflow::worker_adapter;
 use crate::state::AppState;
@@ -80,9 +80,32 @@ async fn run_workflow_inner(
         .await
         .map_err(|err| err.to_string())?;
 
+    for step in existing_steps.iter().filter(|step| {
+        !step_matches_current_snapshot(step, &snapshot)
+            || (step.status == WorkflowStepStatus::Succeeded && !step_has_reusable_result(step))
+    }) {
+        if !matches!(
+            step.status,
+            WorkflowStepStatus::Obsolete
+                | WorkflowStepStatus::Invalidated
+                | WorkflowStepStatus::Cancelled
+        ) {
+            let _ = store::update_workflow_step_status(
+                store_ref,
+                &step.id,
+                WorkflowStepStatus::Obsolete,
+            )
+            .await;
+        }
+    }
+
     let completed_phase_ids = existing_steps
         .iter()
-        .filter(|step| step.status == WorkflowStepStatus::Succeeded)
+        .filter(|step| {
+            step.status == WorkflowStepStatus::Succeeded
+                && step_matches_current_snapshot(step, &snapshot)
+                && step_has_reusable_result(step)
+        })
         .map(|step| step.phase_id.clone())
         .collect::<std::collections::HashSet<_>>();
 
@@ -166,6 +189,29 @@ async fn run_workflow_inner(
 
 fn detail_run_timestamp(run: &WorkflowRun) -> &str {
     run.updated_at.as_str()
+}
+
+fn step_matches_current_snapshot(step: &WorkflowStepRun, snapshot: &ExecutionSnapshot) -> bool {
+    snapshot
+        .phases
+        .iter()
+        .enumerate()
+        .any(|(index, phase)| step_matches_phase(step, phase, index as i64))
+}
+
+fn step_matches_phase(step: &WorkflowStepRun, phase: &CompiledPhase, phase_index: i64) -> bool {
+    step.phase_id == phase.phase_id
+        && step.phase_index == phase_index
+        && step.title == phase.title
+        && step.worker_ref.as_deref() == Some(phase.worker_ref.as_str())
+        && step.goal.as_deref() == Some(phase.goal.as_str())
+}
+
+fn step_has_reusable_result(step: &WorkflowStepRun) -> bool {
+    step.worker_trace_summary
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|summary| !summary.is_empty())
 }
 
 async fn execute_single_phase(
@@ -280,15 +326,33 @@ async fn execute_single_phase(
             let completed_at = time::OffsetDateTime::now_utc()
                 .format(&time::format_description::well_known::Rfc3339)
                 .map_err(|err| err.to_string())?;
-            store::update_workflow_step_result(
-                store_ref,
-                &step_run.id,
-                &artifact_refs,
-                Some(&packet.summary),
-                &completed_at,
-            )
-            .await
-            .map_err(|err| err.to_string())?;
+            let execution_succeeded = execution_result.status == "succeeded";
+            if execution_succeeded {
+                store::update_workflow_step_result(
+                    store_ref,
+                    &step_run.id,
+                    &artifact_refs,
+                    Some(&packet.summary),
+                    &completed_at,
+                )
+                .await
+                .map_err(|err| err.to_string())?;
+            } else {
+                let error = execution_result
+                    .error
+                    .as_deref()
+                    .unwrap_or("Workflow phase returned failed status");
+                store::update_workflow_step_failure(
+                    store_ref,
+                    &step_run.id,
+                    error,
+                    &artifact_refs,
+                    Some(&packet.summary),
+                    &completed_at,
+                )
+                .await
+                .map_err(|err| err.to_string())?;
+            }
 
             store::create_workflow_artifact(
                 store_ref,
@@ -305,14 +369,28 @@ async fn execute_single_phase(
             .await
             .map_err(|err| err.to_string())?;
 
-            emit_event(
-                store_ref,
-                run_id,
-                Some(&step_run.id),
-                "step.succeeded",
-                Some(serde_json::json!({ "phase_id": phase.phase_id })),
-            )
-            .await;
+            if execution_succeeded {
+                emit_event(
+                    store_ref,
+                    run_id,
+                    Some(&step_run.id),
+                    "step.succeeded",
+                    Some(serde_json::json!({ "phase_id": phase.phase_id })),
+                )
+                .await;
+            } else {
+                emit_event(
+                    store_ref,
+                    run_id,
+                    Some(&step_run.id),
+                    "step.failed",
+                    Some(serde_json::json!({
+                        "phase_id": phase.phase_id,
+                        "error": execution_result.error,
+                    })),
+                )
+                .await;
+            }
             emit_event(
                 store_ref,
                 run_id,
@@ -330,9 +408,33 @@ async fn execute_single_phase(
                 phase,
                 phase_index,
                 snapshot.phases.len() as i64,
-                "succeeded",
+                if execution_succeeded {
+                    "succeeded"
+                } else {
+                    "failed"
+                },
             );
-            send_run_detail(store_ref, stream_tx, "workflow.step_succeeded", run_id).await;
+            send_run_detail(
+                store_ref,
+                stream_tx,
+                if execution_succeeded {
+                    "workflow.step_succeeded"
+                } else {
+                    "workflow.step_failed"
+                },
+                run_id,
+            )
+            .await;
+
+            if !execution_succeeded {
+                return Ok(PhaseOutcome {
+                    phase_id: phase.phase_id.clone(),
+                    step_run_id: step_run.id,
+                    status: WorkflowStepStatus::Failed,
+                    result_packet: Some(packet),
+                    revalidation: RevalidationDecision::PauseForEdit,
+                });
+            }
 
             let revalidation = revalidate_remaining_phases(&packet, phase, &snapshot.phases);
             Ok(PhaseOutcome {
@@ -344,9 +446,19 @@ async fn execute_single_phase(
             })
         }
         Err(error) => {
-            store::update_workflow_step_status(store_ref, &step_run.id, WorkflowStepStatus::Failed)
-                .await
+            let completed_at = time::OffsetDateTime::now_utc()
+                .format(&time::format_description::well_known::Rfc3339)
                 .map_err(|err| err.to_string())?;
+            store::update_workflow_step_failure(
+                store_ref,
+                &step_run.id,
+                &error,
+                &[],
+                None,
+                &completed_at,
+            )
+            .await
+            .map_err(|err| err.to_string())?;
             emit_event(
                 store_ref,
                 run_id,
@@ -667,6 +779,29 @@ mod tests {
         }
     }
 
+    fn sample_step_run() -> WorkflowStepRun {
+        WorkflowStepRun {
+            id: "step-1".into(),
+            run_id: "run-1".into(),
+            phase_id: "phase-1".into(),
+            phase_index: 0,
+            step_type: WorkflowStepType::WorkerCall,
+            title: "Research".into(),
+            status: WorkflowStepStatus::Succeeded,
+            worker_ref: Some("direct_llm:default".into()),
+            goal: Some("Find stuff".into()),
+            input_snapshot: None,
+            output_artifact_refs: vec![],
+            worker_trace_summary: Some("done".into()),
+            retry_count: 0,
+            error: None,
+            started_at: None,
+            completed_at: None,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            updated_at: "2026-01-01T00:00:00Z".into(),
+        }
+    }
+
     #[test]
     fn is_approval_gate_detects_marker() {
         let phase = CompiledPhase {
@@ -685,6 +820,39 @@ mod tests {
     fn is_not_approval_gate_for_normal_phase() {
         let phase = sample_compiled_phase();
         assert!(!is_approval_gate(&phase));
+    }
+
+    #[test]
+    fn step_matches_current_snapshot_requires_current_phase_index_and_shape() {
+        let phase = sample_compiled_phase();
+        let snapshot = ExecutionSnapshot {
+            run_id: "run-1".into(),
+            proposal_version: 2,
+            snapshot_version: 3,
+            compiled_at: "2026-01-01T00:00:00Z".into(),
+            goal: "Goal".into(),
+            phases: vec![phase],
+            policy: Default::default(),
+        };
+        assert!(step_matches_current_snapshot(&sample_step_run(), &snapshot));
+
+        let mut stale_step = sample_step_run();
+        stale_step.phase_index = 1;
+        assert!(!step_matches_current_snapshot(&stale_step, &snapshot));
+
+        let mut stale_goal = sample_step_run();
+        stale_goal.goal = Some("Old goal".into());
+        assert!(!step_matches_current_snapshot(&stale_goal, &snapshot));
+    }
+
+    #[test]
+    fn empty_succeeded_step_is_not_reusable() {
+        let mut step = sample_step_run();
+        assert!(step_has_reusable_result(&step));
+        step.worker_trace_summary = Some("   ".into());
+        assert!(!step_has_reusable_result(&step));
+        step.worker_trace_summary = None;
+        assert!(!step_has_reusable_result(&step));
     }
 
     #[test]

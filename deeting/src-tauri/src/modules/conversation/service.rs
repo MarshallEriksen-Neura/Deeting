@@ -315,6 +315,7 @@ pub async fn execute_text_chat_raw(
         reasoning_enabled: None,
         reasoning_effort: None,
         terminal_context: None,
+        workflow_context: None,
         request_id: None,
         stream: false,
         status_stream: false,

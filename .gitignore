@@ -23,6 +23,8 @@ target-codex-warnings/
 .omx/
 .agents/
 .gemini/
+.codegraph/
+.cursor/
 .atomcode/
 .antigravitycli/
 datalog/

@@ -547,7 +547,12 @@ pub(crate) async fn request_provider_chat_completion(
 
 pub(crate) fn normalize_chat_completion_response(raw: serde_json::Value) -> serde_json::Value {
     let finish_reason = extract_finish_reason(&raw);
-    if raw.get("content").is_some() && raw.get("tool_calls").is_some() {
+    let has_choice_payload = raw
+        .get("choices")
+        .and_then(|value| value.as_array())
+        .map(|items| !items.is_empty())
+        .unwrap_or(false);
+    if raw.get("content").is_some() && raw.get("tool_calls").is_some() && !has_choice_payload {
         let mut result = raw;
         promote_terminal_reasoning_content(&mut result);
         if let Some(reason) = finish_reason {
@@ -836,6 +841,27 @@ mod tests {
         assert_eq!(normalized["content"], json!("hello"));
         assert_eq!(normalized["usage"]["total_tokens"], json!(18));
         assert_eq!(normalized["finish_reason"], json!("length"));
+    }
+
+    #[test]
+    fn normalize_chat_completion_response_uses_choices_when_flat_content_is_empty() {
+        let normalized = super::normalize_chat_completion_response(json!({
+            "content": "",
+            "tool_calls": [],
+            "choices": [{
+                "message": {
+                    "content": "choice text should not be lost"
+                },
+                "finish_reason": "stop"
+            }]
+        }));
+
+        assert_eq!(
+            normalized["content"],
+            json!("choice text should not be lost")
+        );
+        assert_eq!(normalized["tool_calls"], json!([]));
+        assert_eq!(normalized["finish_reason"], json!("stop"));
     }
 
     #[test]

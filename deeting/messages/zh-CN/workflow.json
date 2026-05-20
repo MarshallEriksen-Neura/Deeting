@@ -34,6 +34,7 @@
   },
   "execution": {
     "title": "执行中",
+    "needsDecisionTitle": "需要你处理",
     "cancel": "取消",
     "progress": "进度",
     "phaseOf": "阶段 {current}/{total}",
@@ -44,6 +45,12 @@
     "cancelled": "已取消",
     "waitingApproval": "等待审批",
     "awaitingEdit": "等待编辑",
+    "needsDecision": "待处理",
+    "decisionPanelTitle": "这个阶段需要处理",
+    "decisionPanelDescription": "当前阶段没有顺利完成。你可以重新执行该阶段，或确认继续后续阶段。",
+    "blockedPhase": "当前卡住的阶段",
+    "fixByRerun": "重新执行本阶段",
+    "continueAnyway": "确认继续后续阶段",
     "continue": "继续执行",
     "pending": "待执行",
     "rerunPhase": "重新执行",
@@ -69,6 +76,9 @@
   "result": {
     "summary": "摘要",
     "artifacts": "产出",
+    "primaryOutput": "主要结果",
+    "loadingArtifacts": "正在读取阶段产出...",
+    "emptyArtifacts": "这个阶段只生成了文件占位，没有可读正文。建议重新执行该阶段，或让 AI 基于当前上下文补写结果。",
     "trace": "执行轨迹",
     "viewFullContext": "查看完整上下文",
     "noResults": "暂无结果"

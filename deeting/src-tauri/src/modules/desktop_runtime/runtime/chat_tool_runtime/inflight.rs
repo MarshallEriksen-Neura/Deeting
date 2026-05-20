@@ -25,6 +25,7 @@ pub(crate) fn build_persisted_chat_runtime_context_from_execution_request(
         runtime_metrics: Default::default(),
         last_capability_snapshot: request.execution_policy.capability_snapshot.clone(),
         terminal_context: request.terminal_context.clone(),
+        workflow_context: request.workflow_context.clone(),
         last_response: None,
         selected_knowledge_file_ids: request.selected_knowledge_file_ids.clone(),
     }
@@ -54,6 +55,8 @@ pub(crate) struct PersistedChatToolRuntimeContext {
     pub(super) last_capability_snapshot: Option<serde_json::Value>,
     #[serde(default)]
     pub(super) terminal_context: Option<serde_json::Value>,
+    #[serde(default)]
+    pub(super) workflow_context: Option<serde_json::Value>,
     pub(super) last_response: Option<serde_json::Value>,
     // Backwards-compat: older persisted contexts pre-date the context
     // orchestrator manifest, so deserialize as empty when missing.
@@ -162,6 +165,7 @@ pub(super) fn runtime_state_from_persisted_context(
         runtime_metrics: context.runtime_metrics,
         last_capability_snapshot: context.last_capability_snapshot,
         terminal_context: context.terminal_context,
+        workflow_context: context.workflow_context,
         last_response: context.last_response,
         diting_think_consumed: false,
         captured_reasoning: None,
@@ -865,6 +869,7 @@ pub(super) async fn persist_running_tool_execution_runtime(
                 runtime_metrics: state.runtime_metrics.clone(),
                 last_capability_snapshot: state.last_capability_snapshot.clone(),
                 terminal_context: state.terminal_context.clone(),
+                workflow_context: state.workflow_context.clone(),
                 last_response: state.last_response.clone(),
                 selected_knowledge_file_ids: state.selected_knowledge_file_ids.clone(),
             }),
@@ -1036,6 +1041,7 @@ pub(crate) async fn persist_suspended_execution_graph_runtime(
                 runtime_metrics: suspended.runtime_metrics.clone(),
                 last_capability_snapshot: suspended.last_capability_snapshot.clone(),
                 terminal_context: suspended.terminal_context.clone(),
+                workflow_context: suspended.workflow_context.clone(),
                 last_response: suspended.last_response.clone(),
                 selected_knowledge_file_ids: suspended.selected_knowledge_file_ids.clone(),
             }),
@@ -1142,6 +1148,7 @@ pub(crate) async fn load_suspended_chat_tool_execution_for_resume(
                         runtime_metrics: RuntimeMetricsAccumulator::default(),
                         last_capability_snapshot: None,
                         terminal_context: None,
+                        workflow_context: None,
                         last_response: None,
                         selected_knowledge_file_ids: Vec::new(),
                     }
@@ -1167,6 +1174,7 @@ pub(crate) async fn load_suspended_chat_tool_execution_for_resume(
             runtime_metrics: state.runtime_metrics.clone(),
             last_capability_snapshot: state.last_capability_snapshot.clone(),
             terminal_context: state.terminal_context.clone(),
+            workflow_context: state.workflow_context.clone(),
             last_response: state.last_response.clone(),
             pending_approvals: persisted_pending_approvals,
             execution_graph,

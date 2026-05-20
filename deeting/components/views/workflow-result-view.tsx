@@ -47,18 +47,30 @@ export default function WorkflowResultView({ data }: NativeViewProps) {
   const payload = toPayload(data)
   const openView = useWorkspaceStore((state) => state.openView)
   const [showSteps, setShowSteps] = useState(false)
+  const [showArtifacts, setShowArtifacts] = useState(payload?.status === "completed")
 
   if (!payload) {
     return <div className="text-sm text-muted-foreground">Invalid workflow result payload.</div>
   }
 
   const isFailure = payload.status === "failed" || payload.status === "cancelled"
+  const needsDecision = payload.status === "awaiting_plan_edit"
   const statusLabel =
     payload.status === "completed"
-      ? "Completed"
+      ? "已完成"
       : payload.status === "awaiting_plan_edit"
-        ? "Needs review"
-        : "Needs recovery"
+        ? "等待你处理"
+        : "需要处理"
+  const resultTitle = needsDecision
+    ? "工作流暂停，等待你确认下一步"
+    : isFailure
+      ? "工作流执行中断"
+      : "工作流已完成"
+  const resultDescription = needsDecision
+    ? "当前阶段没有顺利完成。你可以先重新执行这个阶段；如果认为结果已经足够，也可以确认继续后续阶段。"
+    : isFailure
+      ? "执行已经停止。已完成的阶段会保留，你可以打开右侧工作流查看并处理失败阶段。"
+      : "所有阶段已经完成，可以查看摘要和产出。"
 
   const openWorkflow = (phaseId?: string | null, contextPhaseId?: string | null) => {
     openView({
@@ -90,7 +102,6 @@ export default function WorkflowResultView({ data }: NativeViewProps) {
     try {
       await resumeWorkflow(payload.run_id)
       openWorkflow(payload.focus_phase_id)
-      toast.success("Workflow execution resumed")
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
     }
@@ -100,25 +111,34 @@ export default function WorkflowResultView({ data }: NativeViewProps) {
     <div className="space-y-5">
       <div className={cn(
         "rounded-lg border p-4",
-        isFailure ? "border-rose-200 bg-rose-50/70" : "border-emerald-200 bg-emerald-50/70"
+        isFailure
+          ? "border-rose-200 bg-rose-50/70"
+          : needsDecision
+            ? "border-amber-200 bg-amber-50/75"
+            : "border-emerald-200 bg-emerald-50/70"
       )}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              {isFailure ? (
-                <AlertTriangle className="h-4 w-4 text-rose-600" />
+              {isFailure || needsDecision ? (
+                <AlertTriangle className={cn("h-4 w-4", needsDecision ? "text-amber-600" : "text-rose-600")} />
               ) : (
                 <CheckCircle2 className="h-4 w-4 text-emerald-600" />
               )}
               <Badge variant="outline" className={cn(
                 "capitalize",
-                isFailure ? "border-rose-200 text-rose-700" : "border-emerald-200 text-emerald-700"
+                isFailure
+                  ? "border-rose-200 text-rose-700"
+                  : needsDecision
+                    ? "border-amber-200 text-amber-800"
+                    : "border-emerald-200 text-emerald-700"
               )}>
                 {statusLabel}
               </Badge>
             </div>
-            <h3 className="mt-3 text-base font-semibold tracking-tight text-foreground">{payload.title}</h3>
-            <p className="mt-1 text-sm text-muted-foreground">{payload.goal}</p>
+            <h3 className="mt-3 text-base font-semibold tracking-tight text-foreground">{resultTitle}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">{resultDescription}</p>
+            <p className="mt-2 text-sm font-medium text-foreground">{payload.focus_phase_title ?? payload.title}</p>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
             {isFailure && payload.focus_phase_id ? (
@@ -130,7 +150,7 @@ export default function WorkflowResultView({ data }: NativeViewProps) {
             {payload.status === "awaiting_plan_edit" ? (
               <Button size="sm" variant="outline" onClick={() => void resumePausedWorkflow()}>
                 <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-                继续执行
+                确认继续
               </Button>
             ) : null}
           </div>
@@ -150,7 +170,18 @@ export default function WorkflowResultView({ data }: NativeViewProps) {
         ) : null}
       </div>
 
-      <ArtifactSection runId={payload.run_id} artifacts={payload.artifacts} />
+      {showArtifacts ? (
+        <ArtifactSection runId={payload.run_id} artifacts={payload.artifacts} />
+      ) : payload.artifacts.length > 0 ? (
+        <button
+          type="button"
+          className="flex w-full items-center justify-between rounded-lg border border-border/70 bg-background px-4 py-3 text-left text-sm transition-colors hover:bg-muted/30"
+          onClick={() => setShowArtifacts(true)}
+        >
+          <span className="font-medium">查看执行产物</span>
+          <span className="text-xs text-muted-foreground">{payload.artifacts.length} 个文件</span>
+        </button>
+      ) : null}
 
       {/* Collapsible step list */}
       <div className="rounded-lg border border-border/70 bg-background overflow-hidden">

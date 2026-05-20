@@ -46,6 +46,7 @@ mod terminal_context;
 #[cfg(test)]
 mod tests;
 mod tool_meta;
+mod workflow_context;
 
 pub(crate) use approval_commands::{
     dispatch_local_chat_execution_run_command, ExecutionRunCommand,
@@ -99,6 +100,7 @@ use tool_meta::{
 pub(crate) use tool_meta::{
     apply_rejected_tool_result_to_execution_graph_value, mark_approval_gate_approving,
 };
+use workflow_context::{execute_workflow_plan_tool, is_workflow_plan_tool};
 
 const DITING_THINK_TOOL_NAME: &str = "diting_think";
 
@@ -283,6 +285,7 @@ struct LocalChatToolRuntimeState {
     runtime_metrics: RuntimeMetricsAccumulator,
     last_capability_snapshot: Option<serde_json::Value>,
     terminal_context: Option<serde_json::Value>,
+    workflow_context: Option<serde_json::Value>,
     last_response: Option<serde_json::Value>,
     realtime_emitter: LocalRealtimeToolTraceEmitter,
     // Selected knowledge file IDs supplied by the workflow context manifest,
@@ -338,6 +341,7 @@ pub(crate) async fn run_local_chat_complete_with_tools(
     reasoning_enabled: Option<bool>,
     reasoning_effort: Option<String>,
     terminal_context: Option<serde_json::Value>,
+    workflow_context: Option<serde_json::Value>,
     event_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
     trace_id: Option<&str>,
     request_id: Option<&str>,
@@ -401,6 +405,7 @@ pub(crate) async fn run_local_chat_complete_with_tools(
         runtime_metrics: RuntimeMetricsAccumulator::default(),
         last_capability_snapshot: execution_policy.capability_snapshot.clone(),
         terminal_context,
+        workflow_context,
         last_response: None,
         realtime_emitter: LocalRealtimeToolTraceEmitter::new(
             event_tx,
@@ -522,6 +527,7 @@ async fn continue_local_chat_complete_with_tools(
             runtime_metrics: state.runtime_metrics.clone(),
             last_capability_snapshot: state.last_capability_snapshot.clone(),
             terminal_context: state.terminal_context.clone(),
+            workflow_context: state.workflow_context.clone(),
             last_response: state.last_response.clone(),
             realtime_emitter: LocalRealtimeToolTraceEmitter::new(
                 None,
@@ -1318,6 +1324,7 @@ async fn process_chat_tool_calls(
                 runtime_metrics: state.runtime_metrics.clone(),
                 last_capability_snapshot: state.last_capability_snapshot.clone(),
                 terminal_context: state.terminal_context.clone(),
+                workflow_context: state.workflow_context.clone(),
                 last_response: state.last_response.clone(),
                 diting_think_consumed: state.diting_think_consumed,
                 captured_reasoning: state.captured_reasoning.clone(),
@@ -1370,6 +1377,47 @@ async fn process_chat_tool_calls(
                         Some(call_id.as_str()),
                         &tool_name,
                         "TERMINAL_CONTEXT_FAILED",
+                        err,
+                    );
+                }
+            }
+        } else if is_workflow_plan_tool(&tool_name) {
+            realtime_emitter.emit_blocks(vec![serde_json::json!({"id":format!("{}-tool-call", call_id),"type":"tool_call","callId":call_id.as_str(),"toolName":tool_name,"status":"running"})]);
+            match execute_workflow_plan_tool(
+                app,
+                app_state,
+                state.workflow_context.as_ref(),
+                &tool_name,
+                &call.arguments,
+            )
+            .await
+            {
+                Ok(result) => {
+                    synthesized = true;
+                    let meta = serde_json::json!({
+                        "id": call_id.as_str(),
+                        "name": tool_name,
+                        "status": "success",
+                        "result": result,
+                    });
+                    let mut streamed_blocks = Vec::new();
+                    append_streamable_local_tool_result_blocks(&mut streamed_blocks, &meta);
+                    realtime_emitter.emit_blocks(streamed_blocks);
+                    tool_call_meta.push(meta);
+                    results.push(format!(
+                        "Workflow plan result:\n{}",
+                        serde_json::to_string_pretty(&result).unwrap_or_else(|_| "{}".to_string())
+                    ));
+                }
+                Err(err) => {
+                    synthesized = true;
+                    push_local_tool_call_error_meta(
+                        &mut tool_call_meta,
+                        &mut results,
+                        realtime_emitter,
+                        Some(call_id.as_str()),
+                        &tool_name,
+                        "WORKFLOW_PLAN_FAILED",
                         err,
                     );
                 }

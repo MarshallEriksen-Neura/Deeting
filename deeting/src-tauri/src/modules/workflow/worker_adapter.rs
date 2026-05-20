@@ -6,8 +6,10 @@ use crate::modules::custom_task_agents::types::{
     CustomTaskAgentPreviewRequest, CustomTaskAgentProfile,
 };
 use crate::modules::mcp::store::McpStore;
+use crate::modules::providers::model_guard::resolve_local_secretary_model_connection;
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
+use serde_json::Value;
 use tauri::AppHandle;
 use uuid::Uuid;
 
@@ -123,15 +125,21 @@ async fn execute_via_direct_llm(
     input: &WorkerExecutionInput,
     profile_slug: &str,
 ) -> Result<WorkerExecutionResult, String> {
-    let (requested_model, requested_provider_model_id) =
-        direct_llm_model_resolution_request(profile_slug);
-    let model_connection = resolve_local_model_connection(
-        app_state,
-        &requested_model,
-        requested_provider_model_id.as_deref(),
-    )
-    .await
-    .map_err(|err| format!("Failed to resolve model: {err}"))?;
+    let model_connection = if profile_slug.trim().is_empty() || profile_slug.trim() == "default" {
+        resolve_local_secretary_model_connection(app_state)
+            .await
+            .map_err(|err| format!("Failed to resolve default workflow model: {err}"))?
+    } else {
+        let (requested_model, requested_provider_model_id) =
+            direct_llm_model_resolution_request(profile_slug);
+        resolve_local_model_connection(
+            app_state,
+            &requested_model,
+            requested_provider_model_id.as_deref(),
+        )
+        .await
+        .map_err(|err| format!("Failed to resolve model: {err}"))?
+    };
     let messages = vec![
         LocalChatInputMessage {
             role: "system".to_string(),
@@ -151,6 +159,7 @@ async fn execute_via_direct_llm(
         },
     ];
 
+    let trace_id = format!("workflow:{}:{}", input.run_id, input.phase_id);
     let response = request_provider_chat_completion(
         app_state,
         &model_connection.provider_model_id,
@@ -160,16 +169,12 @@ async fn execute_via_direct_llm(
         input.temperature.or(Some(0.3)),
         input.max_tokens.or(Some(4096)),
         crate::modules::ai_upstream::ReasoningRequestConfig::default(),
-        None,
+        Some(trace_id.as_str()),
         None,
     )
     .await?;
 
-    let content = response
-        .get("content")
-        .and_then(|value| value.as_str())
-        .unwrap_or("")
-        .to_string();
+    let content = extract_chat_response_content(&response);
     let status = if content.trim().is_empty() {
         "failed"
     } else {
@@ -189,6 +194,70 @@ async fn execute_via_direct_llm(
             None
         },
     })
+}
+
+fn extract_chat_response_content(response: &Value) -> String {
+    let mut content = extract_text_value(response.get("content"));
+    if content.trim().is_empty() {
+        content = response
+            .get("choices")
+            .and_then(Value::as_array)
+            .and_then(|items| items.first())
+            .and_then(|choice| {
+                choice
+                    .get("message")
+                    .and_then(|message| message.get("content"))
+                    .or_else(|| choice.get("text"))
+            })
+            .map(|value| extract_text_value(Some(value)))
+            .unwrap_or_default();
+    }
+    if content.trim().is_empty() {
+        content = extract_text_value(response.get("completion"));
+    }
+    if content.trim().is_empty()
+        && response
+            .get("tool_calls")
+            .and_then(Value::as_array)
+            .map(|items| items.is_empty())
+            .unwrap_or(true)
+    {
+        content = extract_text_value(response.get("reasoning_content"));
+    }
+    content
+}
+
+fn extract_text_value(value: Option<&Value>) -> String {
+    match value {
+        Some(Value::String(text)) => text.trim().to_string(),
+        Some(Value::Array(items)) => items
+            .iter()
+            .filter_map(|item| {
+                let object = item.as_object()?;
+                let block_type = object.get("type").and_then(Value::as_str);
+                if matches!(block_type, Some("tool_use") | Some("server_tool_use")) {
+                    return None;
+                }
+                object
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .or_else(|| object.get("content").and_then(Value::as_str))
+                    .map(str::trim)
+                    .filter(|text| !text.is_empty())
+                    .map(ToString::to_string)
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        Some(Value::Object(object)) => object
+            .get("text")
+            .and_then(Value::as_str)
+            .or_else(|| object.get("content").and_then(Value::as_str))
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(ToString::to_string)
+            .unwrap_or_default(),
+        _ => String::new(),
+    }
 }
 
 fn direct_llm_model_resolution_request(profile_slug: &str) -> (String, Option<String>) {
@@ -216,7 +285,7 @@ fn normalize_execution_status(status: &str) -> &str {
 mod tests {
     use super::{
         build_worker_profile_preview_request, direct_llm_model_resolution_request,
-        normalize_execution_status,
+        extract_chat_response_content, normalize_execution_status,
     };
     use crate::modules::workflow::types::{
         ContextConstraints, ContextInputs, ContextJson, ContextPacket, WorkerExecutionInput,
@@ -284,6 +353,52 @@ mod tests {
     fn normalize_execution_status_maps_completed_to_succeeded() {
         assert_eq!(normalize_execution_status("completed"), "succeeded");
         assert_eq!(normalize_execution_status("error"), "failed");
+    }
+
+    #[test]
+    fn extract_chat_response_content_reads_normalized_content() {
+        let response = json!({ "content": " phase result " });
+        assert_eq!(extract_chat_response_content(&response), "phase result");
+    }
+
+    #[test]
+    fn extract_chat_response_content_reads_openai_choice_content() {
+        let response = json!({
+            "choices": [{
+                "message": { "content": "choice result" },
+                "finish_reason": "stop"
+            }]
+        });
+        assert_eq!(extract_chat_response_content(&response), "choice result");
+    }
+
+    #[test]
+    fn extract_chat_response_content_reads_structured_text_blocks() {
+        let response = json!({
+            "choices": [{
+                "message": {
+                    "content": [
+                        { "type": "text", "text": "line 1" },
+                        { "type": "tool_use", "name": "search" },
+                        { "type": "text", "text": "line 2" }
+                    ]
+                }
+            }]
+        });
+        assert_eq!(extract_chat_response_content(&response), "line 1\nline 2");
+    }
+
+    #[test]
+    fn extract_chat_response_content_falls_back_to_reasoning_without_tools() {
+        let response = json!({
+            "content": "",
+            "reasoning_content": "visible terminal answer",
+            "tool_calls": []
+        });
+        assert_eq!(
+            extract_chat_response_content(&response),
+            "visible terminal answer"
+        );
     }
 
     #[test]

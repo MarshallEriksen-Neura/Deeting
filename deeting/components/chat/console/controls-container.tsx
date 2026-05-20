@@ -50,6 +50,7 @@ import {
 import { useBrowserModeStore } from '@/store/browser-mode-store';
 import { useWorkspaceStore } from '@/store/workspace-store';
 import { useArtifactStore } from '@/store/artifact-store';
+import { useWorkflowStore } from '@/store/workflow-store';
 import { deriveAssistantActivityState } from '@/lib/chat/assistant-activity';
 import { extractLatestComposerRecoveryPrompt } from '@/lib/chat/recovery';
 
@@ -195,9 +196,16 @@ function ControlsContainer() {
 
   const isTauriRuntime = detectTauriRuntime();
   const browserModePage = useBrowserModeStore((state) => state.page)
-  const openWorkspaceView = useWorkspaceStore((state) => state.openView)
+  const { openWorkspaceView, workspaceViews, activeWorkspaceViewId } = useWorkspaceStore(
+    useShallow((state) => ({
+      openWorkspaceView: state.openView,
+      workspaceViews: state.views,
+      activeWorkspaceViewId: state.activeViewId,
+    }))
+  )
   const editingArtifact = useArtifactStore((state) => state.editingArtifact)
   const clearEditingArtifact = useArtifactStore((state) => state.clearEditingArtifact)
+  const workflowRun = useWorkflowStore((state) => state.run)
 
   const {
     handleSendMessage,
@@ -330,10 +338,46 @@ function ControlsContainer() {
   const isApprovalPending = latestAssistantActivity.statusCode === 'approval.required';
   const isApprovalExecuting = latestAssistantActivity.statusCode === 'approval.executing';
   const isApprovalBusy = isApprovalFlowActive && !hasComposerContent;
+  const workflowComposerContext = useMemo(() => {
+    const activeWorkflowView = workspaceViews.find(
+      (view) =>
+        view.id === activeWorkspaceViewId &&
+        view.type === 'native-canvas' &&
+        view.content?.viewType === 'workflow'
+    );
+    const openWorkflowView = activeWorkflowView ?? workspaceViews.find(
+      (view) => view.type === 'native-canvas' && view.content?.viewType === 'workflow'
+    );
+    if (!openWorkflowView) return null;
+
+    const viewRunId =
+      typeof openWorkflowView.content?.runId === 'string'
+        ? openWorkflowView.content.runId
+        : null;
+    const isLoadedRun = Boolean(viewRunId && workflowRun?.id === viewRunId);
+    const title = isLoadedRun && workflowRun?.title
+      ? workflowRun.title
+      : typeof openWorkflowView.content?.goal === 'string'
+        ? openWorkflowView.content.goal
+        : null;
+
+    return {
+      isActive: openWorkflowView.id === activeWorkspaceViewId,
+      title,
+    };
+  }, [activeWorkspaceViewId, workflowRun, workspaceViews]);
   const contextBarItems = useMemo(() => {
-    const items: Array<{ key: string; tone: 'default' | 'warning' | 'danger' | 'active'; label: string }> = [];
+    const items: Array<{ key: string; tone: 'default' | 'warning' | 'danger' | 'active'; label: string; title?: string }> = [];
     if (recoveryPrompt) {
       items.push({ key: 'recovery', tone: 'warning', label: t('controls.contextBar.recovery') });
+    }
+    if (workflowComposerContext) {
+      items.push({
+        key: 'workflow-plan',
+        tone: workflowComposerContext.isActive ? 'active' : 'default',
+        label: t('controls.contextBar.workflowPlan'),
+        title: workflowComposerContext.title ?? undefined,
+      });
     }
     if (isApprovalPending) {
       items.push({ key: 'approval-pending', tone: 'warning', label: t('controls.contextBar.approvalPending') });
@@ -363,7 +407,13 @@ function ControlsContainer() {
     recoveryPrompt,
     selectedKnowledgeFileIds.length,
     t,
+    workflowComposerContext,
   ]);
+  const composerPlaceholder = useMemo(() => {
+    if (composerMode === 'workflow') return t("controls.workflowPlaceholder");
+    if (workflowComposerContext) return t("controls.workflowContextPlaceholder");
+    return t("controls.placeholder");
+  }, [composerMode, t, workflowComposerContext]);
   const canGeneratePlan = useMemo(
     () => Boolean(
       isTauriRuntime &&
@@ -613,6 +663,7 @@ function ControlsContainer() {
       });
       openWorkflow({ goal: workflowGoal, runId: run.id });
       setInput("");
+      setComposerMode("chat");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       toast.error(message);
@@ -1022,6 +1073,7 @@ function ControlsContainer() {
             {contextBarItems.map((item) => (
               <span
                 key={item.key}
+                title={item.title}
                 className={cn(
                   "inline-flex h-6 items-center rounded-full border px-2 text-[11px] font-medium",
                   item.tone === 'danger'
@@ -1099,8 +1151,8 @@ function ControlsContainer() {
                 onPaste={handlePaste}
                 rows={1}
                 className="max-h-[220px] min-h-[44px] w-full resize-none overflow-y-hidden border-0 bg-transparent px-0 py-[9px] text-[15px] font-normal leading-7 text-slate-800 shadow-none focus-visible:ring-0 focus-visible:border-transparent dark:text-white/80 placeholder:text-slate-500 dark:placeholder:text-white/30"
-                placeholder={t("controls.placeholder")}
-                aria-label={t("controls.placeholder")}
+                placeholder={composerPlaceholder}
+                aria-label={composerPlaceholder}
                 autoFocus
                 onFocus={handleInputFocus}
               />
@@ -1689,7 +1741,6 @@ function ControlsContainer() {
                 variant="secondary"
                 size="sm"
                 onClick={() => {
-                  setComposerMode('workflow');
                   void handleGeneratePlan();
                 }}
                 aria-label={t("controls.generatePlan")}

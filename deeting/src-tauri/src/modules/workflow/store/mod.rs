@@ -19,8 +19,8 @@ pub(crate) use runs::{
     update_workflow_run_run_dir, update_workflow_run_snapshot, update_workflow_run_status,
 };
 pub(crate) use steps::{
-    create_workflow_step_run, list_workflow_step_runs_by_run, update_workflow_step_result,
-    update_workflow_step_status,
+    create_workflow_step_run, list_workflow_step_runs_by_run, update_workflow_step_failure,
+    update_workflow_step_result, update_workflow_step_status,
 };
 
 #[cfg(test)]

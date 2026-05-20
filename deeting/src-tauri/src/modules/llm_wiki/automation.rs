@@ -242,6 +242,8 @@ pub(crate) async fn execute_suggestion(
                     worker_ref: Some(worker_ref),
                     inject_into_chat: false,
                     user_notes: None,
+                    execution_model_id: None,
+                    execution_provider_model_id: None,
                     worker_task_packet: None,
                 },
             )
@@ -862,6 +864,8 @@ pub(crate) async fn run_schedule_tick(
                     worker_ref: Some(worker_ref),
                     inject_into_chat: false,
                     user_notes: None,
+                    execution_model_id: None,
+                    execution_provider_model_id: None,
                     worker_task_packet: None,
                 },
             )
@@ -1161,6 +1165,8 @@ async fn handle_corpus_sync_followups(
                     worker_ref: Some(worker_ref),
                     inject_into_chat: false,
                     user_notes: None,
+                    execution_model_id: None,
+                    execution_provider_model_id: None,
                     worker_task_packet: None,
                 },
             )

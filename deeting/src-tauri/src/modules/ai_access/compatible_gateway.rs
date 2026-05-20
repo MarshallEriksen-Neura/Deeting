@@ -264,6 +264,7 @@ async fn chat_completions_handler(
         reasoning_enabled: None,
         reasoning_effort: None,
         terminal_context: None,
+        workflow_context: None,
         request_id: Some(request_id),
         stream: false,
         status_stream: false,

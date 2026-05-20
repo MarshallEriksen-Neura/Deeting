@@ -43,6 +43,7 @@ import {
 } from "@/store/chat-store"
 import { useChatRuntimeStore } from "@/store/chat-runtime-store"
 import { useTerminalPanelStore } from "@/store/terminal-panel-store"
+import { useWorkflowStore } from "@/store/workflow-store"
 import { useWorkspaceStore } from "@/store/workspace-store"
 import type { HtmlRuntimeRefreshSpec, MessageBlock } from "@/lib/chat/message-protocol"
 import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks"
@@ -168,17 +169,19 @@ function buildRequestMetadata(
   const knowledge = buildKnowledgeSelectionMetadata(selectedKnowledgeFileIds)
   const generatedArtifact = buildGeneratedArtifactMetadata(editingArtifact)
   const terminalContext = buildTerminalContextMetadata()
+  const workflowContext = buildWorkflowContextMetadata()
   const normalizedRootExecutionId =
     typeof rootExecutionId === "string" && rootExecutionId.trim().length > 0
       ? rootExecutionId.trim()
       : null
 
-  if (!knowledge && !normalizedRootExecutionId && !generatedArtifact && !terminalContext) return undefined
+  if (!knowledge && !normalizedRootExecutionId && !generatedArtifact && !terminalContext && !workflowContext) return undefined
 
   return {
     ...(knowledge ?? {}),
     ...(generatedArtifact ?? {}),
     ...(terminalContext ?? {}),
+    ...(workflowContext ?? {}),
     ...(normalizedRootExecutionId
       ? {
           execution: {
@@ -186,6 +189,59 @@ function buildRequestMetadata(
           },
         }
       : {}),
+  }
+}
+
+function buildWorkflowContextMetadata() {
+  const {
+    runId,
+    run,
+    view,
+    proposalDirty,
+    activePhaseId,
+    resultFocusPhaseId,
+    failureFocusPhaseId,
+  } = useWorkflowStore.getState()
+  const { views, activeViewId } = useWorkspaceStore.getState()
+  const activeWorkflowView = views.find(
+    (view) =>
+      view.id === activeViewId &&
+      view.type === "native-canvas" &&
+      view.content?.viewType === "workflow"
+  )
+  const openWorkflowView =
+    activeWorkflowView ??
+    views.find(
+      (view) =>
+        view.type === "native-canvas" &&
+        view.content?.viewType === "workflow"
+    )
+  if (!openWorkflowView) return undefined
+
+  const viewRunId =
+    typeof openWorkflowView.content?.runId === "string"
+      ? openWorkflowView.content.runId
+      : null
+  const normalizedRunId = (viewRunId ?? run?.id ?? runId ?? "").trim()
+  if (!normalizedRunId) return undefined
+
+  return {
+    workflow_context: {
+      version: 1,
+      available: true,
+      run_id: normalizedRunId,
+      status: run?.status ?? null,
+      title: run?.title ?? null,
+      goal: run?.goal ?? null,
+      proposal_version: run?.proposal_version ?? null,
+      snapshot_version: run?.snapshot_version ?? null,
+      proposal_dirty: proposalDirty,
+      view,
+      workspace_view_id: openWorkflowView.id,
+      workspace_view_active: openWorkflowView.id === activeViewId,
+      active_phase_id: activePhaseId ?? resultFocusPhaseId ?? failureFocusPhaseId ?? null,
+      captured_at: new Date().toISOString(),
+    },
   }
 }
 

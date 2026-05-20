@@ -209,6 +209,10 @@ where
                 worker_ref: Some(worker_ref.clone()),
                 inject_into_chat: true,
                 user_notes: Some(render_worker_task_packet_notes(&task_packet)),
+                execution_model_id: Some(request.model_connection.model_id.clone()),
+                execution_provider_model_id: Some(
+                    request.model_connection.provider_model_id.clone(),
+                ),
                 worker_task_packet: Some(task_packet.clone()),
             },
         )

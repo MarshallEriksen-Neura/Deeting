@@ -83,6 +83,9 @@ const extractRuntimeMetrics = (metaInfo?: Record<string, unknown>): RuntimeMetri
   }
 }
 
+const isWorkflowUiBlock = (block: MessageBlock) =>
+  block.type === "ui" && block.viewType.startsWith("workflow.")
+
 /**
  * MessageItem 组件 - 单条消息展示组件
  * 
@@ -163,16 +166,31 @@ export const MessageItem = React.memo<MessageItemProps>(
         return acc
       }, "")
     }, [activeCompareCandidate, assistantParts, message.content, message.role])
+    const isWorkflowAssistantMessage = React.useMemo(() => {
+      if (message.role !== "assistant") return false
+      if (
+        messageMetaInfo?.workflow_live ||
+        messageMetaInfo?.workflow_plan ||
+        messageMetaInfo?.workflow_receipt
+      ) {
+        return true
+      }
+      return assistantParts.some(isWorkflowUiBlock)
+    }, [assistantParts, message.role, messageMetaInfo])
+    const hasAssistantActionContent = assistantCopyContent.trim().length > 0
+    const canShowMessageActions =
+      message.role === "assistant" && !isActive && !isWorkflowAssistantMessage
     const canCompare =
       message.role === "assistant" &&
       message.id === lastAssistantId &&
       !message.fromHistory &&
-      !isActive &&
+      canShowMessageActions &&
+      hasAssistantActionContent &&
       !compareState
     const canSaveToWiki =
       message.role === "assistant" &&
-      !isActive &&
-      assistantCopyContent.trim().length > 0 &&
+      canShowMessageActions &&
+      hasAssistantActionContent &&
       Boolean(message.id)
     const userDisplayContent = React.useMemo(() => {
       if (message.role !== "user") return message.content
@@ -268,7 +286,7 @@ export const MessageItem = React.memo<MessageItemProps>(
               />
             ) : null}
             <div className="flex items-center mt-1 ml-1">
-              {!isActive && (
+              {canShowMessageActions && (
                 <MessageActions
                   messageId={message.id}
                   content={assistantCopyContent}
