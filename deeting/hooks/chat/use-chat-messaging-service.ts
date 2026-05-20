@@ -44,7 +44,7 @@ import {
 import { useChatRuntimeStore } from "@/store/chat-runtime-store"
 import { useTerminalPanelStore } from "@/store/terminal-panel-store"
 import { useWorkflowStore } from "@/store/workflow-store"
-import { useWorkspaceStore } from "@/store/workspace-store"
+import { useWorkspaceStore, isWorkflowCanvasView } from "@/store/workspace-store"
 import type { HtmlRuntimeRefreshSpec, MessageBlock } from "@/lib/chat/message-protocol"
 import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks"
 import {
@@ -203,25 +203,12 @@ function buildWorkflowContextMetadata() {
     failureFocusPhaseId,
   } = useWorkflowStore.getState()
   const { views, activeViewId } = useWorkspaceStore.getState()
-  const activeWorkflowView = views.find(
-    (view) =>
-      view.id === activeViewId &&
-      view.type === "native-canvas" &&
-      view.content?.viewType === "workflow"
-  )
-  const openWorkflowView =
-    activeWorkflowView ??
-    views.find(
-      (view) =>
-        view.type === "native-canvas" &&
-        view.content?.viewType === "workflow"
-    )
+  const workflowViews = views.filter(isWorkflowCanvasView)
+  const activeWorkflowView = workflowViews.find((view) => view.id === activeViewId)
+  const openWorkflowView = activeWorkflowView ?? workflowViews[0]
   if (!openWorkflowView) return undefined
 
-  const viewRunId =
-    typeof openWorkflowView.content?.runId === "string"
-      ? openWorkflowView.content.runId
-      : null
+  const viewRunId = openWorkflowView.content.runId ?? null
   const normalizedRunId = (viewRunId ?? run?.id ?? runId ?? "").trim()
   if (!normalizedRunId) return undefined
 

@@ -48,7 +48,7 @@ import {
   resolveLeadingTaskAgentMention,
 } from '@/hooks/chat/task-agent-mention';
 import { useBrowserModeStore } from '@/store/browser-mode-store';
-import { useWorkspaceStore } from '@/store/workspace-store';
+import { useWorkspaceStore, type WorkspaceView } from '@/store/workspace-store';
 import { useArtifactStore } from '@/store/artifact-store';
 import { useWorkflowStore } from '@/store/workflow-store';
 import { deriveAssistantActivityState } from '@/lib/chat/assistant-activity';
@@ -58,6 +58,27 @@ type ComposerMode = 'chat' | 'workflow';
 type KnowledgePickerFilter = 'all' | KnowledgeStatusTone;
 
 type KnowledgeStatusTone = 'ready' | 'processing' | 'failed';
+type WorkflowCanvasContent = {
+  viewType: 'workflow';
+  goal?: string;
+  runId?: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isWorkflowCanvasView(
+  view: WorkspaceView,
+): view is WorkspaceView & { type: 'native-canvas'; content: WorkflowCanvasContent } {
+  if (view.type !== 'native-canvas') return false;
+  const content = view.content;
+  if (!isRecord(content) || content.viewType !== 'workflow') return false;
+  return (
+    (typeof content.goal === 'string' || typeof content.goal === 'undefined') &&
+    (typeof content.runId === 'string' || typeof content.runId === 'undefined')
+  );
+}
 
 function resolveKnowledgeStatusTone(status: KnowledgeFile['status']): KnowledgeStatusTone {
   if (status === 'active') return 'ready';
@@ -339,27 +360,18 @@ function ControlsContainer() {
   const isApprovalExecuting = latestAssistantActivity.statusCode === 'approval.executing';
   const isApprovalBusy = isApprovalFlowActive && !hasComposerContent;
   const workflowComposerContext = useMemo(() => {
-    const activeWorkflowView = workspaceViews.find(
-      (view) =>
-        view.id === activeWorkspaceViewId &&
-        view.type === 'native-canvas' &&
-        view.content?.viewType === 'workflow'
+    const workflowViews = workspaceViews.filter(isWorkflowCanvasView);
+    const activeWorkflowView = workflowViews.find(
+      (view) => view.id === activeWorkspaceViewId
     );
-    const openWorkflowView = activeWorkflowView ?? workspaceViews.find(
-      (view) => view.type === 'native-canvas' && view.content?.viewType === 'workflow'
-    );
+    const openWorkflowView = activeWorkflowView ?? workflowViews[0];
     if (!openWorkflowView) return null;
 
-    const viewRunId =
-      typeof openWorkflowView.content?.runId === 'string'
-        ? openWorkflowView.content.runId
-        : null;
+    const viewRunId = openWorkflowView.content.runId ?? null;
     const isLoadedRun = Boolean(viewRunId && workflowRun?.id === viewRunId);
     const title = isLoadedRun && workflowRun?.title
       ? workflowRun.title
-      : typeof openWorkflowView.content?.goal === 'string'
-        ? openWorkflowView.content.goal
-        : null;
+      : openWorkflowView.content.goal ?? null;
 
     return {
       isActive: openWorkflowView.id === activeWorkspaceViewId,

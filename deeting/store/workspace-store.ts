@@ -17,6 +17,14 @@ export interface NativeCanvasView extends BaseWorkspaceView {
   content: Record<string, unknown>
 }
 
+export interface WorkflowCanvasContent extends Record<string, unknown> {
+  viewType: "workflow"
+  goal?: string
+  runId?: string
+  phaseId?: string
+  contextPhaseId?: string
+}
+
 export interface PluginIframeView extends BaseWorkspaceView {
   type: "plugin-iframe"
   content: { url: string }
@@ -28,6 +36,26 @@ export interface BrowserModeView extends BaseWorkspaceView {
 }
 
 export type WorkspaceView = NativeCanvasView | PluginIframeView | BrowserModeView
+
+export type WorkflowCanvasView = NativeCanvasView & {
+  content: WorkflowCanvasContent
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+export function isWorkflowCanvasView(view: WorkspaceView): view is WorkflowCanvasView {
+  if (view.type !== "native-canvas") return false
+  const content = view.content
+  if (!isRecord(content) || content.viewType !== "workflow") return false
+  return (
+    (typeof content.goal === "string" || typeof content.goal === "undefined") &&
+    (typeof content.runId === "string" || typeof content.runId === "undefined") &&
+    (typeof content.phaseId === "string" || typeof content.phaseId === "undefined") &&
+    (typeof content.contextPhaseId === "string" || typeof content.contextPhaseId === "undefined")
+  )
+}
 
 interface WorkspaceState {
   views: WorkspaceView[]

@@ -308,7 +308,7 @@ function buildTimeline(
   events: MonitorRunEvent[],
   t: ReturnType<typeof useTranslations>,
 ): TimelineEntry[] {
-  const codes = new Set(events.map(eventCode).filter(Boolean))
+  const codes = new Set(events.map(eventCode).filter((code): code is string => Boolean(code)))
   return events
     .filter((event) => shouldShowTimelineEvent(event, codes))
     .map((event) => timelineEntry(event, t))
@@ -349,7 +349,7 @@ function timelineEntry(
   }
 }
 
-function eventPhase(event: MonitorRunEvent, code: string | null): TimelinePhase {
+function eventPhase(event: MonitorRunEvent, code: string | undefined): TimelinePhase {
   if (event.kind === "run_completed" || event.kind === "run_failed") return "complete"
   if (event.kind === "delivery_failed") return "delivery"
   if (event.kind === "tool_succeeded" || event.kind === "tool_failed") return "execute"
@@ -373,8 +373,8 @@ function eventStatus(event: MonitorRunEvent): TimelineStatus {
 
 function eventTitle(
   event: MonitorRunEvent,
-  code: string | null,
-  details: Record<string, unknown> | null,
+  code: string | undefined,
+  details: Record<string, unknown> | undefined,
   t: ReturnType<typeof useTranslations>,
 ) {
   switch (code) {
@@ -431,10 +431,10 @@ function eventTitle(
 
 function eventDetail(
   event: MonitorRunEvent,
-  code: string | null,
-  details: Record<string, unknown> | null,
+  code: string | undefined,
+  details: Record<string, unknown> | undefined,
   t: ReturnType<typeof useTranslations>,
-) {
+): string | undefined {
   if (code === "monitor.response.received") {
     const model = stringValue(details?.model_id)
     const tokens = numberValue(details?.tokens_used)
@@ -457,10 +457,10 @@ function eventDetail(
     return stringValue(details?.error)
   }
   if (event.kind === "delivery_failed") {
-    return stringValue(details?.error) || event.summary
+    return stringValue(details?.error) || event.summary || undefined
   }
   if (event.kind === "run_failed") {
-    return event.summary
+    return event.summary || undefined
   }
   return undefined
 }
@@ -488,13 +488,13 @@ function eventDiagnosticTitle(event: MonitorRunEvent) {
 
 function eventCode(event: MonitorRunEvent) {
   const meta = event.meta
-  if (!isRecord(meta)) return null
+  if (!isRecord(meta)) return undefined
   return stringValue(meta.code)
 }
 
 function eventDetails(event: MonitorRunEvent) {
   const meta = event.meta
-  if (!isRecord(meta)) return null
+  if (!isRecord(meta)) return undefined
   return isRecord(meta.details) ? meta.details : meta
 }
 
@@ -503,7 +503,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function stringValue(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : null
+  return typeof value === "string" && value.trim() ? value.trim() : undefined
 }
 
 function numberValue(value: unknown) {
