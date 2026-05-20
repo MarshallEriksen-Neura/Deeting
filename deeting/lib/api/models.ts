@@ -1,7 +1,10 @@
 import { z } from "zod"
 
 import { request } from "@/lib/http"
-import { modelSupportsCapability } from "@/lib/providers/model-capabilities"
+import {
+  modelSupportsCapability,
+  resolveModelCapabilities,
+} from "@/lib/providers/model-capabilities"
 
 const MODELS_BASE = "/api/v1/internal/models"
 const AVAILABLE_MODELS_PATH = "/api/v1/models/available"
@@ -27,6 +30,7 @@ export const ModelInfoSchema = z.object({
   upstream_model_id: z.string().nullable().optional(),
   provider_model_id: z.string().nullable().optional(),
   display_name: z.string().nullable().optional(),
+  capabilities: z.array(z.string()).optional(),
   input_types: z.array(z.string()).nullable().optional(),
   request_route: z.enum(["local_invoke", "cloud_http"]).optional(),
   runtime_source: z.enum(["desktop_local", "cloud_internal"]).optional(),
@@ -234,6 +238,11 @@ async function fetchDesktopLocalModels(options?: {
           const meta = (model.extra_meta && typeof model.extra_meta === "object"
             ? model.extra_meta
             : null) as Record<string, unknown> | null
+          const capabilities = resolveModelCapabilities({
+            capabilities: model.capabilities,
+            routingConfig: model.routing_config ?? null,
+            extraMeta: meta,
+          })
           const inputTypes = Array.isArray(meta?.input_types)
             ? (meta?.input_types as unknown[])
                 .map((item) => String(item))
@@ -249,6 +258,7 @@ async function fetchDesktopLocalModels(options?: {
             upstream_model_id: model.model_id,
             provider_model_id: model.id,
             display_name: model.display_name ?? null,
+            capabilities,
             input_types: inputTypes,
           }
         }),

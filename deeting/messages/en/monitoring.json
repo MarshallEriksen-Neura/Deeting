@@ -300,7 +300,51 @@
         "empty": "No executions yet",
         "channelFallback": "Fallback channel used",
         "significantChange": "Significant change detected",
-        "tokensUsed": "Tokens used",
+        "outcomeTitle": "Run outcome",
+        "noSummary": "This run did not produce a summary.",
+        "timelineTitle": "Run stages",
+        "diagnosticsTitle": "Technical details ({count} events)",
+        "tokensUsed": "Tokens: {count}",
+        "phases": {
+          "prepare": "Prepare",
+          "context": "Context",
+          "execute": "Execute",
+          "analyze": "Analyze",
+          "delivery": "Deliver",
+          "complete": "Record"
+        },
+        "timelineStatus": {
+          "running": "Running",
+          "success": "Done",
+          "failed": "Failed",
+          "neutral": "Record"
+        },
+        "events": {
+          "runStarted": "Started monitor run",
+          "runCompleted": "Run completed",
+          "runFailed": "Run failed",
+          "deliveryFailed": "Notification delivery failed",
+          "agentResolving": "Confirming execution agent",
+          "agentResolved": "Execution agent selected",
+          "agentResolvedWithName": "Execution agent selected: {name}",
+          "promptBuilding": "Preparing the monitor objective and tool context",
+          "promptBuilt": "Monitor context prepared",
+          "agentExecuting": "Running monitor analysis",
+          "agentError": "Monitor analysis failed",
+          "responseEmpty": "The model returned empty content",
+          "responseReceived": "Monitor analysis result received",
+          "analysisDone": "Change judgment completed",
+          "policyResult": "Policy and observations recorded",
+          "toolFallback": "tool",
+          "toolSucceeded": "Tool {tool} succeeded",
+          "toolFailed": "Tool {tool} failed"
+        },
+        "details": {
+          "unknownModel": "unknown model",
+          "responseReceived": "Model {model}, {tokens} tokens, {tools} tool call(s)",
+          "significant": "Significant change detected",
+          "notSignificant": "No significant change detected"
+        },
         "feedback": {
           "useful": "Useful",
           "notUseful": "Not Useful"

@@ -71,7 +71,7 @@ impl MonitorWorkflowContext {
         let summary = if code.trim().is_empty() {
             step.to_string()
         } else {
-            code.to_string()
+            monitor_status_summary(code, meta.as_ref())
         };
         let payload = build_run_event(
             self.execution_id.as_str(),
@@ -417,4 +417,45 @@ fn build_monitor_engine() -> LocalOrchestrationEngine<MonitorWorkflowContext> {
         Box::new(MonitorParseResultStep),
     ])
     .expect("monitor engine dag should be valid")
+}
+
+fn monitor_status_summary(code: &str, meta: Option<&Value>) -> String {
+    match code {
+        "monitor.agent.resolving" => "正在确认执行 Agent".to_string(),
+        "monitor.agent.resolved" => {
+            let assistant_name = meta
+                .and_then(|value| value.get("assistant_name"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            match assistant_name {
+                Some(name) => format!("已选择执行 Agent: {}", name),
+                None => "已选择执行 Agent".to_string(),
+            }
+        }
+        "monitor.prompt.building" => "正在整理巡猎目标和工具上下文".to_string(),
+        "monitor.prompt.built" => "已整理巡猎上下文".to_string(),
+        "monitor.agent.executing" => "正在执行巡猎分析".to_string(),
+        "monitor.agent.error" => meta
+            .and_then(|value| value.get("message"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|message| format!("巡猎分析执行失败: {}", message))
+            .unwrap_or_else(|| "巡猎分析执行失败".to_string()),
+        "monitor.response.empty" => "模型返回内容为空".to_string(),
+        "monitor.response.received" => "已收到巡猎分析结果".to_string(),
+        "monitor.analysis.done" => {
+            let is_significant_change = meta
+                .and_then(|value| value.get("is_significant_change"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            if is_significant_change {
+                "已完成变化判断: 检测到显著变化".to_string()
+            } else {
+                "已完成变化判断: 未检测到显著变化".to_string()
+            }
+        }
+        _ => code.to_string(),
+    }
 }

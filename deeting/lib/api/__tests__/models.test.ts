@@ -67,6 +67,7 @@ describe("models api", () => {
     const cloud = result.instances.find((item) => item.instance_id === "inst-cloud-1")
 
     expect(local?.models[0]?.provider_model_id).toBe("pm-local-1")
+    expect(local?.models[0]?.capabilities).toEqual(["chat"])
     expect(local?.models[0]?.request_route).toBe("local_invoke")
     expect(local?.models[0]?.runtime_source).toBe("desktop_local")
 
@@ -304,6 +305,7 @@ describe("models api", () => {
     const result = await fetchChatModels({ capability: "video_generation" })
     expect(result.instances).toHaveLength(1)
     expect(result.instances[0]?.models[0]?.provider_model_id).toBe("pm-local-routing")
+    expect(result.instances[0]?.models[0]?.capabilities).toEqual(["video_generation"])
   })
 
   it("reuses desktop local inventory across capability-filtered requests within ttl", async () => {

@@ -33,6 +33,7 @@ import {
   submitMonitorFeedback,
   type MonitorDeliveryStateRecord,
   type MonitorExecutionLog as MonitorExecutionLogItem,
+  type MonitorRunEvent,
 } from "@/lib/api/monitors"
 
 interface MonitorExecutionLogProps {
@@ -169,6 +170,7 @@ function LogCard({
   const StatusIcon = meta.icon
   const events = log.output_data?.events ?? []
   const changeSummary = log.output_data?.change_summary
+  const timeline = buildTimeline(events, t)
 
   return (
     <Card>
@@ -188,22 +190,84 @@ function LogCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
-        {changeSummary ? <div className="leading-6">{changeSummary}</div> : null}
-        {!changeSummary && log.error_message ? (
-          <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-red-700 dark:text-red-300">
-            {log.error_message}
+        <div className="rounded-xl border border-border/60 bg-muted/20 p-4">
+          <div className="text-xs font-medium text-muted-foreground">
+            {t("monitors.log.outcomeTitle")}
+          </div>
+          {changeSummary ? (
+            <div className="mt-2 whitespace-pre-wrap leading-6 text-foreground">
+              {changeSummary}
+            </div>
+          ) : log.error_message ? (
+            <div className="mt-2 leading-6 text-red-700 dark:text-red-300">
+              {log.error_message}
+            </div>
+          ) : (
+            <div className="mt-2 text-muted-foreground">
+              {t("monitors.log.noSummary")}
+            </div>
+          )}
+        </div>
+
+        {timeline.length ? (
+          <div className="space-y-3">
+            <div className="text-xs font-medium text-muted-foreground">
+              {t("monitors.log.timelineTitle")}
+            </div>
+            <div className="space-y-0 border-l border-border/70 pl-4">
+              {timeline.map((entry) => (
+                <div key={entry.key} className="relative pb-4 last:pb-0">
+                  <span className={`absolute -left-[21px] top-1 size-2.5 rounded-full border-2 border-background ${statusDotClass(entry.status)}`} />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      {entry.phaseLabel}
+                    </span>
+                    <Badge variant="outline" className="h-5 rounded-md px-1.5 text-[10px]">
+                      {statusLabel(entry.status, t)}
+                    </Badge>
+                  </div>
+                  <div className="mt-1 font-medium leading-5 text-foreground">
+                    {entry.title}
+                  </div>
+                  {entry.detail ? (
+                    <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                      {entry.detail}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
           </div>
         ) : null}
 
         {events.length ? (
-          <div className="space-y-2 border-l border-border/60 pl-4 text-xs text-muted-foreground">
-            {events.slice(0, 8).map((event) => (
-              <div key={event.event_id} className="space-y-1">
-                <div className="font-medium text-foreground/90">{event.summary || event.step || event.kind}</div>
-                <div>{event.stage || event.state || event.kind}</div>
-              </div>
-            ))}
-          </div>
+          <details className="rounded-xl border border-border/60 bg-muted/10 px-3 py-2 text-xs text-muted-foreground">
+            <summary className="cursor-pointer select-none font-medium text-foreground/80">
+              {t("monitors.log.diagnosticsTitle", { count: events.length })}
+            </summary>
+            <div className="mt-3 max-h-72 space-y-3 overflow-auto">
+              {events.map((event) => (
+                <div key={event.event_id} className="rounded-lg bg-background/70 p-3">
+                  <div className="font-medium text-foreground/80">
+                    {eventDiagnosticTitle(event)}
+                  </div>
+                  <div className="mt-1">
+                    {[
+                      event.kind,
+                      event.stage,
+                      event.step,
+                      event.state,
+                    ].filter(Boolean).join(" / ")}
+                  </div>
+                  {event.meta ? (
+                    <pre className="mt-2 whitespace-pre-wrap break-words text-[11px] leading-5">
+                      {JSON.stringify(event.meta, null, 2)}
+                    </pre>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </details>
         ) : null}
 
         <div className="flex items-center gap-3 border-t border-border/60 pt-4 text-xs text-muted-foreground">
@@ -227,6 +291,227 @@ function LogCard({
       </CardContent>
     </Card>
   )
+}
+
+type TimelineStatus = "running" | "success" | "failed" | "neutral"
+type TimelinePhase = "prepare" | "context" | "execute" | "analyze" | "delivery" | "complete"
+
+interface TimelineEntry {
+  key: string
+  phaseLabel: string
+  title: string
+  detail?: string
+  status: TimelineStatus
+}
+
+function buildTimeline(
+  events: MonitorRunEvent[],
+  t: ReturnType<typeof useTranslations>,
+): TimelineEntry[] {
+  const codes = new Set(events.map(eventCode).filter(Boolean))
+  return events
+    .filter((event) => shouldShowTimelineEvent(event, codes))
+    .map((event) => timelineEntry(event, t))
+    .filter((entry): entry is TimelineEntry => Boolean(entry))
+    .slice(0, 10)
+}
+
+function shouldShowTimelineEvent(event: MonitorRunEvent, codes: Set<string>) {
+  const code = eventCode(event)
+  if (code === "monitor.agent.resolving" && codes.has("monitor.agent.resolved")) return false
+  if (code === "monitor.prompt.building" && codes.has("monitor.prompt.built")) return false
+  if (
+    code === "monitor.agent.executing" &&
+    (codes.has("monitor.response.received") || codes.has("monitor.agent.error"))
+  ) {
+    return false
+  }
+  if (event.kind === "tool_called") return false
+  return true
+}
+
+function timelineEntry(
+  event: MonitorRunEvent,
+  t: ReturnType<typeof useTranslations>,
+): TimelineEntry | null {
+  const code = eventCode(event)
+  const details = eventDetails(event)
+  const phase = eventPhase(event, code)
+  const title = eventTitle(event, code, details, t)
+  if (!title) return null
+
+  return {
+    key: event.event_id || `${event.seq}-${event.kind}-${code || event.step || ""}`,
+    phaseLabel: t(`monitors.log.phases.${phase}`),
+    title,
+    detail: eventDetail(event, code, details, t),
+    status: eventStatus(event),
+  }
+}
+
+function eventPhase(event: MonitorRunEvent, code: string | null): TimelinePhase {
+  if (event.kind === "run_completed" || event.kind === "run_failed") return "complete"
+  if (event.kind === "delivery_failed") return "delivery"
+  if (event.kind === "tool_succeeded" || event.kind === "tool_failed") return "execute"
+  if (code?.startsWith("monitor.agent.")) return "prepare"
+  if (code?.startsWith("monitor.prompt.")) return "context"
+  if (code?.startsWith("monitor.response.")) return "execute"
+  if (code?.startsWith("monitor.analysis.") || event.step === "monitor_policy_result") return "analyze"
+  return "execute"
+}
+
+function eventStatus(event: MonitorRunEvent): TimelineStatus {
+  if (event.kind === "run_failed" || event.kind === "delivery_failed" || event.kind === "tool_failed") {
+    return "failed"
+  }
+  if (event.kind === "run_completed" || event.kind === "tool_succeeded") return "success"
+  if (event.state === "failed") return "failed"
+  if (event.state === "running") return "running"
+  if (event.state === "success") return "success"
+  return "neutral"
+}
+
+function eventTitle(
+  event: MonitorRunEvent,
+  code: string | null,
+  details: Record<string, unknown> | null,
+  t: ReturnType<typeof useTranslations>,
+) {
+  switch (code) {
+    case "monitor.agent.resolving":
+      return t("monitors.log.events.agentResolving")
+    case "monitor.agent.resolved": {
+      const name = stringValue(details?.assistant_name)
+      return name
+        ? t("monitors.log.events.agentResolvedWithName", { name })
+        : t("monitors.log.events.agentResolved")
+    }
+    case "monitor.prompt.building":
+      return t("monitors.log.events.promptBuilding")
+    case "monitor.prompt.built":
+      return t("monitors.log.events.promptBuilt")
+    case "monitor.agent.executing":
+      return t("monitors.log.events.agentExecuting")
+    case "monitor.agent.error":
+      return t("monitors.log.events.agentError")
+    case "monitor.response.empty":
+      return t("monitors.log.events.responseEmpty")
+    case "monitor.response.received":
+      return t("monitors.log.events.responseReceived")
+    case "monitor.analysis.done":
+      return t("monitors.log.events.analysisDone")
+    default:
+      break
+  }
+  if (event.step === "monitor_policy_result") {
+    return t("monitors.log.events.policyResult")
+  }
+
+  switch (event.kind) {
+    case "run_started":
+      return t("monitors.log.events.runStarted")
+    case "run_completed":
+      return t("monitors.log.events.runCompleted")
+    case "run_failed":
+      return t("monitors.log.events.runFailed")
+    case "delivery_failed":
+      return t("monitors.log.events.deliveryFailed")
+    case "tool_succeeded": {
+      const tool = stringValue(details?.tool_name) || event.step || t("monitors.log.events.toolFallback")
+      return t("monitors.log.events.toolSucceeded", { tool })
+    }
+    case "tool_failed": {
+      const tool = stringValue(details?.tool_name) || event.step || t("monitors.log.events.toolFallback")
+      return t("monitors.log.events.toolFailed", { tool })
+    }
+    default:
+      return event.summary || event.step || event.kind
+  }
+}
+
+function eventDetail(
+  event: MonitorRunEvent,
+  code: string | null,
+  details: Record<string, unknown> | null,
+  t: ReturnType<typeof useTranslations>,
+) {
+  if (code === "monitor.response.received") {
+    const model = stringValue(details?.model_id)
+    const tokens = numberValue(details?.tokens_used)
+    const tools = numberValue(details?.tool_trace_len)
+    return t("monitors.log.details.responseReceived", {
+      model: model || t("monitors.log.details.unknownModel"),
+      tokens,
+      tools,
+    })
+  }
+  if (code === "monitor.analysis.done") {
+    return booleanValue(details?.is_significant_change)
+      ? t("monitors.log.details.significant")
+      : t("monitors.log.details.notSignificant")
+  }
+  if (code === "monitor.agent.error") {
+    return stringValue(details?.message)
+  }
+  if (event.kind === "tool_failed") {
+    return stringValue(details?.error)
+  }
+  if (event.kind === "delivery_failed") {
+    return stringValue(details?.error) || event.summary
+  }
+  if (event.kind === "run_failed") {
+    return event.summary
+  }
+  return undefined
+}
+
+function statusLabel(status: TimelineStatus, t: ReturnType<typeof useTranslations>) {
+  return t(`monitors.log.timelineStatus.${status}`)
+}
+
+function statusDotClass(status: TimelineStatus) {
+  switch (status) {
+    case "running":
+      return "bg-sky-500"
+    case "success":
+      return "bg-emerald-500"
+    case "failed":
+      return "bg-red-500"
+    default:
+      return "bg-muted-foreground"
+  }
+}
+
+function eventDiagnosticTitle(event: MonitorRunEvent) {
+  return eventCode(event) || event.step || event.summary || event.kind
+}
+
+function eventCode(event: MonitorRunEvent) {
+  const meta = event.meta
+  if (!isRecord(meta)) return null
+  return stringValue(meta.code)
+}
+
+function eventDetails(event: MonitorRunEvent) {
+  const meta = event.meta
+  if (!isRecord(meta)) return null
+  return isRecord(meta.details) ? meta.details : meta
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null
+}
+
+function numberValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0
+}
+
+function booleanValue(value: unknown) {
+  return typeof value === "boolean" ? value : false
 }
 
 function deliveryStateLabel(

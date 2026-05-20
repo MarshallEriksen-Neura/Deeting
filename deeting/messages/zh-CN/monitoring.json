@@ -300,7 +300,51 @@
         "empty": "暂无执行记录",
         "channelFallback": "已使用备用渠道",
         "significantChange": "检测到显著变化",
-        "tokensUsed": "消耗 Token",
+        "outcomeTitle": "本次巡猎结论",
+        "noSummary": "本次运行没有生成摘要。",
+        "timelineTitle": "运行阶段",
+        "diagnosticsTitle": "技术详情（{count} 条事件）",
+        "tokensUsed": "Token: {count}",
+        "phases": {
+          "prepare": "准备任务",
+          "context": "整理上下文",
+          "execute": "执行分析",
+          "analyze": "判断变化",
+          "delivery": "投递通知",
+          "complete": "完成记录"
+        },
+        "timelineStatus": {
+          "running": "进行中",
+          "success": "已完成",
+          "failed": "失败",
+          "neutral": "记录"
+        },
+        "events": {
+          "runStarted": "开始运行巡猎任务",
+          "runCompleted": "运行完成",
+          "runFailed": "运行失败",
+          "deliveryFailed": "通知投递失败",
+          "agentResolving": "正在确认执行 Agent",
+          "agentResolved": "已选择执行 Agent",
+          "agentResolvedWithName": "已选择执行 Agent：{name}",
+          "promptBuilding": "正在整理巡猎目标和工具上下文",
+          "promptBuilt": "已整理巡猎上下文",
+          "agentExecuting": "正在执行巡猎分析",
+          "agentError": "巡猎分析执行失败",
+          "responseEmpty": "模型返回内容为空",
+          "responseReceived": "已收到巡猎分析结果",
+          "analysisDone": "已完成变化判断",
+          "policyResult": "已记录策略与观测结果",
+          "toolFallback": "工具",
+          "toolSucceeded": "工具 {tool} 执行成功",
+          "toolFailed": "工具 {tool} 执行失败"
+        },
+        "details": {
+          "unknownModel": "未知模型",
+          "responseReceived": "模型 {model}，消耗 {tokens} Token，工具调用 {tools} 次",
+          "significant": "检测到显著变化",
+          "notSignificant": "未检测到显著变化"
+        },
         "feedback": {
           "useful": "有用",
           "notUseful": "无用"
