@@ -24,6 +24,7 @@ target-codex-warnings/
 .agents/
 .gemini/
 .atomcode/
+.antigravitycli/
 datalog/
 target-codex-shell/
 
