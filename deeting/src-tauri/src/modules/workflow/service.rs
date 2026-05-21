@@ -6,13 +6,13 @@ use crate::modules::workflow::proposal;
 use crate::modules::workflow::run_dir;
 use crate::modules::workflow::store;
 use crate::modules::workflow::types::{
-    ApprovalAction, ApprovalGroup, ApprovalGroupPolicy, ApprovalGroupUpdate, ApprovalItem,
-    ApprovalItemStatus, ApproveWorkflowRequest, CompileResult, CreateWorkflowEventRequest,
-    CreateWorkflowRunRequest, EditRemainingPhasesRequest, ExecutionSnapshot,
-    ExportWorkflowArtifactResponse, GenerateProposalRequest, QuickWorkflowRequest,
-    QuickWorkflowResult, RegenerateProposalRequest, RerunPhaseRequest, UpdateProposalRequest,
-    WorkflowArtifactContent, WorkflowPhaseContext, WorkflowRun, WorkflowRunDetail,
-    WorkflowRunStatus, WorkflowStepStatus,
+    ApplyPlanDeltaRequest, ApprovalAction, ApprovalGroup, ApprovalGroupPolicy, ApprovalGroupUpdate,
+    ApprovalItem, ApprovalItemStatus, ApproveWorkflowRequest, CompileResult, CompiledPhase,
+    CreateWorkflowEventRequest, CreateWorkflowRunRequest, EditRemainingPhasesRequest,
+    ExecutionSnapshot, ExportWorkflowArtifactResponse, GenerateProposalRequest, PlanDelta,
+    PlanDeltaOperation, QuickWorkflowRequest, QuickWorkflowResult, RegenerateProposalRequest,
+    RerunPhaseRequest, UpdateProposalRequest, WorkflowArtifactContent, WorkflowPhaseContext,
+    WorkflowRun, WorkflowRunDetail, WorkflowRunStatus, WorkflowStepStatus,
 };
 use crate::state::AppState;
 use tauri::Manager;
@@ -911,6 +911,14 @@ pub(crate) async fn edit_remaining_phases(
     edit_remaining_phases_with_store(store_ref, req).await
 }
 
+pub(crate) async fn apply_plan_delta(
+    app_state: &AppState,
+    req: ApplyPlanDeltaRequest,
+) -> Result<WorkflowRun, String> {
+    let store_ref = app_state.mcp.store.as_ref();
+    apply_plan_delta_with_store(store_ref, req).await
+}
+
 async fn edit_remaining_phases_with_store(
     store_ref: &McpStore,
     req: EditRemainingPhasesRequest,
@@ -926,6 +934,104 @@ async fn edit_remaining_phases_with_store(
 
     persist_paused_proposal_edit(store_ref, run_id, &run, &req.updated_proposal).await?;
     reload_run(store_ref, run_id).await
+}
+
+async fn apply_plan_delta_with_store(
+    store_ref: &McpStore,
+    req: ApplyPlanDeltaRequest,
+) -> Result<WorkflowRun, String> {
+    let run_id = req.run_id.trim();
+    let run = load_run(store_ref, run_id).await?;
+    if run.status != WorkflowRunStatus::AwaitingPlanEdit {
+        return Err(format!(
+            "Run must be in 'awaiting_plan_edit' status, currently: {}",
+            run.status
+        ));
+    }
+
+    let mut snapshot = parse_snapshot(&run)?;
+    apply_plan_delta_to_running_snapshot(
+        store_ref,
+        &run,
+        &mut snapshot,
+        &req.delta,
+        req.user_decision.clone(),
+    )
+    .await?;
+    store::update_workflow_run_status(store_ref, run_id, WorkflowRunStatus::Ready)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    reload_run(store_ref, run_id).await
+}
+
+pub(crate) async fn apply_plan_delta_to_running_snapshot(
+    store_ref: &McpStore,
+    run: &WorkflowRun,
+    snapshot: &mut ExecutionSnapshot,
+    delta: &PlanDelta,
+    user_decision: Option<String>,
+) -> Result<(), String> {
+    let run_id = run.id.as_str();
+    if delta.base_snapshot_version != snapshot.snapshot_version {
+        return Err(format!(
+            "Plan delta base snapshot version {} does not match current snapshot version {}",
+            delta.base_snapshot_version, snapshot.snapshot_version
+        ));
+    }
+    if delta.operations.is_empty() {
+        return Err("Plan delta must include at least one operation".to_string());
+    }
+
+    let steps = store::list_workflow_step_runs_by_run(store_ref, run_id)
+        .await
+        .map_err(|err| err.to_string())?;
+    let completed_phase_ids = steps
+        .iter()
+        .filter(|step| step.status == WorkflowStepStatus::Succeeded)
+        .map(|step| step.phase_id.clone())
+        .collect::<std::collections::HashSet<_>>();
+
+    let mut next_snapshot = snapshot.clone();
+    apply_plan_delta_to_snapshot(&mut next_snapshot, delta, &completed_phase_ids)?;
+    validate_plan_delta_snapshot(store_ref, &next_snapshot).await?;
+
+    let snapshot_version = snapshot.snapshot_version + 1;
+    next_snapshot.snapshot_version = snapshot_version;
+    next_snapshot.compiled_at = time::OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)
+        .map_err(|err| err.to_string())?;
+    let snapshot_value = serde_json::to_value(&next_snapshot)
+        .map_err(|err| format!("Failed to serialize snapshot: {err}"))?;
+
+    store::update_workflow_run_snapshot(store_ref, run_id, &snapshot_value, snapshot_version)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    if let Some(run_dir) = run.run_dir.as_deref().map(PathBuf::from) {
+        run_dir::write_snapshot_file(&run_dir, &next_snapshot)?;
+    }
+
+    let operation_count = delta.operations.len();
+    let delta_reason = delta.reason.clone();
+
+    emit_event(
+        store_ref,
+        run_id,
+        None,
+        "run.plan_delta.applied",
+        Some(serde_json::json!({
+            "base_snapshot_version": delta.base_snapshot_version,
+            "snapshot_version": snapshot_version,
+            "operation_count": operation_count,
+            "reason": delta_reason,
+            "user_decision": user_decision,
+        })),
+    )
+    .await;
+
+    *snapshot = next_snapshot;
+    Ok(())
 }
 
 pub(crate) async fn resume_workflow(
@@ -1159,6 +1265,169 @@ async fn persist_paused_proposal_edit(
     }
 
     Ok(())
+}
+
+fn apply_plan_delta_to_snapshot(
+    snapshot: &mut ExecutionSnapshot,
+    delta: &PlanDelta,
+    completed_phase_ids: &std::collections::HashSet<String>,
+) -> Result<(), String> {
+    for operation in &delta.operations {
+        match operation {
+            PlanDeltaOperation::UpdatePhase {
+                phase_id,
+                title,
+                worker_ref,
+                depends_on,
+                goal,
+                expected_output,
+            } => {
+                reject_completed_phase_edit(completed_phase_ids, phase_id)?;
+                let phase = snapshot
+                    .phases
+                    .iter_mut()
+                    .find(|phase| phase.phase_id == *phase_id)
+                    .ok_or_else(|| format!("Phase '{phase_id}' not found in snapshot"))?;
+                if let Some(value) = non_empty_patch_value(title.as_deref()) {
+                    phase.title = value.to_string();
+                }
+                if let Some(value) = non_empty_patch_value(worker_ref.as_deref()) {
+                    phase.worker_ref = value.to_string();
+                }
+                if let Some(value) = non_empty_patch_value(goal.as_deref()) {
+                    phase.goal = value.to_string();
+                }
+                if let Some(next_depends_on) = depends_on.as_ref() {
+                    phase.depends_on = next_depends_on.clone();
+                }
+                if let Some(next_expected_output) = expected_output.as_ref() {
+                    phase.expected_output = Some(next_expected_output.clone());
+                }
+            }
+            PlanDeltaOperation::AddPhase { after, phase } => {
+                if completed_phase_ids.contains(&phase.phase_id) {
+                    return Err(format!(
+                        "Cannot add phase '{}' because that phase id is already completed",
+                        phase.phase_id
+                    ));
+                }
+                if phase.phase_id.trim().is_empty() {
+                    return Err("Added phase id cannot be empty".to_string());
+                }
+                if snapshot
+                    .phases
+                    .iter()
+                    .any(|existing| existing.phase_id == phase.phase_id)
+                {
+                    return Err(format!("Phase '{}' already exists", phase.phase_id));
+                }
+                let insert_index = match non_empty_patch_value(after.as_deref()) {
+                    Some(after_phase_id) => snapshot
+                        .phases
+                        .iter()
+                        .position(|existing| existing.phase_id == after_phase_id)
+                        .map(|index| index + 1)
+                        .ok_or_else(|| format!("After phase '{after_phase_id}' not found"))?,
+                    None => snapshot.phases.len(),
+                };
+                snapshot.phases.insert(insert_index, phase.clone());
+            }
+            PlanDeltaOperation::RemovePendingPhase { phase_id }
+            | PlanDeltaOperation::ReorderPendingPhase { phase_id, .. }
+            | PlanDeltaOperation::MarkPendingObsolete { phase_id } => {
+                reject_completed_phase_edit(completed_phase_ids, phase_id)?;
+                return Err(format!(
+                    "Plan delta operation for phase '{phase_id}' is not supported yet"
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn validate_plan_delta_snapshot(
+    store_ref: &McpStore,
+    snapshot: &ExecutionSnapshot,
+) -> Result<(), String> {
+    let available_worker_refs = compiler::collect_available_worker_refs(store_ref).await?;
+    let available_refs = available_worker_refs
+        .iter()
+        .map(String::as_str)
+        .collect::<std::collections::HashSet<_>>();
+    let mut seen_phase_ids = std::collections::HashSet::<String>::new();
+
+    for (index, phase) in snapshot.phases.iter().enumerate() {
+        validate_phase_shape(phase, &available_refs)?;
+        if !seen_phase_ids.insert(phase.phase_id.clone()) {
+            return Err(format!("Duplicate phase id: {}", phase.phase_id));
+        }
+        for dependency in &phase.depends_on {
+            let Some(dep_index) = snapshot
+                .phases
+                .iter()
+                .position(|candidate| candidate.phase_id == *dependency)
+            else {
+                return Err(format!(
+                    "Phase '{}' depends on unknown phase '{}'",
+                    phase.phase_id, dependency
+                ));
+            };
+            if dep_index >= index {
+                return Err(format!(
+                    "Forward dependency not allowed: {} depends on {}",
+                    phase.phase_id, dependency
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_phase_shape(
+    phase: &CompiledPhase,
+    available_worker_refs: &std::collections::HashSet<&str>,
+) -> Result<(), String> {
+    if phase.phase_id.trim().is_empty() {
+        return Err("Phase id cannot be empty".to_string());
+    }
+    if phase.title.trim().is_empty() {
+        return Err(format!("Phase '{}' title cannot be empty", phase.phase_id));
+    }
+    if phase.worker_ref.trim().is_empty() {
+        return Err(format!(
+            "Phase '{}' worker_ref cannot be empty",
+            phase.phase_id
+        ));
+    }
+    if !phase.worker_ref.starts_with("direct_llm:")
+        && !available_worker_refs.contains(phase.worker_ref.as_str())
+        && phase.worker_ref != "approval_gate"
+    {
+        return Err(format!(
+            "Unknown worker reference for phase '{}': {}",
+            phase.phase_id, phase.worker_ref
+        ));
+    }
+    if phase.goal.trim().is_empty() {
+        return Err(format!("Phase '{}' goal cannot be empty", phase.phase_id));
+    }
+    Ok(())
+}
+
+fn reject_completed_phase_edit(
+    completed_phase_ids: &std::collections::HashSet<String>,
+    phase_id: &str,
+) -> Result<(), String> {
+    if completed_phase_ids.contains(phase_id) {
+        return Err(format!("Cannot modify completed phase '{phase_id}'"));
+    }
+    Ok(())
+}
+
+fn non_empty_patch_value(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
 }
 
 async fn claim_run_for_resume(store_ref: &McpStore, run_id: &str) -> Result<(), String> {
@@ -2622,6 +2891,293 @@ Goal: Produce a useful output
         assert_eq!(updated.status, WorkflowRunStatus::AwaitingPlanEdit);
         assert_eq!(updated.proposal_version, 2);
         assert!(updated.snapshot_json.is_none());
+
+        std::fs::remove_dir_all(app_data_dir).ok();
+    }
+
+    #[tokio::test]
+    async fn apply_plan_delta_updates_pending_phase_and_increments_snapshot() {
+        let store = create_test_store("apply-delta-update").await;
+        let app_data_dir = temp_app_data_dir("apply-delta-update");
+        let run = persist_generated_proposal(
+            &store,
+            Some(app_data_dir.clone()),
+            "Workflow Runtime V2".to_string(),
+            "Ship phase 5".to_string(),
+            SAMPLE_PROPOSAL.to_string(),
+            false,
+        )
+        .await
+        .expect("persist proposal");
+        let compiled = compile_current_proposal(&store, Some(app_data_dir.clone()), &run.id)
+            .await
+            .expect("compile proposal");
+        let base_snapshot_version = compiled.snapshot.expect("snapshot").snapshot_version;
+        store::update_workflow_run_status(&store, &run.id, WorkflowRunStatus::AwaitingPlanEdit)
+            .await
+            .expect("set awaiting plan edit");
+
+        let updated = apply_plan_delta_with_store(
+            &store,
+            crate::modules::workflow::types::ApplyPlanDeltaRequest {
+                run_id: run.id.clone(),
+                user_decision: Some("approve".to_string()),
+                delta: crate::modules::workflow::types::PlanDelta {
+                    base_snapshot_version,
+                    reason: Some("Phase 1 changed the analysis target".to_string()),
+                    operations: vec![
+                        crate::modules::workflow::types::PlanDeltaOperation::UpdatePhase {
+                            phase_id: "phase-2".to_string(),
+                            title: None,
+                            worker_ref: None,
+                            depends_on: None,
+                            goal: Some("Analyze the revised findings".to_string()),
+                            expected_output: None,
+                        },
+                    ],
+                },
+            },
+        )
+        .await
+        .expect("apply delta");
+
+        assert_eq!(updated.status, WorkflowRunStatus::Ready);
+        assert_eq!(updated.snapshot_version, base_snapshot_version + 1);
+        let snapshot = parse_snapshot(&updated).expect("parse updated snapshot");
+        assert_eq!(snapshot.phases[1].goal, "Analyze the revised findings");
+
+        std::fs::remove_dir_all(app_data_dir).ok();
+    }
+
+    #[tokio::test]
+    async fn apply_plan_delta_to_running_snapshot_keeps_run_active() {
+        let store = create_test_store("apply-delta-running").await;
+        let app_data_dir = temp_app_data_dir("apply-delta-running");
+        let run = persist_generated_proposal(
+            &store,
+            Some(app_data_dir.clone()),
+            "Workflow Runtime V2".to_string(),
+            "Ship phase 5".to_string(),
+            SAMPLE_PROPOSAL.to_string(),
+            false,
+        )
+        .await
+        .expect("persist proposal");
+        let compiled = compile_current_proposal(&store, Some(app_data_dir.clone()), &run.id)
+            .await
+            .expect("compile proposal");
+        let mut snapshot = compiled.snapshot.expect("snapshot");
+        let base_snapshot_version = snapshot.snapshot_version;
+        store::update_workflow_run_status(&store, &run.id, WorkflowRunStatus::Running)
+            .await
+            .expect("set running");
+
+        apply_plan_delta_to_running_snapshot(
+            &store,
+            &run,
+            &mut snapshot,
+            &crate::modules::workflow::types::PlanDelta {
+                base_snapshot_version,
+                reason: Some("Low-risk title clarification".to_string()),
+                operations: vec![
+                    crate::modules::workflow::types::PlanDeltaOperation::UpdatePhase {
+                        phase_id: "phase-2".to_string(),
+                        title: Some("Analyze revised findings".to_string()),
+                        worker_ref: None,
+                        depends_on: None,
+                        goal: None,
+                        expected_output: None,
+                    },
+                ],
+            },
+            Some("auto_apply_delta".to_string()),
+        )
+        .await
+        .expect("apply running delta");
+
+        let updated = store::get_workflow_run(&store, &run.id)
+            .await
+            .expect("load run")
+            .expect("run");
+        assert_eq!(updated.status, WorkflowRunStatus::Running);
+        assert_eq!(snapshot.snapshot_version, base_snapshot_version + 1);
+        assert_eq!(updated.snapshot_version, base_snapshot_version + 1);
+        assert_eq!(snapshot.phases[1].title, "Analyze revised findings");
+
+        std::fs::remove_dir_all(app_data_dir).ok();
+    }
+
+    #[tokio::test]
+    async fn apply_plan_delta_rejects_completed_phase_update() {
+        let store = create_test_store("apply-delta-completed").await;
+        let app_data_dir = temp_app_data_dir("apply-delta-completed");
+        let run = persist_generated_proposal(
+            &store,
+            Some(app_data_dir.clone()),
+            "Workflow Runtime V2".to_string(),
+            "Ship phase 5".to_string(),
+            SAMPLE_PROPOSAL.to_string(),
+            false,
+        )
+        .await
+        .expect("persist proposal");
+        let compiled = compile_current_proposal(&store, Some(app_data_dir.clone()), &run.id)
+            .await
+            .expect("compile proposal");
+        let base_snapshot_version = compiled.snapshot.expect("snapshot").snapshot_version;
+        store::update_workflow_run_status(&store, &run.id, WorkflowRunStatus::AwaitingPlanEdit)
+            .await
+            .expect("set awaiting plan edit");
+        let step = store::create_workflow_step_run(
+            &store,
+            crate::modules::workflow::types::CreateWorkflowStepRunRequest {
+                run_id: run.id.clone(),
+                phase_id: "phase-1".to_string(),
+                phase_index: 0,
+                step_type: WorkflowStepType::WorkerCall,
+                title: "Research".to_string(),
+                worker_ref: Some("direct_llm:default".to_string()),
+                goal: Some("Gather information".to_string()),
+            },
+        )
+        .await
+        .expect("create step");
+        store::update_workflow_step_result(
+            &store,
+            &step.id,
+            &["phase-1/result.md".to_string()],
+            Some("done"),
+            "2026-05-21T00:00:00Z",
+        )
+        .await
+        .expect("mark succeeded");
+
+        let error = apply_plan_delta_with_store(
+            &store,
+            crate::modules::workflow::types::ApplyPlanDeltaRequest {
+                run_id: run.id.clone(),
+                user_decision: Some("approve".to_string()),
+                delta: crate::modules::workflow::types::PlanDelta {
+                    base_snapshot_version,
+                    reason: None,
+                    operations: vec![
+                        crate::modules::workflow::types::PlanDeltaOperation::UpdatePhase {
+                            phase_id: "phase-1".to_string(),
+                            title: None,
+                            worker_ref: None,
+                            depends_on: None,
+                            goal: Some("Rewrite completed work".to_string()),
+                            expected_output: None,
+                        },
+                    ],
+                },
+            },
+        )
+        .await
+        .expect_err("completed phase update should fail");
+
+        assert!(error.contains("completed phase"));
+
+        std::fs::remove_dir_all(app_data_dir).ok();
+    }
+
+    #[tokio::test]
+    async fn apply_plan_delta_rejects_snapshot_version_mismatch() {
+        let store = create_test_store("apply-delta-mismatch").await;
+        let app_data_dir = temp_app_data_dir("apply-delta-mismatch");
+        let run = persist_generated_proposal(
+            &store,
+            Some(app_data_dir.clone()),
+            "Workflow Runtime V2".to_string(),
+            "Ship phase 5".to_string(),
+            SAMPLE_PROPOSAL.to_string(),
+            false,
+        )
+        .await
+        .expect("persist proposal");
+        let _compiled = compile_current_proposal(&store, Some(app_data_dir.clone()), &run.id)
+            .await
+            .expect("compile proposal");
+        store::update_workflow_run_status(&store, &run.id, WorkflowRunStatus::AwaitingPlanEdit)
+            .await
+            .expect("set awaiting plan edit");
+
+        let error = apply_plan_delta_with_store(
+            &store,
+            crate::modules::workflow::types::ApplyPlanDeltaRequest {
+                run_id: run.id.clone(),
+                user_decision: Some("approve".to_string()),
+                delta: crate::modules::workflow::types::PlanDelta {
+                    base_snapshot_version: 999,
+                    reason: None,
+                    operations: vec![
+                        crate::modules::workflow::types::PlanDeltaOperation::UpdatePhase {
+                            phase_id: "phase-2".to_string(),
+                            title: None,
+                            worker_ref: None,
+                            depends_on: None,
+                            goal: Some("Analyze the revised findings".to_string()),
+                            expected_output: None,
+                        },
+                    ],
+                },
+            },
+        )
+        .await
+        .expect_err("stale delta should fail");
+
+        assert!(error.contains("base snapshot version"));
+
+        std::fs::remove_dir_all(app_data_dir).ok();
+    }
+
+    #[tokio::test]
+    async fn apply_plan_delta_rejects_forward_dependency() {
+        let store = create_test_store("apply-delta-forward-dep").await;
+        let app_data_dir = temp_app_data_dir("apply-delta-forward-dep");
+        let run = persist_generated_proposal(
+            &store,
+            Some(app_data_dir.clone()),
+            "Workflow Runtime V2".to_string(),
+            "Ship phase 5".to_string(),
+            SAMPLE_PROPOSAL.to_string(),
+            false,
+        )
+        .await
+        .expect("persist proposal");
+        let compiled = compile_current_proposal(&store, Some(app_data_dir.clone()), &run.id)
+            .await
+            .expect("compile proposal");
+        let base_snapshot_version = compiled.snapshot.expect("snapshot").snapshot_version;
+        store::update_workflow_run_status(&store, &run.id, WorkflowRunStatus::AwaitingPlanEdit)
+            .await
+            .expect("set awaiting plan edit");
+
+        let error = apply_plan_delta_with_store(
+            &store,
+            crate::modules::workflow::types::ApplyPlanDeltaRequest {
+                run_id: run.id.clone(),
+                user_decision: Some("approve".to_string()),
+                delta: crate::modules::workflow::types::PlanDelta {
+                    base_snapshot_version,
+                    reason: None,
+                    operations: vec![
+                        crate::modules::workflow::types::PlanDeltaOperation::UpdatePhase {
+                            phase_id: "phase-1".to_string(),
+                            title: None,
+                            worker_ref: None,
+                            depends_on: Some(vec!["phase-2".to_string()]),
+                            goal: None,
+                            expected_output: None,
+                        },
+                    ],
+                },
+            },
+        )
+        .await
+        .expect_err("forward dependency should fail");
+
+        assert!(error.contains("Forward dependency"));
 
         std::fs::remove_dir_all(app_data_dir).ok();
     }

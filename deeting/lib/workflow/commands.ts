@@ -6,6 +6,7 @@ import { resolveLocalGatewayBaseUrl } from "@/lib/api/chat"
 import { openSSE } from "@/lib/http"
 import type {
   ApproveWorkflowRequest,
+  ApplyPlanDeltaRequest,
   CompileResult,
   EditRemainingPhasesRequest,
   GenerateProposalRequest,
@@ -209,6 +210,10 @@ export async function editRemainingPhases(
   req: EditRemainingPhasesRequest,
 ): Promise<WorkflowRun> {
   return invoke<WorkflowRun>("edit_remaining_phases", { req })
+}
+
+export async function applyPlanDelta(req: ApplyPlanDeltaRequest): Promise<WorkflowRun> {
+  return invoke<WorkflowRun>("apply_plan_delta", { req })
 }
 
 export async function resumeWorkflow(runId: string): Promise<WorkflowRun> {

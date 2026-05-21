@@ -48,6 +48,14 @@ export type RevalidationDecision =
   | "mark_invalidated"
   | "suffix_replan"
 
+export type PlanAuditDecisionKind =
+  | "continue_original_plan"
+  | "auto_apply_delta"
+  | "requires_user_approval"
+  | "stop_unrecoverable"
+
+export type PlanAuditRiskLevel = "low" | "medium" | "high"
+
 // --- Domain Models ---
 
 export interface WorkflowRun {
@@ -200,6 +208,53 @@ export interface ExpectedOutput {
   result_schema_hint: string | null
 }
 
+export interface PlanAuditDecision {
+  run_id: string
+  completed_phase_id: string
+  base_snapshot_version: number
+  decision: PlanAuditDecisionKind
+  risk_level: PlanAuditRiskLevel
+  reason: string
+  revalidation: RevalidationDecision
+  invalidates_future_phases: string[]
+  delta?: PlanDelta | null
+}
+
+export interface PlanDelta {
+  base_snapshot_version: number
+  reason?: string | null
+  operations: PlanDeltaOperation[]
+}
+
+export type PlanDeltaOperation =
+  | {
+      op: "update_phase"
+      phase_id: string
+      title?: string | null
+      worker_ref?: string | null
+      depends_on?: string[] | null
+      goal?: string | null
+      expected_output?: ExpectedOutput | null
+    }
+  | {
+      op: "add_phase"
+      after?: string | null
+      phase: CompiledPhase
+    }
+  | {
+      op: "remove_pending_phase"
+      phase_id: string
+    }
+  | {
+      op: "reorder_pending_phase"
+      phase_id: string
+      after?: string | null
+    }
+  | {
+      op: "mark_pending_obsolete"
+      phase_id: string
+    }
+
 export interface SnapshotPolicy {
   allow_auto_suffix_replan: boolean
   default_timeout_ms: number
@@ -285,6 +340,12 @@ export interface RerunPhaseRequest {
 export interface EditRemainingPhasesRequest {
   run_id: string
   updated_proposal: string
+}
+
+export interface ApplyPlanDeltaRequest {
+  run_id: string
+  delta: PlanDelta
+  user_decision?: string | null
 }
 
 // --- Tauri Event Payloads ---

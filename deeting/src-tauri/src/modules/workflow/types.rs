@@ -586,6 +586,89 @@ pub enum RevalidationDecision {
     SuffixReplan,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanAuditDecisionKind {
+    ContinueOriginalPlan,
+    AutoApplyDelta,
+    RequiresUserApproval,
+    StopUnrecoverable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanAuditRiskLevel {
+    Low,
+    Medium,
+    High,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PlanAuditDecision {
+    pub run_id: String,
+    pub completed_phase_id: String,
+    pub base_snapshot_version: i64,
+    pub decision: PlanAuditDecisionKind,
+    pub risk_level: PlanAuditRiskLevel,
+    pub reason: String,
+    pub revalidation: RevalidationDecision,
+    #[serde(default)]
+    pub invalidates_future_phases: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delta: Option<PlanDelta>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PlanDelta {
+    pub base_snapshot_version: i64,
+    #[serde(default)]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub operations: Vec<PlanDeltaOperation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum PlanDeltaOperation {
+    UpdatePhase {
+        phase_id: String,
+        #[serde(default)]
+        title: Option<String>,
+        #[serde(default)]
+        worker_ref: Option<String>,
+        #[serde(default)]
+        depends_on: Option<Vec<String>>,
+        #[serde(default)]
+        goal: Option<String>,
+        #[serde(default)]
+        expected_output: Option<ExpectedOutput>,
+    },
+    AddPhase {
+        #[serde(default)]
+        after: Option<String>,
+        phase: CompiledPhase,
+    },
+    RemovePendingPhase {
+        phase_id: String,
+    },
+    ReorderPendingPhase {
+        phase_id: String,
+        #[serde(default)]
+        after: Option<String>,
+    },
+    MarkPendingObsolete {
+        phase_id: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApplyPlanDeltaRequest {
+    pub run_id: String,
+    pub delta: PlanDelta,
+    #[serde(default)]
+    pub user_decision: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct PhaseOutcome {
     pub phase_id: String,
@@ -593,6 +676,7 @@ pub struct PhaseOutcome {
     pub status: WorkflowStepStatus,
     pub result_packet: Option<ResultPacket>,
     pub revalidation: RevalidationDecision,
+    pub audit_decision: Option<PlanAuditDecision>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

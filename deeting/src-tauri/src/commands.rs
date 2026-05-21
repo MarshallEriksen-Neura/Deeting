@@ -303,6 +303,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::workflow::commands::export_workflow_artifact,
         crate::modules::workflow::commands::approve_workflow,
         crate::modules::workflow::commands::edit_remaining_phases,
+        crate::modules::workflow::commands::apply_plan_delta,
         crate::modules::workflow::commands::resume_workflow,
         crate::modules::workflow::commands::rerun_phase,
         // Chat Asset Commands

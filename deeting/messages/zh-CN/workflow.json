@@ -48,6 +48,13 @@
     "needsDecision": "待处理",
     "decisionPanelTitle": "这个阶段需要处理",
     "decisionPanelDescription": "当前阶段没有顺利完成。你可以重新执行该阶段，或确认继续后续阶段。",
+    "auditCheckpoint": "计划审计",
+    "auditRisk": {
+      "low": "低风险",
+      "medium": "中风险",
+      "high": "高风险"
+    },
+    "proposedDeltaOperations": "{count} 个建议计划变更",
     "blockedPhase": "当前卡住的阶段",
     "fixByRerun": "重新执行本阶段",
     "continueAnyway": "确认继续后续阶段",

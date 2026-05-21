@@ -10,11 +10,19 @@ import { ScrollArea } from "@/ui/shadcn/scroll-area"
 import { Badge } from "@/ui/shadcn/badge"
 import { getWorkflowArtifactContent } from "@/lib/workflow/commands"
 import { TimelinePhase } from "./timeline-phase"
-import type { CompiledPhase, WorkflowArtifactContent, WorkflowRun, WorkflowStepRun } from "@/lib/workflow/types"
+import type {
+  CompiledPhase,
+  PlanAuditDecision,
+  WorkflowArtifactContent,
+  WorkflowEvent,
+  WorkflowRun,
+  WorkflowStepRun,
+} from "@/lib/workflow/types"
 
 interface WorkflowExecutionProps {
   run: WorkflowRun
   steps: WorkflowStepRun[]
+  events?: WorkflowEvent[]
   activePhaseId: string | null
   resultFocusPhaseId: string | null
   failureFocusPhaseId: string | null
@@ -39,6 +47,7 @@ const runStatusBadge: Record<string, { label: string; variant: "default" | "seco
 export function WorkflowExecution({
   run,
   steps,
+  events = [],
   activePhaseId,
   resultFocusPhaseId,
   failureFocusPhaseId,
@@ -66,6 +75,7 @@ export function WorkflowExecution({
         ?? sortedSteps.find((step) => step.phase_id === activePhaseId)
   const failedStep = sortedSteps.find((step) => step.status === "failed")
   const decisionStep = needsConfirmation ? failedStep ?? focusStep : focusStep
+  const latestPlanAuditDecision = needsConfirmation ? findLatestPlanAuditDecision(events) : null
 
   const badge = runStatusBadge[run.status] ?? { label: "status.draft", variant: "secondary" as const }
   const headerTitle = needsConfirmation ? t("execution.needsDecisionTitle") : t("execution.title")
@@ -107,6 +117,7 @@ export function WorkflowExecution({
         <WorkflowDecisionPanel
           run={run}
           step={decisionStep}
+          auditDecision={latestPlanAuditDecision}
           onRerun={decisionStep.status === "failed" ? () => onRerunPhase(decisionStep.phase_id) : undefined}
           onResume={onResumeWorkflow}
           onViewContext={decisionStep.status === "succeeded" ? () => onViewContext(decisionStep.phase_id) : undefined}
@@ -148,6 +159,36 @@ export function WorkflowExecution({
       </ScrollArea>
     </div>
   )
+}
+
+function findLatestPlanAuditDecision(events: WorkflowEvent[]): PlanAuditDecision | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event.event_type !== "run.plan_audit.completed" || !event.payload) continue
+    const payload = event.payload as Partial<PlanAuditDecision>
+    if (
+      typeof payload.completed_phase_id === "string" &&
+      typeof payload.base_snapshot_version === "number" &&
+      typeof payload.reason === "string" &&
+      typeof payload.decision === "string" &&
+      typeof payload.risk_level === "string"
+    ) {
+      return {
+        run_id: typeof payload.run_id === "string" ? payload.run_id : event.run_id,
+        completed_phase_id: payload.completed_phase_id,
+        base_snapshot_version: payload.base_snapshot_version,
+        decision: payload.decision as PlanAuditDecision["decision"],
+        risk_level: payload.risk_level as PlanAuditDecision["risk_level"],
+        reason: payload.reason,
+        revalidation: (typeof payload.revalidation === "string" ? payload.revalidation : "pause_for_edit") as PlanAuditDecision["revalidation"],
+        invalidates_future_phases: Array.isArray(payload.invalidates_future_phases)
+          ? payload.invalidates_future_phases.filter((value): value is string => typeof value === "string")
+          : [],
+        delta: typeof payload.delta === "object" && payload.delta !== null ? payload.delta : null,
+      }
+    }
+  }
+  return null
 }
 
 function selectVisibleWorkflowSteps(steps: WorkflowStepRun[], phases: CompiledPhase[]): WorkflowStepRun[] {
@@ -193,18 +234,20 @@ function compareStepRecency(a: WorkflowStepRun, b: WorkflowStepRun): number {
 
 function WorkflowDecisionPanel({
   step,
+  auditDecision,
   onRerun,
   onResume,
   onViewContext,
 }: {
   run: WorkflowRun
   step: WorkflowStepRun
+  auditDecision?: PlanAuditDecision | null
   onRerun?: () => void
   onResume?: () => void
   onViewContext?: () => void
 }) {
   const t = useI18n("workflow")
-  const reason = step.error || step.worker_trace_summary || step.goal
+  const reason = auditDecision?.reason || step.error || step.worker_trace_summary || step.goal
 
   return (
     <div className="border-b border-[color:var(--ios-shell-border)] px-5 py-4">
@@ -221,16 +264,39 @@ function WorkflowDecisionPanel({
               {t("execution.decisionPanelDescription")}
             </p>
             <div className="mt-3 rounded-[14px] border border-amber-200/70 bg-white/70 px-3 py-2 dark:border-amber-400/20 dark:bg-black/10">
-              <div className="text-[11px] font-medium text-amber-900/55 dark:text-amber-100/50">
-                {t("execution.blockedPhase")}
-              </div>
-              <div className="mt-0.5 truncate text-[13px] font-semibold text-foreground">
-                {step.title || step.phase_id}
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-medium text-amber-900/55 dark:text-amber-100/50">
+                    {auditDecision ? t("execution.auditCheckpoint") : t("execution.blockedPhase")}
+                  </div>
+                  <div className="mt-0.5 truncate text-[13px] font-semibold text-foreground">
+                    {step.title || step.phase_id}
+                  </div>
+                </div>
+                {auditDecision ? (
+                  <Badge variant="outline" className="h-5 shrink-0 rounded-[4px] px-1.5 font-mono text-[10px] uppercase tracking-wider">
+                    {t(`execution.auditRisk.${auditDecision.risk_level}`)}
+                  </Badge>
+                ) : null}
               </div>
               {reason ? (
                 <p className="mt-1 line-clamp-3 text-[12px] leading-5 text-muted-foreground">
                   {reason}
                 </p>
+              ) : null}
+              {auditDecision?.invalidates_future_phases.length ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {auditDecision.invalidates_future_phases.map((phaseId) => (
+                    <Badge key={phaseId} variant="secondary" className="h-5 rounded-[4px] px-1.5 font-mono text-[10px]">
+                      {phaseId}
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
+              {auditDecision?.delta?.operations.length ? (
+                <div className="mt-2 text-[11px] leading-4 text-muted-foreground">
+                  {t("execution.proposedDeltaOperations", { count: auditDecision.delta.operations.length })}
+                </div>
               ) : null}
             </div>
             <div className="mt-3 flex flex-wrap gap-2">

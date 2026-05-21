@@ -299,6 +299,7 @@ export function WorkflowRuntime({
             <WorkflowExecution
               run={store.run}
               steps={store.steps}
+              events={store.events}
               activePhaseId={store.activePhaseId}
               resultFocusPhaseId={store.resultFocusPhaseId}
               failureFocusPhaseId={store.failureFocusPhaseId}

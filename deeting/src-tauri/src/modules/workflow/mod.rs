@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod compiler;
 pub mod context;
+pub mod plan_audit;
 pub mod proposal;
 pub mod result_packet;
 pub mod run_dir;

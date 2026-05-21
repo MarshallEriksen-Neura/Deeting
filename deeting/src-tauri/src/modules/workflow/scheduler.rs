@@ -3,13 +3,15 @@ use tokio::sync::mpsc;
 
 use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUNDS_CONFIG_KEY};
 use crate::modules::workflow::context;
+use crate::modules::workflow::plan_audit;
 use crate::modules::workflow::result_packet;
 use crate::modules::workflow::run_dir;
+use crate::modules::workflow::service;
 use crate::modules::workflow::store;
 use crate::modules::workflow::types::{
     ApprovalGroup, ApprovalGroupPolicy, ApprovalItem, ApprovalItemStatus, CompiledPhase,
     CreateWorkflowArtifactRequest, CreateWorkflowCheckpointRequest, CreateWorkflowEventRequest,
-    CreateWorkflowStepRunRequest, ExecutionSnapshot, PhaseOutcome, ResultPacket,
+    CreateWorkflowStepRunRequest, ExecutionSnapshot, PhaseOutcome, PlanAuditDecisionKind,
     RevalidationDecision, WorkerExecutionInput, WorkflowArtifactKind, WorkflowProgress,
     WorkflowRun, WorkflowRunStatus, WorkflowStepRun, WorkflowStepStatus, WorkflowStepType,
 };
@@ -55,7 +57,7 @@ async fn run_workflow_inner(
         .snapshot_json
         .clone()
         .ok_or_else(|| "Run has no compiled snapshot".to_string())?;
-    let snapshot: ExecutionSnapshot =
+    let mut snapshot: ExecutionSnapshot =
         serde_json::from_value(snapshot_value).map_err(|err| format!("Invalid snapshot: {err}"))?;
 
     let run_dir_path = run
@@ -111,13 +113,16 @@ async fn run_workflow_inner(
 
     let mut final_status = WorkflowRunStatus::Completed;
 
-    for (index, phase) in snapshot.phases.iter().enumerate() {
+    let mut index = 0usize;
+    while index < snapshot.phases.len() {
+        let phase = snapshot.phases[index].clone();
         if completed_phase_ids.contains(&phase.phase_id) {
+            index += 1;
             continue;
         }
 
-        if is_approval_gate(phase) {
-            final_status = handle_approval_gate(store_ref, run_id, phase, index as i64).await?;
+        if is_approval_gate(&phase) {
+            final_status = handle_approval_gate(store_ref, run_id, &phase, index as i64).await?;
             break;
         }
 
@@ -127,7 +132,7 @@ async fn run_workflow_inner(
             stream_tx.as_ref(),
             &run,
             &snapshot,
-            phase,
+            &phase,
             index as i64,
             &run_dir_path,
         )
@@ -136,7 +141,7 @@ async fn run_workflow_inner(
         emit_progress(
             app_handle,
             run_id,
-            phase,
+            &phase,
             index as i64,
             snapshot.phases.len() as i64,
             &outcome,
@@ -147,10 +152,68 @@ async fn run_workflow_inner(
             break;
         }
 
+        if let Some(audit_decision) = outcome.audit_decision.as_ref() {
+            if audit_decision.decision == PlanAuditDecisionKind::AutoApplyDelta {
+                match audit_decision.delta.as_ref() {
+                    Some(delta) => {
+                        if let Err(error) = service::apply_plan_delta_to_running_snapshot(
+                            store_ref,
+                            &run,
+                            &mut snapshot,
+                            delta,
+                            Some("auto_apply_delta".to_string()),
+                        )
+                        .await
+                        {
+                            emit_event(
+                                store_ref,
+                                run_id,
+                                None,
+                                "run.plan_delta.auto_apply_failed",
+                                Some(serde_json::json!({
+                                    "reason": error,
+                                    "completed_phase_id": audit_decision.completed_phase_id,
+                                })),
+                            )
+                            .await;
+                            final_status = WorkflowRunStatus::AwaitingPlanEdit;
+                            break;
+                        }
+                        send_run_detail(
+                            store_ref,
+                            stream_tx.as_ref(),
+                            "workflow.plan_delta_applied",
+                            run_id,
+                        )
+                        .await;
+                        index += 1;
+                        continue;
+                    }
+                    None => {
+                        emit_event(
+                            store_ref,
+                            run_id,
+                            None,
+                            "run.plan_delta.auto_apply_failed",
+                            Some(serde_json::json!({
+                                "reason": "auto_apply_delta decision did not include a delta",
+                                "completed_phase_id": audit_decision.completed_phase_id,
+                            })),
+                        )
+                        .await;
+                        final_status = WorkflowRunStatus::AwaitingPlanEdit;
+                        break;
+                    }
+                }
+            }
+        }
+
         if outcome.revalidation != RevalidationDecision::Continue {
             final_status = handle_revalidation(store_ref, run_id, &outcome.revalidation).await?;
             break;
         }
+
+        index += 1;
     }
 
     store::update_workflow_run_status(store_ref, run_id, final_status.clone())
@@ -433,16 +496,28 @@ async fn execute_single_phase(
                     status: WorkflowStepStatus::Failed,
                     result_packet: Some(packet),
                     revalidation: RevalidationDecision::PauseForEdit,
+                    audit_decision: None,
                 });
             }
 
-            let revalidation = revalidate_remaining_phases(&packet, phase, &snapshot.phases);
+            let audit_decision =
+                plan_audit::audit_after_phase(app_state, snapshot, phase, &packet).await;
+            emit_event(
+                store_ref,
+                run_id,
+                Some(&step_run.id),
+                "run.plan_audit.completed",
+                serde_json::to_value(&audit_decision).ok(),
+            )
+            .await;
+            let revalidation = audit_decision.revalidation.clone();
             Ok(PhaseOutcome {
                 phase_id: phase.phase_id.clone(),
                 step_run_id: step_run.id,
                 status: WorkflowStepStatus::Succeeded,
                 result_packet: Some(packet),
                 revalidation,
+                audit_decision: Some(audit_decision),
             })
         }
         Err(error) => {
@@ -482,6 +557,7 @@ async fn execute_single_phase(
                 status: WorkflowStepStatus::Failed,
                 result_packet: None,
                 revalidation: RevalidationDecision::PauseForEdit,
+                audit_decision: None,
             })
         }
     }
@@ -583,19 +659,22 @@ fn build_approval_payload(
     Ok(serde_json::Value::Object(payload))
 }
 
-pub(crate) fn revalidate_remaining_phases(
-    result: &ResultPacket,
-    _current_phase: &CompiledPhase,
-    _all_phases: &[CompiledPhase],
+#[cfg(test)]
+fn revalidate_remaining_phases(
+    result: &crate::modules::workflow::types::ResultPacket,
+    current_phase: &CompiledPhase,
+    all_phases: &[CompiledPhase],
 ) -> RevalidationDecision {
-    let hints = &result.result_json.followup_hints;
-    if hints.recommended_next_action == "pause_for_edit" {
-        return RevalidationDecision::PauseForEdit;
-    }
-    if !hints.invalidates_future_phases.is_empty() {
-        return RevalidationDecision::MarkInvalidated;
-    }
-    RevalidationDecision::Continue
+    let snapshot = ExecutionSnapshot {
+        run_id: result.run_id.clone(),
+        proposal_version: 0,
+        snapshot_version: 0,
+        compiled_at: String::new(),
+        goal: String::new(),
+        phases: all_phases.to_vec(),
+        policy: Default::default(),
+    };
+    plan_audit::audit_after_phase_deterministic(&snapshot, current_phase, result).revalidation
 }
 
 async fn handle_revalidation(

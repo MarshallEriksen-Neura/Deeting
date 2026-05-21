@@ -48,6 +48,13 @@
     "needsDecision": "Needs action",
     "decisionPanelTitle": "This phase needs attention",
     "decisionPanelDescription": "The current phase did not finish cleanly. Rerun this phase, or confirm that the workflow should continue with the remaining phases.",
+    "auditCheckpoint": "Plan audit",
+    "auditRisk": {
+      "low": "Low risk",
+      "medium": "Medium risk",
+      "high": "High risk"
+    },
+    "proposedDeltaOperations": "{count} suggested plan change(s)",
     "blockedPhase": "Blocked phase",
     "fixByRerun": "Rerun this phase",
     "continueAnyway": "Continue remaining phases",

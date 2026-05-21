@@ -5,10 +5,11 @@ use crate::state::AppState;
 use super::service;
 use super::store;
 use super::types::{
-    ApproveWorkflowRequest, CompileResult, CreateWorkflowRunRequest, EditRemainingPhasesRequest,
-    ExportWorkflowArtifactResponse, GenerateProposalRequest, QuickWorkflowRequest,
-    QuickWorkflowResult, RegenerateProposalRequest, RerunPhaseRequest, UpdateProposalRequest,
-    WorkflowArtifactContent, WorkflowPhaseContext, WorkflowRun, WorkflowRunDetail,
+    ApplyPlanDeltaRequest, ApproveWorkflowRequest, CompileResult, CreateWorkflowRunRequest,
+    EditRemainingPhasesRequest, ExportWorkflowArtifactResponse, GenerateProposalRequest,
+    QuickWorkflowRequest, QuickWorkflowResult, RegenerateProposalRequest, RerunPhaseRequest,
+    UpdateProposalRequest, WorkflowArtifactContent, WorkflowPhaseContext, WorkflowRun,
+    WorkflowRunDetail,
 };
 
 #[tauri::command]
@@ -197,6 +198,14 @@ pub async fn edit_remaining_phases(
     req: EditRemainingPhasesRequest,
 ) -> Result<WorkflowRun, String> {
     service::edit_remaining_phases(state.inner(), req).await
+}
+
+#[tauri::command]
+pub async fn apply_plan_delta(
+    state: State<'_, AppState>,
+    req: ApplyPlanDeltaRequest,
+) -> Result<WorkflowRun, String> {
+    service::apply_plan_delta(state.inner(), req).await
 }
 
 #[tauri::command]
