@@ -336,7 +336,131 @@ RouteBanditScores { direct, worker }
 
 Strategy is switchable at the store layer (Thompson Sampling / ε-greedy). The coefficient is locked at `ROUTE_BANDIT_COEFF = 0.25` and may not be raised at the business layer.
 
-## 12. Self_ Consult API
+## 12. Explicit-Feedback Experience Loop
+
+§7–§11 describe the **priors loop**: a heuristic judge collapses every execution into one row of `task_policy_priors` (numeric weight). This section describes the **parallel** loop — the **experience loop**, living in [`evolution/`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/evolution/).
+
+It does not solve "which route to take next time"; instead:
+
+> When a similar task arrives next time, **let the model see, in the system prompt, the natural-language experience of past same-family tasks.** Do not modify its decision — only hand it cold-start context.
+
+The two loops coexist and do not contaminate each other:
+
+| Dimension | Priors loop (§7–§11) | Experience loop (this section) |
+|---|---|---|
+| Data sink | `task_policy_priors` (numeric weights) | `evolution_cases` (natural-language summaries) |
+| Input evidence | Heuristic judge + posterior signal | **Only** `ExplicitTraceFeedback` (user Accept / Reject / Correct) |
+| Injection site | Routing / worker-selection layer (decision fusion) | Cold-start system message (`ColdStartPacket`) |
+| Injection strength | Weighted fusion, can flip the decision past threshold | **Read-only guidance**; model may ignore |
+| Learning trigger | Every task that completes | Only on explicit feedback arrival |
+
+### 12.1 Topology
+
+```text
+task ends → user clicks Accept / Reject / Correct in UI
+              │
+              ▼
+        ExplicitTraceFeedback signal
+              │
+              ▼
+  submit_evolution_signal (evolution/service.rs)
+              │
+   ┌──────────┴──────────────────────────────────┐
+   ▼                                             ▼
+persist as EvolutionSignal                  route_case_type
+(carries fingerprint_key, trace_id, run_id) (Rejected  → Negative case)
+                                            (Accepted  → Reference case)
+                                            (Corrected → Constraint case)
+                                                   │
+                                                   ▼
+                                          evolution_cases table
+                                                   │
+   next task with the same fingerprint_key:
+                                                   ▼
+  build_cold_start_packet → ColdStartPacket {
+      priors_summary,    // from task_policy_priors (read-only projection)
+      reference_cases,   // up to 2
+      negative_cases,    // up to 2
+  }
+                                                   │
+                                                   ▼
+  render_cold_start_packet_prompt → injected as system message
+                                                   │
+                                                   ▼
+                                           model decides freely
+```
+
+### 12.2 Signal sources (EvolutionSignalSource)
+
+[`evolution/types.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/evolution/types.rs) lists five signal sources, but **only one** is allowed to be promoted into a Case:
+
+| Source | Entry point | Allowed to promote to Case |
+|---|---|---|
+| `ExplicitTraceFeedback` | `admin/commands.rs` (user clicks Accept / Reject / Correct in UI) | ✅ **Only** allowed source |
+| `DeetingThink` | `chat_tool_runtime/mod.rs` (pre-task pre-flight planning) | ❌ Persisted as audit signal only |
+| `ManualTaskLearningRevision` | `admin/commands.rs` (operator revises historical run) | ❌ Persisted as audit signal only |
+| `MonitorObservation` | `monitor/mod.rs` (runtime monitor observations) | ❌ Persisted as audit signal only |
+| `MonitorFeedback` | `monitor/workflow.rs` (monitor feedback score) | ❌ Persisted as audit signal only |
+
+**Why locked to explicit user feedback**: this boundary is a charter invariant. Any "the program judges its own run" or "another model judges this run" would constitute a hidden secondary agent and would pollute the experience store. The gate is hardcoded in [`service.rs::route_case_type`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/evolution/service.rs), guarded by `reference_case_does_not_trigger_for_other_sources_with_accepted` / `constraint_case_does_not_trigger_for_other_sources_with_corrected` / `monitor_feedback_rejected_does_not_trigger_negative_case` tests.
+
+### 12.3 Case promotion rules
+
+`(source, classification) → case_type` mapping ([`service.rs::route_case_type`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/evolution/service.rs)):
+
+| classification | case_type | Meaning |
+|---|---|---|
+| `Rejected`  | `Negative`   | "Avoid this framing for next same-family task" |
+| `Accepted`  | `Reference`  | "This response is a good reference for next same-family task" |
+| `Corrected` | `Constraint` | "Next same-family task must respect this boundary" |
+| `Neutral` / `Unknown` | — | No promotion; persisted as signal only |
+
+On promotion, `EvolutionSignal.status` advances from `Classified` to `Applied`; writing into `evolution_cases` carries `fingerprint_key` + `source_run_id` + `evidence_signal_ids` for full traceability. Case summaries are built by [`service.rs::render_case_summary`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/evolution/service.rs), a pure function that concatenates the user's note directly; when no note is supplied a fixed placeholder is used — **no model call** for polishing or rewriting.
+
+### 12.4 Cold-start packet (ColdStartPacket)
+
+Build entry: [`evolution/packet.rs::build_cold_start_packet`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/evolution/packet.rs), invoked by [`local_orchestrator/workflow.rs`](../deeting/src-tauri/src/modules/desktop_runtime/local_orchestrator/workflow.rs) at every task startup.
+
+Render template (any empty section is omitted):
+
+```text
+## Evolution Context (from prior runs of similar tasks)
+These notes are guidance only — use them when assessing context. Do not treat
+them as overriding the user's current request.
+
+### Prior direction         ← priors_summary (read-only projection from §8)
+- route:direct (favor, weight +0.42, confidence 0.71)
+- discovery:search_sdk_early (avoid, weight -0.18, confidence 0.55)
+
+### Reference cases — past successes for this task family
+- User accepted the assistant's prior response with note: ...
+
+### Negative cases — avoid repeating
+- User rejected the assistant's prior response with note: ...
+```
+
+Token budgets (constants at top of [`packet.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/evolution/packet.rs)):
+
+| Section | Cap | Constant |
+|---|---|---|
+| `priors_summary` | 200 tokens (≈ 800 chars) | `PRIORS_SUMMARY_CHAR_BUDGET` |
+| `reference_cases` + `negative_cases` combined | 600 tokens (≈ 2400 chars) | `CASES_CHAR_BUDGET`, enforced by `enforce_case_budget` which drops lowest `confidence × recency_decay` first |
+| Per-type case count | 2 | `CASE_PACKET_PER_TYPE_LIMIT` |
+| Case half-life | ≈ 14 days (`exp(-age_days/20)`) | `CASE_HALFLIFE_DAYS` |
+| Prior half-life | 21 days | `PRIOR_HALF_LIFE_MS`, matches §8 |
+
+**Read-only discipline**: the `priors_summary` section is decayed and displayed from `task_policy_priors`, but is **never written back**. `task_learning::policy::apply_policy_delta` remains the sole writer for the priors table.
+
+### 12.5 Hard lines (PR review rejection checklist)
+
+- ❌ Promoting a Case from any signal source other than `ExplicitTraceFeedback` (charter invariant, enforced by `route_case_type` gate)
+- ❌ Calling any model inside `evolution/packet.rs` or `service.rs` to score, rewrite, or generate cases
+- ❌ Marking `ColdStartPacket` content as "must obey" — it is guidance; the disclaimer line in the render template must not be removed
+- ❌ Letting `evolution/packet.rs` write `task_policy_priors` (priors write path is owned by `task_learning::policy::apply_policy_delta` alone)
+- ❌ Routing Case summaries through any async / LLM post-processing pipeline for "polishing" — summaries come from `render_case_summary` directly off the user note
+- ❌ Adding a second "experience" store outside `evolution_cases`
+
+## 13. Self_ Consult API
 
 Recommended caller pattern ([`sovereign/mod.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/sovereign/mod.rs)):
 
@@ -359,7 +483,7 @@ let gate_meta = advisory.gate_meta("direct"); // attach to tool-call telemetry
 
 `Self_::consult_named(store, "discovery", ...)` is a transitional bridge for stringly-typed callers; new code uses the strongly-typed `DecisionLocus`.
 
-## 13. End-to-end: full lifecycle of one task
+## 14. End-to-end: full lifecycle of one task
 
 ```text
 T0  ─ user query "rename all .ts files in src to .tsx"
@@ -404,7 +528,7 @@ T2' ─ direct prior is now larger; lean toward direct
        and prevent the prior from flipping
 ```
 
-## 14. File map
+## 15. File map
 
 By "what do I want to change":
 
@@ -416,16 +540,16 @@ By "what do I want to change":
 | Change PolicyDelta algorithm | [`evaluator.rs::compute_policy_delta`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/evaluator.rs) |
 | Change which decision point gets credit | [`evaluator.rs::primary_stage_from_outcome`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/evaluator.rs) |
 | Change posterior signal recognition | [`posterior_signal/rules.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/posterior_signal/rules.rs) + [`resolver.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/posterior_signal/resolver.rs) |
-| Add a new decision point | §15.1 |
-| Add a new external signal source | §15.2 |
+| Add a new decision point | §16.1 |
+| Add a new external signal source | §16.2 |
 | Change bandit strategy | [`providers/store/bandit.rs`](../deeting/src-tauri/src/modules/providers/store/bandit.rs) + `arm.strategy` field |
 | Change safety lock list | [`policy.rs::decision_has_safety_lock`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/policy.rs) |
 | View / replay history runs | [`task_learning/revision.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/revision.rs) |
 | Entry point (recommended: Self_) | [`sovereign/mod.rs::Self_::consult`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/sovereign/mod.rs) |
 
-## 15. How to extend
+## 16. How to extend
 
-### 15.1 Add a new decision point (example: `memory_write`)
+### 16.1 Add a new decision point (example: `memory_write`)
 
 > Scenario: you want Deeting to learn "should this task family write to long-term memory?"
 
@@ -445,7 +569,7 @@ By "what do I want to change":
 
 **Key judgment**: is the action **something runtime itself can choose**? If the choice belongs to the user (e.g. "should I delete this file"), it belongs to the safety-lock domain — **do not** make it a self-evolving decision point.
 
-### 15.2 Add a new external signal source (example: EvoMap GEP capsule)
+### 16.2 Add a new external signal source (example: EvoMap GEP capsule)
 
 1. Create `runtime/sovereign/ingress/sources/evomap.rs` (this is the boundary file):
    ```rust
@@ -478,7 +602,7 @@ By "what do I want to change":
 3. Add an invariant test: deleting this boundary file must keep `cargo check -p deeting-tauri` green.
 4. In the PR description, cite "borrows EvoMap GDI methodology" — but **do not** write this attribution into core type names.
 
-### 15.3 Change half-life / flip threshold / bandit coefficient
+### 16.3 Change half-life / flip threshold / bandit coefficient
 
 Only edit the three constants at the top of `policy.rs`:
 
@@ -490,7 +614,7 @@ const ROUTE_BANDIT_COEFF: f64 = 0.25;
 
 Before raising `ROUTE_BANDIT_COEFF`, **re-read** §6.5: "the bandit cannot flip a decision alone" is a hard charter invariant, guarded by the `apply_route_prior_bandit_scores_surface_on_application` test. If your change lets the bandit flip alone, that test will go red — don't "fix" it; go back and reconsider.
 
-## 16. Anti-patterns (reject in PR review)
+## 17. Anti-patterns (reject in PR review)
 
 - Renaming `effective_weight` to `fitness`
 - Applying prior decay outside `query_task_policy_hint` (double decay)
@@ -503,7 +627,7 @@ Before raising `ROUTE_BANDIT_COEFF`, **re-read** §6.5: "the bandit cannot flip 
 - Adding a new ingress without implementing `Ingress` (stuffing data straight into `Observation::TaskExecution`)
 - Adding fields to canonical types that only one external source uses (substrate drift)
 
-## 17. Recorded decisions and tradeoffs
+## 18. Recorded decisions and tradeoffs
 
 | Decision | Why |
 |---|---|
@@ -515,7 +639,7 @@ Before raising `ROUTE_BANDIT_COEFF`, **re-read** §6.5: "the bandit cannot flip 
 | Priors fade naturally instead of GC | Natural forgetting > active GC; no background job, no retention window config |
 | Charter in AGENTS.md, not a design doc | Discipline for "what is already done" > design for "what we want to do"; name the current truth first |
 
-## 18. Verification checklist
+## 19. Verification checklist
 
 A PR that touches the self-evolution path must self-check applicable items:
 
@@ -532,7 +656,7 @@ A PR that touches the self-evolution path must self-check applicable items:
 
 > Known Windows caveat: `cargo test` binaries occasionally fail to launch due to DLL load failures (STATUS_ENTRYPOINT_NOT_FOUND). Distinguish compile failure (must fix) from run failure (host-env issue — rerun on CI/Linux).
 
-## 19. FAQ
+## 20. FAQ
 
 **Q: Why not just have the LLM write a "self-reflection" and rewrite its own prompt?**
 A: Because (1) free-text reflection is unreviewable, unrolling-back-able, and unexplainable; (2) LLM self-reflection tends toward self-reinforcement with no external ground truth; (3) Deeting's goal is to "adjust its own behavior," not "rewrite its own prompt" — the latter is prompt engineering, the former is policy learning.
@@ -555,7 +679,7 @@ A: Yes, but the path is pinned by the charter: add a boundary file at `sovereign
 **Q: Can we export "learned preferences" for others to import?**
 A: Technically yes (`task_policy_priors` table + fingerprints are stable), but treat the import as a new ingress: import via `ExternalIngress`. **Do not** write `task_policy_priors` directly — otherwise cross-user contamination has no audit point.
 
-## 20. References
+## 21. References
 
 - Sovereign Charter (architectural discipline): [`deeting/src-tauri/src/modules/desktop_runtime/runtime/AGENTS.md`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/AGENTS.md)
 - Decision fusion: [`task_learning/policy.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/policy.rs)

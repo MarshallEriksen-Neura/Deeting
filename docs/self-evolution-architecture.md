@@ -336,7 +336,131 @@ RouteBanditScores { direct, worker }
 
 策略可在 store 层切换（Thompson Sampling / ε-greedy），coefficient 锁在 `ROUTE_BANDIT_COEFF = 0.25` 不允许在业务层调高。
 
-## 12. Self_ Consult API
+## 12. 显式反馈经验回路（Explicit-Feedback Experience Loop）
+
+§7-§11 描述的是**先验回路**：用启发式判官把每次执行落成一行 `task_policy_priors`（数字权重）。本节描述与它**并行**的另一条回路——**经验回路**，住在 [`evolution/`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/evolution/) 模块。
+
+它解决的不是"下次该往哪条路由走"，而是：
+
+> 下次同类任务进来时，**让模型在 system prompt 里看到过去同类任务的经验文字**。不修改它的决策，只递给它冷启动上下文。
+
+两条回路并存、互不污染：
+
+| 维度 | 先验回路（§7-§11） | 经验回路（本节） |
+|---|---|---|
+| 数据落点 | `task_policy_priors`（数字权重） | `evolution_cases`（自然语言摘要） |
+| 输入证据 | 启发式判官 + 后验信号 | **只能**是 `ExplicitTraceFeedback`（用户显式 Accept / Reject / Correct） |
+| 注入位置 | 路由 / 工人选择层（决策融合） | 冷启动 system message（`ColdStartPacket`） |
+| 注入强度 | 加权融合，达到阈值会翻盘 | **只读引导**，模型可忽略 |
+| 学习触发 | 每次任务跑完都计算 | 仅在显式反馈到达时升格 |
+
+### 12.1 拓扑
+
+```text
+任务结束 → 用户在 UI 上点 Accept / Reject / Correct
+              │
+              ▼
+        ExplicitTraceFeedback 信号
+              │
+              ▼
+  submit_evolution_signal（evolution/service.rs）
+              │
+   ┌──────────┴──────────────────────────────────┐
+   ▼                                             ▼
+持久化为 EvolutionSignal                     route_case_type
+（带 fingerprint_key、trace_id、run_id）       (Rejected  → Negative case)
+                                              (Accepted  → Reference case)
+                                              (Corrected → Constraint case)
+                                                   │
+                                                   ▼
+                                          evolution_cases 表
+                                                   │
+        下一次同 fingerprint_key 任务开始：
+                                                   ▼
+  build_cold_start_packet → ColdStartPacket {
+      priors_summary,    // 来自 task_policy_priors（read-only 投影）
+      reference_cases,   // 至多 2 条
+      negative_cases,    // 至多 2 条
+  }
+                                                   │
+                                                   ▼
+  render_cold_start_packet_prompt → 注入 system message
+                                                   │
+                                                   ▼
+                                              模型自由决策
+```
+
+### 12.2 信号源分类（EvolutionSignalSource）
+
+[`evolution/types.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/evolution/types.rs) 列出五种信号源，但**只有一种**允许升格为 Case：
+
+| 信号源 | 入口 | 是否允许升格为 Case |
+|---|---|---|
+| `ExplicitTraceFeedback` | `admin/commands.rs`（用户 UI 点 Accept / Reject / Correct） | ✅ **唯一**允许 |
+| `DeetingThink` | `chat_tool_runtime/mod.rs`（任务前预飞行计划） | ❌ 仅持久化为审计信号 |
+| `ManualTaskLearningRevision` | `admin/commands.rs`（人工修订历史 run） | ❌ 仅持久化为审计信号 |
+| `MonitorObservation` | `monitor/mod.rs`（运行时监控观察） | ❌ 仅持久化为审计信号 |
+| `MonitorFeedback` | `monitor/workflow.rs`（监控反馈分数） | ❌ 仅持久化为审计信号 |
+
+**为什么死锁在用户显式反馈**：这条边界是 charter invariant。任何"程序自己判断这次跑得好"或"另一个模型判断这次跑得好"都会构成隐藏的二级 agent，污染经验库。Gate 写死在 [`service.rs::route_case_type`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/evolution/service.rs)，由 `reference_case_does_not_trigger_for_other_sources_with_accepted` / `constraint_case_does_not_trigger_for_other_sources_with_corrected` / `monitor_feedback_rejected_does_not_trigger_negative_case` 多重测试守护。
+
+### 12.3 Case 升格规则
+
+`(source, classification) → case_type` 映射（[`service.rs::route_case_type`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/evolution/service.rs)）：
+
+| classification | case_type | 含义 |
+|---|---|---|
+| `Rejected`  | `Negative`   | "下次同类任务避免这种 framing" |
+| `Accepted`  | `Reference`  | "下次同类任务可以参考这种回答" |
+| `Corrected` | `Constraint` | "下次同类任务必须遵守这条边界" |
+| `Neutral` / `Unknown` | — | 不升格，仅持久化为信号 |
+
+升格成功后，`EvolutionSignal.status` 由 `Classified` 推进到 `Applied`；写入 `evolution_cases` 时携带 `fingerprint_key` + `source_run_id` + `evidence_signal_ids`，保留追溯链。Case 摘要由 [`service.rs::render_case_summary`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/evolution/service.rs) 纯函数从用户 note 直接拼出，缺省 note 时落到固定 placeholder——**不调用任何模型**做润色或重写。
+
+### 12.4 冷启动包（ColdStartPacket）
+
+构建入口在 [`evolution/packet.rs::build_cold_start_packet`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/evolution/packet.rs)，由 [`local_orchestrator/workflow.rs`](../deeting/src-tauri/src/modules/desktop_runtime/local_orchestrator/workflow.rs) 在每次任务启动时调用。
+
+渲染模板（任一段缺失则该段被省略）：
+
+```text
+## Evolution Context (from prior runs of similar tasks)
+These notes are guidance only — use them when assessing context. Do not treat
+them as overriding the user's current request.
+
+### Prior direction         ← priors_summary（read-only 投影自 §8）
+- route:direct (favor, weight +0.42, confidence 0.71)
+- discovery:search_sdk_early (avoid, weight -0.18, confidence 0.55)
+
+### Reference cases — past successes for this task family
+- User accepted the assistant's prior response with note: ...
+
+### Negative cases — avoid repeating
+- User rejected the assistant's prior response with note: ...
+```
+
+Token 预算（[`packet.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/evolution/packet.rs) 顶部常量）：
+
+| 段 | 上限 | 出处 |
+|---|---|---|
+| `priors_summary` | 200 token（≈ 800 字符） | `PRIORS_SUMMARY_CHAR_BUDGET` |
+| `reference_cases` + `negative_cases` 合计 | 600 token（≈ 2400 字符） | `CASES_CHAR_BUDGET`，由 `enforce_case_budget` 按 `confidence × recency_decay` 最低处先丢 |
+| 每段单类 Case 数 | 2 条 | `CASE_PACKET_PER_TYPE_LIMIT` |
+| Case 半衰期 | ≈ 14 天（`exp(-age_days/20)`） | `CASE_HALFLIFE_DAYS` |
+| Prior 半衰期 | 21 天 | `PRIOR_HALF_LIFE_MS`，与 §8 一致 |
+
+**只读纪律**：`priors_summary` 段从 `task_policy_priors` 读出后衰减展示，**永不写回**。`task_learning::policy::apply_policy_delta` 仍然是 priors 表的唯一写入点。
+
+### 12.5 不可越线（PR review 拒绝清单）
+
+- ❌ 让 `ExplicitTraceFeedback` 以外的任何信号源升格 Case（charter invariant，由 `route_case_type` gate 强制）
+- ❌ 在 `evolution/packet.rs` 或 `service.rs` 里调用任何模型给 case 打分、重写摘要、生成新 case
+- ❌ 把 `ColdStartPacket` 的内容标记为"必须遵守"——它是 guidance，render 模板里的免责声明不能删
+- ❌ 让 `evolution/packet.rs` 写 `task_policy_priors` 表（priors 写入路径由 `task_learning::policy::apply_policy_delta` 独占）
+- ❌ 把 Case 摘要异步化或丢到 LLM 后处理 pipeline 去"润色"——摘要由 `render_case_summary` 纯函数从用户 note 直接拼
+- ❌ 在 `evolution_cases` 之外开辟第二个"经验"存储位置
+
+## 13. Self_ Consult API
 
 调用方推荐姿势（[`sovereign/mod.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/sovereign/mod.rs)）：
 
@@ -359,7 +483,7 @@ let gate_meta = advisory.gate_meta("direct"); // 喂进 tool-call telemetry
 
 `Self_::consult_named(store, "discovery", ...)` 是给 stringly-typed 调用方的过渡桥，新代码用强类型 `DecisionLocus`。
 
-## 13. 端到端流程：一次任务的完整生命周期
+## 14. 端到端流程：一次任务的完整生命周期
 
 ```text
 T0  ─ user query "把 src 下所有 ts 文件改成 tsx"
@@ -404,7 +528,7 @@ T2' ─ direct prior 已经更大，更倾向 direct
        会拦下 prior 翻盘
 ```
 
-## 14. 文件地图
+## 15. 文件地图
 
 按"我想改什么"反向定位：
 
@@ -416,16 +540,16 @@ T2' ─ direct prior 已经更大，更倾向 direct
 | 改 PolicyDelta 的算法 | [`evaluator.rs::compute_policy_delta`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/evaluator.rs) |
 | 改"哪个决策点这次承担学习"的归因 | [`evaluator.rs::primary_stage_from_outcome`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/evaluator.rs) |
 | 改后验信号识别 | [`posterior_signal/rules.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/posterior_signal/rules.rs) + [`resolver.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/posterior_signal/resolver.rs) |
-| 加新决策点 | §15.1 |
-| 加新外部信号源（EvoMap / 朋友共享技能 / 合成数据） | §15.2 |
+| 加新决策点 | §16.1 |
+| 加新外部信号源（EvoMap / 朋友共享技能 / 合成数据） | §16.2 |
 | 改 bandit 策略（Thompson / ε-greedy） | [`providers/store/bandit.rs`](../deeting/src-tauri/src/modules/providers/store/bandit.rs) + `arm.strategy` 字段 |
 | 改 safety lock 名单 | [`policy.rs::decision_has_safety_lock`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/policy.rs) |
 | 查看 / 回放历史 run | [`task_learning/revision.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/revision.rs) |
 | 调用入口（推荐用 Self_） | [`sovereign/mod.rs::Self_::consult`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/sovereign/mod.rs) |
 
-## 15. 怎么扩展
+## 16. 怎么扩展
 
-### 15.1 加一个新的决策点（例：`memory_write`）
+### 16.1 加一个新的决策点（例：`memory_write`）
 
 > 场景：你想让 Deeting 学会"这一类任务该不该往长期 memory 里写"。
 
@@ -445,7 +569,7 @@ T2' ─ direct prior 已经更大，更倾向 direct
 
 **最关键的判断题**：这个决策点的 action 是不是 **runtime 自己能选** 的？如果选择权在用户（如"该不该删文件"），那它属于 safety lock 范畴，**不该**做成自进化决策点。
 
-### 15.2 加一个新的外部信号源（例：EvoMap GEP capsule）
+### 16.2 加一个新的外部信号源（例：EvoMap GEP capsule）
 
 1. 新建 `runtime/sovereign/ingress/sources/evomap.rs`（这是 boundary 文件）：
    ```rust
@@ -478,7 +602,7 @@ T2' ─ direct prior 已经更大，更倾向 direct
 3. 写一个 invariant 测试：删除这个 boundary 文件后 `cargo check -p deeting-tauri` 必须仍然绿。
 4. PR 描述里说明"借鉴 EvoMap GDI 方法论"作为出处，但**不要**把这个出处写进核心类型名。
 
-### 15.3 改半衰期 / 翻盘阈值 / bandit 系数
+### 16.3 改半衰期 / 翻盘阈值 / bandit 系数
 
 只改 `policy.rs` 顶部三个常量：
 
@@ -490,7 +614,7 @@ const ROUTE_BANDIT_COEFF: f64 = 0.25;
 
 调高 `ROUTE_BANDIT_COEFF` 之前**必须**回到 §6.5 复读一遍："Bandit 不能独自翻盘"是 charter 的硬性 invariant，由测试 `apply_route_prior_bandit_scores_surface_on_application` 守护。如果改了系数让 bandit 能独自翻盘，这条测试会红——别"修复"它，回去想清楚。
 
-## 16. 反模式（PR review 时拒绝）
+## 17. 反模式（PR review 时拒绝）
 
 - 把 `effective_weight` 重命名为 `fitness`
 - 在 `query_task_policy_hint` 之外的地方做先验衰减（双重衰减）
@@ -503,7 +627,7 @@ const ROUTE_BANDIT_COEFF: f64 = 0.25;
 - 加一个新的 ingress 但不实现 `Ingress` trait 而是直接塞进 `Observation::TaskExecution`
 - 给 canonical 类型加只有外部源用得到的字段（substrate drift）
 
-## 17. 已知决策与权衡
+## 18. 已知决策与权衡
 
 | 决策 | 为什么 |
 |---|---|
@@ -515,7 +639,7 @@ const ROUTE_BANDIT_COEFF: f64 = 0.25;
 | 先验衰减不主动清洗 | 自然遗忘 > 主动 GC；不需要后台任务、不需要存活窗口配置 |
 | 把 charter 写成 AGENTS.md 而不是设计文档 | "已经在做的事"的纪律 > "想要做的事"的设计；先把现状名命好，再讨论改进 |
 
-## 18. 验证清单
+## 19. 验证清单
 
 改动自进化链路的 PR 必须自检以下相关项：
 
@@ -532,7 +656,7 @@ const ROUTE_BANDIT_COEFF: f64 = 0.25;
 
 > Windows 主机已知 caveat：`cargo test` 的二进制偶尔会因 DLL 加载失败启动失败（STATUS_ENTRYPOINT_NOT_FOUND）。区分"编译失败"和"运行失败"——前者必须修，后者通常是宿主环境问题，应在 CI/Linux 复跑。
 
-## 19. FAQ
+## 20. FAQ
 
 **Q：为什么不直接让 LLM 写一段 "self-reflection" 然后照着改自己的 prompt？**
 A：因为：(1) 自由文本反思不可 PR review、不可回滚、不可解释；(2) LLM 反思自己时倾向自我强化，没有外部 ground truth 制衡；(3) Deeting 的目标是"调整自己的行为"，不是"修改自己的 prompt"——后者是 prompt engineering，前者是策略学习。
@@ -555,7 +679,7 @@ A：做得到，但路径已经被 charter 钉死：在 `sovereign/ingress/sourc
 **Q：能不能让 Deeting 把"学到的偏好"export 出来给别人导入？**
 A：技术上能（`task_policy_priors` 表 + fingerprint 是稳定的），但请把它当成新的 ingress 处理：导入方走 `ExternalIngress`，**不要**直接写 `task_policy_priors` 表，否则跨用户的污染没有审计点。
 
-## 20. 参考
+## 21. 参考
 
 - Sovereign Charter（架构纪律）：[`deeting/src-tauri/src/modules/desktop_runtime/runtime/AGENTS.md`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/AGENTS.md)
 - 决策融合实现：[`task_learning/policy.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/policy.rs)
