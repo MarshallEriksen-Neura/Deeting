@@ -3,6 +3,7 @@ use tauri::AppHandle;
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
+use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::modules::conversations::summary_generation::generate_local_conversation_title_with_secretary_model;
 #[cfg(test)]
 use crate::modules::custom_task_agents::types::{
@@ -314,6 +315,7 @@ pub async fn execute_local_orchestrated_chat(
             reusable_pinned_provider_model_id(conversation_model_binding.as_ref(), &input.model)
         })
         .flatten();
+    let mut reused_existing_pool_binding = false;
     let model_connection = match selection_mode {
         LocalModelSelectionMode::ExactProvider => {
             resolve_provider_model_connection(
@@ -332,12 +334,34 @@ pub async fn execute_local_orchestrated_chat(
                 if pool_request_matches_model_connection(&input.model, &explicit_connection) {
                     explicit_connection
                 } else if let Some(pinned_provider_model_id) = reused_pinned_provider_model_id {
-                    resolve_provider_model_connection(app_state, pinned_provider_model_id).await?
+                    if let Some(connection) = resolve_reusable_pinned_pool_connection(
+                        app_state,
+                        &input.model,
+                        pinned_provider_model_id,
+                    )
+                    .await
+                    {
+                        reused_existing_pool_binding = true;
+                        connection
+                    } else {
+                        resolve_local_model_pool_connection(app_state, &input.model).await?
+                    }
                 } else {
                     resolve_local_model_pool_connection(app_state, &input.model).await?
                 }
             } else if let Some(pinned_provider_model_id) = reused_pinned_provider_model_id {
-                resolve_provider_model_connection(app_state, pinned_provider_model_id).await?
+                if let Some(connection) = resolve_reusable_pinned_pool_connection(
+                    app_state,
+                    &input.model,
+                    pinned_provider_model_id,
+                )
+                .await
+                {
+                    reused_existing_pool_binding = true;
+                    connection
+                } else {
+                    resolve_local_model_pool_connection(app_state, &input.model).await?
+                }
             } else {
                 resolve_local_model_pool_connection(app_state, &input.model).await?
             }
@@ -361,8 +385,7 @@ pub async fn execute_local_orchestrated_chat(
             );
         }
         if matches!(selection_mode, LocalModelSelectionMode::Pool)
-            && (explicit_pool_provider_model_id.is_some()
-                || reused_pinned_provider_model_id.is_none())
+            && (explicit_pool_provider_model_id.is_some() || !reused_existing_pool_binding)
         {
             let pinned_model_key = model_connection
                 .logical_model_key
@@ -981,6 +1004,75 @@ pub async fn execute_local_orchestrated_chat(
         }
     }
     Ok(response)
+}
+
+async fn resolve_reusable_pinned_pool_connection(
+    app_state: &AppState,
+    requested_model: &str,
+    pinned_provider_model_id: &str,
+) -> Option<LocalModelConnection> {
+    let connection =
+        match resolve_provider_model_connection(app_state, pinned_provider_model_id).await {
+            Ok(connection) => connection,
+            Err(err) => {
+                log::warn!(
+                    "pinned pool provider is no longer reusable provider_model_id={} err={}",
+                    pinned_provider_model_id,
+                    err
+                );
+                return None;
+            }
+        };
+    if !pool_request_matches_model_connection(requested_model, &connection) {
+        return None;
+    }
+    if pinned_pool_arm_is_reusable(app_state, pinned_provider_model_id).await {
+        Some(connection)
+    } else {
+        None
+    }
+}
+
+async fn pinned_pool_arm_is_reusable(app_state: &AppState, provider_model_id: &str) -> bool {
+    use crate::modules::providers::store::BANDIT_DEFAULT_SCENE;
+
+    let now = time::OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_default();
+    match app_state
+        .providers
+        .store
+        .get_bandit_arm_state(BANDIT_DEFAULT_SCENE, provider_model_id)
+        .await
+    {
+        Ok(state) => bandit_arm_allows_pinned_reuse(state.as_ref(), now.as_str()),
+        Err(err) => {
+            log::warn!(
+                "failed to inspect pinned pool bandit state provider_model_id={} err={}",
+                provider_model_id,
+                err
+            );
+            true
+        }
+    }
+}
+
+fn bandit_arm_allows_pinned_reuse(
+    arm: Option<&crate::modules::providers::types::BanditArmState>,
+    now_rfc3339: &str,
+) -> bool {
+    let Some(arm) = arm else {
+        return true;
+    };
+    if arm
+        .cooldown_until
+        .as_deref()
+        .map(|until| until > now_rfc3339)
+        .unwrap_or(false)
+    {
+        return false;
+    }
+    !(arm.total_trials > 0 && arm.last_reward <= 0.0)
 }
 
 async fn record_task_learning_bandit_feedback(

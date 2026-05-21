@@ -795,6 +795,59 @@ async fn quick_add_models_is_idempotent_for_same_model_and_instance() {
 }
 
 #[tokio::test]
+async fn list_active_models_excludes_disabled_instances() {
+    let store = init_store().await;
+    let disabled_instance_id = insert_instance_with_preset(
+        &store,
+        "custom",
+        "Disabled Provider",
+        "https://disabled.example.com",
+    )
+    .await;
+    let enabled_instance_id = insert_instance_with_preset(
+        &store,
+        "custom",
+        "Enabled Provider",
+        "https://enabled.example.com",
+    )
+    .await;
+
+    store
+        .quick_add_models(
+            &disabled_instance_id,
+            vec!["mimo-v2.5-pro".to_string()],
+            None,
+        )
+        .await
+        .expect("quick add disabled provider model");
+    store
+        .quick_add_models(
+            &enabled_instance_id,
+            vec!["mimo-v2.5-pro".to_string()],
+            None,
+        )
+        .await
+        .expect("quick add enabled provider model");
+
+    sqlx::query("UPDATE provider_instances SET is_enabled = 0 WHERE id = ?")
+        .bind(&disabled_instance_id)
+        .execute(&store.pool)
+        .await
+        .expect("disable provider instance");
+
+    let active_models = store
+        .list_active_models()
+        .await
+        .expect("list active models");
+
+    assert_eq!(active_models.len(), 1);
+    assert_eq!(
+        active_models[0].instance_id.to_string(),
+        enabled_instance_id
+    );
+}
+
+#[tokio::test]
 async fn quick_add_models_respects_forced_capability_alias() {
     let store = init_store().await;
     let instance_id = insert_instance(&store).await;

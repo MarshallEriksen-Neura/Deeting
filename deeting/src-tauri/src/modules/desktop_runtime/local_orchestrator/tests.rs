@@ -667,6 +667,51 @@ fn reusable_pinned_provider_model_id_requires_requested_pool_match() {
     );
 }
 
+fn test_bandit_arm(
+    last_reward: f64,
+    cooldown_until: Option<&str>,
+) -> crate::modules::providers::types::BanditArmState {
+    crate::modules::providers::types::BanditArmState {
+        id: "bandit-arm-state".to_string(),
+        provider_model_id: None,
+        scene: "router:llm".to_string(),
+        arm_id: Some("provider-model-a".to_string()),
+        reward_metric_type: None,
+        strategy: "epsilon_greedy".to_string(),
+        epsilon: 0.1,
+        alpha: 1.0,
+        beta: 1.0,
+        total_trials: 1,
+        successes: if last_reward > 0.0 { 1 } else { 0 },
+        failures: if last_reward > 0.0 { 0 } else { 1 },
+        total_latency_ms: 1000,
+        latency_p95_ms: None,
+        total_cost: 0.0,
+        last_reward,
+        cooldown_until: cooldown_until.map(str::to_string),
+        version: 1,
+        created_at: "2026-05-21T00:00:00Z".to_string(),
+        updated_at: "2026-05-21T00:00:00Z".to_string(),
+    }
+}
+
+#[test]
+fn bandit_arm_allows_pinned_reuse_rejects_recent_failure_or_cooldown() {
+    assert!(bandit_arm_allows_pinned_reuse(None, "2026-05-21T10:00:00Z"));
+    assert!(bandit_arm_allows_pinned_reuse(
+        Some(&test_bandit_arm(1.0, None)),
+        "2026-05-21T10:00:00Z"
+    ));
+    assert!(!bandit_arm_allows_pinned_reuse(
+        Some(&test_bandit_arm(0.0, None)),
+        "2026-05-21T10:00:00Z"
+    ));
+    assert!(!bandit_arm_allows_pinned_reuse(
+        Some(&test_bandit_arm(1.0, Some("2026-05-21T11:00:00Z"))),
+        "2026-05-21T10:00:00Z"
+    ));
+}
+
 #[test]
 fn pool_request_matches_model_connection_checks_pool_key_model_id_and_provider_member() {
     let connection = crate::modules::ai_upstream::types::LocalModelConnection {

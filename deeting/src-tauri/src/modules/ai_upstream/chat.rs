@@ -121,21 +121,32 @@ pub(crate) async fn resolve_provider_model_connection(
         .await
         .map_err(to_string)?
         .ok_or_else(|| "provider model not found".to_string())?;
+    if !model.is_active {
+        return Err("provider model is inactive".to_string());
+    }
+    let instance = app_state
+        .providers
+        .store
+        .get_instance(&model.instance_id.to_string())
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| "provider instance not found".to_string())?;
+    if !instance.is_enabled {
+        return Err(format!("provider instance is disabled: {}", instance.name));
+    }
+    let connection = app_state
+        .providers
+        .store
+        .get_instance_connection(&model.instance_id.to_string())
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| "provider instance connection not found".to_string())?;
     Ok(LocalModelConnection {
         provider_model_id: model.id.to_string(),
         model_id: model.model_id.clone(),
         logical_model_key: normalize_model_pool_key(&model),
         protocol_family: infer_protocol_family(
-            app_state
-                .providers
-                .store
-                .get_instance_connection(&model.instance_id.to_string())
-                .await
-                .map_err(to_string)?
-                .ok_or_else(|| "provider instance connection not found".to_string())?
-                .protocol
-                .as_deref()
-                .unwrap_or("openai"),
+            connection.protocol.as_deref().unwrap_or("openai"),
             model.upstream_path.as_str(),
         )
         .to_string(),
@@ -217,26 +228,33 @@ pub(crate) async fn resolve_local_model_connection(
         return Err("no active provider model configured".to_string());
     }
     let requested = requested_model.trim().to_lowercase();
-    let exact_match = models
+    let candidate_models: Vec<_> = models
         .iter()
-        .find(|model| model_matches_requested(model, &requested));
-    if let Some(matched) = exact_match {
+        .filter(|model| model_matches_requested(model, &requested))
+        .cloned()
+        .collect();
+    if !candidate_models.is_empty() {
+        let selected = if candidate_models.len() == 1 {
+            candidate_models[0].clone()
+        } else {
+            select_model_by_bandit(app_state, &candidate_models).await
+        };
         return Ok(LocalModelConnection {
-            provider_model_id: matched.id.to_string(),
-            model_id: matched.model_id.clone(),
-            logical_model_key: normalize_model_pool_key(matched),
+            provider_model_id: selected.id.to_string(),
+            model_id: selected.model_id.clone(),
+            logical_model_key: normalize_model_pool_key(&selected),
             protocol_family: infer_protocol_family(
                 app_state
                     .providers
                     .store
-                    .get_instance_connection(&matched.instance_id.to_string())
+                    .get_instance_connection(&selected.instance_id.to_string())
                     .await
                     .map_err(to_string)?
                     .ok_or_else(|| "provider instance connection not found".to_string())?
                     .protocol
                     .as_deref()
                     .unwrap_or("openai"),
-                matched.upstream_path.as_str(),
+                selected.upstream_path.as_str(),
             )
             .to_string(),
         });
@@ -326,6 +344,9 @@ pub(crate) async fn request_provider_chat_completion(
         .await
         .map_err(to_string)?
         .ok_or_else(|| "provider model not found".to_string())?;
+    if !model.is_active {
+        return Err("provider model is inactive".to_string());
+    }
     let instance = app_state
         .providers
         .store
@@ -333,6 +354,9 @@ pub(crate) async fn request_provider_chat_completion(
         .await
         .map_err(to_string)?
         .ok_or_else(|| "provider instance not found".to_string())?;
+    if !instance.is_enabled {
+        return Err(format!("provider instance is disabled: {}", instance.name));
+    }
     let connection = app_state
         .providers
         .store

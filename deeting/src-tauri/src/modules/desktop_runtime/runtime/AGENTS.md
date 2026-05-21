@@ -134,6 +134,10 @@ matches any of these, push back.
 - Removing `decision_has_safety_lock` checks "to simplify".
 - Bypassing decision-point routing to call a specific scorer directly from
   `chat_tool_runtime`.
+- Calling a model during task evaluation to grade the runtime's own output.
+  Evaluation in [task_learning/evaluator.rs](task_learning/evaluator.rs) must
+  remain a pure heuristic function; the only authoritative posterior channel
+  is explicit user feedback (`PosteriorSignalKind` resolved from user actions).
 
 ### Boundary leak
 - Importing foreign types (`GepCapsule`, etc.) anywhere outside
@@ -162,6 +166,12 @@ The following must hold at every commit. Add CI checks if practical:
    ≥3 distinct non-`Unknown` kinds.
 5. **Tie-breaker test:** Bandit coefficient must remain low enough that bandit
    alone cannot flip a decision against the prior + base layer.
+6. **Heuristic-only evaluation:** `evaluate_task_learning_with_runtime` in
+   [task_learning/evaluator.rs](task_learning/evaluator.rs) must remain a
+   synchronous pure function over `TaskLearningSignals` + resolved posterior
+   signal. It must not depend on `AppState`, `LocalModelConnection`, or any
+   model-runtime handle. Adding a second model call there reintroduces the
+   "model judges model" hidden loop this charter forbids.
 
 ## WHERE TO LOOK
 

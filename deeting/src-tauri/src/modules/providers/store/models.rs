@@ -47,7 +47,11 @@ impl ProviderStore {
 
     pub async fn list_active_models(&self) -> Result<Vec<ProviderModel>, ProviderError> {
         let rows = sqlx::query(
-            "SELECT * FROM provider_models WHERE is_active = 1 ORDER BY priority DESC, weight DESC",
+            "SELECT pm.*
+             FROM provider_models pm
+             JOIN provider_instances pi ON pi.id = pm.instance_id
+             WHERE pm.is_active = 1 AND pi.is_enabled = 1
+             ORDER BY pm.priority DESC, pm.weight DESC",
         )
         .fetch_all(&self.pool)
         .await?;
