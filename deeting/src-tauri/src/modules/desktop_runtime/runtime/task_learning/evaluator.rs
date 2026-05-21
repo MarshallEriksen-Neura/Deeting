@@ -6,27 +6,11 @@ use super::types::{
     DECISION_POINT_CAPABILITY_ATTACH, DECISION_POINT_DISCOVERY, DECISION_POINT_EXECUTION,
     DECISION_POINT_ROUTE, DECISION_POINT_VERIFICATION, DECISION_POINT_WORKER_SELECTION,
 };
-use crate::modules::ai_upstream::types::LocalModelConnection;
-use crate::modules::desktop_runtime::runtime::request_provider_chat_completion;
 use crate::modules::desktop_runtime::runtime::sovereign::TaskExecutionIngress;
 use crate::modules::desktop_runtime::runtime::{LocalExecutionPolicy, LocalRouteDecision};
-use crate::state::AppState;
-use mcp_core::types::LocalChatInputMessage;
-use serde::Deserialize;
 use serde_json::Value;
 
-const ROUTE_JUDGMENTS: &[&str] = &["good", "acceptable", "wasteful", "wrong"];
-const DISCOVERY_JUDGMENTS: &[&str] = &["sufficient", "shallow", "excessive", "skipped_when_needed"];
-const EXECUTION_JUDGMENTS: &[&str] = &["justified", "unnecessary", "fragile", "failed"];
 const USER_RESPONSE_SIGNALS: &[&str] = &["accepted", "silent", "corrected", "rejected", "unknown"];
-
-#[derive(Debug, Deserialize)]
-struct ConstrainedJudgmentOutput {
-    route_judgment: String,
-    discovery_judgment: String,
-    execution_judgment: String,
-    confidence: f64,
-}
 
 fn tool_trace_result_blocks(tool_trace_blocks: &[Value]) -> impl Iterator<Item = &Value> {
     tool_trace_blocks
@@ -660,180 +644,7 @@ pub(crate) fn normalize_task_learning_user_response_signal(value: Option<&str>) 
     }
 }
 
-fn extract_text_content(value: &Value) -> String {
-    match value {
-        Value::String(text) => text.trim().to_string(),
-        Value::Array(items) => items
-            .iter()
-            .filter_map(|item| {
-                item.get("text")
-                    .and_then(Value::as_str)
-                    .or_else(|| item.get("content").and_then(Value::as_str))
-                    .map(str::trim)
-                    .filter(|text| !text.is_empty())
-                    .map(str::to_string)
-            })
-            .collect::<Vec<_>>()
-            .join("\n"),
-        Value::Object(object) => object
-            .get("text")
-            .and_then(Value::as_str)
-            .or_else(|| object.get("content").and_then(Value::as_str))
-            .map(str::trim)
-            .unwrap_or_default()
-            .to_string(),
-        _ => String::new(),
-    }
-}
-
-fn parse_jsonish<T>(raw: &str) -> Option<T>
-where
-    T: serde::de::DeserializeOwned,
-{
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    if let Ok(parsed) = serde_json::from_str::<T>(trimmed) {
-        return Some(parsed);
-    }
-    let fence_trimmed = trimmed
-        .strip_prefix("```json")
-        .or_else(|| trimmed.strip_prefix("```"))
-        .map(str::trim_start)
-        .and_then(|value| value.strip_suffix("```"))
-        .map(str::trim);
-    if let Some(candidate) = fence_trimmed {
-        if let Ok(parsed) = serde_json::from_str::<T>(candidate) {
-            return Some(parsed);
-        }
-    }
-    let start = trimmed.find('{')?;
-    let end = trimmed.rfind('}')?;
-    serde_json::from_str::<T>(&trimmed[start..=end]).ok()
-}
-
-fn valid_enum(value: &str, allowed: &[&str]) -> bool {
-    allowed.iter().any(|candidate| candidate == &value)
-}
-
-fn build_constrained_trace_summary(tool_trace_blocks: &[Value]) -> Vec<Value> {
-    tool_trace_result_blocks(tool_trace_blocks)
-        .take(8)
-        .map(|block| {
-            serde_json::json!({
-                "tool_name": block.get("toolName").and_then(Value::as_str).unwrap_or_default(),
-                "status": block.get("status").and_then(Value::as_str).unwrap_or_default(),
-                "error_code": block.pointer("/result/error_code").and_then(Value::as_str),
-            })
-        })
-        .collect()
-}
-
-async fn run_constrained_judgment_pass(
-    app_state: &AppState,
-    model_connection: &LocalModelConnection,
-    query: Option<&str>,
-    fingerprint: &TaskFingerprint,
-    route_decision: Option<&LocalRouteDecision>,
-    execution_policy: &LocalExecutionPolicy,
-    response_text: &str,
-    finish_reason: &str,
-    tool_trace_blocks: &[Value],
-    signals: &TaskLearningSignals,
-    user_response_signal: &str,
-) -> Option<ConstrainedJudgmentOutput> {
-    let query = query.map(str::trim).filter(|value| !value.is_empty())?;
-    let evidence = serde_json::json!({
-        "task_query": query,
-        "task_fingerprint": fingerprint,
-        "route_decision": route_decision,
-        "execution_policy": {
-            "route": execution_policy.route.as_str(),
-            "plane": execution_policy.plane.as_str(),
-        },
-        "response_summary": {
-            "finish_reason": finish_reason,
-            "response_empty": response_text.trim().is_empty(),
-            "response_length": response_text.trim().chars().count(),
-        },
-        "signals": {
-            "tool_call_count": signals.tool_call_count,
-            "tool_error_count": signals.tool_error_count,
-            "requires_approval_count": signals.requires_approval_count,
-            "search_sdk_calls": signals.search_sdk_calls,
-            "used_attach_capability": signals.used_attach_capability,
-            "attach_capability_errors": signals.attach_capability_errors,
-            "used_execute_code_plan": signals.used_execute_code_plan,
-            "successful_execute_code_plan": signals.successful_execute_code_plan,
-            "delegated_execution": signals.delegated_execution,
-            "observed_error_codes": signals.observed_error_codes,
-        },
-        "trace_summary": build_constrained_trace_summary(tool_trace_blocks),
-        "user_response_signal": user_response_signal,
-    });
-    let messages = vec![
-        LocalChatInputMessage {
-            role: "system".to_string(),
-            content: concat!(
-                "You are a constrained evaluator for Deeting desktop task learning.\n",
-                "Classify only the observed path. Do not give advice. Do not speculate about unobserved counterfactuals.\n",
-                "Return one JSON object with exactly these fields:\n",
-                "- route_judgment: one of good|acceptable|wasteful|wrong\n",
-                "- discovery_judgment: one of sufficient|shallow|excessive|skipped_when_needed\n",
-                "- execution_judgment: one of justified|unnecessary|fragile|failed\n",
-                "- confidence: float between 0 and 1\n",
-                "Output JSON only."
-            )
-            .to_string(),
-            reasoning_content: None,
-            tool_calls: vec![],
-            tool_call_id: None,
-            name: None,
-        },
-        LocalChatInputMessage {
-            role: "user".to_string(),
-            content: serde_json::to_string_pretty(&evidence).ok()?,
-            reasoning_content: None,
-            tool_calls: vec![],
-            tool_call_id: None,
-            name: None,
-        },
-    ];
-    let response = request_provider_chat_completion(
-        app_state,
-        &model_connection.provider_model_id,
-        &model_connection.model_id,
-        messages,
-        None,
-        Some(0.0),
-        Some(220),
-        crate::modules::ai_upstream::ReasoningRequestConfig::default(),
-        None,
-        None,
-    )
-    .await
-    .ok()?;
-    let content = extract_text_content(response.get("content").unwrap_or(&Value::Null));
-    let parsed = parse_jsonish::<ConstrainedJudgmentOutput>(&content)?;
-    if !valid_enum(parsed.route_judgment.as_str(), ROUTE_JUDGMENTS)
-        || !valid_enum(parsed.discovery_judgment.as_str(), DISCOVERY_JUDGMENTS)
-        || !valid_enum(parsed.execution_judgment.as_str(), EXECUTION_JUDGMENTS)
-    {
-        return None;
-    }
-    Some(ConstrainedJudgmentOutput {
-        route_judgment: parsed.route_judgment,
-        discovery_judgment: parsed.discovery_judgment,
-        execution_judgment: parsed.execution_judgment,
-        confidence: parsed.confidence.clamp(0.0, 1.0),
-    })
-}
-
-pub(crate) async fn evaluate_task_learning_with_runtime(
-    app_state: &AppState,
-    model_connection: &LocalModelConnection,
-    query: Option<&str>,
+pub(crate) fn evaluate_task_learning_with_runtime(
     fingerprint: &TaskFingerprint,
     route_decision: Option<&LocalRouteDecision>,
     execution_policy: &LocalExecutionPolicy,
@@ -861,28 +672,6 @@ pub(crate) async fn evaluate_task_learning_with_runtime(
     .outcome;
     outcome.user_response_signal =
         normalize_task_learning_user_response_signal(user_response_signal);
-
-    if let Some(judgment) = run_constrained_judgment_pass(
-        app_state,
-        model_connection,
-        query,
-        fingerprint,
-        route_decision,
-        execution_policy,
-        response_text,
-        finish_reason,
-        tool_trace_blocks,
-        &signals,
-        outcome.user_response_signal.as_str(),
-    )
-    .await
-    {
-        outcome.route_judgment = judgment.route_judgment;
-        outcome.discovery_judgment = judgment.discovery_judgment;
-        outcome.execution_judgment = judgment.execution_judgment;
-        outcome.confidence = ((outcome.confidence + judgment.confidence) / 2.0).clamp(0.0, 1.0);
-        outcome.judgment_mode = "constrained_llm".to_string();
-    }
 
     let task_execution_ingress = TaskExecutionIngress::new(fingerprint.clone(), outcome);
 

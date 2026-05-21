@@ -1272,6 +1272,47 @@ async fn process_chat_tool_calls(
             results.push(
                 "Deep reasoning acknowledged. Continue with your planned execution.".to_string(),
             );
+            // Slice 2: emit deeting_think preflight signal. classification is
+            // Unknown because deeting_think is a pre-flight hypothesis; it
+            // becomes accepted/rejected only after comparison against the
+            // observed execution outcome in a later slice.
+            {
+                use crate::modules::desktop_runtime::runtime::evolution::{
+                    submit_evolution_signal, EvolutionSignalClassification, EvolutionSignalDraft,
+                    EvolutionSignalSource,
+                };
+                let payload = serde_json::json!({
+                    "intent": call.arguments.get("intent").cloned().unwrap_or(serde_json::Value::Null),
+                    "context_assessment": call.arguments.get("context_assessment").cloned().unwrap_or(serde_json::Value::Null),
+                    "tool_plan": call.arguments.get("tool_plan").cloned().unwrap_or(serde_json::Value::Null),
+                    "constraints": call.arguments.get("constraints").cloned().unwrap_or(serde_json::Value::Null),
+                    "task_query": state.task_query.clone(),
+                    "trace_id": state.trace_id.clone(),
+                    "session_id": state.session_id.clone(),
+                    "request_id": state.request_id.clone(),
+                });
+                let draft = EvolutionSignalDraft {
+                    source: EvolutionSignalSource::DeetingThink,
+                    classification: EvolutionSignalClassification::Unknown,
+                    session_id: Some(state.session_id.clone()),
+                    trace_id: Some(state.trace_id.clone()),
+                    run_id: None,
+                    monitor_task_id: None,
+                    monitor_log_id: None,
+                    fingerprint_key: None,
+                    confidence: 0.0,
+                    payload_json: payload,
+                    note: None,
+                };
+                if let Err(err) = submit_evolution_signal(app_state.mcp.store.as_ref(), draft).await
+                {
+                    log::warn!(
+                        "deeting_think evolution signal submission failed trace_id={} err={}",
+                        state.trace_id,
+                        err
+                    );
+                }
+            }
             continue;
         }
 

@@ -204,8 +204,56 @@
       "confirmed": "Confirmed"
     }
   },
+  "evolution": {
+    "title": "Evolution Signal Audit",
+    "description": "Inspect persisted evolution signals without promoting implicit feedback into cases or priors.",
+    "summary": "{count} matching signals",
+    "emptyTitle": "No matching evolution signals",
+    "empty": "No evolution signals match the current audit filters.",
+    "sourceLabel": "Source: {source}",
+    "confidence": "{value}% confidence",
+    "method": "Method",
+    "matchedRules": "Matched rules",
+    "filters": {
+      "source": {
+        "all": "All sources"
+      },
+      "classification": {
+        "all": "All classes"
+      },
+      "status": {
+        "all": "All statuses"
+      },
+      "link": {
+        "session": "Session",
+        "trace": "Trace",
+        "run": "Run",
+        "fingerprint": "Fingerprint"
+      },
+      "linkPlaceholder": "Exact linked id"
+    },
+    "sources": {
+      "next_user_message": "Next user message",
+      "explicit_trace_feedback": "Trace feedback",
+      "deeting_think": "Deeting Think",
+      "manual_task_learning_revision": "Manual revision",
+      "monitor_observation": "Monitor observation",
+      "monitor_feedback": "Monitor feedback"
+    },
+    "classifications": {
+      "neutral": "Neutral"
+    },
+    "statuses": {
+      "observed": "Observed",
+      "classified": "Classified",
+      "correlated": "Correlated",
+      "applied": "Applied",
+      "ignored": "Ignored"
+    }
+  },
   "feedback": {
     "loadFailed": "Failed to load task learning data.",
+    "evolutionLoadFailed": "Failed to load evolution signal audit data.",
     "actionFailed": "Action failed. Please try again.",
     "replayed": "Re-evaluated the current task record.",
     "revised": "Recorded your {signal} feedback — AI will adjust accordingly."

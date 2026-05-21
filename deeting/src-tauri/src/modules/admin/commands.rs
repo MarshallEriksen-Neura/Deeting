@@ -15,7 +15,8 @@ use mcp_session::admin::{
     LocalConversationSummaryBatchRetryRequest, LocalConversationSummaryBatchRetryResponse,
     LocalConversationSummaryEnqueueResponse, LocalConversationSummaryIdleTaskListResponse,
     LocalConversationSummaryIdleTaskQuery, LocalConversationSummaryJobListResponse,
-    LocalConversationSummaryJobQuery, LocalConversationSummaryQueueStats, LocalGatewayLogItem,
+    LocalConversationSummaryJobQuery, LocalConversationSummaryQueueStats,
+    LocalEvolutionSignalListResponse, LocalEvolutionSignalQuery, LocalGatewayLogItem,
     LocalGatewayLogListResponse, LocalGatewayLogQuery, LocalGatewayLogStatsResponse,
     LocalMaintenanceActionRequest, LocalMaintenanceLogItem, LocalMaintenanceLogListResponse,
     LocalMaintenanceLogQuery, LocalTaskLearningManualRevisionRequest,
@@ -130,39 +131,78 @@ pub async fn create_local_trace_feedback(
             err
         );
     }
+    // Look up the latest task-learning run once and reuse for both the
+    // legacy revision path and the evolution-signal emission below.
+    let latest_run = match state
+        .mcp
+        .store
+        .get_latest_task_learning_run_by_trace_id(feedback.trace_id.as_str())
+        .await
+    {
+        Ok(value) => value,
+        Err(err) => {
+            log::warn!(
+                "trace feedback run lookup failed trace_id={} err={}",
+                feedback.trace_id,
+                err
+            );
+            None
+        }
+    };
     if crate::modules::desktop_runtime::runtime::should_apply_posterior_signal(&posterior_signal) {
-        match state
-            .mcp
-            .store
-            .get_latest_task_learning_run_by_trace_id(feedback.trace_id.as_str())
-            .await
-        {
-            Ok(Some(run)) => {
-                if let Err(err) =
-                    crate::modules::desktop_runtime::runtime::apply_task_learning_revision(
-                        state.mcp.store.as_ref(),
-                        run.run_id.as_str(),
-                        posterior_signal.signal.as_str(),
-                        "trace_feedback",
-                        feedback.comment.as_deref(),
-                    )
-                    .await
-                {
-                    log::warn!(
-                        "trace feedback task learning revision failed trace_id={} err={}",
-                        feedback.trace_id,
-                        err
-                    );
-                }
-            }
-            Ok(None) => {}
-            Err(err) => {
+        if let Some(run) = latest_run.as_ref() {
+            if let Err(err) =
+                crate::modules::desktop_runtime::runtime::apply_task_learning_revision(
+                    state.mcp.store.as_ref(),
+                    run.run_id.as_str(),
+                    posterior_signal.signal.as_str(),
+                    "trace_feedback",
+                    feedback.comment.as_deref(),
+                )
+                .await
+            {
                 log::warn!(
-                    "trace feedback run lookup failed trace_id={} err={}",
+                    "trace feedback task learning revision failed trace_id={} err={}",
                     feedback.trace_id,
                     err
                 );
             }
+        }
+    }
+    // Slice 1 evolution-signal emission. Additive — failures here never
+    // affect the legacy posterior/revision flow above.
+    {
+        use crate::modules::desktop_runtime::runtime::evolution::{
+            submit_evolution_signal, EvolutionSignalClassification, EvolutionSignalDraft,
+            EvolutionSignalSource,
+        };
+        let classification =
+            EvolutionSignalClassification::from_canonical_str(posterior_signal.signal.as_str())
+                .unwrap_or(EvolutionSignalClassification::Unknown);
+        let draft = EvolutionSignalDraft {
+            source: EvolutionSignalSource::ExplicitTraceFeedback,
+            classification,
+            session_id: None,
+            trace_id: Some(feedback.trace_id.clone()),
+            run_id: latest_run.as_ref().map(|run| run.run_id.clone()),
+            monitor_task_id: None,
+            monitor_log_id: None,
+            fingerprint_key: latest_run.as_ref().map(|run| run.fingerprint_key.clone()),
+            confidence: posterior_signal.confidence,
+            payload_json: serde_json::json!({
+                "feedback_score": feedback.score,
+                "trace_id": feedback.trace_id.clone(),
+                "posterior_source": posterior_signal.source.as_str(),
+                "posterior_signal": posterior_signal.signal.as_str(),
+            }),
+            note: feedback.comment.clone(),
+        };
+        if let Err(err) = submit_evolution_signal(state.mcp.store.as_ref(), draft).await {
+            log::warn!(
+                "evolution signal submission failed trace_id={} err={}",
+                feedback.trace_id,
+                err
+            );
         }
     }
     Ok(feedback)
@@ -209,11 +249,24 @@ pub async fn list_local_task_policy_priors(
 }
 
 #[tauri::command]
+pub async fn list_local_evolution_signals(
+    state: State<'_, AppState>,
+    query: LocalEvolutionSignalQuery,
+) -> Result<LocalEvolutionSignalListResponse, String> {
+    crate::modules::desktop_runtime::runtime::evolution::list_evolution_signals_for_query(
+        state.mcp.store.as_ref(),
+        &query,
+    )
+    .await
+    .map_err(to_string)
+}
+
+#[tauri::command]
 pub async fn revise_local_task_learning_run(
     state: State<'_, AppState>,
     payload: LocalTaskLearningManualRevisionRequest,
 ) -> Result<LocalTaskLearningRunDetail, String> {
-    crate::modules::desktop_runtime::runtime::apply_task_learning_revision(
+    let detail = crate::modules::desktop_runtime::runtime::apply_task_learning_revision(
         state.mcp.store.as_ref(),
         payload.run_id.as_str(),
         payload.user_response_signal.as_str(),
@@ -225,7 +278,47 @@ pub async fn revise_local_task_learning_run(
     )
     .await
     .map_err(to_string)?
-    .ok_or_else(|| format!("task learning run not found: {}", payload.run_id))
+    .ok_or_else(|| format!("task learning run not found: {}", payload.run_id))?;
+    // Slice 2 evolution-signal emission. Additive — failures here never
+    // affect the revision behavior above. classification mirrors the
+    // canonical user_response_signal; an unrecognized value collapses to
+    // Unknown so the signal still lands as audit evidence.
+    {
+        use crate::modules::desktop_runtime::runtime::evolution::{
+            submit_evolution_signal, EvolutionSignalClassification, EvolutionSignalDraft,
+            EvolutionSignalSource,
+        };
+        let classification = EvolutionSignalClassification::from_canonical_str(
+            payload.user_response_signal.as_str(),
+        )
+        .unwrap_or(EvolutionSignalClassification::Unknown);
+        let draft = EvolutionSignalDraft {
+            source: EvolutionSignalSource::ManualTaskLearningRevision,
+            classification,
+            session_id: Some(detail.session_id.clone()),
+            trace_id: detail.trace_id.clone(),
+            run_id: Some(detail.run_id.clone()),
+            monitor_task_id: None,
+            monitor_log_id: None,
+            fingerprint_key: Some(detail.fingerprint_key.clone()),
+            confidence: 0.95,
+            payload_json: serde_json::json!({
+                "user_response_signal": payload.user_response_signal,
+                "trigger_source": payload.trigger_source,
+                "run_id": detail.run_id,
+                "fingerprint_key": detail.fingerprint_key,
+            }),
+            note: payload.note.clone(),
+        };
+        if let Err(err) = submit_evolution_signal(state.mcp.store.as_ref(), draft).await {
+            log::warn!(
+                "manual revision evolution signal submission failed run_id={} err={}",
+                payload.run_id,
+                err
+            );
+        }
+    }
+    Ok(detail)
 }
 
 #[tauri::command]

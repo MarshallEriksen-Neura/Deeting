@@ -472,6 +472,12 @@ Workflow 引擎是**独立**的：
 - worker 适配：[`workflow/worker_adapter.rs::execute_via_worker_profile`](../deeting/src-tauri/src/modules/workflow/worker_adapter.rs) — 把 step 落到对应 custom task agent，消费 `context_packet.worker_task_packet`
 - 持久化：[`workflow/store/`](../deeting/src-tauri/src/modules/workflow/store/) — run / step / event / artifact / checkpoint 四张表
 
+**自适应计划审计**：Workflow 不是把初始 proposal 静态跑到底。每个普通 worker phase 成功后，scheduler 会调用 [`workflow/plan_audit.rs`](../deeting/src-tauri/src/modules/workflow/plan_audit.rs) 生成 `PlanAuditDecision`，并写入 `run.plan_audit.completed` 事件。默认 deterministic 层兼容 worker 输出的 `followup_hints`：空 hints 继续原计划；`pause_for_edit` 或 `invalidates_future_phases` 会让 run 进入 `AwaitingPlanEdit`，等待用户处理。
+
+Plan 修订走结构化 `PlanDelta`，不直接覆盖原始 proposal。用户审批的 delta 通过 `apply_plan_delta` / [`workflow/service.rs::apply_plan_delta_to_running_snapshot`](../deeting/src-tauri/src/modules/workflow/service.rs) 应用，只能修改 pending phases，并且必须通过 snapshot version、completed phase、worker ref、phase id、DAG forward dependency 等校验。自动应用更窄：只有低风险、pending-only、无 worker/dependency 变更的 `update_phase` 可以 `auto_apply_delta`；`add_phase` / remove / reorder / worker 变化都会降级到用户审批，避免模型静默重写执行图。
+
+模型审计是可选增强，由桌面 config `workflow.plan_audit.model.enabled` 控制，默认关闭。打开后模型只能产出结构化 JSON decision / delta；任何无效 JSON、缺失 delta、风险不匹配或 validator 失败都会转为 `AwaitingPlanEdit`，不会静默继续。
+
 走 Workflow 路径时，父 handler 持久化一行 `InFlightExecutionStage::DelegatedWorkflowRunning`，把 chat runtime context 一并打包进去。父 loop 暂停。子 workflow 跑完后由 `recovery.rs::wake_delegated_runtime_for_workflow_run` 唤醒父。
 
 ### 7.5 `delegated_result` 回流
@@ -577,7 +583,7 @@ Worker handler **绝不**绕过 8 步流水线直接跑 agentic loop。即使是
 | `discovery_judgment` | `sufficient` / `shallow` / `excessive` / `skipped_when_needed` |
 | `execution_judgment` | （execution 决策点专用）|
 
-启发式 + 受限 LLM judge（强约束 JSON schema、固定枚举）**双重打分**，按 confidence 取均值——防止单一信号被幻觉污染。详见 [self-evolution-architecture.md §7](./self-evolution-architecture.md#7-评估管线evaluator)。
+评估**只用启发式**——不在评估阶段二次调用模型给自己打分，避免"模型给模型打分"的隐藏回路。详见 [self-evolution-architecture.md §7](./self-evolution-architecture.md#7-评估管线evaluator)。
 
 特殊情形捕捉：例如**route = worker 但实际没委派、也没调任何工具** → `route_judgment = "wasteful"`——下次同 fingerprint 会被 prior 拉回 Direct。
 

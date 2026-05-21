@@ -18,7 +18,7 @@ Deeting 桌面端 **不是**一个固定行为的 agent。它会基于每一次�
 
 1. 进入一次任务前，runtime 用一个 **TaskFingerprint**（任务指纹）把"这是哪一类任务"压缩成 8 个语义维度。
 2. 对每个**决策点**（route / worker_selection / discovery / capability_attach / execution / verification），系统去**先验库**取这个指纹下的历史权重（priors）。
-3. 任务真实跑完之后，runtime 用**启发式 + 受约束 LLM 判官**评估这次跑得"好不好"，结合**用户事后信号**（accepted / corrected / rejected）算出一个 `PolicyDelta`。
+3. 任务真实跑完之后，runtime 用**启发式判官**评估这次跑得"好不好"，结合**用户事后信号**（accepted / corrected / rejected）算出一个 `PolicyDelta`。
 4. 这个 delta **加权写回**到先验库，时间会让旧 delta **半衰减**（21 天半衰期）。
 5. 下一次同类指纹的任务进来时，先验影响路由倾向，但**永远不能突破安全锁**（destructive / approval_sensitive / 用户显式路由）。
 
@@ -37,11 +37,11 @@ Deeting 选择的设计：
 
 | 朴素自进化的坑 | Deeting 的做法 |
 |---|---|
-| 一个全局 fitness 决定一切 | **多决策点 + 多信号**：6 个独立决策点、4 类信号源、3 套判官（启发式 / LLM / 用户后验）相互制衡 |
+| 一个全局 fitness 决定一切 | **多决策点 + 多信号**：6 个独立决策点、4 类信号源、启发式判官与用户后验信号相互制衡 |
 | 学到的 prior 永久压制用户意图 | 安全锁（`decision_has_safety_lock`）一票否决，用户显式指令永远赢 |
 | 老 prior 永远生效 | 21 天半衰期（`PRIOR_HALF_LIFE_MS`）；不更新就慢慢忘 |
 | 引入一个外部信号源就要重写核心 | **Sovereign Charter**：外部源只能通过 `Ingress` 边界进来，核心只看 `Observation` |
-| 用 LLM 自评来自我强化（幻觉风险） | LLM 判官是**受约束**的（固定枚举值 + JSON-only），且置信度与启发式判官做平均，**不独占决定权** |
+| 用 LLM 自评来自我强化（幻觉风险） | 任务评估**只用启发式**，不在评估阶段二次调用模型，避免"模型给模型打分"的隐藏回路 |
 | Bandit 算法越调越激进 | `ROUTE_BANDIT_COEFF = 0.25`，bandit 只做平局拆解，无法独自翻盘 |
 
 一句话：**Deeting 是主语，所有信号是观察。**
@@ -76,13 +76,11 @@ Deeting 选择的设计：
 │       final_status / verification_result / route_judgment /    │
 │       discovery_judgment / execution_judgment / cost_class /   │
 │       error_profile / confidence …                             │
-│  ③ run_constrained_judgment_pass(LLM, 固定枚举, 0.0 温度)      │
-│       └─ 把 route/discovery/execution 判断与启发式做平均        │
-│  ④ resolve_posterior_signal(user_text / score / explicit)      │
+│  ③ resolve_posterior_signal(user_text / score / explicit)      │
 │       └─ accepted / corrected / rejected / unknown              │
-│  ⑤ primary_stage_from_outcome → 决定 PolicyDelta 落到哪个决策点│
-│  ⑥ compute_policy_delta → 算 direction & magnitude              │
-│  ⑦ apply_policy_delta → 写入 task_policy_priors（McpStore）    │
+│  ④ primary_stage_from_outcome → 决定 PolicyDelta 落到哪个决策点│
+│  ⑤ compute_policy_delta → 算 direction & magnitude              │
+│  ⑥ apply_policy_delta → 写入 task_policy_priors（McpStore）    │
 └────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -99,7 +97,7 @@ deeting/src-tauri/src/modules/desktop_runtime/runtime/
 │   ├── types.rs               // TaskFingerprint / EvaluatedOutcome / PolicyDelta / 6 个 DECISION_POINT
 │   ├── fingerprint.rs         // build_task_fingerprint（8 维度分类器）
 │   ├── policy.rs              // query_task_policy_hint / apply_route_prior / apply_policy_delta / decay
-│   ├── evaluator.rs           // evaluate_task_learning + 受约束 LLM 判官
+│   ├── evaluator.rs           // evaluate_task_learning（纯启发式，无二次模型调用）
 │   └── revision.rs            // 历史回放、人工修订
 ├── posterior_signal/
 │   ├── mod.rs
@@ -220,36 +218,27 @@ step 2: heuristic_pass
         derive_error_profile       // none / recoverable / structural / environment_blocked
         derive_confidence          // 0.0 - 1.0
 
-step 3: run_constrained_judgment_pass（受约束 LLM）
-        - temperature: 0.0
-        - max_tokens: 220
-        - 输出必须是 JSON，字段固定 4 个（route/discovery/execution + confidence）
-        - 每个字段只接受预定义枚举
-        - 不通过校验就丢弃，回落到启发式
-        - 通过校验就和启发式 confidence 做平均
-
-step 4: resolve_posterior_signal(user 事后输入)
+step 3: resolve_posterior_signal(user 事后输入)
         → accepted / corrected / rejected / unknown
         → 只在 confidence ≥ 0.5 时被采纳
 
-step 5: primary_stage_from_outcome
+step 4: primary_stage_from_outcome
         按优先级决定这次"主要在哪个决策点上学到了东西"：
         worker_selection > verification（如果用户 corrected/rejected）
                           > route（如果 wasteful/wrong）
                           > discovery > capability_attach > execution
                           > verification（兜底）> route（兜底）
 
-step 6: compute_policy_delta
+step 5: compute_policy_delta
         decision_point / action_key / direction(strengthen|weaken) / magnitude / state(provisional|confirmed)
 
-step 7: apply_policy_delta(store, fingerprint_key, delta)
+step 6: apply_policy_delta(store, fingerprint_key, delta)
         → 写入 task_policy_priors 表
 ```
 
 **关键纪律**：
 
-- LLM 判官**只输出三个枚举字段 + confidence**，不能输出自由文本、不能输出建议、不能输出"counterfactual"。它的任务是分类，不是推理。
-- 启发式判官和 LLM 判官**做平均**，不是 LLM 覆盖启发式。
+- 任务评估**只用启发式**，不在评估阶段二次调用模型。这条边界由 `evaluate_task_learning_with_runtime` 的同步签名保护——它不再依赖 `AppState` / `LocalModelConnection`。
 - `learning_eligible` 卡控：环境阻塞、blocked、置信度 < 0.45 且无后验信号的样本，**不写入先验**。脏数据宁可丢，也不要污染。
 
 ## 8. Prior 更新 & 衰减
@@ -394,9 +383,6 @@ T7  ─ evaluate_task_learning_with_runtime
        execution_judgment   = justified
        error_profile        = recoverable
        confidence (启发式)   = 0.55
-       LLM judge            = { route: good, discovery: sufficient,
-                                execution: justified, confidence: 0.7 }
-       final confidence     = (0.55 + 0.7) / 2 = 0.625
 T8  ─ 用户回了 "perfect"
        resolve_posterior_signal → accepted, source=user_text, confidence=0.7
        outcome.user_response_signal = "accepted"
@@ -405,7 +391,7 @@ T9  ─ primary_stage = route（无 corrected/rejected, route 不是 wrong/waste
          decision_point: "route",
          action_key:     "direct",
          direction:      "strengthen",
-         magnitude:      0.18 + 0.625*0.22 * 0.8 ≈ 0.255
+         magnitude:      0.18 + 0.55*0.22 * 0.8 ≈ 0.245
          state:          "confirmed" (confidence ≥ 0.8? 否 → "provisional")
        }
 T10 ─ apply_policy_delta 写入 priors 表（direct weight 升至 ~0.44）
@@ -427,7 +413,6 @@ T2' ─ direct prior 已经更大，更倾向 direct
 | 改任务指纹的分类规则 | [`task_learning/fingerprint.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/fingerprint.rs) |
 | 改先验的衰减周期 / 翻盘阈值 / bandit 系数 | 顶部常量 in [`task_learning/policy.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/policy.rs) |
 | 改启发式判官（route/discovery/execution） | [`task_learning/evaluator.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/evaluator.rs) `derive_*_judgment` |
-| 改 LLM 判官的 prompt / 枚举 | [`evaluator.rs::run_constrained_judgment_pass`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/evaluator.rs) |
 | 改 PolicyDelta 的算法 | [`evaluator.rs::compute_policy_delta`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/evaluator.rs) |
 | 改"哪个决策点这次承担学习"的归因 | [`evaluator.rs::primary_stage_from_outcome`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/evaluator.rs) |
 | 改后验信号识别 | [`posterior_signal/rules.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/posterior_signal/rules.rs) + [`resolver.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/posterior_signal/resolver.rs) |
@@ -510,8 +495,7 @@ const ROUTE_BANDIT_COEFF: f64 = 0.25;
 - 把 `effective_weight` 重命名为 `fitness`
 - 在 `query_task_policy_hint` 之外的地方做先验衰减（双重衰减）
 - 给某个外部信号源加 `if source == "x"` 分支到核心代码
-- 让 LLM 判官输出自由文本而不是固定枚举
-- 用 LLM 判官的 confidence 直接覆盖启发式 confidence（必须做平均）
+- 在任务评估阶段二次调用模型给自己打分（评估必须保持启发式纯函数）
 - 把 `should_apply_posterior_signal` 的阈值降到 0.5 以下（噪声会污染先验）
 - 把 prior 的写入路径"简化"成绕过 `apply_task_policy_delta`
 - 在 chat_tool_runtime 里直接调 bandit，绕过 `Self_::consult` + `apply_route_prior`
@@ -527,8 +511,7 @@ const ROUTE_BANDIT_COEFF: f64 = 0.25;
 | 半衰期 21 天 | 工作内容大概以 sprint 节奏变化；超过 1 个月的偏好通常不再适用 |
 | 翻盘阈值 0.35 | 经验上小于 0.3 会让 prior 太激进；大于 0.4 让学习几乎不影响行为 |
 | Bandit 系数 0.25 | 让 bandit 永远做不到独自翻盘（0.25 × 1.0 = 0.25 < 0.35） |
-| LLM 判官受约束到三个枚举 + confidence | 自由文本判官会幻觉、会建议、会变成隐藏的二级 agent |
-| 启发式 + LLM 做平均，不是 LLM 独占 | 两个独立来源的错误模式不同，平均能稳健 |
+| 任务评估只用启发式，不二次调模型 | "模型给模型打分"会构成隐藏的二级 agent，且把评估从纯函数变成异步状态依赖；用户显式反馈才是更强的证据来源 |
 | 先验衰减不主动清洗 | 自然遗忘 > 主动 GC；不需要后台任务、不需要存活窗口配置 |
 | 把 charter 写成 AGENTS.md 而不是设计文档 | "已经在做的事"的纪律 > "想要做的事"的设计；先把现状名命好，再讨论改进 |
 

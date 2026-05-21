@@ -476,6 +476,12 @@ The Workflow engine is **independent**:
 - Worker adapter: [`workflow/worker_adapter.rs::execute_via_worker_profile`](../deeting/src-tauri/src/modules/workflow/worker_adapter.rs) — drops the step onto the matching custom task agent; consumes `context_packet.worker_task_packet`
 - Persistence: [`workflow/store/`](../deeting/src-tauri/src/modules/workflow/store/) — run / step / event / artifact / checkpoint, four tables
 
+**Adaptive plan audit**: the Workflow engine does not blindly execute the initial proposal to the end. After every successful normal worker phase, the scheduler calls [`workflow/plan_audit.rs`](../deeting/src-tauri/src/modules/workflow/plan_audit.rs) to produce a `PlanAuditDecision`, then records it as a `run.plan_audit.completed` event. The default deterministic layer preserves existing worker `followup_hints`: empty hints continue the original plan; `pause_for_edit` or `invalidates_future_phases` moves the run into `AwaitingPlanEdit` for user handling.
+
+Plan revisions use structured `PlanDelta`; they do not overwrite the original proposal directly. User-approved deltas go through `apply_plan_delta` / [`workflow/service.rs::apply_plan_delta_to_running_snapshot`](../deeting/src-tauri/src/modules/workflow/service.rs), can only touch pending phases, and must pass snapshot-version, completed-phase, worker-ref, phase-id, and DAG forward-dependency validation. Auto-apply is narrower still: only low-risk, pending-only `update_phase` operations with no worker or dependency changes can become `auto_apply_delta`; `add_phase`, remove, reorder, or worker changes are downgraded to user approval so the model cannot silently rewrite the execution graph.
+
+Model audit is an optional enhancement controlled by desktop config `workflow.plan_audit.model.enabled`, and is off by default. When enabled, the model may only return structured JSON decision / delta. Invalid JSON, missing delta, risk mismatch, or validator failure falls back to `AwaitingPlanEdit`; it never silently continues.
+
 On this path, the parent handler persists an `InFlightExecutionStage::DelegatedWorkflowRunning` row with the embedded chat runtime context. The parent loop suspends. After the child workflow completes, `recovery.rs::wake_delegated_runtime_for_workflow_run` resumes the parent.
 
 ### 7.5 `delegated_result` integration
@@ -579,7 +585,7 @@ After the 8-step pipeline and the chosen handler complete, [`local_orchestrator.
 | `discovery_judgment` | `sufficient` / `shallow` / `excessive` / `skipped_when_needed` |
 | `execution_judgment` | (specific to the `execution` decision point) |
 
-Heuristic + constrained-LLM judge (strict JSON schema, fixed enums) score in parallel, with confidence-weighted averaging — defends against single-signal hallucination. See [self-evolution-architecture.en.md §7](./self-evolution-architecture.en.md#7-evaluation-pipeline-evaluator).
+Evaluation is **heuristic-only** — no second model call during evaluation to grade itself, avoiding any "model judging model" hidden loop. See [self-evolution-architecture.en.md §7](./self-evolution-architecture.en.md#7-evaluation-pipeline-evaluator).
 
 Special-case detection: e.g. **route = worker but no delegation and no tool call** → `route_judgment = "wasteful"` — next turn with the same fingerprint, the prior pulls back toward Direct.
 

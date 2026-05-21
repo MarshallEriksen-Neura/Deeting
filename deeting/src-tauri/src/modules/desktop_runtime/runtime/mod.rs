@@ -7,6 +7,7 @@ pub mod chat_completion;
 pub mod chat_tool_runtime;
 pub mod consult;
 pub mod control_plane;
+pub mod evolution;
 pub mod execution_graph;
 pub mod execution_graph_store;
 pub mod execution_plane;

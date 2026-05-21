@@ -706,6 +706,104 @@ impl McpStore {
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
 
+        // ------------------------------------------------------------------
+        // Evolution boundary tables (see .omx/plans/2026-05-21-evolution-
+        // signal-boundary-plan.md). Owned by `desktop_runtime::runtime::
+        // evolution::store`; the McpStore only contributes pool + migration
+        // plumbing so that all evolution state lives in one SQLite file.
+        // ------------------------------------------------------------------
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS evolution_signals (
+              id TEXT PRIMARY KEY,
+              source TEXT NOT NULL,
+              status TEXT NOT NULL,
+              classification TEXT NOT NULL,
+              session_id TEXT,
+              trace_id TEXT,
+              run_id TEXT,
+              monitor_task_id TEXT,
+              monitor_log_id TEXT,
+              fingerprint_key TEXT,
+              confidence REAL NOT NULL DEFAULT 0,
+              payload_json TEXT NOT NULL,
+              note TEXT,
+              created_at_unix_ms INTEGER NOT NULL
+            );
+            "#,
+        )
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_evolution_signals_trace
+            ON evolution_signals(trace_id, created_at_unix_ms DESC);
+            "#,
+        )
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_evolution_signals_run
+            ON evolution_signals(run_id, created_at_unix_ms DESC);
+            "#,
+        )
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_evolution_signals_fingerprint
+            ON evolution_signals(fingerprint_key, created_at_unix_ms DESC);
+            "#,
+        )
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_evolution_signals_source_status
+            ON evolution_signals(source, status);
+            "#,
+        )
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS evolution_cases (
+              id TEXT PRIMARY KEY,
+              fingerprint_key TEXT NOT NULL,
+              case_type TEXT NOT NULL,
+              summary TEXT NOT NULL,
+              evidence_signal_ids TEXT NOT NULL,
+              source_run_id TEXT,
+              confidence REAL NOT NULL DEFAULT 0,
+              created_at_unix_ms INTEGER NOT NULL
+            );
+            "#,
+        )
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_evolution_cases_fingerprint_type
+            ON evolution_cases(fingerprint_key, case_type, created_at_unix_ms DESC);
+            "#,
+        )
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
         sqlx::query(
             r#"
             CREATE INDEX IF NOT EXISTS idx_asset_query_affinity_last_matched

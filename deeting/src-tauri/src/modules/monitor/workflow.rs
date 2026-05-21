@@ -404,6 +404,45 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorParseResultStep {
                 })),
             ));
             ctx.next_event_seq += 1;
+            // Slice 2: emit monitor_observation evolution signal.
+            // classification=Unknown — monitor observation is not by itself a
+            // judgment. Monitor signals MUST NOT influence task_policy_priors;
+            // they only land in evolution_signals for inspection. monitor_log_id
+            // is unavailable at parse time (the log row is written later by
+            // record_execution_success); leave it None.
+            if let Some(mcp_store) = ctx.state.shared.mcp_store.as_ref() {
+                use crate::modules::desktop_runtime::runtime::evolution::{
+                    submit_evolution_signal, EvolutionSignalClassification, EvolutionSignalDraft,
+                    EvolutionSignalSource,
+                };
+                let draft = EvolutionSignalDraft {
+                    source: EvolutionSignalSource::MonitorObservation,
+                    classification: EvolutionSignalClassification::Unknown,
+                    session_id: None,
+                    trace_id: None,
+                    run_id: None,
+                    monitor_task_id: Some(ctx.task.id.clone()),
+                    monitor_log_id: None,
+                    fingerprint_key: None,
+                    confidence: 0.0,
+                    payload_json: json!({
+                        "strategy_tag": ctx.strategy_tag,
+                        "observations": ctx.observations,
+                        "is_significant_change": ctx.is_significant_change,
+                        "change_summary": ctx.change_summary,
+                        "monitor_task_id": ctx.task.id,
+                        "monitor_execution_id": ctx.execution_id,
+                    }),
+                    note: None,
+                };
+                if let Err(err) = submit_evolution_signal(mcp_store.as_ref(), draft).await {
+                    log::warn!(
+                        "monitor observation evolution signal submission failed task_id={} err={}",
+                        ctx.task.id,
+                        err
+                    );
+                }
+            }
             Ok(StepResult::success())
         })
     }

@@ -18,7 +18,7 @@ Its self-evolution follows a deliberately restrained loop:
 
 1. Before a task starts, the runtime compresses "what kind of task is this" into a **TaskFingerprint** — 8 semantic dimensions.
 2. For each **decision point** (route / worker_selection / discovery / capability_attach / execution / verification), the system pulls historical weights (priors) for this fingerprint from a **prior store**.
-3. After the task actually finishes, the runtime evaluates "how well did this run go" using a **heuristic + constrained LLM judge**, combines it with the **user posterior signal** (accepted / corrected / rejected), and produces a `PolicyDelta`.
+3. After the task actually finishes, the runtime evaluates "how well did this run go" using a **heuristic judge**, combines it with the **user posterior signal** (accepted / corrected / rejected), and produces a `PolicyDelta`.
 4. The delta is **weight-merged** back into the prior store. Old deltas **half-decay** over time (21-day half-life).
 5. The next time a similarly fingerprinted task arrives, the prior influences route bias — but it **can never break a safety lock** (destructive / approval_sensitive / explicit user route).
 
@@ -37,11 +37,11 @@ Deeting's design choices:
 
 | Naive self-evolution pitfall | Deeting's approach |
 |---|---|
-| One global fitness decides everything | **Multiple decision points + multiple signals**: 6 independent decision points, 4 categories of signal sources, 3 judges (heuristic / LLM / user posterior) checking each other |
+| One global fitness decides everything | **Multiple decision points + multiple signals**: 6 independent decision points, 4 categories of signal sources, heuristic judge and user posterior signal checking each other |
 | Learned priors permanently override user intent | Safety locks (`decision_has_safety_lock`) veto; explicit user instructions always win |
 | Old priors live forever | 21-day half-life (`PRIOR_HALF_LIFE_MS`); without updates they fade away |
 | Adding an external signal source rewrites the core | **Sovereign Charter**: external sources can only enter through the `Ingress` boundary; the core only sees `Observation` |
-| LLM self-evaluation creates a hallucination feedback loop | The LLM judge is **constrained** (fixed enum values + JSON-only) and is **averaged** with the heuristic — never independently authoritative |
+| LLM self-evaluation creates a hallucination feedback loop | Task evaluation is **heuristic-only** — no second model call during evaluation, no "model judging model" hidden loop |
 | Bandits get more aggressive over time | `ROUTE_BANDIT_COEFF = 0.25` — bandits are only tie-breakers, they cannot flip a decision alone |
 
 In one sentence: **Deeting is the subject; all signals are observation.**
@@ -76,13 +76,11 @@ In one sentence: **Deeting is the subject; all signals are observation.**
 │       final_status / verification_result / route_judgment /    │
 │       discovery_judgment / execution_judgment / cost_class /   │
 │       error_profile / confidence …                             │
-│  ③ run_constrained_judgment_pass (LLM, fixed enums, temp 0.0)  │
-│       └─ average route/discovery/execution judgments + conf    │
-│  ④ resolve_posterior_signal(user_text / score / explicit)      │
+│  ③ resolve_posterior_signal(user_text / score / explicit)      │
 │       └─ accepted / corrected / rejected / unknown              │
-│  ⑤ primary_stage_from_outcome → which decision point learns    │
-│  ⑥ compute_policy_delta → direction & magnitude                 │
-│  ⑦ apply_policy_delta → write to task_policy_priors (McpStore) │
+│  ④ primary_stage_from_outcome → which decision point learns    │
+│  ⑤ compute_policy_delta → direction & magnitude                 │
+│  ⑥ apply_policy_delta → write to task_policy_priors (McpStore) │
 └────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -99,7 +97,7 @@ deeting/src-tauri/src/modules/desktop_runtime/runtime/
 │   ├── types.rs               // TaskFingerprint / EvaluatedOutcome / PolicyDelta / 6 DECISION_POINTs
 │   ├── fingerprint.rs         // build_task_fingerprint (8-dim classifier)
 │   ├── policy.rs              // query_task_policy_hint / apply_route_prior / apply_policy_delta / decay
-│   ├── evaluator.rs           // evaluate_task_learning + constrained LLM judge
+│   ├── evaluator.rs           // evaluate_task_learning (heuristic-only, no second model call)
 │   └── revision.rs            // history replay, manual revision
 ├── posterior_signal/
 │   ├── mod.rs
@@ -220,36 +218,27 @@ step 2: heuristic_pass
         derive_error_profile       // none / recoverable / structural / environment_blocked
         derive_confidence          // 0.0 - 1.0
 
-step 3: run_constrained_judgment_pass (constrained LLM)
-        - temperature: 0.0
-        - max_tokens: 220
-        - output must be JSON with exactly 4 fixed fields (route/discovery/execution + confidence)
-        - each field is a predefined enum
-        - if validation fails → discard, fall back to heuristic
-        - if validation passes → average with heuristic confidence
-
-step 4: resolve_posterior_signal(user post-turn input)
+step 3: resolve_posterior_signal(user post-turn input)
         → accepted / corrected / rejected / unknown
         → applied only when confidence ≥ 0.5
 
-step 5: primary_stage_from_outcome
+step 4: primary_stage_from_outcome
         priority order — "which decision point did this turn primarily learn from":
         worker_selection > verification (if user corrected/rejected)
                          > route (if wasteful/wrong)
                          > discovery > capability_attach > execution
                          > verification (fallback) > route (fallback)
 
-step 6: compute_policy_delta
+step 5: compute_policy_delta
         decision_point / action_key / direction(strengthen|weaken) / magnitude / state(provisional|confirmed)
 
-step 7: apply_policy_delta(store, fingerprint_key, delta)
+step 6: apply_policy_delta(store, fingerprint_key, delta)
         → write to task_policy_priors table
 ```
 
 **Key discipline**:
 
-- The LLM judge **outputs only the 3 enum fields + confidence**, never free text, never advice, never counterfactuals. It classifies; it does not reason.
-- The heuristic judge and LLM judge are **averaged**, not LLM-overwrites-heuristic.
+- Task evaluation is **heuristic-only** — no second model call during evaluation. This boundary is enforced by the synchronous signature of `evaluate_task_learning_with_runtime`, which no longer depends on `AppState` / `LocalModelConnection`.
 - The `learning_eligible` gate filters out environment-blocked, blocked, and (confidence < 0.45 AND no posterior signal) samples — they are **not written to priors**. We'd rather lose dirty data than poison the prior table.
 
 ## 8. Prior update & decay
@@ -394,9 +383,6 @@ T7  ─ evaluate_task_learning_with_runtime
        execution_judgment   = justified
        error_profile        = recoverable
        confidence (heuristic) = 0.55
-       LLM judge            = { route: good, discovery: sufficient,
-                                execution: justified, confidence: 0.7 }
-       final confidence     = (0.55 + 0.7) / 2 = 0.625
 T8  ─ user replies "perfect"
        resolve_posterior_signal → accepted, source=user_text, confidence=0.7
        outcome.user_response_signal = "accepted"
@@ -405,7 +391,7 @@ T9  ─ primary_stage = route (no corrected/rejected; route not wrong/wasteful)
          decision_point: "route",
          action_key:     "direct",
          direction:      "strengthen",
-         magnitude:      0.18 + 0.625*0.22 * 0.8 ≈ 0.255
+         magnitude:      0.18 + 0.55*0.22 * 0.8 ≈ 0.245
          state:          "confirmed" (confidence ≥ 0.8? no → "provisional")
        }
 T10 ─ apply_policy_delta writes to priors table (direct weight rises to ~0.44)
@@ -427,7 +413,6 @@ By "what do I want to change":
 | Change fingerprint classification rules | [`task_learning/fingerprint.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/fingerprint.rs) |
 | Change decay period / flip threshold / bandit coefficient | Top-of-file constants in [`task_learning/policy.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/policy.rs) |
 | Change heuristic judges (route/discovery/execution) | [`task_learning/evaluator.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/evaluator.rs) `derive_*_judgment` |
-| Change LLM judge prompt / enums | [`evaluator.rs::run_constrained_judgment_pass`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/evaluator.rs) |
 | Change PolicyDelta algorithm | [`evaluator.rs::compute_policy_delta`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/evaluator.rs) |
 | Change which decision point gets credit | [`evaluator.rs::primary_stage_from_outcome`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/evaluator.rs) |
 | Change posterior signal recognition | [`posterior_signal/rules.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/posterior_signal/rules.rs) + [`resolver.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/posterior_signal/resolver.rs) |
@@ -510,8 +495,7 @@ Before raising `ROUTE_BANDIT_COEFF`, **re-read** §6.5: "the bandit cannot flip 
 - Renaming `effective_weight` to `fitness`
 - Applying prior decay outside `query_task_policy_hint` (double decay)
 - Adding `if source == "x"` branches for some external source to core code
-- Letting the LLM judge output free text instead of fixed enums
-- Letting the LLM judge's confidence directly overwrite the heuristic's (must average)
+- Calling the model again during task evaluation to grade itself (evaluation must stay a heuristic pure function)
 - Lowering the `should_apply_posterior_signal` threshold below 0.5 (noise pollutes priors)
 - "Simplifying" the prior write path by bypassing `apply_task_policy_delta`
 - Calling the bandit directly from chat_tool_runtime, bypassing `Self_::consult` + `apply_route_prior`
@@ -527,8 +511,7 @@ Before raising `ROUTE_BANDIT_COEFF`, **re-read** §6.5: "the bandit cannot flip 
 | 21-day half-life | Work content drifts on roughly sprint cadence; preferences > 1 month are usually stale |
 | 0.35 flip threshold | Empirically, < 0.3 makes priors too aggressive; > 0.4 makes learning irrelevant |
 | Bandit coefficient 0.25 | Ensures bandit can never flip alone (0.25 × 1.0 = 0.25 < 0.35) |
-| LLM judge constrained to 3 enums + confidence | Free-text judges hallucinate, advise, and become hidden secondary agents |
-| Average heuristic + LLM, no override | Two independent error modes; averaging is robust |
+| Heuristic-only evaluation, no second model call | A second model call during evaluation becomes a hidden secondary agent and turns a pure function into an async stateful one; explicit user feedback is the stronger evidence channel |
 | Priors fade naturally instead of GC | Natural forgetting > active GC; no background job, no retention window config |
 | Charter in AGENTS.md, not a design doc | Discipline for "what is already done" > design for "what we want to do"; name the current truth first |
 

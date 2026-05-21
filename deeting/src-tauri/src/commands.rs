@@ -66,6 +66,7 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::admin::commands::list_local_task_learning_runs,
         crate::modules::admin::commands::get_local_task_learning_run,
         crate::modules::admin::commands::list_local_task_policy_priors,
+        crate::modules::admin::commands::list_local_evolution_signals,
         crate::modules::admin::commands::revise_local_task_learning_run,
         crate::modules::admin::commands::replay_local_task_learning_run,
         crate::modules::admin::commands::create_local_gateway_log,

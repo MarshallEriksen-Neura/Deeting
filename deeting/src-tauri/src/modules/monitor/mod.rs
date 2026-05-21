@@ -521,7 +521,52 @@ impl MonitorState {
         self.shared
             .store
             .submit_feedback(task_id.as_str(), log_id.as_str(), score)
-            .await
+            .await?;
+        // Slice 2 evolution-signal emission. Additive — failures here never
+        // affect the monitor feedback row stored above. classification is a
+        // placeholder heuristic (>0.5 accepted, <0 rejected, else neutral);
+        // calibration is deferred to Slice 4. Monitor signals MUST NOT
+        // influence task_policy_priors — this row only lands in
+        // evolution_signals for inspection.
+        if let Some(mcp_store) = self.shared.mcp_store.as_ref() {
+            use crate::modules::desktop_runtime::runtime::evolution::{
+                submit_evolution_signal, EvolutionSignalClassification, EvolutionSignalDraft,
+                EvolutionSignalSource,
+            };
+            let classification = if score > 0.5 {
+                EvolutionSignalClassification::Accepted
+            } else if score < 0.0 {
+                EvolutionSignalClassification::Rejected
+            } else {
+                EvolutionSignalClassification::Neutral
+            };
+            let draft = EvolutionSignalDraft {
+                source: EvolutionSignalSource::MonitorFeedback,
+                classification,
+                session_id: None,
+                trace_id: None,
+                run_id: None,
+                monitor_task_id: Some(task_id.clone()),
+                monitor_log_id: Some(log_id.clone()),
+                fingerprint_key: None,
+                confidence: score.abs().clamp(0.0, 1.0),
+                payload_json: serde_json::json!({
+                    "score": score,
+                    "monitor_task_id": task_id,
+                    "monitor_log_id": log_id,
+                }),
+                note: None,
+            };
+            if let Err(err) = submit_evolution_signal(mcp_store.as_ref(), draft).await {
+                log::warn!(
+                    "monitor feedback evolution signal submission failed task_id={} log_id={} err={}",
+                    task_id,
+                    log_id,
+                    err
+                );
+            }
+        }
+        Ok(())
     }
 
     pub async fn list_notification_channels(

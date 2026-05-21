@@ -750,6 +750,7 @@ pub(super) fn build_desktop_local_chat_engine(
         Box::new(ContextManifestStep),
         Box::new(GeneratedArtifactContextInjectionStep),
         Box::new(RouteSelectionStep),
+        Box::new(EvolutionPacketInjectionStep),
         Box::new(SkillRecipeInjectionStep),
         Box::new(PromptVariantSelectionStep),
         Box::new(TemplateRenderStep),
@@ -1533,6 +1534,51 @@ impl LocalWorkflowStep<LocalWorkflowContext> for RouteSelectionStep {
                         "task_learning": route_hint_status_meta(&route_prior_application),
                     })),
                 )))
+        })
+    }
+}
+
+struct EvolutionPacketInjectionStep;
+
+impl LocalWorkflowStep<LocalWorkflowContext> for EvolutionPacketInjectionStep {
+    fn name(&self) -> &'static str {
+        "evolution_packet_injection"
+    }
+
+    fn depends_on(&self) -> &'static [&'static str] {
+        &["route_selection"]
+    }
+
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a mut LocalWorkflowContext,
+    ) -> BoxFuture<'a, Result<LocalStepResult, String>> {
+        Box::pin(async move {
+            let Some(fingerprint) = ctx.task_fingerprint.as_ref() else {
+                return Ok(StepResult::skipped());
+            };
+            let fingerprint_key = fingerprint.key();
+            let packet =
+                match crate::modules::desktop_runtime::runtime::evolution::build_cold_start_packet(
+                    ctx.app_state.mcp.store.as_ref(),
+                    &fingerprint_key,
+                )
+                .await
+                {
+                    Ok(value) => value,
+                    Err(err) => {
+                        log::warn!(
+                            "evolution packet build failed fingerprint_key={} err={}",
+                            fingerprint_key,
+                            err
+                        );
+                        return Ok(StepResult::skipped());
+                    }
+                };
+            let Some(prompt) = crate::modules::desktop_runtime::runtime::evolution::render_cold_start_packet_prompt(&packet) else {
+                return Ok(StepResult::skipped());
+            };
+            Ok(StepResult::success().with_system_message(prompt))
         })
     }
 }

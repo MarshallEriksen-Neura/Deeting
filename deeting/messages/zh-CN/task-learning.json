@@ -204,8 +204,56 @@
       "confirmed": "已确认"
     }
   },
+  "evolution": {
+    "title": "演化信号审计",
+    "description": "查看已持久化的 evolution signals，不把隐式反馈自动提升为 case 或 prior。",
+    "summary": "匹配 {count} 条信号",
+    "emptyTitle": "没有匹配的演化信号",
+    "empty": "当前审计筛选条件下没有演化信号。",
+    "sourceLabel": "来源：{source}",
+    "confidence": "{value}% 置信度",
+    "method": "方法",
+    "matchedRules": "命中规则",
+    "filters": {
+      "source": {
+        "all": "全部来源"
+      },
+      "classification": {
+        "all": "全部分类"
+      },
+      "status": {
+        "all": "全部状态"
+      },
+      "link": {
+        "session": "会话",
+        "trace": "Trace",
+        "run": "Run",
+        "fingerprint": "Fingerprint"
+      },
+      "linkPlaceholder": "精确关联 ID"
+    },
+    "sources": {
+      "next_user_message": "下一条用户消息",
+      "explicit_trace_feedback": "Trace 反馈",
+      "deeting_think": "Deeting Think",
+      "manual_task_learning_revision": "手动修订",
+      "monitor_observation": "Monitor 观察",
+      "monitor_feedback": "Monitor 反馈"
+    },
+    "classifications": {
+      "neutral": "中性"
+    },
+    "statuses": {
+      "observed": "已观察",
+      "classified": "已分类",
+      "correlated": "已关联",
+      "applied": "已应用",
+      "ignored": "已忽略"
+    }
+  },
   "feedback": {
     "loadFailed": "加载任务学习数据失败。",
+    "evolutionLoadFailed": "加载演化信号审计数据失败。",
     "actionFailed": "操作失败，请稍后再试。",
     "replayed": "已重新评估这条任务记录。",
     "revised": "已记录你的 {signal} 评价，AI 会据此调整策略。"

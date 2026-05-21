@@ -120,10 +120,36 @@ export const TaskPolicyPriorListResponseSchema = z.object({
   items: z.array(TaskPolicyPriorItemSchema).default([]),
 })
 
+export const EvolutionSignalItemSchema = z.object({
+  id: z.string(),
+  source: z.string(),
+  status: z.string(),
+  classification: z.string(),
+  session_id: z.string().nullable().optional(),
+  trace_id: z.string().nullable().optional(),
+  run_id: z.string().nullable().optional(),
+  monitor_task_id: z.string().nullable().optional(),
+  monitor_log_id: z.string().nullable().optional(),
+  fingerprint_key: z.string().nullable().optional(),
+  confidence: z.number(),
+  payload_json: JsonValueSchema,
+  note: z.string().nullable().optional(),
+  created_at_unix_ms: z.number().int(),
+})
+
+export const EvolutionSignalListResponseSchema = z.object({
+  total: z.number().int(),
+  skip: z.number().int(),
+  limit: z.number().int(),
+  items: z.array(EvolutionSignalItemSchema).default([]),
+})
+
 export type TaskLearningRunListItem = z.infer<typeof TaskLearningRunListItemSchema>
 export type TaskLearningRunListResponse = z.infer<typeof TaskLearningRunListResponseSchema>
 export type TaskLearningRunDetail = z.infer<typeof TaskLearningRunDetailSchema>
 export type TaskPolicyPriorListResponse = z.infer<typeof TaskPolicyPriorListResponseSchema>
+export type EvolutionSignalItem = z.infer<typeof EvolutionSignalItemSchema>
+export type EvolutionSignalListResponse = z.infer<typeof EvolutionSignalListResponseSchema>
 
 export type TaskLearningRunQuery = {
   skip?: number
@@ -158,6 +184,28 @@ export async function listTaskPolicyPriors(query: {
   ensureTauriRuntime()
   const data = await invokeTauri<unknown>("list_local_task_policy_priors", { query })
   return TaskPolicyPriorListResponseSchema.parse(data)
+}
+
+export type EvolutionSignalQuery = {
+  skip?: number
+  limit?: number
+  source?: string | null
+  classification?: string | null
+  session_id?: string | null
+  trace_id?: string | null
+  run_id?: string | null
+  fingerprint_key?: string | null
+  status?: string | null
+  created_at_start_unix_ms?: number | null
+  created_at_end_unix_ms?: number | null
+}
+
+export async function listEvolutionSignals(
+  query: EvolutionSignalQuery = {}
+): Promise<EvolutionSignalListResponse> {
+  ensureTauriRuntime()
+  const data = await invokeTauri<unknown>("list_local_evolution_signals", { query })
+  return EvolutionSignalListResponseSchema.parse(data)
 }
 
 export async function reviseTaskLearningRun(payload: {

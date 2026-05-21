@@ -36,10 +36,12 @@ import { Input } from "@/components/ui/shadcn/input"
 import { Textarea } from "@/components/ui/shadcn/textarea"
 import {
   getTaskLearningRun,
+  listEvolutionSignals,
   listTaskLearningRuns,
   listTaskPolicyPriors,
   replayTaskLearningRun,
   reviseTaskLearningRun,
+  type EvolutionSignalItem,
   type TaskLearningRunDetail,
   type TaskLearningRunListItem,
 } from "@/lib/api/task-learning"
@@ -74,6 +76,7 @@ type TimelineStep = {
 }
 
 const PAGE_SIZE = 6
+const EVOLUTION_SIGNAL_LIMIT = 12
 
 function formatDateTime(unixMs: number | null | undefined, locale: string) {
   if (!unixMs) return "-"
@@ -128,6 +131,23 @@ function getStringArray(value: Record<string, unknown>, key: string) {
   return next.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
 }
 
+function payloadText(value: unknown, key: string) {
+  return getString(asRecord(value), key)
+}
+
+function payloadTextArray(value: unknown, key: string) {
+  return getStringArray(asRecord(value), key)
+}
+
+function signalLinkedIds(signal: EvolutionSignalItem) {
+  return [
+    signal.session_id ? `session:${signal.session_id.slice(0, 8)}` : null,
+    signal.trace_id ? `trace:${signal.trace_id.slice(0, 8)}` : null,
+    signal.run_id ? `run:${signal.run_id.slice(0, 8)}` : null,
+    signal.fingerprint_key ? `fp:${signal.fingerprint_key.slice(0, 8)}` : null,
+  ].filter((value): value is string => Boolean(value))
+}
+
 function humanizeToken(value: string | null | undefined) {
   if (!value) return "-"
   const normalized = value.trim()
@@ -151,6 +171,7 @@ function signalLabel(
   if (signal === "accepted") return t("runs.signals.accepted")
   if (signal === "corrected") return t("runs.signals.corrected")
   if (signal === "rejected") return t("runs.signals.rejected")
+  if (signal === "neutral") return t("evolution.classifications.neutral")
   if (signal === "silent") return t("runs.signals.silent")
   return t("runs.signals.unknown")
 }
@@ -388,6 +409,7 @@ function exportSnapshot(
   runs: TaskLearningRunListItem[],
   detail: TaskLearningRunDetail | null,
   priors: TaskPolicyPrior[],
+  evolutionSignals: EvolutionSignalItem[],
   searchQuery: string,
   signalFilter: string,
 ) {
@@ -399,6 +421,7 @@ function exportSnapshot(
     },
     runs,
     selected_detail: detail,
+    evolution_signals: evolutionSignals,
     priors,
   }
 }
@@ -411,6 +434,13 @@ export function TaskLearningClient() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [detail, setDetail] = useState<TaskLearningRunDetail | null>(null)
   const [priors, setPriors] = useState<TaskPolicyPrior[]>([])
+  const [evolutionSignals, setEvolutionSignals] = useState<EvolutionSignalItem[]>([])
+  const [evolutionSignalTotal, setEvolutionSignalTotal] = useState(0)
+  const [evolutionSourceFilter, setEvolutionSourceFilter] = useState("next_user_message")
+  const [evolutionClassificationFilter, setEvolutionClassificationFilter] = useState("all")
+  const [evolutionStatusFilter, setEvolutionStatusFilter] = useState("all")
+  const [evolutionLinkKind, setEvolutionLinkKind] = useState("trace_id")
+  const [evolutionLinkFilter, setEvolutionLinkFilter] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [signalFilter, setSignalFilter] = useState("all")
   const [currentPage, setCurrentPage] = useState(1)
@@ -448,10 +478,35 @@ export function TaskLearningClient() {
     }
   }
 
+  async function loadEvolutionSignals() {
+    try {
+      const link = evolutionLinkFilter.trim()
+      const response = await listEvolutionSignals({
+        limit: EVOLUTION_SIGNAL_LIMIT,
+        source: evolutionSourceFilter === "all" ? null : evolutionSourceFilter,
+        classification: evolutionClassificationFilter === "all" ? null : evolutionClassificationFilter,
+        status: evolutionStatusFilter === "all" ? null : evolutionStatusFilter,
+        session_id: evolutionLinkKind === "session_id" ? link || null : null,
+        trace_id: evolutionLinkKind === "trace_id" ? link || null : null,
+        run_id: evolutionLinkKind === "run_id" ? link || null : null,
+        fingerprint_key: evolutionLinkKind === "fingerprint_key" ? link || null : null,
+      })
+      setEvolutionSignals(response.items)
+      setEvolutionSignalTotal(response.total)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("feedback.evolutionLoadFailed"))
+    }
+  }
+
   useEffect(() => {
     void loadRuns()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    void loadEvolutionSignals()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [evolutionSourceFilter, evolutionClassificationFilter, evolutionStatusFilter, evolutionLinkKind])
 
   useEffect(() => {
     return () => {
@@ -632,7 +687,7 @@ export function TaskLearningClient() {
     const blob = new Blob(
       [
         JSON.stringify(
-          exportSnapshot(runs, detail, priors, searchQuery, signalFilter),
+          exportSnapshot(runs, detail, priors, evolutionSignals, searchQuery, signalFilter),
           null,
           2,
         ),
@@ -694,7 +749,10 @@ export function TaskLearningClient() {
             <GlassButton
               variant="secondary"
               size="sm"
-              onClick={() => void loadRuns(selectedRunId)}
+              onClick={() => {
+                void loadRuns(selectedRunId)
+                void loadEvolutionSignals()
+              }}
             >
               <RefreshCw className="size-4" />
               {t("actions.refreshRecords")}
@@ -1173,6 +1231,156 @@ export function TaskLearningClient() {
             </GlassCardContent>
           </GlassCard>
         </div>
+
+        <GlassCard
+          blur="sm"
+          theme="surface"
+          hover="none"
+          padding="none"
+          className="border-[var(--hairline)] bg-[var(--panel-bg)]/96"
+        >
+          <GlassCardHeader className="gap-4 border-b border-[var(--hairline)] px-5 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="space-y-1">
+                <GlassCardTitle className="text-[22px] tracking-[-0.04em] text-[var(--ink)]">
+                  {t("evolution.title")}
+                </GlassCardTitle>
+                <GlassCardDescription className="max-w-[720px] text-[13px] leading-6 text-[var(--ink-3)]">
+                  {t("evolution.description")}
+                </GlassCardDescription>
+              </div>
+              <StatusPill tone="info" label={t("evolution.summary", { count: evolutionSignalTotal })} />
+            </div>
+
+            <div className="grid gap-3 xl:grid-cols-[160px_150px_130px_130px_minmax(0,1fr)_auto]">
+              <select
+                value={evolutionSourceFilter}
+                onChange={(event) => setEvolutionSourceFilter(event.target.value)}
+                className="h-10 rounded-[var(--r-10)] border border-[var(--hairline)] bg-[var(--panel-bg)] px-3.5 text-[13px] text-[var(--ink)] outline-none transition-[border-color,box-shadow] focus:border-[var(--accent-border)] focus:[box-shadow:var(--focus-ring)]"
+              >
+                <option value="all">{t("evolution.filters.source.all")}</option>
+                <option value="next_user_message">{t("evolution.sources.next_user_message")}</option>
+                <option value="explicit_trace_feedback">{t("evolution.sources.explicit_trace_feedback")}</option>
+                <option value="deeting_think">{t("evolution.sources.deeting_think")}</option>
+                <option value="manual_task_learning_revision">{t("evolution.sources.manual_task_learning_revision")}</option>
+                <option value="monitor_observation">{t("evolution.sources.monitor_observation")}</option>
+                <option value="monitor_feedback">{t("evolution.sources.monitor_feedback")}</option>
+              </select>
+              <select
+                value={evolutionClassificationFilter}
+                onChange={(event) => setEvolutionClassificationFilter(event.target.value)}
+                className="h-10 rounded-[var(--r-10)] border border-[var(--hairline)] bg-[var(--panel-bg)] px-3.5 text-[13px] text-[var(--ink)] outline-none transition-[border-color,box-shadow] focus:border-[var(--accent-border)] focus:[box-shadow:var(--focus-ring)]"
+              >
+                <option value="all">{t("evolution.filters.classification.all")}</option>
+                <option value="accepted">{t("runs.signals.accepted")}</option>
+                <option value="corrected">{t("runs.signals.corrected")}</option>
+                <option value="rejected">{t("runs.signals.rejected")}</option>
+                <option value="neutral">{t("evolution.classifications.neutral")}</option>
+                <option value="unknown">{t("runs.signals.unknown")}</option>
+              </select>
+              <select
+                value={evolutionStatusFilter}
+                onChange={(event) => setEvolutionStatusFilter(event.target.value)}
+                className="h-10 rounded-[var(--r-10)] border border-[var(--hairline)] bg-[var(--panel-bg)] px-3.5 text-[13px] text-[var(--ink)] outline-none transition-[border-color,box-shadow] focus:border-[var(--accent-border)] focus:[box-shadow:var(--focus-ring)]"
+              >
+                <option value="all">{t("evolution.filters.status.all")}</option>
+                <option value="observed">{t("evolution.statuses.observed")}</option>
+                <option value="classified">{t("evolution.statuses.classified")}</option>
+                <option value="correlated">{t("evolution.statuses.correlated")}</option>
+                <option value="applied">{t("evolution.statuses.applied")}</option>
+                <option value="ignored">{t("evolution.statuses.ignored")}</option>
+              </select>
+              <select
+                value={evolutionLinkKind}
+                onChange={(event) => setEvolutionLinkKind(event.target.value)}
+                className="h-10 rounded-[var(--r-10)] border border-[var(--hairline)] bg-[var(--panel-bg)] px-3.5 text-[13px] text-[var(--ink)] outline-none transition-[border-color,box-shadow] focus:border-[var(--accent-border)] focus:[box-shadow:var(--focus-ring)]"
+              >
+                <option value="trace_id">{t("evolution.filters.link.trace")}</option>
+                <option value="session_id">{t("evolution.filters.link.session")}</option>
+                <option value="run_id">{t("evolution.filters.link.run")}</option>
+                <option value="fingerprint_key">{t("evolution.filters.link.fingerprint")}</option>
+              </select>
+              <Input
+                value={evolutionLinkFilter}
+                onChange={(event) => setEvolutionLinkFilter(event.target.value)}
+                placeholder={t("evolution.filters.linkPlaceholder")}
+                className="h-10 rounded-[var(--r-10)] border-[var(--hairline)] bg-[var(--panel-bg)] text-[13px] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]"
+              />
+              <GlassButton variant="secondary" size="sm" onClick={() => void loadEvolutionSignals()}>
+                <RefreshCw className="size-4" />
+                {t("actions.refresh")}
+              </GlassButton>
+            </div>
+          </GlassCardHeader>
+
+          <GlassCardContent className="px-4 py-4">
+            {evolutionSignals.length === 0 ? (
+              <EmptyPanel
+                icon={<FileSearch className="size-5" />}
+                title={t("evolution.emptyTitle")}
+                description={t("evolution.empty")}
+              />
+            ) : (
+              <div className="grid gap-3 xl:grid-cols-2">
+                {evolutionSignals.map((signal) => {
+                  const payload = signal.payload_json
+                  const userMessage = payloadText(payload, "user_message")
+                  const matchedRules = payloadTextArray(payload, "matched_rules")
+                  const classificationMethod = payloadText(payload, "classification_method")
+                  return (
+                    <div
+                      key={signal.id}
+                      className="rounded-[var(--r-14)] border border-[var(--hairline)] bg-[var(--panel-bg)] px-4 py-3"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusPill tone={signalTone(signal.classification)} label={signalLabel(signal.classification, t)} />
+                            <StatusPill tone="muted" label={humanizeToken(signal.status)} />
+                            <span className="text-xs text-[var(--ink-3)]">
+                              {t("evolution.confidence", { value: Math.round(signal.confidence * 100) })}
+                            </span>
+                          </div>
+                          <div className="text-xs text-[var(--ink-3)]">
+                            {t("evolution.sourceLabel", { source: humanizeToken(signal.source) })}
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-xs text-[var(--ink-3)]">
+                          {formatDateTime(signal.created_at_unix_ms, locale)}
+                        </div>
+                      </div>
+
+                      {userMessage ? (
+                        <div className="mt-3 rounded-[var(--r-10)] border border-[var(--hairline)] bg-[var(--panel-bg-inset)] px-3 py-2 text-sm leading-6 text-[var(--ink)]">
+                          {userMessage}
+                        </div>
+                      ) : null}
+
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--ink-3)]">
+                        {signalLinkedIds(signal).map((id) => (
+                          <span key={id} className="rounded-full border border-[var(--hairline)] px-2 py-1">
+                            {id}
+                          </span>
+                        ))}
+                      </div>
+
+                      <div className="mt-3 grid gap-2 text-xs text-[var(--ink-3)] md:grid-cols-2">
+                        <div>
+                          <span className="font-medium text-[var(--ink-2)]">{t("evolution.method")}: </span>
+                          {classificationMethod ?? "-"}
+                        </div>
+                        <div>
+                          <span className="font-medium text-[var(--ink-2)]">{t("evolution.matchedRules")}: </span>
+                          {matchedRules.length > 0 ? matchedRules.join(", ") : "-"}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </GlassCardContent>
+        </GlassCard>
 
         <GlassCard
           blur="sm"

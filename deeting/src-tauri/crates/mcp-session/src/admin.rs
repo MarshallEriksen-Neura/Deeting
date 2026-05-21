@@ -143,6 +143,47 @@ pub struct LocalTaskPolicyPriorListResponse {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LocalEvolutionSignalQuery {
+    pub skip: Option<i64>,
+    pub limit: Option<i64>,
+    pub source: Option<String>,
+    pub classification: Option<String>,
+    pub session_id: Option<String>,
+    pub trace_id: Option<String>,
+    pub run_id: Option<String>,
+    pub fingerprint_key: Option<String>,
+    pub status: Option<String>,
+    pub created_at_start_unix_ms: Option<i64>,
+    pub created_at_end_unix_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalEvolutionSignalItem {
+    pub id: String,
+    pub source: String,
+    pub status: String,
+    pub classification: String,
+    pub session_id: Option<String>,
+    pub trace_id: Option<String>,
+    pub run_id: Option<String>,
+    pub monitor_task_id: Option<String>,
+    pub monitor_log_id: Option<String>,
+    pub fingerprint_key: Option<String>,
+    pub confidence: f64,
+    pub payload_json: Value,
+    pub note: Option<String>,
+    pub created_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalEvolutionSignalListResponse {
+    pub total: i64,
+    pub skip: i64,
+    pub limit: i64,
+    pub items: Vec<LocalEvolutionSignalItem>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LocalGatewayLogQuery {
     pub skip: Option<i64>,
     pub limit: Option<i64>,
