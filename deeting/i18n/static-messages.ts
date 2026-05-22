@@ -29,6 +29,7 @@ const namespaces = [
   "bandit",
   "task-learning",
   "llm-wiki",
+  "workflow",
   "island",
 ] as const
 

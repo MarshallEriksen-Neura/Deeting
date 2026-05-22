@@ -16,6 +16,7 @@ const CHAT_MESSAGE_NAMESPACES: readonly StaticMessageNamespace[] = [
   "common",
   "chat",
   "knowledge",
+  "workflow",
 ]
 
 export default async function ChatLayout({
