@@ -307,15 +307,12 @@ pub(super) fn render_skill_recipe_prompt(
     }
 
     let mut lines = vec![
-        "## Installed Skills".to_string(),
-        "These are candidate skill packages discovered for this request. A recipe preview is not the full skill.".to_string(),
-        "When a listed skill is relevant, call `activate_skill` with its stable `skill_id` before relying on package-specific procedures.".to_string(),
-        "After activation, call `read_skill_resource` only for package-local references, examples, templates, or script source named by `SKILL.md`.".to_string(),
-        "Use registered skill actions for callable skill tools, and use `shell_execute` only for actual host command execution when it is allowed.".to_string(),
+        "## Installed Skills (candidate packages for this turn)".to_string(),
+        "Activate via `activate_skill` with the stable `skill_id` before relying on package-specific procedures. Skill discipline lives in the base Tool & Capability Contract above — this section only lists candidates.".to_string(),
     ];
     if !explicit_mentions.is_empty() {
         lines.push(format!(
-            "Explicit user skill mentions in this request: {}. Prefer matching entries, but still activate by stable `skill_id`.",
+            "User explicitly mentioned: {}. Prefer matching entries.",
             explicit_mentions
                 .iter()
                 .map(|mention| format!("${mention}"))

@@ -1238,6 +1238,12 @@ html:not(.dark) [data-tauri-drag-region] {
   overflow: hidden;
   isolation: isolate;
 }
+.atelier-shell[data-fullscreen="true"] {
+  background:
+    radial-gradient(circle at 14% 12%, color-mix(in srgb, var(--atl-accent) 18%, transparent), transparent 28%),
+    radial-gradient(circle at 88% 8%, color-mix(in srgb, #7ce2df 18%, transparent), transparent 26%),
+    linear-gradient(180deg, var(--atl-canvas-soft), var(--atl-canvas));
+}
 .atelier-shell::before {
   content: "";
   position: absolute;
@@ -1260,7 +1266,67 @@ html:not(.dark) [data-tauri-drag-region] {
 .atelier-corner[data-pos="bl"] { bottom: 10px; left: 10px; border-left: 1px solid; border-bottom: 1px solid; }
 .atelier-corner[data-pos="br"] { bottom: 10px; right: 10px; border-right: 1px solid; border-bottom: 1px solid; }
 
+.atelier-fullscreen-ambient {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background-image:
+    linear-gradient(var(--atl-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--atl-grid) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, 0.7) 42%, transparent 100%);
+}
+.atelier-fullscreen-orbit {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(22px);
+  transform: translateZ(0);
+}
+.atelier-fullscreen-orbit-a {
+  top: 72px;
+  left: max(64px, 7vw);
+  width: 180px;
+  height: 180px;
+  background: color-mix(in srgb, var(--atl-accent) 22%, transparent);
+}
+.atelier-fullscreen-orbit-b {
+  right: max(48px, 8vw);
+  bottom: 96px;
+  width: 220px;
+  height: 220px;
+  background: color-mix(in srgb, #7ce2df 16%, transparent);
+}
+.atelier-fullscreen-rail {
+  position: absolute;
+  left: 18px;
+  top: 22px;
+  bottom: 22px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 1px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    color-mix(in srgb, var(--atl-accent) 42%, transparent),
+    transparent
+  );
+}
+.atelier-fullscreen-rail span {
+  width: 5px;
+  height: 5px;
+  margin-left: -2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--atl-accent) 72%, var(--atl-canvas));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--atl-accent) 12%, transparent);
+}
+
 .atelier-header {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;

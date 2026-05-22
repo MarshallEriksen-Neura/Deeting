@@ -27,6 +27,7 @@ pub struct TaskProfile {
     pub wants_single_action: bool,
     pub destructive_intent: bool,
     pub approval_sensitive: bool,
+    pub wants_artifact_generation: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -81,11 +82,14 @@ pub fn select_local_route_with_evidence(
         (LocalRouteKind::Direct, reasons)
     } else if profile.wants_programmatic_logic
         && evidence.has_programmatic_executor
-        && (!profile.wants_analysis || profile.has_batch_scope)
+        && (!profile.wants_analysis || profile.has_batch_scope || profile.wants_artifact_generation)
     {
         let mut reasons = Vec::new();
         if profile.has_batch_scope {
             reasons.push("batch_scope".to_string());
+        }
+        if profile.wants_artifact_generation {
+            reasons.push("artifact_generation".to_string());
         }
         reasons.push("programmatic_logic".to_string());
         reasons.push("programmatic_executor_available".to_string());
@@ -146,6 +150,7 @@ pub fn build_local_route_status_meta(decision: &LocalRouteDecision) -> Value {
         "has_batch_scope": decision.profile.has_batch_scope,
         "wants_programmatic_logic": decision.profile.wants_programmatic_logic,
         "wants_analysis": decision.profile.wants_analysis,
+        "wants_artifact_generation": decision.profile.wants_artifact_generation,
         "destructive_intent": decision.profile.destructive_intent,
         "approval_sensitive": decision.profile.approval_sensitive,
     })
@@ -277,41 +282,110 @@ impl TaskProfile {
                 "缓存",
             ],
         );
-        let wants_programmatic_logic = contains_any(
+        let wants_artifact_generation = contains_any(
             &normalized,
             &[
-                "script",
-                "programmatically",
-                "automation",
-                "pipeline",
-                "aggregate",
-                "dedup",
-                "extract",
-                "manifest",
-                "rename",
-                "directory tree",
-                "json",
-                "csv",
-                "table",
-                "脚本",
-                "自动化",
-                "汇总",
-                "聚合",
-                "去重",
-                "提取",
-                "目录树",
-                "重命名",
-                "生成清单",
-                "生成 json",
+                // English artifact nouns/phrases
+                "html page",
+                "html file",
+                "html dashboard",
+                "html report",
+                "svg image",
+                "svg file",
+                "infographic",
+                "landing page",
+                "web page",
+                "webpage",
+                "slide deck",
+                "presentation deck",
+                "poster",
+                // Generation verbs paired with artifact tokens (substring match)
+                "make an html",
+                "write an html",
+                "generate an html",
+                "build an html",
+                "create an html",
+                "export an html",
+                "make me an html",
+                "write me an html",
+                "make an svg",
+                "write an svg",
+                "generate an svg",
+                "draw an svg",
+                // Chinese artifact nouns and verb pairs
+                "html 页面",
+                "html页面",
+                "html 文件",
+                "html文件",
+                "html 报告",
+                "html报告",
+                "svg 图",
+                "svg图",
+                "svg 文件",
+                "网页",
+                "落地页",
+                "海报",
+                "信息图",
+                "信息长图",
+                "长图",
+                "幻灯片",
+                "演示文稿",
+                "做一个 html",
+                "做一个html",
+                "做个 html",
+                "做个html",
+                "写一个 html",
+                "写一个html",
+                "写个 html",
+                "写个html",
+                "生成 html",
+                "生成html",
+                "导出 html",
+                "导出html",
+                "生成网页",
+                "生成海报",
+                "生成 svg",
+                "生成svg",
             ],
-        ) || (has_batch_scope
-            && contains_any(
+        );
+
+        let wants_programmatic_logic = wants_artifact_generation
+            || contains_any(
                 &normalized,
                 &[
-                    "markdown", "md", "file", "files", "repo", "repos", "log", "logs", "目录",
-                    "文件", "仓库", "日志",
+                    "script",
+                    "programmatically",
+                    "automation",
+                    "pipeline",
+                    "aggregate",
+                    "dedup",
+                    "extract",
+                    "manifest",
+                    "rename",
+                    "directory tree",
+                    "json",
+                    "csv",
+                    "table",
+                    "脚本",
+                    "自动化",
+                    "汇总",
+                    "聚合",
+                    "去重",
+                    "提取",
+                    "目录树",
+                    "重命名",
+                    "生成清单",
+                    "生成 json",
                 ],
-            ));
+            )
+            || (has_batch_scope
+                && contains_any(
+                    &normalized,
+                    &[
+                        "markdown", "md", "file", "files", "repo", "repos", "log", "logs", "目录",
+                        "文件", "仓库", "日志",
+                    ],
+                ));
 
         let wants_single_action = !wants_programmatic_logic && !wants_analysis;
 
@@ -323,6 +397,7 @@ impl TaskProfile {
             wants_single_action,
             destructive_intent,
             approval_sensitive,
+            wants_artifact_generation,
         }
     }
 }
@@ -451,6 +526,7 @@ mod tests {
                 wants_single_action: true,
                 destructive_intent: false,
                 approval_sensitive: false,
+                wants_artifact_generation: false,
             },
             evidence: RouteEvidence {
                 direct_callable_capability_count: 2,
@@ -466,6 +542,77 @@ mod tests {
         assert!(prompt.contains("exact tool name `search_sdk`"));
         assert!(prompt.contains("words like search, find, lookup, or query"));
         assert!(prompt.contains("browser/page/tab requests"));
+    }
+
+    #[test]
+    fn html_artifact_request_routes_to_worker() {
+        let decision = select_local_route(
+            "再写一个 html 页面 进行总结的 我直接分享给我的好朋友们",
+            &json!({
+                "orchestration_primitives": [{ "name": "execute_code_plan" }],
+                "capabilities": [],
+                "routing_hint": { "programmatic_path": "execute_code_plan" }
+            }),
+        );
+        assert_eq!(decision.route, LocalRouteKind::Worker);
+        assert!(decision.profile.wants_artifact_generation);
+        assert!(decision
+            .reasons
+            .iter()
+            .any(|reason| reason == "artifact_generation"));
+        assert!(decision
+            .reasons
+            .iter()
+            .any(|reason| reason == "programmatic_logic"));
+    }
+
+    #[test]
+    fn html_artifact_request_overrides_analysis_signal() {
+        // "分析" alone would trigger wants_analysis → analysis_request; but artifact_generation
+        // must override that so we actually produce the deliverable.
+        let decision = select_local_route(
+            "分析一下今日热点然后做一个 html 页面给我",
+            &json!({
+                "orchestration_primitives": [{ "name": "execute_code_plan" }],
+                "capabilities": [],
+                "routing_hint": { "programmatic_path": "execute_code_plan" }
+            }),
+        );
+        assert_eq!(decision.route, LocalRouteKind::Worker);
+        assert!(decision.profile.wants_analysis);
+        assert!(decision.profile.wants_artifact_generation);
+        assert!(decision
+            .reasons
+            .iter()
+            .any(|reason| reason == "artifact_generation"));
+    }
+
+    #[test]
+    fn english_html_request_routes_to_worker() {
+        let decision = select_local_route(
+            "Build an html dashboard summarizing today's news",
+            &json!({
+                "orchestration_primitives": [{ "name": "execute_code_plan" }],
+                "capabilities": [],
+                "routing_hint": { "programmatic_path": "execute_code_plan" }
+            }),
+        );
+        assert_eq!(decision.route, LocalRouteKind::Worker);
+        assert!(decision.profile.wants_artifact_generation);
+    }
+
+    #[test]
+    fn explaining_what_html_is_does_not_trigger_artifact_route() {
+        // "html 是什么" / "what is html" — pure question, no artifact verb pair.
+        let decision = select_local_route(
+            "html 是什么 跟 xml 有什么区别",
+            &json!({
+                "orchestration_primitives": [{ "name": "execute_code_plan" }],
+                "capabilities": [],
+                "routing_hint": { "programmatic_path": "execute_code_plan" }
+            }),
+        );
+        assert!(!decision.profile.wants_artifact_generation);
     }
 }
 

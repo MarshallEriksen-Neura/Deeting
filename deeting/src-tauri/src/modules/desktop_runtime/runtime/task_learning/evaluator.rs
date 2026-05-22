@@ -780,6 +780,7 @@ mod tests {
                 wants_single_action: true,
                 destructive_intent: false,
                 approval_sensitive: false,
+                wants_artifact_generation: false,
             },
             evidence: RouteEvidence {
                 direct_callable_capability_count: 1,
