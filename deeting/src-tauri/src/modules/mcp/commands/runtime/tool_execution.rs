@@ -2024,10 +2024,11 @@ pub(crate) async fn execute_mcp_tool(
         let remote_tool_name = tool
             .remote_tool_name()
             .ok_or_else(|| format!("remote tool {} is missing remote tool name", tool.name))?;
+        let headers = tool.remote_headers();
         return run_mcp_tool_future_with_timeout(
             &tool.name,
             timeout,
-            call_remote_sse_tool(&sse_url, &remote_tool_name, arguments),
+            call_remote_sse_tool(&sse_url, &remote_tool_name, arguments, &headers),
         )
         .await;
     }

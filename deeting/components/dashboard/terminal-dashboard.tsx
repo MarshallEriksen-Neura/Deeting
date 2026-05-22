@@ -4,7 +4,11 @@ import { useUserSecretary, useUserEmbeddingConfig } from "@/lib/swr/use-embeddin
 import { usePlatformModels } from "@/lib/swr/use-platform-models"
 import { useChatModels } from "@/hooks/use-chat-models"
 import { isTauriRuntime } from "@/lib/runtime/tauri"
-import { buildWorkflowResultPayload, isWorkflowTerminal } from "@/lib/workflow/presentation"
+import {
+  buildWorkflowResultPayload,
+  getUserVisibleWorkflowArtifactRefs,
+  isWorkflowTerminal,
+} from "@/lib/workflow/presentation"
 import ViewBlock from "@/components/views/view-block"
 import type { WorkflowEvent, WorkflowRun, WorkflowStepRun } from "@/lib/workflow/types"
 
@@ -321,6 +325,12 @@ function WorkflowLiveNodes({
       : run.status === "completed" || run.status === "awaiting_plan_edit"
         ? resultStep
         : sortedSteps.find((step) => step.status === "running") ?? resultStep
+  const outputSteps = sortedSteps
+    .map((step) => ({
+      step,
+      artifactRefs: getUserVisibleWorkflowArtifactRefs(step.output_artifact_refs),
+    }))
+    .filter(({ step, artifactRefs }) => step.worker_trace_summary || artifactRefs.length > 0)
 
   return (
     <div className="space-y-6">
@@ -366,12 +376,11 @@ function WorkflowLiveNodes({
         sortedSteps.map((step) => <LiveStep key={step.id} step={step} />)
       )}
 
-      {sortedSteps.some((step) => step.worker_trace_summary || step.output_artifact_refs.length > 0) ? (
+      {outputSteps.length > 0 ? (
         <>
           <SectionLabel>Output Artifacts</SectionLabel>
-          {sortedSteps
-            .filter((step) => step.worker_trace_summary || step.output_artifact_refs.length > 0)
-            .map((step) => (
+          {outputSteps
+            .map(({ step, artifactRefs }) => (
               <div key={`${step.id}-result`} className="pl-6 ml-1.5 mb-4">
                 <div className="bg-[var(--atl-canvas)] border border-[var(--atl-rule)] rounded-lg shadow-[var(--atl-shell-shadow)] overflow-hidden">
                   <div className="bg-[var(--atl-canvas-soft)] px-4 py-2 border-b border-[var(--atl-rule)] flex items-center gap-2">
@@ -380,9 +389,9 @@ function WorkflowLiveNodes({
                   </div>
                   <div className="p-4 text-[var(--atl-ink)] text-[13px] leading-relaxed">
                     {step.worker_trace_summary ? <p>{step.worker_trace_summary}</p> : null}
-                    {step.output_artifact_refs.length > 0 ? (
+                    {artifactRefs.length > 0 ? (
                       <div className="mt-3 space-y-1 font-mono text-[10px] text-[var(--atl-ink-soft)]">
-                        {step.output_artifact_refs.map((ref) => <div key={ref}>{formatWorkflowArtifactLabel(ref)}</div>)}
+                        {artifactRefs.map((ref) => <div key={ref}>{formatWorkflowArtifactLabel(ref)}</div>)}
                       </div>
                     ) : null}
                   </div>

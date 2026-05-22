@@ -9,6 +9,7 @@ import { Progress } from "@/ui/shadcn/progress"
 import { ScrollArea } from "@/ui/shadcn/scroll-area"
 import { Badge } from "@/ui/shadcn/badge"
 import { getWorkflowArtifactContent } from "@/lib/workflow/commands"
+import { getUserVisibleWorkflowArtifactRefs } from "@/lib/workflow/presentation"
 import { TimelinePhase } from "./timeline-phase"
 import type {
   CompiledPhase,
@@ -29,7 +30,7 @@ interface WorkflowExecutionProps {
   expandedPhaseIds: Set<string>
   onToggleExpand: (phaseId: string) => void
   onRerunPhase: (phaseId: string) => void
-  onViewContext: (phaseId: string) => void
+  onViewResult: (phaseId: string) => void
   onResumeWorkflow?: () => void
   onBack: () => void
   onCancel?: () => void
@@ -54,7 +55,7 @@ export function WorkflowExecution({
   expandedPhaseIds,
   onToggleExpand,
   onRerunPhase,
-  onViewContext,
+  onViewResult,
   onResumeWorkflow,
   onBack,
   onCancel,
@@ -120,14 +121,14 @@ export function WorkflowExecution({
           auditDecision={latestPlanAuditDecision}
           onRerun={decisionStep.status === "failed" ? () => onRerunPhase(decisionStep.phase_id) : undefined}
           onResume={onResumeWorkflow}
-          onViewContext={decisionStep.status === "succeeded" ? () => onViewContext(decisionStep.phase_id) : undefined}
+          onViewResult={decisionStep.status === "succeeded" ? () => onViewResult(decisionStep.phase_id) : undefined}
         />
       ) : focusStep ? (
         <WorkflowFocusPanel
           run={run}
           step={focusStep}
           onRerun={focusStep.status === "failed" ? () => onRerunPhase(focusStep.phase_id) : undefined}
-          onViewContext={focusStep.status === "succeeded" ? () => onViewContext(focusStep.phase_id) : undefined}
+          onViewResult={focusStep.status === "succeeded" ? () => onViewResult(focusStep.phase_id) : undefined}
         />
       ) : null}
 
@@ -151,7 +152,7 @@ export function WorkflowExecution({
                   }
                   onToggleExpand={() => onToggleExpand(step.phase_id)}
                   onRerun={step.status === "failed" ? () => onRerunPhase(step.phase_id) : undefined}
-                  onViewContext={step.status === "succeeded" ? () => onViewContext(step.phase_id) : undefined}
+                  onViewResult={step.status === "succeeded" ? () => onViewResult(step.phase_id) : undefined}
                 />
               ))
           )}
@@ -237,14 +238,14 @@ function WorkflowDecisionPanel({
   auditDecision,
   onRerun,
   onResume,
-  onViewContext,
+  onViewResult,
 }: {
   run: WorkflowRun
   step: WorkflowStepRun
   auditDecision?: PlanAuditDecision | null
   onRerun?: () => void
   onResume?: () => void
-  onViewContext?: () => void
+  onViewResult?: () => void
 }) {
   const t = useI18n("workflow")
   const reason = auditDecision?.reason || step.error || step.worker_trace_summary || step.goal
@@ -311,9 +312,9 @@ function WorkflowDecisionPanel({
                   {t("execution.continueAnyway")}
                 </Button>
               ) : null}
-              {onViewContext ? (
-                <Button variant="ghost" size="sm" className="h-8 rounded-[10px] px-2 text-xs" onClick={onViewContext}>
-                  {t("execution.viewContext")}
+              {onViewResult ? (
+                <Button variant="ghost" size="sm" className="h-8 rounded-[10px] px-2 text-xs" onClick={onViewResult}>
+                  {t("execution.viewResult")}
                 </Button>
               ) : null}
             </div>
@@ -328,12 +329,12 @@ function WorkflowFocusPanel({
   run,
   step,
   onRerun,
-  onViewContext,
+  onViewResult,
 }: {
   run: WorkflowRun
   step: WorkflowStepRun
   onRerun?: () => void
-  onViewContext?: () => void
+  onViewResult?: () => void
 }) {
   const t = useI18n("workflow")
   const isFailed = step.status === "failed" || run.status === "failed" || run.status === "cancelled"
@@ -342,6 +343,7 @@ function WorkflowFocusPanel({
   const summary = isFailed
     ? step.error || run.error || step.worker_trace_summary || step.goal
     : step.worker_trace_summary || step.goal
+  const visibleArtifactRefs = getUserVisibleWorkflowArtifactRefs(step.output_artifact_refs)
 
   return (
     <div className="border-b border-[color:var(--ios-shell-border)] px-5 py-4">
@@ -377,17 +379,17 @@ function WorkflowFocusPanel({
               <p className="mt-2 text-[12px] leading-5 text-muted-foreground/60">{t("result.noResults")}</p>
             )}
 
-            {step.output_artifact_refs.length > 0 && (
+            {visibleArtifactRefs.length > 0 && (
               <WorkflowArtifactInlinePreview
                 runId={run.id}
-                artifactRefs={step.output_artifact_refs}
+                artifactRefs={visibleArtifactRefs}
               />
             )}
 
             <div className="mt-3 flex flex-wrap gap-2">
-              {onViewContext && (
-                <Button variant="ios" size="xs" className="h-7 rounded-[8px] px-2 text-[10px]" onClick={onViewContext}>
-                  {t("result.viewFullContext")}
+              {onViewResult && (
+                <Button variant="ios" size="xs" className="h-7 rounded-[8px] px-2 text-[10px]" onClick={onViewResult}>
+                  {t("result.viewFullResult")}
                 </Button>
               )}
               {onRerun && (

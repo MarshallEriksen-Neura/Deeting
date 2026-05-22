@@ -344,6 +344,13 @@ impl McpTool {
         })
     }
 
+    pub fn remote_headers(&self) -> HashMap<String, String> {
+        self.config_value()
+            .as_ref()
+            .map(remote_headers_from_value)
+            .unwrap_or_default()
+    }
+
     pub fn is_stdio_mcp_tool(&self) -> bool {
         self.transport_kind() == McpTransportKind::Stdio
             && self
@@ -406,6 +413,36 @@ impl McpToolConfigPayload {
             .map(str::trim)
             .filter(|value| !value.is_empty())
     }
+
+    pub fn remote_headers(&self) -> HashMap<String, String> {
+        self.extra
+            .get("headers")
+            .and_then(Value::as_object)
+            .map(remote_headers_from_object)
+            .unwrap_or_default()
+    }
+}
+
+fn remote_headers_from_value(value: &Value) -> HashMap<String, String> {
+    value
+        .get("headers")
+        .and_then(Value::as_object)
+        .map(remote_headers_from_object)
+        .unwrap_or_default()
+}
+
+fn remote_headers_from_object(headers: &serde_json::Map<String, Value>) -> HashMap<String, String> {
+    headers
+        .iter()
+        .filter_map(|(name, value)| {
+            let name = name.trim();
+            let value = value.as_str()?.trim();
+            if name.is_empty() || value.is_empty() {
+                return None;
+            }
+            Some((name.to_string(), value.to_string()))
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -571,5 +608,86 @@ mod tests {
 
         assert_eq!(payload.transport_kind(), McpTransportKind::Sse);
         assert_eq!(payload.remote_sse_url(), Some("https://example.com/mcp"));
+    }
+
+    #[test]
+    fn tool_config_payload_reads_remote_headers_from_extra() {
+        let mut extra = HashMap::new();
+        extra.insert(
+            "headers".to_string(),
+            serde_json::json!({
+                "Authorization": "Bearer token123",
+                "X-Trace-Id": "trace-1",
+                "X-Empty": ""
+            }),
+        );
+        let payload = McpToolConfigPayload {
+            command: None,
+            args: None,
+            env: None,
+            description: None,
+            capabilities: None,
+            transport_type: Some("sse".to_string()),
+            url: Some("https://example.com/sse".to_string()),
+            sse_url: None,
+            extra,
+        };
+
+        let headers = payload.remote_headers();
+
+        assert_eq!(
+            headers.get("Authorization").map(String::as_str),
+            Some("Bearer token123")
+        );
+        assert_eq!(
+            headers.get("X-Trace-Id").map(String::as_str),
+            Some("trace-1")
+        );
+        assert!(!headers.contains_key("X-Empty"));
+    }
+
+    #[test]
+    fn tool_reads_remote_headers_from_config_json() {
+        let tool = McpTool {
+            id: "tool-1".to_string(),
+            identifier: None,
+            name: "remote_tool".to_string(),
+            service_key: None,
+            service_display_name: None,
+            service_description: None,
+            source_type: McpSourceType::Local,
+            source_id: None,
+            status: McpToolStatus::Healthy,
+            ping_ms: None,
+            capabilities: Vec::new(),
+            description: String::new(),
+            error: None,
+            command: None,
+            args: None,
+            env: None,
+            config_json: serde_json::json!({
+                "transport": "sse",
+                "url": "https://example.com/sse",
+                "headers": {
+                    "Authorization": "Bearer token123"
+                }
+            })
+            .to_string(),
+            pending_config_json: None,
+            config_hash: "hash".to_string(),
+            pending_config_hash: None,
+            conflict_status: McpConflictStatus::None,
+            is_read_only: false,
+            is_new: false,
+            created_at: String::new(),
+            updated_at: String::new(),
+        };
+
+        assert_eq!(
+            tool.remote_headers()
+                .get("Authorization")
+                .map(String::as_str),
+            Some("Bearer token123")
+        );
     }
 }

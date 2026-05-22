@@ -133,6 +133,114 @@
       "title": "Scan Reviews",
       "description": "Review local scan output, security signals, and index reconciliation for doc-first assets"
     },
+    "ecosystem": {
+      "eyebrow": "Ecosystem Signals",
+      "guardrail": "Candidate first, local truth later",
+      "title": "External Experience Radar",
+      "description": "This is not a daily raw-record review queue. Deeting turns EvoMap and manual imports into a small set of adoption suggestions, and only asks for a decision when a signal may affect knowledge, memory, or agent strategy.",
+      "footer": "External experience stays provisional by default and does not change local runtime truth before adoption.",
+      "loading": "Loading ecosystem signals...",
+      "desktopOnly": {
+        "title": "Ecosystem signals are desktop-only",
+        "description": "External sources, raw records, and candidate adoption are local runtime capabilities. Open this page in Deeting Desktop."
+      },
+      "actions": {
+        "refresh": "Refresh signals",
+        "configure": "Manage sources",
+        "syncNow": "Sync",
+        "saveToWiki": "Save as knowledge",
+        "saved": "Saved",
+        "adoptForAgent": "Use as strategy candidate",
+        "adopted": "Strategy candidate",
+        "ignore": "Ignore"
+      },
+      "metrics": {
+        "sources": "Enabled sources",
+        "sourcesHint": "{count} sources configured",
+        "needsDecision": "Suggestions",
+        "needsDecisionHint": "Curated candidates only, not raw payloads",
+        "savedKnowledge": "Knowledge drafts",
+        "savedKnowledgeHint": "External experience saved into LLM Wiki",
+        "agentReady": "Strategy candidates",
+        "agentReadyHint": "Promoted through WikiPromotion memory guard"
+      },
+      "suggestions": {
+        "title": "Suggested adoption",
+        "description": "Review translated and summarized high-value experience. Raw records stay available only for provenance.",
+        "confidence": "{value}% confidence",
+        "adoptHint": "Save as knowledge before using this as an agent strategy candidate.",
+        "rawSummaryFallback": "This {kind} has been curated, but the raw payload is not shown in the review queue. Use the title, source, and structure summary to decide whether it is worth preserving."
+      },
+      "lanes": {
+        "decision": "Needs decision",
+        "saved": "Knowledge",
+        "adopted": "Strategy"
+      },
+      "empty": {
+        "title": "No ecosystem suggestions need your attention",
+        "description": "Sources can keep syncing in the background. This page only surfaces a small number of suggestions when something is worth preserving.",
+        "archiveTitle": "This queue is empty",
+        "archiveDescription": "Items saved to knowledge or promoted into strategy candidates will remain here for review."
+      },
+      "sources": {
+        "title": "Source health",
+        "description": "Connection and sync health, not raw payload inspection.",
+        "empty": "No external experience sources configured yet.",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "neverSynced": "Never synced",
+        "ready": "Ready",
+        "attention": "Needs attention",
+        "total": "Total"
+      },
+      "candidate": {
+        "source": "Source",
+        "created": "Created",
+        "state": "State",
+        "stateValue": {
+          "decision": "Needs your decision",
+          "saved": "Saved as knowledge",
+          "adopted": "Strategy candidate"
+        }
+      },
+      "flow": {
+        "title": "Recent signal flow",
+        "description": "Confirms sources are active. Detailed raw records stay in advanced logs.",
+        "empty": "No recent sync records.",
+        "advancedLogs": "Manage sources and raw records"
+      },
+      "source": {
+        "unknown": "Unknown source"
+      },
+      "connector": {
+        "manual_import": "Manual import",
+        "evomap_public_feed": "EvoMap Public Feed",
+        "evomap_kg": "EvoMap Knowledge Graph"
+      },
+      "status": {
+        "draft": "Draft",
+        "ready": "Ready",
+        "syncing": "Syncing",
+        "error": "Error",
+        "disabled": "Disabled"
+      },
+      "stages": {
+        "provisional": "Provisional",
+        "canSave": "Ready for knowledge",
+        "saved": "Saved to LLM Wiki",
+        "agentCandidate": "Strategy candidate",
+        "adopted": "Adopted candidate"
+      },
+      "toast": {
+        "loadFailed": "Failed to load ecosystem signals",
+        "syncFailed": "Failed to sync source",
+        "synced": "Synced {name}",
+        "actionFailed": "Failed to update suggestion",
+        "ignored": "Suggestion ignored",
+        "savedToWiki": "Saved to LLM Wiki",
+        "adopted": "Saved as strategy candidate"
+      }
+    },
     "notificationChannels": {
       "wechat": {
         "connect": "Connect WeChat",

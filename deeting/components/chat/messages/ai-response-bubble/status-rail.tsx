@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useReducer, useRef } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 import { resolveStatusDetail } from "@/lib/chat/status-detail";
@@ -10,6 +10,42 @@ import {
   useStepProgress,
   resolveStageIndex,
 } from "@/components/chat/visuals/status-visuals";
+
+// Slow-upstream hint thresholds (seconds). Once the assistant has been "active"
+// (request in flight, no content yet) for this long, surface a friendly hint so
+// users don't think the app is stuck on a poor network.
+const SLOW_HINT_SOFT_S = 6;
+const SLOW_HINT_MEDIUM_S = 15;
+const SLOW_HINT_STRONG_S = 30;
+
+function useElapsedSeconds(active: boolean): number {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    if (!active) {
+      setSeconds(0);
+      return;
+    }
+    const startedAt = Date.now();
+    const tick = () => {
+      setSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [active]);
+  return seconds;
+}
+
+function resolveSlowUpstreamHint(elapsedSeconds: number): string | null {
+  if (elapsedSeconds < SLOW_HINT_SOFT_S) return null;
+  if (elapsedSeconds < SLOW_HINT_MEDIUM_S) {
+    return `等上游响应 · ${elapsedSeconds}s`;
+  }
+  if (elapsedSeconds < SLOW_HINT_STRONG_S) {
+    return `网络较慢,还在等 · ${elapsedSeconds}s`;
+  }
+  return `上游响应慢 · ${elapsedSeconds}s(没卡住,可稍候)`;
+}
 
 type BubbleUiState = {
   stableActiveStep: number;
@@ -126,10 +162,17 @@ export function AIResponseStatusRail({
   }, [isActive, statusDetail]);
 
   const currentStepLabel = steps[stableActiveStep]?.label ?? t("status.header.processing");
-  const terminalDetail = isActive ? (stableDetail ?? statusDetail) : null;
+  const elapsedSeconds = useElapsedSeconds(isActive && !hasContent);
+  const slowUpstreamHint = resolveSlowUpstreamHint(elapsedSeconds);
+  const terminalDetail = isActive
+    ? (slowUpstreamHint ?? stableDetail ?? statusDetail)
+    : null;
 
-  // Transient only: once the assistant returns message/tool blocks, the loading
-  // indicator gives way to the real response instead of becoming a status panel.
+  // Show the status rail whenever the bubble is active and has not yet
+  // produced user-visible answer content (text / thought / error / UI block).
+  // Tool calls and intermediate execution blocks are deliberately ignored
+  // here so the loading indicator keeps spinning between phases (e.g. while
+  // the model is still composing a reply after a tool result has arrived).
   const shouldShowStatusRail = isActive && !hasContent;
 
   return (
@@ -146,6 +189,67 @@ export function AIResponseStatusRail({
             label={currentStepLabel}
             status={terminalDetail}
           />
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+// Compact presence indicator shown *after* the rail has handed off — i.e. once
+// the bubble has user-visible answer content but is still streaming or otherwise
+// active. Sits inline below the GhostCursor at the tail of the content so the
+// user's eye (which is at the bottom reading the latest token) keeps seeing
+// "still alive" without the heavy rail dominating their attention.
+export function AIResponseStreamingTail({
+  isActive,
+  hasContent,
+  statusStage,
+}: {
+  isActive: boolean;
+  hasContent: boolean;
+  statusStage: string | null;
+}) {
+  const t = useI18n("chat");
+  const steps = useMemo(
+    () => [
+      { key: "listen", label: t("status.flow.listen") },
+      { key: "remember", label: t("status.flow.remember") },
+      { key: "evolve", label: t("status.flow.evolve") },
+      { key: "render", label: t("status.flow.render") },
+    ],
+    [t],
+  );
+  const timerStep = useStepProgress(isActive && !statusStage, steps.length);
+  const activeStep = statusStage
+    ? resolveStageIndex(statusStage, steps)
+    : timerStep;
+  const currentLabel =
+    steps[activeStep]?.label ?? t("status.header.processing");
+  const elapsedSeconds = useElapsedSeconds(isActive);
+
+  const visible = isActive && hasContent;
+
+  return (
+    <AnimatePresence>
+      {visible && (
+        <motion.div
+          key="streaming-tail"
+          initial={{ opacity: 0, y: 2 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, transition: { duration: 0.4, ease: "easeOut" } }}
+          transition={{ duration: 0.3, ease: "easeOut", delay: 0.1 }}
+          className="mt-1 flex items-center gap-2"
+        >
+          <span className="relative inline-flex h-1.5 w-1.5 shrink-0">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-500/40" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-blue-500/70" />
+          </span>
+          <span className="flex items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.1em] text-muted-foreground/55">
+            <span>{currentLabel}</span>
+            <span className="text-muted-foreground/35 normal-case tracking-normal">
+              · {elapsedSeconds}s
+            </span>
+          </span>
         </motion.div>
       )}
     </AnimatePresence>

@@ -85,7 +85,7 @@ export function buildWorkflowLiveBlocks(run: WorkflowRun, steps: WorkflowStepRun
       id: `workflow-live-ui-${run.id}`,
       type: "ui",
       viewType: "workflow.live",
-      title: "Workflow Progress",
+      title: "执行中",
       payload: buildWorkflowLivePayload(run, steps),
       metadata: { workflow_run_id: run.id },
       streamState: "streaming",
@@ -130,8 +130,17 @@ export function findWorkflowResultStep(run: WorkflowRun | null, steps: WorkflowS
   return sorted.find((step) => step.status === "running") ?? [...sorted].reverse().find((step) => step.status === "succeeded") ?? null
 }
 
+export function isUserVisibleWorkflowArtifactRef(ref: string): boolean {
+  const label = ref.split(/[\\/]/).pop()?.toLowerCase() || ref.toLowerCase()
+  return label !== "result.json"
+}
+
+export function getUserVisibleWorkflowArtifactRefs(refs: string[]): string[] {
+  return refs.filter(isUserVisibleWorkflowArtifactRef)
+}
+
 export function summarizeWorkflowArtifacts(step: WorkflowStepRun | null | undefined): WorkflowArtifactSummary[] {
-  return (step?.output_artifact_refs ?? []).map((ref) => {
+  return getUserVisibleWorkflowArtifactRefs(step?.output_artifact_refs ?? []).map((ref) => {
     const label = ref.split(/[\\/]/).pop() || ref
     const lower = label.toLowerCase()
     const kind: WorkflowArtifactSummary["kind"] = lower.endsWith(".md")
@@ -251,21 +260,8 @@ export function buildWorkflowExecutionPayload(run: WorkflowRun, steps: WorkflowS
 
 export function buildWorkflowReceiptBlocks(run: WorkflowRun, steps: WorkflowStepRun[]): MessageBlock[] {
   const resultPayload = buildWorkflowResultPayload(run, steps)
-  const statusText =
-    run.status === "completed"
-      ? "工作流已完成。"
-      : run.status === "awaiting_plan_edit"
-        ? "工作流已暂停，等待你确认下一步。"
-        : "工作流需要处理。"
-  const summary = resultPayload.summary ?? resultPayload.error ?? run.goal
 
   return [
-    {
-      id: `workflow-receipt-text-${run.id}`,
-      type: "text",
-      content: `${statusText}\n\n${summary}`,
-      streamState: "completed",
-    },
     {
       id: `workflow-receipt-ui-${run.id}`,
       type: "ui",

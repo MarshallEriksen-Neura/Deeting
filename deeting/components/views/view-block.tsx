@@ -13,7 +13,13 @@ interface ViewBlockProps {
 }
 
 export function rendersWithoutViewCard(viewType: string) {
-  return viewType === "html.v1" || viewType === "image.result" || viewType === "execution.lifecycle"
+  return (
+    viewType === "html.v1" ||
+    viewType === "image.result" ||
+    viewType === "execution.lifecycle" ||
+    viewType === "workflow.live" ||
+    viewType === "workflow.result"
+  )
 }
 
 export const ViewBlock = memo<ViewBlockProps>(function ViewBlock({

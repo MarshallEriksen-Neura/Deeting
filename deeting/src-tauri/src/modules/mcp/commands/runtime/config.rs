@@ -379,7 +379,8 @@ async fn sync_remote_sse_tools(
             server_name
         ))
     })?;
-    let discovered = list_remote_sse_tools(sse_url)
+    let headers = server_config.remote_headers();
+    let discovered = list_remote_sse_tools(sse_url, &headers)
         .await
         .map_err(McpError::Network)?;
     let desired_identifiers = discovered

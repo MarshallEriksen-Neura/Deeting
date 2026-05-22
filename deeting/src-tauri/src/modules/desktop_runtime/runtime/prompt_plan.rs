@@ -18,11 +18,32 @@ pub(crate) use mcp_runtime::prompt::{
 };
 
 const PRE_TOOL_VISIBILITY_PROMPT: &str = concat!(
-    "Before a user-visible tool call, briefly state what you are about to check or do in one natural sentence when that helps the user follow the action.\n",
-    "Keep the pre-tool note short and specific.\n",
-    "Do not add a pre-tool note when you can answer directly without tools.\n",
-    "Do not repeat the same pre-tool note for every immediate sub-tool call in one continuous action.\n",
-    "Prefer emitting that note as the assistant's normal text content before the tool call rather than as a separate empty update."
+    "Tool calls are visible to the user as live cards. Communicate around them with this discipline:\n",
+    "\n",
+    "1. Read-only tools (search, read_file, list, grep, fetch_url): DO NOT pre-announce. ",
+    "The tool card itself documents the action — narrating it is noise.\n",
+    "2. Side-effect tools (write, execute, send, modify state, call external API with cost): ",
+    "Before the call, emit ONE short sentence stating what you are about to do AND why. Not a paragraph.\n",
+    "3. A batch of related tools fired back-to-back (e.g. reading 5 files to map an interface): ",
+    "Narrate the intent ONCE before the batch, not before each individual call.\n",
+    "4. Never use filler openers before a tool: \"let me check\", \"I'll help you with that\", \"好的\", \"我来\" add zero information.\n",
+    "5. Emit pre-tool notes as regular assistant text immediately before the tool call, ",
+    "not as a separate empty update."
+);
+
+const POST_REPLY_STYLE_PROMPT: &str = concat!(
+    "After all tool work is done, your final reply must answer the user directly. Specifically:\n",
+    "\n",
+    "1. DO NOT recap what tools you called or what you found step-by-step. ",
+    "The tool cards above already show this — repeating it is pure noise.\n",
+    "2. DO NOT write meta-narrative like \"Based on my research above\", \"In summary, I have done X, Y, Z\", ",
+    "\"综上所述\", \"经过以上分析\". Just state the conclusion or answer.\n",
+    "3. DO NOT open with \"好的\" / \"OK\" / \"Sure\" / \"Let me explain\" / \"我来为你...\". ",
+    "Start with the substance of the answer.\n",
+    "4. If the answer is a single fact or short conclusion, write it in one or two sentences — ",
+    "do not pad it to look thorough.\n",
+    "5. Only structure the reply (headings, lists) when the answer genuinely has multiple parallel parts. ",
+    "A single conclusion does not need a heading."
 );
 
 fn query_router_prompt_local_context_from_system() -> Option<RouterPromptLocalContext> {
@@ -91,6 +112,11 @@ pub(crate) fn render_local_runtime_system_prompt(
     sections.push(format!(
         "## User-Visible Tool Call Updates\n{}",
         PRE_TOOL_VISIBILITY_PROMPT
+    ));
+
+    sections.push(format!(
+        "## Final Reply Style\n{}",
+        POST_REPLY_STYLE_PROMPT
     ));
 
     sections.join("\n\n")

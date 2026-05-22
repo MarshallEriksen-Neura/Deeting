@@ -420,7 +420,12 @@ fn browser_expanded_input_schema(name: &str) -> Value {
             "properties": {
                 "tab_id": browser_tab_id_property("Browser tab identifier containing the field. This is normalized to tabId."),
                 "target": browser_locator_property("Required structured locator for the field to fill."),
-                "text": {"type": "string", "description": "Text to place into the field."},
+                "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "description": "Non-empty text to place into the field. Whitespace-only values are rejected."
+                },
                 "submit_after": {"type": "boolean", "description": "Submit the closest form after filling. This is normalized to submitAfter."}
             },
             "required": ["tab_id", "target", "text"],
@@ -1619,7 +1624,12 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
                             "index": { "type": "integer" }
                         }
                     },
-                    "text": { "type": "string", "description": "Text to input into the target element." }
+                    "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S",
+                        "description": "Non-empty text to input into the target element. Whitespace-only values are rejected."
+                    }
                 },
                 "required": ["tab_id", "target", "text"]
             }),
@@ -2694,6 +2704,8 @@ mod tests {
         assert!(!tool.read_only);
         assert!(tool.mutating);
         assert_eq!(tool.risk_level, "LOW");
+        assert_eq!(tool.input_schema["properties"]["text"]["minLength"], 1);
+        assert_eq!(tool.input_schema["properties"]["text"]["pattern"], "\\S");
     }
 
     #[test]

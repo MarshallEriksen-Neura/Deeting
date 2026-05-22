@@ -49,6 +49,11 @@ export interface WorkflowCompileAndStartStreamRequest {
   executionProviderModelId?: string | null
 }
 
+function normalizeWorkflowProposalText(text: string | null | undefined): string | null {
+  if (text == null) return null
+  return text.replace(/^- Depends on:\s*--\s*$/gim, "- Depends on:")
+}
+
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke: tauriInvoke } = await import("@tauri-apps/api/core")
   return tauriInvoke<T>(cmd, args)
@@ -137,7 +142,7 @@ export async function streamWorkflowCompileAndStart(
 
   const baseUrl = await resolveLocalGatewayBaseUrl()
   const body = JSON.stringify({
-    proposalText: payload.proposalText ?? null,
+    proposalText: normalizeWorkflowProposalText(payload.proposalText),
     proposalDirty: payload.proposalDirty ?? false,
     requestId: payload.requestId,
     executionModelId: payload.executionModelId ?? null,

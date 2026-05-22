@@ -50,7 +50,6 @@ import {
   DeferredAgentSettingsCard,
   DeferredDesktopAiAccessSettingsCard,
   DeferredDesktopBrowserAgentPanelCard,
-  DeferredExternalEcosystemSettingsCard,
   DeferredDesktopNetworkSettingsCard,
   DeferredDesktopObjectStorageSettingsCard,
   DeferredDesktopSandboxSettingsCard,
@@ -810,15 +809,6 @@ export function SettingsForm({
           )}
 
           {/* Storage section */}
-          {activeSection === "ecosystem" && (
-            <div className="flex flex-col gap-5 md:gap-6">
-              <DeferredExternalEcosystemSettingsCard
-                isTauriRuntime={isTauriRuntime}
-              />
-            </div>
-          )}
-
-          {/* Storage section */}
           {activeSection === "storage" && (
             <div className="flex flex-col gap-5 md:gap-6">
               <DeferredDesktopObjectStorageSettingsCard
@@ -847,7 +837,6 @@ export function SettingsForm({
 
           {activeSection !== "agent" &&
             activeSection !== "aiAccess" &&
-            activeSection !== "ecosystem" &&
             activeSection !== "shortcuts" &&
             activeSection !== "window" &&
             activeSection !== "version" &&

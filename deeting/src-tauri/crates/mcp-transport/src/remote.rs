@@ -1,10 +1,14 @@
 use futures_util::StreamExt;
 use log::warn;
+use reqwest::header::{HeaderName, HeaderValue};
 use rmcp::{
     model::{CallToolRequestParams, ClientInfo, Implementation},
     service::{RoleClient, RunningService},
     transport::{
-        child_process::TokioChildProcess, streamable_http_client::StreamableHttpClientTransport,
+        child_process::TokioChildProcess,
+        streamable_http_client::{
+            StreamableHttpClientTransport, StreamableHttpClientTransportConfig,
+        },
     },
     ServiceExt,
 };
@@ -98,8 +102,9 @@ impl LocalStdioMcpClient {
 
 async fn connect_sse_client(
     sse_url: &str,
+    headers: &HashMap<String, String>,
 ) -> Result<RunningService<RoleClient, ClientInfo>, String> {
-    match connect_streamable_http_client(sse_url).await {
+    match connect_streamable_http_client(sse_url, headers).await {
         Ok(client) => Ok(client),
         Err(primary_error) => {
             if !is_http_405_method_not_allowed_error(&primary_error) {
@@ -117,7 +122,8 @@ async fn connect_sse_client(
                 return Err(primary_error);
             }
 
-            let fallback_candidates = collect_legacy_sse_fallback_candidates(sse_url).await;
+            let fallback_candidates =
+                collect_legacy_sse_fallback_candidates(sse_url, headers).await;
             if fallback_candidates.is_empty() {
                 return Err(primary_error);
             }
@@ -127,7 +133,7 @@ async fn connect_sse_client(
                 if candidate == sse_url {
                     continue;
                 }
-                match connect_streamable_http_client(&candidate).await {
+                match connect_streamable_http_client(&candidate, headers).await {
                     Ok(client) => {
                         warn!(
                             "remote MCP fallback succeeded after HTTP 405: original='{}' fallback='{}'",
@@ -167,12 +173,47 @@ async fn connect_sse_client(
 
 async fn connect_streamable_http_client(
     url: &str,
+    headers: &HashMap<String, String>,
 ) -> Result<RunningService<RoleClient, ClientInfo>, String> {
-    let transport = StreamableHttpClientTransport::from_uri(url);
+    let mut config = StreamableHttpClientTransportConfig::with_uri(url);
+    let custom_headers = remote_custom_headers(headers)?;
+    if !custom_headers.is_empty() {
+        config = config.custom_headers(custom_headers);
+    }
+    let transport = StreamableHttpClientTransport::from_config(config);
     client_info()
         .serve(transport)
         .await
         .map_err(|err| err.to_string())
+}
+
+fn remote_custom_headers(
+    headers: &HashMap<String, String>,
+) -> Result<HashMap<HeaderName, HeaderValue>, String> {
+    let mut custom_headers = HashMap::new();
+    for (name, value) in headers {
+        let name = name.trim();
+        let value = value.trim();
+        if name.is_empty() || value.is_empty() {
+            continue;
+        }
+        let header_name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|_| format!("invalid remote MCP HTTP header name '{name}'"))?;
+        let header_value = HeaderValue::from_str(value)
+            .map_err(|_| format!("invalid remote MCP HTTP header value for '{name}'"))?;
+        custom_headers.insert(header_name, header_value);
+    }
+    Ok(custom_headers)
+}
+
+fn apply_remote_headers(
+    mut request: reqwest::RequestBuilder,
+    headers: &HashMap<String, String>,
+) -> Result<reqwest::RequestBuilder, String> {
+    for (name, value) in remote_custom_headers(headers)? {
+        request = request.header(name, value);
+    }
+    Ok(request)
 }
 
 async fn connect_legacy_sse_proxy_client(
@@ -680,19 +721,19 @@ fn extract_legacy_sse_endpoint_path(payload: &str) -> Option<String> {
     None
 }
 
-async fn discover_legacy_sse_message_endpoint_url(sse_url: &str) -> Option<String> {
+async fn discover_legacy_sse_message_endpoint_url(
+    sse_url: &str,
+    headers: &HashMap<String, String>,
+) -> Option<String> {
     let origin = reqwest::Url::parse(sse_url).ok()?;
     let client = reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(5))
         .timeout(std::time::Duration::from_secs(12))
         .build()
         .ok()?;
-    let response = client
-        .get(sse_url)
-        .header("Accept", "text/event-stream")
-        .send()
-        .await
-        .ok()?;
+    let request = client.get(sse_url).header("Accept", "text/event-stream");
+    let request = apply_remote_headers(request, headers).ok()?;
+    let response = request.send().await.ok()?;
     if !response.status().is_success() {
         return None;
     }
@@ -737,9 +778,12 @@ fn heuristic_streamable_http_fallback_urls(sse_url: &str) -> Vec<String> {
     candidates
 }
 
-async fn collect_legacy_sse_fallback_candidates(sse_url: &str) -> Vec<String> {
+async fn collect_legacy_sse_fallback_candidates(
+    sse_url: &str,
+    headers: &HashMap<String, String>,
+) -> Vec<String> {
     let mut candidates = Vec::new();
-    if let Some(discovered) = discover_legacy_sse_message_endpoint_url(sse_url).await {
+    if let Some(discovered) = discover_legacy_sse_message_endpoint_url(sse_url, headers).await {
         candidates.push(discovered);
     }
     for candidate in heuristic_streamable_http_fallback_urls(sse_url) {
@@ -761,8 +805,11 @@ fn normalized_call_arguments(
     }
 }
 
-pub async fn list_remote_sse_tools(sse_url: &str) -> Result<Vec<RemoteDiscoveredTool>, String> {
-    let mut client = connect_sse_client(sse_url).await?;
+pub async fn list_remote_sse_tools(
+    sse_url: &str,
+    headers: &HashMap<String, String>,
+) -> Result<Vec<RemoteDiscoveredTool>, String> {
+    let mut client = connect_sse_client(sse_url, headers).await?;
     let result = client
         .peer()
         .list_all_tools()
@@ -786,9 +833,10 @@ pub async fn call_remote_sse_tool(
     sse_url: &str,
     tool_name: &str,
     arguments: &Value,
+    headers: &HashMap<String, String>,
 ) -> Result<Value, String> {
     let args = normalized_call_arguments(arguments, "remote MCP tool")?;
-    let mut client = connect_sse_client(sse_url).await?;
+    let mut client = connect_sse_client(sse_url, headers).await?;
     let request = args.map_or_else(
         || CallToolRequestParams::new(tool_name.to_string()),
         |arguments| CallToolRequestParams::new(tool_name.to_string()).with_arguments(arguments),
@@ -836,9 +884,10 @@ mod tests {
         build_url_with_same_origin, enrich_stdio_connect_error, extract_legacy_sse_endpoint_path,
         heuristic_streamable_http_fallback_urls, is_http_405_method_not_allowed_error,
         legacy_sse_proxy_command_candidates, local_stdio_command_candidates_with_discovered_paths,
-        looks_like_legacy_sse_endpoint_url, spawn_local_stdio_client,
+        looks_like_legacy_sse_endpoint_url, remote_custom_headers, spawn_local_stdio_client,
     };
-    use std::sync::Mutex;
+    use reqwest::header::{HeaderName, HeaderValue};
+    use std::{collections::HashMap, sync::Mutex};
 
     #[test]
     fn detects_http_405_method_not_allowed_error_text() {
@@ -886,6 +935,36 @@ mod tests {
         assert!(!looks_like_legacy_sse_endpoint_url(
             "https://mcp.example.com/mcp"
         ));
+    }
+
+    #[test]
+    fn builds_remote_custom_headers_from_authorization_config() {
+        let headers = HashMap::from([
+            ("Authorization".to_string(), "Bearer token123".to_string()),
+            ("X-Trace-Id".to_string(), "trace-1".to_string()),
+        ]);
+
+        let parsed = remote_custom_headers(&headers).expect("headers should parse");
+
+        assert_eq!(
+            parsed.get(&HeaderName::from_static("authorization")),
+            Some(&HeaderValue::from_static("Bearer token123"))
+        );
+        assert_eq!(
+            parsed.get(&HeaderName::from_static("x-trace-id")),
+            Some(&HeaderValue::from_static("trace-1"))
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_remote_header_without_leaking_value() {
+        let headers =
+            HashMap::from([("Bad Header".to_string(), "Bearer secret-token".to_string())]);
+
+        let error = remote_custom_headers(&headers).expect_err("header name should be invalid");
+
+        assert!(error.contains("Bad Header"));
+        assert!(!error.contains("secret-token"));
     }
 
     #[test]

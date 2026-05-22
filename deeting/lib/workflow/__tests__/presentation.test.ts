@@ -76,7 +76,7 @@ describe("workflow presentation helpers", () => {
         title: "Final report",
         status: "succeeded",
         worker_trace_summary: "The final report is ready.",
-        output_artifact_refs: ["phase-2/result.md", "phase-2/result.json"],
+        output_artifact_refs: ["phase-2/result.md", "phase-2/result.json", "phase-2/metrics.json"],
       }),
     ]
 
@@ -87,8 +87,9 @@ describe("workflow presentation helpers", () => {
     expect(payload.summary).toBe("The final report is ready.")
     expect(payload.artifacts).toEqual([
       { ref: "phase-2/result.md", kind: "markdown", label: "result.md" },
-      { ref: "phase-2/result.json", kind: "json", label: "result.json" },
+      { ref: "phase-2/metrics.json", kind: "json", label: "metrics.json" },
     ])
+    expect(payload.steps[1].artifacts).toEqual(payload.artifacts)
   })
 
   it("builds a recovery payload from the failed phase", () => {
@@ -107,7 +108,7 @@ describe("workflow presentation helpers", () => {
     expect(payload.preserved_success_count).toBe(1)
   })
 
-  it("creates a structured chat receipt with an execution lifecycle block", () => {
+  it("creates a compact chat receipt without duplicating result text", () => {
     const blocks = buildWorkflowReceiptBlocks(makeRun("completed"), [
       makeStep({
         phase_id: "phase-1",
@@ -117,16 +118,14 @@ describe("workflow presentation helpers", () => {
       }),
     ])
 
+    expect(blocks).toHaveLength(1)
     expect(blocks[0]).toMatchObject({
-      type: "text",
-      content: expect.stringContaining("Workflow completed."),
-    })
-    expect(blocks[1]).toMatchObject({
       type: "ui",
-      viewType: "execution.lifecycle",
+      viewType: "workflow.result",
       payload: expect.objectContaining({
-        execution_kind: "workflow",
-        execution_status: "succeeded",
+        run_id: "run-productized",
+        status: "completed",
+        summary: "Done",
       }),
     })
   })

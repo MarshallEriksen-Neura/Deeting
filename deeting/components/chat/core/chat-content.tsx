@@ -7,6 +7,7 @@ import { useChatMessagingService } from "@/hooks/chat/use-chat-messaging-service
 import { useHydratePendingToolApproval } from "@/hooks/chat/use-hydrate-pending-tool-approval"
 import { useBrowserModeToolActivity } from "@/hooks/chat/use-browser-mode-tool-activity"
 import { useWorkflowStore } from "@/store/workflow-store"
+import { getWorkflowRunStatus } from "@/lib/workflow/commands"
 import {
   buildWorkflowReceiptBlocks,
   buildWorkflowLiveBlocks,
@@ -50,6 +51,45 @@ export function ChatContent({ agent }: ChatContentProps) {
   const workflowRun = useWorkflowStore((state) => state.run)
   const workflowSteps = useWorkflowStore((state) => state.steps)
   const workflowView = useWorkflowStore((state) => state.view)
+  const setWorkflowRunDetail = useWorkflowStore((state) => state.setRunDetail)
+  const setWorkflowError = useWorkflowStore((state) => state.setError)
+
+  React.useEffect(() => {
+    const runId = workflowRun?.id
+    if (!runId || isWorkflowTerminal(workflowRun.status)) return
+
+    let cancelled = false
+    let unlisten: (() => void) | null = null
+
+    async function subscribe() {
+      try {
+        const { listen } = await import("@tauri-apps/api/event")
+        unlisten = await listen<{ run_id?: string; runId?: string }>(
+          "workflow:run-updated",
+          async (event) => {
+            const updatedRunId = event.payload?.run_id ?? event.payload?.runId
+            if (!updatedRunId || updatedRunId !== runId || cancelled) return
+            try {
+              const detail = await getWorkflowRunStatus(updatedRunId)
+              if (!cancelled) setWorkflowRunDetail(detail)
+            } catch (err) {
+              if (!cancelled) {
+                setWorkflowError(err instanceof Error ? err.message : String(err))
+              }
+            }
+          },
+        )
+      } catch {
+        // Web previews do not expose the Tauri event bridge.
+      }
+    }
+
+    void subscribe()
+    return () => {
+      cancelled = true
+      unlisten?.()
+    }
+  }, [setWorkflowError, setWorkflowRunDetail, workflowRun?.id, workflowRun?.status])
 
   // Inject or update workflow progress/receipt message in the chat stream
   React.useEffect(() => {
@@ -135,7 +175,7 @@ export function ChatContent({ agent }: ChatContentProps) {
 
       setMessages([...messages, planMessage])
     }
-  }, [messages, setMessages, workflowRun, workflowSteps])
+  }, [messages, setMessages, workflowRun, workflowSteps, workflowView])
 
   return (
     <div className="flex flex-1 min-h-0 h-full w-full">

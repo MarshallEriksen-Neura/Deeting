@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertCircle, ArrowUp, Bot, Check, ChevronsDown, ChevronsUp, CircleDashed, FileText, Globe, Loader2, MessageSquarePlus, Paperclip, Play, Presentation, RotateCcw, Search, Sliders, Square, X } from 'lucide-react';
+import { AlertCircle, ArrowUp, Bot, Check, ChevronsDown, ChevronsUp, CircleDashed, FileText, Globe, ListChecks, Loader2, MessageSquarePlus, PanelRightOpen, Paperclip, PencilLine, Play, Presentation, RotateCcw, Search, Sliders, Square, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useMemo, useRef, useState, useCallback, useEffect, memo } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
@@ -28,10 +28,8 @@ import { Separator } from '@/ui/shadcn/separator';
 import { cn } from '@/lib/utils';
 import { formatFileSize } from '@/lib/utils/file';
 import {
-  getLocalBrowserAgentActivePage,
   getLocalBrowserAgentPageSnapshot,
 } from '@/lib/api/browser-agent';
-import { buildChatPageContextAttachment } from '@/lib/browser/page-context';
 import { buildPageInspectionResult, isPageInspectionPrompt } from '@/lib/browser/page-inspection';
 import { buildChatAttachments, UPLOAD_ERROR_CODES, ATTACHMENT_INVALID_ERROR_CODES } from '@/lib/chat/attachments';
 import { createConversation } from '@/lib/api/conversations';
@@ -54,7 +52,6 @@ import { useWorkflowStore } from '@/store/workflow-store';
 import { deriveAssistantActivityState } from '@/lib/chat/assistant-activity';
 import { extractLatestComposerRecoveryPrompt } from '@/lib/chat/recovery';
 
-type ComposerMode = 'chat' | 'workflow';
 type KnowledgePickerFilter = 'all' | KnowledgeStatusTone;
 
 type KnowledgeStatusTone = 'ready' | 'processing' | 'failed';
@@ -148,9 +145,7 @@ function ControlsContainer() {
   const [taskAgentMentionActiveIndex, setTaskAgentMentionActiveIndex] = useState(0);
   const [isTaskAgentMentionPickerDismissed, setIsTaskAgentMentionPickerDismissed] = useState(false);
   const [dismissedRecoveryMessageIds, setDismissedRecoveryMessageIds] = useState<string[]>([]);
-  const [composerMode, setComposerMode] = useState<ComposerMode>('chat');
   const [isPlanningWorkflow, setIsPlanningWorkflow] = useState(false);
-  const [isAttachingPageContext, setIsAttachingPageContext] = useState(false);
   const [isImmersiveComposerCollapsed, setIsImmersiveComposerCollapsed] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -174,7 +169,6 @@ function ControlsContainer() {
     addAttachments,
     removeAttachment,
     clearAttachments,
-    setPageContext,
     clearPageContext,
     toggleSelectedKnowledgeFileId,
     clearSelectedKnowledgeFileIds,
@@ -195,7 +189,6 @@ function ControlsContainer() {
       addAttachments: state.addAttachments,
       removeAttachment: state.removeAttachment,
       clearAttachments: state.clearAttachments,
-      setPageContext: state.setPageContext,
       clearPageContext: state.clearPageContext,
       toggleSelectedKnowledgeFileId: state.toggleSelectedKnowledgeFileId,
       clearSelectedKnowledgeFileIds: state.clearSelectedKnowledgeFileIds,
@@ -227,6 +220,7 @@ function ControlsContainer() {
   const editingArtifact = useArtifactStore((state) => state.editingArtifact)
   const clearEditingArtifact = useArtifactStore((state) => state.clearEditingArtifact)
   const workflowRun = useWorkflowStore((state) => state.run)
+  const workflowSteps = useWorkflowStore((state) => state.steps)
 
   const {
     handleSendMessage,
@@ -378,6 +372,41 @@ function ControlsContainer() {
       title,
     };
   }, [activeWorkspaceViewId, workflowRun, workspaceViews]);
+  const workflowDock = useMemo(() => {
+    if (!workflowRun) return null;
+    const isActiveWorkflow =
+      workflowRun.status === 'running' ||
+      workflowRun.status === 'waiting_approval' ||
+      workflowRun.status === 'awaiting_plan_edit';
+    if (!isActiveWorkflow) return null;
+
+    const sortedSteps = [...workflowSteps].sort((a, b) => a.phase_index - b.phase_index);
+    const total = workflowRun.snapshot_json?.phases?.length ?? sortedSteps.length;
+    const completed = sortedSteps.filter((step) => step.status === 'succeeded').length;
+    const current =
+      sortedSteps.find((step) => step.status === 'running') ??
+      sortedSteps.find((step) => step.status === 'waiting_approval') ??
+      sortedSteps.find((step) => step.status === 'failed') ??
+      sortedSteps.find((step) => step.status !== 'succeeded') ??
+      sortedSteps[sortedSteps.length - 1] ??
+      null;
+    const statusLabel =
+      workflowRun.status === 'awaiting_plan_edit'
+        ? '需要确认'
+        : workflowRun.status === 'waiting_approval'
+          ? '等待审批'
+          : '执行中';
+
+    return {
+      runId: workflowRun.id,
+      goal: workflowRun.goal,
+      statusLabel,
+      completed,
+      total,
+      current,
+      steps: sortedSteps,
+    };
+  }, [workflowRun, workflowSteps]);
   const contextBarItems = useMemo(() => {
     const items: Array<{ key: string; tone: 'default' | 'warning' | 'danger' | 'active'; label: string; title?: string }> = [];
     if (recoveryPrompt) {
@@ -422,10 +451,9 @@ function ControlsContainer() {
     workflowComposerContext,
   ]);
   const composerPlaceholder = useMemo(() => {
-    if (composerMode === 'workflow') return t("controls.workflowPlaceholder");
     if (workflowComposerContext) return t("controls.workflowContextPlaceholder");
     return t("controls.placeholder");
-  }, [composerMode, t, workflowComposerContext]);
+  }, [t, workflowComposerContext]);
   const canGeneratePlan = useMemo(
     () => Boolean(
       isTauriRuntime &&
@@ -483,13 +511,11 @@ function ControlsContainer() {
     if (canQueuePendingTakeover) return false;
     if (canContinueGeneration) return false;
     if (isApprovalBusy) return true;
-    return composerMode === 'workflow' ? !canGeneratePlan : !canSend;
+    return !canSend;
   }, [
     canContinueGeneration,
-    canGeneratePlan,
     canQueuePendingTakeover,
     canSend,
-    composerMode,
     isApprovalBusy,
     isGenerating,
     isPlanningWorkflow,
@@ -513,13 +539,10 @@ function ControlsContainer() {
     if (canContinueGeneration) {
       return t("controls.continue");
     }
-    return composerMode === 'workflow'
-      ? t("controls.generatePlan")
-      : t("controls.send");
+    return t("controls.send");
   }, [
     canContinueGeneration,
     canQueuePendingTakeover,
-    composerMode,
     hasComposerContent,
     isApprovalExecuting,
     isApprovalPending,
@@ -541,6 +564,18 @@ function ControlsContainer() {
   const handleImmersiveComposerToggle = useCallback(() => {
     setIsImmersiveComposerCollapsed((current) => !current);
   }, []);
+
+  const handleOpenWorkflowInspector = useCallback(() => {
+    if (!workflowRun) return;
+    openWorkflow({ goal: workflowRun.goal, runId: workflowRun.id, surface: 'inspector' });
+  }, [openWorkflow, workflowRun]);
+
+  const handleDraftWorkflowPlanChange = useCallback(() => {
+    setInput('调整当前执行计划：');
+    window.requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  }, [setInput]);
 
   const handleSelectTaskAgentMention = useCallback((agent: CustomTaskAgentProfile) => {
     setInput(buildLeadingTaskAgentMentionInput(agent.name, ''));
@@ -675,7 +710,6 @@ function ControlsContainer() {
       });
       openWorkflow({ goal: workflowGoal, runId: run.id });
       setInput("");
-      setComposerMode("chat");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       toast.error(message);
@@ -698,10 +732,6 @@ function ControlsContainer() {
     }
     if (canQueuePendingTakeover) {
       queuePendingTakeoverFromCurrentDraft("send_after_step");
-      return;
-    }
-    if (composerMode === 'workflow') {
-      await handleGeneratePlan();
       return;
     }
     if (!canSend) return;
@@ -730,8 +760,6 @@ function ControlsContainer() {
     browserModePage,
     canSend,
     canQueuePendingTakeover,
-    composerMode,
-    handleGeneratePlan,
     handleSendMessage,
     hasUnavailableSelectedKnowledge,
     input,
@@ -893,28 +921,6 @@ function ControlsContainer() {
       setRetryingKnowledgeFileIds((current) => current.filter((id) => id !== fileId));
     }
   }, [t]);
-
-  const handleAttachCurrentPageContext = useCallback(async () => {
-    if (!isTauriRuntime) return;
-
-    setIsAttachingPageContext(true);
-    try {
-      const activePage = await getLocalBrowserAgentActivePage();
-      if (!activePage?.tabId) {
-        toast.error(t("controls.pageContextUnavailable"));
-        return;
-      }
-
-      const snapshot = await getLocalBrowserAgentPageSnapshot(activePage.tabId);
-      setPageContext(buildChatPageContextAttachment(snapshot, activePage));
-      toast.success(t("controls.pageContextAttached"));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      toast.error(message);
-    } finally {
-      setIsAttachingPageContext(false);
-    }
-  }, [isTauriRuntime, setPageContext, t]);
 
   useEffect(() => {
     setDismissedRecoveryMessageIds((previous) =>
@@ -1698,75 +1704,120 @@ function ControlsContainer() {
             </Popover>
           ) : null}
 
+          {isTauriRuntime && workflowDock ? (
+            <Popover>
+              <PopoverTrigger asChild>
+                <GlassButton
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  aria-label="执行计划"
+                  className="h-10 max-w-[210px] px-3 text-xs cursor-pointer"
+                >
+                  <ListChecks className="h-4 w-4" />
+                  <span className="truncate">
+                    执行计划 {workflowDock.total > 0 ? `${workflowDock.completed}/${workflowDock.total}` : ''}
+                  </span>
+                </GlassButton>
+              </PopoverTrigger>
+              <PopoverContent
+                side="top"
+                align="start"
+                className="w-[360px] max-w-[calc(100vw-1rem)] rounded-[26px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-bg)] p-3 shadow-[0_24px_48px_-32px_rgba(15,23,42,0.45)] backdrop-blur-2xl"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-white/[0.08] dark:text-white/65">
+                        {workflowDock.statusLabel}
+                      </span>
+                      <span className="font-mono text-[10px] text-slate-400 dark:text-white/35">
+                        {workflowDock.completed}/{workflowDock.total || workflowDock.steps.length}
+                      </span>
+                    </div>
+                    <p className="mt-2 line-clamp-2 text-sm font-medium leading-5 text-slate-800 dark:text-white/85">
+                      {workflowDock.current?.title || workflowDock.goal}
+                    </p>
+                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-white/45">
+                      {workflowDock.current?.goal || workflowDock.goal}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-3 max-h-56 space-y-1 overflow-y-auto pr-1">
+                  {workflowDock.steps.map((step) => {
+                    const isCurrent = step.phase_id === workflowDock.current?.phase_id;
+                    return (
+                      <div
+                        key={`${step.phase_index}-${step.phase_id}`}
+                        className={cn(
+                          "flex items-start gap-2 rounded-2xl px-3 py-2 text-left",
+                          isCurrent
+                            ? "bg-slate-100/90 text-slate-800 dark:bg-white/[0.07] dark:text-white/85"
+                            : "text-slate-500 dark:text-white/45"
+                        )}
+                      >
+                        <span className="mt-0.5 font-mono text-[10px] tabular-nums">
+                          {step.phase_index + 1}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-xs font-medium">{step.title || step.phase_id}</div>
+                          {isCurrent && step.goal ? (
+                            <div className="mt-0.5 line-clamp-2 text-[11px] leading-4 opacity-70">
+                              {step.goal}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-3 flex items-center justify-between gap-2 border-t border-[color:var(--ios-shell-border)] pt-3">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 rounded-full px-3 text-xs"
+                    onClick={handleDraftWorkflowPlanChange}
+                  >
+                    <PencilLine className="mr-1.5 h-3.5 w-3.5" />
+                    调整计划
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 rounded-full px-3 text-xs"
+                    onClick={handleOpenWorkflowInspector}
+                  >
+                    <PanelRightOpen className="mr-1.5 h-3.5 w-3.5" />
+                    查看详情
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
+          ) : null}
+
           {isTauriRuntime ? (
             <GlassButton
               type="button"
               variant="secondary"
               size="sm"
-              aria-label={t("controls.attachCurrentPage")}
-              className="h-10 px-4 text-xs cursor-pointer"
               onClick={() => {
-                void handleAttachCurrentPageContext();
+                void handleGeneratePlan();
               }}
-              disabled={isLoading || isAttachingPageContext}
+              aria-label={t("controls.generatePlan")}
+              className="h-10 px-4 text-xs cursor-pointer"
+              disabled={!canGeneratePlan}
             >
-              {isAttachingPageContext ? (
+              {isPlanningWorkflow ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <Globe className="h-4 w-4" />
+                <FileText className="h-4 w-4" />
               )}
-              <span>
-                {isAttachingPageContext
-                  ? t("controls.attachingCurrentPage")
-                  : t("controls.attachCurrentPage")}
-              </span>
+              <span>{t("controls.generatePlan")}</span>
             </GlassButton>
-          ) : null}
-
-          {isTauriRuntime ? (
-            <>
-              <div className="flex items-center rounded-[calc(var(--radius)+999px)] border border-[var(--hairline)]/50 bg-[var(--panel-bg)]/60 p-1 backdrop-blur-xl shadow-[0_2px_8px_-2px_rgba(0,0,0,0.1)]">
-                <GlassButton
-                  type="button"
-                  variant={composerMode === 'chat' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  onClick={() => setComposerMode('chat')}
-                  aria-label={t("controls.modeChat")}
-                  className="h-8 px-4 text-xs rounded-full border-0 shadow-none"
-                >
-                  {t("controls.modeChat")}
-                </GlassButton>
-                <GlassButton
-                  type="button"
-                  variant={composerMode === 'workflow' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  onClick={() => setComposerMode('workflow')}
-                  aria-label={t("controls.modeWorkflow")}
-                  className="h-8 px-4 text-xs rounded-full border-0 shadow-none"
-                >
-                  {t("controls.modeWorkflow")}
-                </GlassButton>
-              </div>
-
-              <GlassButton
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  void handleGeneratePlan();
-                }}
-                aria-label={t("controls.generatePlan")}
-                className="h-10 px-4 text-xs cursor-pointer"
-                disabled={!canGeneratePlan}
-              >
-                {isPlanningWorkflow ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <FileText className="h-4 w-4" />
-                )}
-                <span>{t("controls.generatePlan")}</span>
-              </GlassButton>
-            </>
           ) : null}
 
           <GlassButton
@@ -1813,8 +1864,6 @@ function ControlsContainer() {
               <Loader2 className="w-5 h-5 animate-spin" />
             ) : canContinueGeneration ? (
               <Play className="w-5 h-5" />
-            ) : composerMode === 'workflow' ? (
-              <FileText className="w-5 h-5" />
             ) : (
               <ArrowUp className="w-5 h-5" />
             )}

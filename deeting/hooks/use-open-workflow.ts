@@ -13,7 +13,7 @@ export function useOpenWorkflow() {
   const resetWorkflow = useWorkflowStore((s) => s.reset)
 
   const openWorkflow = useCallback(
-    (options?: { goal?: string; runId?: string }) => {
+    (options?: { goal?: string; runId?: string; surface?: "plan" | "inspector" }) => {
       // Reset workflow store for a fresh start
       if (!options?.runId) {
         resetWorkflow()
@@ -22,7 +22,7 @@ export function useOpenWorkflow() {
       openView({
         id: options?.runId ? `workflow-${options.runId}` : `workflow-new-${Date.now()}`,
         type: "native-canvas",
-        title: "Workflow",
+        title: options?.surface === "inspector" ? "Run Inspector" : "Workflow",
         keepAlive: true,
         content: {
           viewType: "workflow",

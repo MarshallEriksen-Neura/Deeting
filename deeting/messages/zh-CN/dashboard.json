@@ -133,6 +133,114 @@
       "title": "扫描审查",
       "description": "查看本地扫描结果、风险信号以及 doc-first 资产的索引对账情况"
     },
+    "ecosystem": {
+      "eyebrow": "生态信号",
+      "guardrail": "先沉淀为候选，再进入本地知识",
+      "title": "外部经验雷达",
+      "description": "这里不要求你每天审核原始记录。Deeting 会把 EvoMap 与手动导入的外部经验整理成少量可采纳建议，只有可能影响知识、记忆或智能体策略时才需要你决策。",
+      "footer": "外部经验默认保持候选态，采纳前不会改变本地运行真相。",
+      "loading": "正在读取生态信号...",
+      "desktopOnly": {
+        "title": "生态信号仅在桌面端可用",
+        "description": "外部经验源、原始记录和候选采纳都属于本地运行时能力。请在 Deeting 桌面端打开此页。"
+      },
+      "actions": {
+        "refresh": "刷新信号",
+        "configure": "管理来源",
+        "syncNow": "同步",
+        "saveToWiki": "保存为知识",
+        "saved": "已保存",
+        "adoptForAgent": "作为策略候选",
+        "adopted": "已加入策略候选",
+        "ignore": "忽略"
+      },
+      "metrics": {
+        "sources": "启用来源",
+        "sourcesHint": "共配置 {count} 个来源",
+        "needsDecision": "待决策建议",
+        "needsDecisionHint": "只显示整理后的候选，不推原始 payload",
+        "savedKnowledge": "知识草稿",
+        "savedKnowledgeHint": "已进入 LLM Wiki 的外部经验",
+        "agentReady": "策略候选",
+        "agentReadyHint": "通过 WikiPromotion 进入记忆候选"
+      },
+      "suggestions": {
+        "title": "建议采纳",
+        "description": "优先处理已经翻译和归纳的高价值经验；原始记录只保留为溯源材料。",
+        "confidence": "置信度 {value}%",
+        "adoptHint": "先保存为知识后，才能作为智能体策略候选。",
+        "rawSummaryFallback": "这条 {kind} 已完成整理，但原始内容不直接展示。请根据标题、来源和结构摘要判断是否值得沉淀。"
+      },
+      "lanes": {
+        "decision": "待决策",
+        "saved": "已入知识",
+        "adopted": "策略候选"
+      },
+      "empty": {
+        "title": "当前没有需要你处理的生态建议",
+        "description": "来源仍会按计划同步。只有出现可沉淀为知识或策略的内容时，这里才会出现少量建议。",
+        "archiveTitle": "这个队列暂时为空",
+        "archiveDescription": "保存到知识或进入策略候选后的记录会留在这里，便于回看采纳链路。"
+      },
+      "sources": {
+        "title": "来源健康",
+        "description": "这里看连接状态和最近同步，不看原始 payload。",
+        "empty": "还没有配置外部经验源。",
+        "enabled": "已启用",
+        "disabled": "已停用",
+        "neverSynced": "尚未同步",
+        "ready": "就绪",
+        "attention": "需处理",
+        "total": "总数"
+      },
+      "candidate": {
+        "source": "来源",
+        "created": "生成时间",
+        "state": "当前状态",
+        "stateValue": {
+          "decision": "待你决策",
+          "saved": "已保存为知识",
+          "adopted": "已进入策略候选"
+        }
+      },
+      "flow": {
+        "title": "最近信号流",
+        "description": "用于确认来源仍在工作，详细原始记录放在高级日志。",
+        "empty": "暂无最近同步记录。",
+        "advancedLogs": "管理来源与原始记录"
+      },
+      "source": {
+        "unknown": "未知来源"
+      },
+      "connector": {
+        "manual_import": "手动导入",
+        "evomap_public_feed": "EvoMap 公共 Feed",
+        "evomap_kg": "EvoMap 知识图谱"
+      },
+      "status": {
+        "draft": "待配置",
+        "ready": "就绪",
+        "syncing": "同步中",
+        "error": "异常",
+        "disabled": "已停用"
+      },
+      "stages": {
+        "provisional": "候选态",
+        "canSave": "可保存为知识",
+        "saved": "已保存到 LLM Wiki",
+        "agentCandidate": "可转为策略候选",
+        "adopted": "已进入策略候选"
+      },
+      "toast": {
+        "loadFailed": "加载生态信号失败",
+        "syncFailed": "同步来源失败",
+        "synced": "已同步 {name}",
+        "actionFailed": "处理建议失败",
+        "ignored": "已忽略这条建议",
+        "savedToWiki": "已保存到 LLM Wiki",
+        "adopted": "已作为策略候选"
+      }
+    },
     "notificationChannels": {
       "wechat": {
         "connect": "连接微信",

@@ -11,7 +11,10 @@ import type {
   ToolResultBlock as MessageToolResultBlock,
 } from "@/lib/chat/message-protocol";
 import { cn } from "@/lib/utils";
-import { AIResponseStatusRail } from "@/components/chat/messages/ai-response-bubble/status-rail";
+import {
+  AIResponseStatusRail,
+  AIResponseStreamingTail,
+} from "@/components/chat/messages/ai-response-bubble/status-rail";
 import { ExecutionConsole } from "@/components/chat/messages/ai-response-bubble/execution-console";
 import {
   CapabilityTransitionCard,
@@ -128,6 +131,24 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
     statusMeta = null,
   }) {
     const hasContent = useMemo(() => parts.length > 0, [parts.length]);
+
+    // For the status rail we only care about user-visible *answer* content
+    // (text / thoughts / errors / inline UI). Tool calls and intermediate
+    // execution blocks should NOT silence the loading indicator — otherwise
+    // the rail vanishes the instant a tool fires and the user is left with
+    // no feedback while the model is still working between turns.
+    const hasAnswerContent = useMemo(
+      () =>
+        parts.some((part) => {
+          if (part.type === "text" || part.type === "thought") {
+            return typeof part.content === "string" && part.content.trim().length > 0;
+          }
+          if (part.type === "error") return true;
+          if (part.type === "ui") return true;
+          return false;
+        }),
+      [parts],
+    );
 
     const { resultMap, pairedResultIndices } = useMemo(() => {
       const map = new Map<string, MessageToolResultBlock>();
@@ -252,7 +273,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
         <div className="pl-4 pr-1 py-2 min-w-0 overflow-hidden">
           <AIResponseStatusRail
             isActive={isActive}
-            hasContent={hasContent}
+            hasContent={hasAnswerContent}
             hasToolActivity={hasToolActivity}
             statusStage={statusStage}
             statusCode={statusCode}
@@ -436,6 +457,12 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                   <GhostCursor />
                 </motion.div>
               ) : null}
+
+              <AIResponseStreamingTail
+                isActive={isActive}
+                hasContent={hasAnswerContent}
+                statusStage={statusStage}
+              />
             </motion.div>
           )}
         </div>

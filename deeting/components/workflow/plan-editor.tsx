@@ -1,11 +1,10 @@
 "use client"
 
 import { useState, useCallback } from "react"
-import { ArrowLeft, Plus, RefreshCw, AlertTriangle } from "lucide-react"
+import { AlertTriangle, ArrowLeft, ListChecks, Plus, RefreshCw } from "lucide-react"
 import { useI18n } from "@/hooks/use-i18n"
 import { Button } from "@/ui/shadcn/button"
 import { ScrollArea } from "@/ui/shadcn/scroll-area"
-import { Separator } from "@/ui/shadcn/separator"
 import { TooltipProvider } from "@/ui/shadcn/tooltip"
 import { useChatModels } from "@/hooks/use-chat-models"
 import { PlanPhaseCard } from "./plan-phase-card"
@@ -96,16 +95,22 @@ export function PlanEditor({
   const isDisabled = disabled || compiling || regenerating
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      {/* Header */}
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[color:var(--ios-shell-bg)]">
       <div className="flex items-center justify-between border-b border-[color:var(--ios-shell-border)] px-5 py-4">
         <div className="flex items-center gap-3">
-          <Button variant="ios" size="icon-sm" className="size-8" onClick={onBack}>
+          <Button variant="ios" size="icon-sm" className="size-8 rounded-full" onClick={onBack}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h2 className="text-sm font-semibold tracking-tight">{t("plan.title")}</h2>
-            <p className="text-xs text-muted-foreground">{t("plan.goalLabel")}</p>
+            <div className="flex items-center gap-2">
+              <h2 className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-white/90">
+                {t("plan.title")}
+              </h2>
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 font-mono text-[10px] text-slate-500 dark:bg-white/[0.07] dark:text-white/45">
+                {phases.length} steps
+              </span>
+            </div>
+            <p className="mt-0.5 text-xs text-muted-foreground">Review the draft before execution</p>
           </div>
         </div>
         <Button
@@ -113,27 +118,28 @@ export function PlanEditor({
           size="sm"
           onClick={handleRegenerate}
           disabled={isDisabled}
-          className="text-xs"
+          className="h-8 rounded-full px-3 text-xs"
         >
           <RefreshCw className={`mr-1.5 h-3 w-3 ${regenerating ? "animate-spin" : ""}`} />
           {regenerating ? t("plan.regenerating") : t("plan.regenerate")}
         </Button>
       </div>
 
-      {/* Content */}
       <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-5 p-5">
-          {/* Goal display */}
-          <div className="rounded-[24px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] px-4 py-3 text-sm text-muted-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.5)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-            <span className="font-medium text-foreground">{t("plan.goalLabel")}:</span>{" "}
-            {goal}
+        <div className="px-5 pb-5 pt-4">
+          <div className="mb-5 rounded-[22px] border border-slate-200/70 bg-white/70 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.045]">
+            <div className="mb-1 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-slate-400 dark:text-white/35">
+              <ListChecks className="h-3.5 w-3.5" />
+              {t("plan.goalLabel")}
+            </div>
+            <p className="text-sm font-medium leading-6 text-slate-800 dark:text-white/80">
+              {goal}
+            </p>
           </div>
 
-          <Separator className="opacity-40" />
-
-          {/* Phase list */}
           <TooltipProvider>
-            <div className="space-y-3">
+            <div className="relative pl-2">
+              <div className="absolute bottom-6 left-[18px] top-6 w-px bg-slate-200 dark:bg-white/10" />
               {phases.map((phase, index) => (
                 <PlanPhaseCard
                   key={phase.phase_id}
@@ -150,21 +156,19 @@ export function PlanEditor({
             </div>
           </TooltipProvider>
 
-          {/* Add phase */}
           <Button
-            variant="ios"
+            variant="ghost"
             size="sm"
             onClick={handleAddPhase}
             disabled={isDisabled}
-            className="text-xs"
+            className="ml-8 mt-2 h-9 rounded-full px-3 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-white/50 dark:hover:bg-white/[0.07] dark:hover:text-white/80"
           >
             <Plus className="mr-1.5 h-3 w-3" />
             {t("plan.addPhase")}
           </Button>
 
-          {/* Compiler errors */}
           {compilerErrors.length > 0 && (
-            <div className="space-y-2 rounded-[24px] border border-destructive/20 bg-destructive/5 p-4">
+            <div className="mt-5 space-y-2 rounded-[20px] border border-destructive/20 bg-destructive/5 p-4">
               <div className="flex items-center gap-1.5 text-sm font-medium text-destructive">
                 <AlertTriangle className="h-4 w-4" />
                 {t("plan.compilerErrors")}
@@ -180,14 +184,14 @@ export function PlanEditor({
         </div>
       </ScrollArea>
 
-      <div className="p-5 pt-0">
+      <div className="border-t border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-bg)]/92 p-4 backdrop-blur-2xl">
         <Button
-          className="w-full h-11 rounded-[14px] bg-[linear-gradient(180deg,#2A2A2A,#1A1A1A)] text-white shadow-[0_4px_14px_-6px_rgba(0,0,0,0.4)] hover:scale-[1.01] transition-transform font-mono text-[13px] tracking-tight dark:bg-[linear-gradient(180deg,#FFFFFF,#F0F0F0)] dark:text-black"
+          className="h-11 w-full rounded-[14px] bg-zinc-900 text-[13px] font-medium text-white shadow-[0_16px_32px_-24px_rgba(15,23,42,0.9)] transition-transform hover:scale-[1.005] hover:bg-zinc-800 dark:bg-white dark:text-zinc-950 dark:hover:bg-white/90"
           size="xl"
           onClick={handleCompile}
           disabled={isDisabled || phases.length === 0}
         >
-          {compiling ? t("plan.compiling") : `> ${t("plan.compileAndStart")}`}
+          {compiling ? t("plan.compiling") : t("plan.compileAndStart")}
         </Button>
       </div>
     </div>

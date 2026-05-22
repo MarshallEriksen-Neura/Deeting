@@ -183,7 +183,8 @@
       "storage": "Storage",
       "knowledge": "Knowledge Base",
       "llmWiki": "LLM Wiki",
-      "memory": "Personal Memory"
+      "memory": "Personal Memory",
+      "ecosystemSignals": "Ecosystem Signals"
     }
   }
 }

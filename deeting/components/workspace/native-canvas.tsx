@@ -3,10 +3,12 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/ui/shadcn/card"
 import { useI18n } from "@/hooks/use-i18n"
 import PageInspectionResultPanel from "@/components/inspection/page-inspection-result-panel"
+import type { PageInspectionResult } from "@/lib/browser/page-inspection"
 import type { NativeCanvasView } from "@/store/workspace-store"
 import { WorkflowRuntime } from "@/components/workflow/workflow-runtime"
 import { TerminalDashboard } from "@/components/dashboard/terminal-dashboard"
 import { useWorkflowStore } from "@/store/workflow-store"
+import { useWorkspaceStore } from "@/store/workspace-store"
 import ViewBlock from "@/components/views/view-block"
 
 function WorkflowMonitorPanel() {
@@ -28,6 +30,7 @@ export function NativeCanvasRenderer({
   view: NativeCanvasView
 }) {
   const t = useI18n("chat")
+  const closeView = useWorkspaceStore((state) => state.closeView)
 
   // Workflow runtime view
   if (view.content?.viewType === "workflow") {
@@ -37,6 +40,7 @@ export function NativeCanvasRenderer({
         initialRunId={view.content.runId as string | undefined}
         initialPhaseId={view.content.phaseId as string | undefined}
         initialContextPhaseId={view.content.contextPhaseId as string | undefined}
+        onClose={() => closeView(view.id)}
       />
     )
   }
@@ -49,7 +53,7 @@ export function NativeCanvasRenderer({
   if (view.content?.viewType === "page-inspection" && view.content?.result) {
     return (
       <div className="h-full w-full p-6">
-        <PageInspectionResultPanel result={view.content.result as any} />
+        <PageInspectionResultPanel result={view.content.result as PageInspectionResult} />
       </div>
     )
   }

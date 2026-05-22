@@ -62,6 +62,7 @@
     "pending": "Pending",
     "rerunPhase": "Rerun",
     "viewContext": "View context",
+    "viewResult": "View result",
     "showResults": "Show results",
     "hideResults": "Hide results"
   },
@@ -88,6 +89,8 @@
     "emptyArtifacts": "This phase only created file placeholders and no readable content. Rerun the phase, or ask AI to write a result from the current context.",
     "trace": "Trace",
     "viewFullContext": "View full context",
+    "viewFullResult": "View full result",
+    "viewerTitle": "Phase result",
     "noResults": "No results yet"
   },
   "context": {

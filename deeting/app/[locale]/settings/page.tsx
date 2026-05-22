@@ -1,5 +1,6 @@
 ﻿import { setRequestLocale } from "next-intl/server";
 
+import { redirect } from "@/i18n/routing";
 import { SettingsClient } from "./components/settings-client";
 import { normalizeSettingsSection } from "./section";
 
@@ -17,6 +18,9 @@ export default async function SettingsPage({ params, searchParams }: SettingsPag
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const sectionParam = resolvedSearchParams.section;
   const section = Array.isArray(sectionParam) ? sectionParam[0] : sectionParam;
+  if (section === "ecosystem") {
+    redirect({ href: "/dashboard/ecosystem", locale });
+  }
   const initialSection = normalizeSettingsSection(section);
 
   return (

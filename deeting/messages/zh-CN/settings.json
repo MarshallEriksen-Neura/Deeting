@@ -387,7 +387,7 @@
       "title": "外部生态观察源",
       "description": "让 Deeting 观察用户自选的外部生态，但不把外部系统变成运行时真相。",
       "securityHint": "凭据只保存在当前桌面端。所有导入记录都会先原样落库，再进入翻译流程。",
-      "intro": "在这里管理可选 connector、同步原始外部记录，并保持 Deeting 处于观察者模式。导入经验在本地验证前都只是 provisional 提示。",
+      "intro": "在这里管理来源 connector、同步配置和原始记录。上方信号区只展示整理后的建议。",
       "footerHint": "connector 是可选的。禁用或删除它们，不应影响 Deeting 的本地基线能力。",
       "loading": "正在加载外部观察源...",
       "empty": "还没有外部观察源 connector。需要让 Deeting 观察某个生态或导入外部记录时再添加。",
@@ -610,8 +610,6 @@
       }
     },
     "nav": {
-      "ecosystem": "生态观察",
-      "ecosystemDesc": "外部 connector 与原始观察记录",
       "models": "模型",
       "modelsDesc": "Embedding 与秘书模型",
       "aiAccess": "AI 接入",

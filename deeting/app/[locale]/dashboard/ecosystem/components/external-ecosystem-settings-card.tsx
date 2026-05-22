@@ -17,10 +17,12 @@ import { ExternalSourceCard } from "./external-source-card"
 
 interface ExternalEcosystemSettingsCardProps {
   isTauriRuntime: boolean
+  onSourcesChanged?: () => void | Promise<void>
 }
 
 export function ExternalEcosystemSettingsCard({
   isTauriRuntime,
+  onSourcesChanged,
 }: ExternalEcosystemSettingsCardProps) {
   const t = useI18n("settings")
   const [sources, setSources] = useState<ExternalSourceRecord[]>([])
@@ -49,6 +51,7 @@ export function ExternalEcosystemSettingsCard({
     try {
       const created = await createExternalSource(payload)
       setSources((current) => [created, ...current])
+      await onSourcesChanged?.()
       toast.success(t("ecosystem.toast.created"))
     } catch (error) {
       const message =
@@ -62,10 +65,12 @@ export function ExternalEcosystemSettingsCard({
     setSources((current) =>
       current.map((item) => (item.id === nextSource.id ? nextSource : item))
     )
+    void onSourcesChanged?.()
   }
 
   function handleDeleted(sourceId: string) {
     setSources((current) => current.filter((item) => item.id !== sourceId))
+    void onSourcesChanged?.()
   }
 
   if (!isTauriRuntime) {
@@ -99,9 +104,11 @@ export function ExternalEcosystemSettingsCard({
           <p className="max-w-3xl text-sm text-muted-foreground">
             {t("ecosystem.intro")}
           </p>
-          <ExternalSourceCreateDialog onCreate={handleCreate}>
-            <Button type="button">{t("ecosystem.create.trigger")}</Button>
-          </ExternalSourceCreateDialog>
+          <div className="flex flex-wrap items-center gap-2">
+            <ExternalSourceCreateDialog onCreate={handleCreate}>
+              <Button type="button">{t("ecosystem.create.trigger")}</Button>
+            </ExternalSourceCreateDialog>
+          </div>
         </div>
 
         {isLoading ? (

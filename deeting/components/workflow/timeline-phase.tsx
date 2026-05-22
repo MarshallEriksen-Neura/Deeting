@@ -13,7 +13,7 @@ interface TimelinePhaseProps {
   isExpanded: boolean
   onToggleExpand: () => void
   onRerun?: () => void
-  onViewContext?: () => void
+  onViewResult?: () => void
 }
 
 const statusConfig = {
@@ -35,7 +35,7 @@ export function TimelinePhase({
   isExpanded,
   onToggleExpand,
   onRerun,
-  onViewContext,
+  onViewResult,
 }: TimelinePhaseProps) {
   const t = useI18n("workflow")
   const config = statusConfig[step.status] ?? statusConfig.pending
@@ -135,14 +135,14 @@ export function TimelinePhase({
                     ))}
                   </div>
                 )}
-                {onViewContext && (
+                {onViewResult && (
                   <Button
                     variant="ghost"
                     size="xs"
                     className="mt-2 h-6 px-0 font-mono text-[10px] text-emerald-600/70 hover:bg-transparent hover:text-emerald-600 dark:text-emerald-400/70 dark:hover:text-emerald-400"
-                    onClick={onViewContext}
+                    onClick={onViewResult}
                   >
-                    {'>'} {t("execution.viewContext")}
+                    {'>'} {t("execution.viewResult")}
                   </Button>
                 )}
               </div>

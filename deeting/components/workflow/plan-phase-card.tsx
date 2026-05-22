@@ -1,12 +1,11 @@
 "use client"
 
-import { GripVertical, Trash2 } from "lucide-react"
+import { Trash2 } from "lucide-react"
 import { useI18n } from "@/hooks/use-i18n"
 import { Input } from "@/ui/shadcn/input"
 import { Textarea } from "@/ui/shadcn/textarea"
 import { Button } from "@/ui/shadcn/button"
 import { Badge } from "@/ui/shadcn/badge"
-import { Card } from "@/ui/shadcn/card"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/ui/shadcn/tooltip"
 import { ModelPickerField } from "@/components/models/model-picker-field"
 import type { ModelGroup } from "@/lib/api/models"
@@ -65,87 +64,81 @@ export function PlanPhaseCard({
   }
 
   return (
-    <Card className="group relative overflow-hidden rounded-[24px] border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] p-4 shadow-[0_16px_38px_-28px_rgba(15,23,42,0.28)] backdrop-blur-xl transition-colors hover:border-white/60 dark:hover:border-white/12">
-      <div className="pointer-events-none absolute inset-x-6 top-0 h-10 rounded-full bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.58),transparent_72%)] opacity-70 dark:opacity-20" />
-      <div className="relative flex items-start gap-3">
-        {/* Left: Index badge + drag handle */}
-        <div className="flex flex-col items-center gap-1 pt-1">
-          <Badge variant="outline" className="h-7 w-7 justify-center rounded-full border-white/70 bg-white/75 text-[11px] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] dark:border-white/12 dark:bg-white/10">
-            {index + 1}
-          </Badge>
-          <GripVertical className="h-4 w-4 text-muted-foreground/40 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity" />
-        </div>
+    <div className="group relative pl-8">
+      <div className="absolute left-0 top-5 z-[1] flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] font-semibold text-slate-500 shadow-[0_10px_26px_-22px_rgba(15,23,42,0.9)] dark:border-white/10 dark:bg-slate-950 dark:text-white/55">
+        {index + 1}
+      </div>
 
-        {/* Right: Fields */}
-        <div className="flex-1 space-y-3 min-w-0">
-          {/* Title */}
+      <div className="relative mb-3 ml-5 rounded-[20px] border border-slate-200/70 bg-white/58 px-3.5 py-3 shadow-[0_18px_42px_-38px_rgba(15,23,42,0.5)] backdrop-blur-xl transition-colors hover:border-slate-300/80 dark:border-white/10 dark:bg-white/[0.04] dark:hover:border-white/16">
+        <div className="mb-2 flex items-start justify-between gap-2">
           <Input
             value={phase.title}
-            onChange={(e) => update({ title: e.target.value })}
+            onChange={(event) => update({ title: event.target.value })}
             placeholder={t("plan.phaseTitle")}
-            className="h-9 rounded-[18px] border-transparent bg-transparent px-2 text-sm font-semibold focus:border-[color:var(--ios-shell-border)] focus:bg-background/60"
+            className="h-8 min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 text-[15px] font-semibold tracking-tight text-slate-900 shadow-none focus-visible:ring-0 dark:text-white/88"
             disabled={disabled}
           />
 
-          {/* Goal */}
-          <Textarea
-            value={phase.goal}
-            onChange={(e) => update({ goal: e.target.value })}
-            placeholder={t("plan.phaseGoal")}
-            className="min-h-[64px] rounded-[18px] border-transparent bg-transparent px-2 py-2 text-sm text-muted-foreground focus:border-[color:var(--ios-shell-border)] focus:bg-background/60"
-            disabled={disabled}
-          />
-
-          {/* Worker + Depends */}
-          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-            <div className="w-full max-w-[320px]">
-              <ModelPickerField
-                id={`workflow-phase-${phase.phase_id}-worker-model`}
-                label={t("plan.worker")}
-                placeholder={t("plan.workerModelPlaceholder")}
-                value={workerRefToModelValue(phase.worker_ref)}
-                onChange={(value) => update({ worker_ref: modelValueToWorkerRef(value) })}
-                disabled={disabled || isLoadingModels}
-                isLoading={isLoadingModels}
-                loadingText={t("plan.workerModelLoading")}
-                searchPlaceholder={t("plan.workerModelSearchPlaceholder")}
-                emptyText={t("plan.workerModelEmpty")}
-                noResultsText={t("plan.workerModelNoResults")}
-                modelGroups={modelGroups}
-                resolveValue={(_group, model) => model.provider_model_id ?? model.id}
-              />
-            </div>
-            {phase.depends_on.length > 0 && (
-              <div className="flex items-center gap-1">
-                <span className="text-muted-foreground/60">{t("plan.dependsOn")}:</span>
-                {phase.depends_on.map((dep) => (
-                  <Badge key={dep} variant="secondary" className="h-6 rounded-full px-2.5 text-[10px]">
-                    {dep}
-                  </Badge>
-                ))}
-              </div>
-            )}
-          </div>
+          {totalPhases > 1 ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="h-7 w-7 shrink-0 rounded-full text-slate-300 opacity-0 transition-opacity hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100 dark:text-white/20 dark:hover:bg-rose-500/10 dark:hover:text-rose-300"
+                  onClick={onDelete}
+                  disabled={disabled}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t("plan.deletePhase")}</TooltipContent>
+            </Tooltip>
+          ) : null}
         </div>
 
-        {/* Delete button */}
-        {totalPhases > 1 && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="opacity-0 text-muted-foreground transition-opacity hover:text-destructive group-hover:opacity-100"
-                onClick={onDelete}
-                disabled={disabled}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t("plan.deletePhase")}</TooltipContent>
-          </Tooltip>
-        )}
+        <Textarea
+          value={phase.goal}
+          onChange={(event) => update({ goal: event.target.value })}
+          placeholder={t("plan.phaseGoal")}
+          className="min-h-[76px] resize-none rounded-[16px] border-slate-200/70 bg-white/52 px-3 py-2 text-[13px] leading-5 text-slate-500 shadow-none focus:border-slate-300 focus:bg-white/75 focus-visible:ring-0 dark:border-white/8 dark:bg-white/[0.035] dark:text-white/45 dark:focus:bg-white/[0.06]"
+          disabled={disabled}
+        />
+
+        <div className="mt-3 flex flex-wrap items-end gap-2 text-xs text-muted-foreground">
+          <div className="min-w-[220px] flex-1">
+            <ModelPickerField
+              id={`workflow-phase-${phase.phase_id}-worker-model`}
+              label={t("plan.worker")}
+              placeholder={t("plan.workerModelPlaceholder")}
+              value={workerRefToModelValue(phase.worker_ref)}
+              onChange={(value) => update({ worker_ref: modelValueToWorkerRef(value) })}
+              disabled={disabled || isLoadingModels}
+              isLoading={isLoadingModels}
+              loadingText={t("plan.workerModelLoading")}
+              searchPlaceholder={t("plan.workerModelSearchPlaceholder")}
+              emptyText={t("plan.workerModelEmpty")}
+              noResultsText={t("plan.workerModelNoResults")}
+              modelGroups={modelGroups}
+              resolveValue={(_group, model) => model.provider_model_id ?? model.id}
+            />
+          </div>
+          {phase.depends_on.length > 0 ? (
+            <div className="flex max-w-full flex-wrap items-center gap-1 pb-1">
+              <span className="text-[11px] text-slate-400 dark:text-white/35">{t("plan.dependsOn")}</span>
+              {phase.depends_on.map((dep) => (
+                <Badge
+                  key={dep}
+                  variant="secondary"
+                  className="h-5 rounded-full bg-slate-100 px-2 text-[10px] font-normal text-slate-500 dark:bg-white/[0.06] dark:text-white/45"
+                >
+                  {dep}
+                </Badge>
+              ))}
+            </div>
+          ) : null}
+        </div>
       </div>
-    </Card>
+    </div>
   )
 }

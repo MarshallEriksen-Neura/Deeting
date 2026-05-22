@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { useWorkflowStore } from "@/store/workflow-store"
 import { useChatStore } from "@/store/chat-store"
@@ -9,19 +9,20 @@ import {
   generateWorkflowProposal,
   regenerateWorkflowProposal,
   getWorkflowRunStatus,
-  getWorkflowPhaseContext,
+  getWorkflowArtifactContent,
   approveWorkflow,
   resumeWorkflow,
   rerunPhase,
   streamWorkflowCompileAndStart,
 } from "@/lib/workflow/commands"
-import type { WorkflowPhaseContext } from "@/lib/workflow/types"
+import { getUserVisibleWorkflowArtifactRefs } from "@/lib/workflow/presentation"
+import type { WorkflowArtifactContent, WorkflowStepRun } from "@/lib/workflow/types"
 import { WorkflowLanding } from "./workflow-landing"
 import { PlanEditor } from "./plan-editor"
 import type { PlanPhaseData } from "./plan-phase-card"
 import { WorkflowExecution } from "./workflow-execution"
 import { ApprovalGate } from "./approval-gate"
-import { PhaseContextViewer } from "./phase-context-viewer"
+import { PhaseResultViewer } from "./phase-context-viewer"
 
 interface WorkflowRuntimeProps {
   initialGoal?: string
@@ -41,7 +42,12 @@ export function WorkflowRuntime({
   const store = useWorkflowStore()
   const chatModelSelection = useChatStore((state) => state.config.model)
   const chatModels = useChatStore((state) => state.models)
-  const [phaseContext, setPhaseContext] = useState<WorkflowPhaseContext | null>(null)
+  const [phaseResult, setPhaseResult] = useState<{
+    phaseId: string
+    phaseTitle: string
+    artifact: WorkflowArtifactContent | null
+  } | null>(null)
+  const executionPanelClosedRef = useRef(false)
   const selectedChatModel = useMemo(
     () => chatModels.find((model) => matchesChatModelSelectionValue(model, chatModelSelection)),
     [chatModels, chatModelSelection],
@@ -121,22 +127,39 @@ export function WorkflowRuntime({
     store.setActivePhaseId(phaseId)
   }, [initialPhaseId, store.setActivePhaseId])
 
-  const handleOpenContextViewer = useCallback(async (phaseId: string) => {
+  const handleOpenResultViewer = useCallback(async (phaseId: string) => {
     if (!store.runId) return
     try {
-      const context = await getWorkflowPhaseContext(store.runId, phaseId)
-      setPhaseContext(context)
+      let step = findPhaseStep(store.steps, phaseId)
+      if (!step) {
+        const detail = await getWorkflowRunStatus(store.runId)
+        store.setRunDetail(detail)
+        step = findPhaseStep(detail.steps, phaseId)
+      }
+      if (!step) {
+        throw new Error(`Phase not found in workflow run: ${phaseId}`)
+      }
+      const artifactRef = selectPhaseResultArtifactRef(step.output_artifact_refs)
+      if (!artifactRef) {
+        throw new Error(`No result artifact found for phase: ${phaseId}`)
+      }
+      const artifact = await getWorkflowArtifactContent(store.runId, artifactRef)
+      setPhaseResult({
+        phaseId: step.phase_id,
+        phaseTitle: step.title || step.phase_id,
+        artifact,
+      })
       store.openContextViewer(phaseId)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err))
     }
-  }, [store.runId])
+  }, [store.openContextViewer, store.runId, store.setRunDetail, store.steps])
 
   useEffect(() => {
     const phaseId = initialContextPhaseId?.trim()
     if (!phaseId || !store.runId) return
-    void handleOpenContextViewer(phaseId)
-  }, [handleOpenContextViewer, initialContextPhaseId, store.runId])
+    void handleOpenResultViewer(phaseId)
+  }, [handleOpenResultViewer, initialContextPhaseId, store.runId])
 
   // --- Landing: create workflow ---
   const handleCreateWorkflow = useCallback(async (goal: string, hints?: string) => {
@@ -165,6 +188,13 @@ export function WorkflowRuntime({
     if (!store.runId || !store.editedProposal) return
     store.setCompileErrors([])
     store.setLoading(true)
+    executionPanelClosedRef.current = false
+
+    const closeExecutionPanel = () => {
+      if (!onClose || executionPanelClosedRef.current) return
+      executionPanelClosedRef.current = true
+      window.requestAnimationFrame(() => onClose())
+    }
 
     try {
       await streamWorkflowCompileAndStart(
@@ -182,9 +212,15 @@ export function WorkflowRuntime({
             if (event.type === "workflow.compile_result" && event.compile_result.errors.length === 0) {
               store.markProposalClean()
             }
+            if ("detail" in event && event.detail?.run.status === "running") {
+              closeExecutionPanel()
+            }
           },
         },
       )
+      if (useWorkflowStore.getState().run?.status === "running") {
+        closeExecutionPanel()
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       store.setError(msg)
@@ -192,7 +228,7 @@ export function WorkflowRuntime({
     } finally {
       store.setLoading(false)
     }
-  }, [store, workflowExecutionModel])
+  }, [onClose, store, workflowExecutionModel])
 
   // --- Editor: regenerate ---
   const handleRegenerate = useCallback(async () => {
@@ -306,7 +342,7 @@ export function WorkflowRuntime({
               expandedPhaseIds={store.expandedPhaseIds}
               onToggleExpand={(id) => store.togglePhaseExpanded(id)}
               onRerunPhase={handleRerunPhase}
-              onViewContext={handleOpenContextViewer}
+              onViewResult={handleOpenResultViewer}
               onResumeWorkflow={handleResumeWorkflow}
               onBack={handleBack}
             />
@@ -336,17 +372,40 @@ export function WorkflowRuntime({
         </div>
       )}
 
-      {/* Surface 6: Context Viewer Sheet */}
-      <PhaseContextViewer
+      {/* Surface 6: Phase Result Sheet */}
+      <PhaseResultViewer
         open={store.contextViewerPhaseId !== null}
         onClose={() => store.closeContextViewer()}
-        phaseId={phaseContext?.phase_id ?? store.contextViewerPhaseId ?? ""}
-        phaseTitle={phaseContext?.phase_title ?? ""}
-        contextMd={phaseContext?.context_md ?? null}
-        contextJson={phaseContext?.context_json ?? null}
+        phaseId={phaseResult?.phaseId ?? store.contextViewerPhaseId ?? ""}
+        phaseTitle={phaseResult?.phaseTitle ?? ""}
+        artifact={phaseResult?.artifact ?? null}
       />
     </div>
   )
+}
+
+function findPhaseStep(steps: WorkflowStepRun[], phaseId: string): WorkflowStepRun | null {
+  return [...steps]
+    .reverse()
+    .find((step) => step.phase_id === phaseId && step.status !== "obsolete") ?? null
+}
+
+function selectPhaseResultArtifactRef(refs: string[]): string | null {
+  const visibleRefs = getUserVisibleWorkflowArtifactRefs(refs)
+  return (
+    visibleRefs.find((ref) => getArtifactFileName(ref).toLowerCase() === "result.md") ??
+    visibleRefs.find((ref) => getArtifactFileName(ref).toLowerCase().endsWith(".md")) ??
+    visibleRefs.find((ref) => {
+      const name = getArtifactFileName(ref).toLowerCase()
+      return name.endsWith(".txt") || name.endsWith(".log")
+    }) ??
+    visibleRefs[0] ??
+    null
+  )
+}
+
+function getArtifactFileName(ref: string): string {
+  return ref.split(/[\\/]/).pop() || ref
 }
 
 // --- Proposal MD <-> Phase Data conversion ---
@@ -404,7 +463,7 @@ function phasesToProposalMd(phases: PlanPhaseData[], goal: string): string {
     const deps = phase.depends_on.length > 0
       ? phase.depends_on.map((d: string) => d.replace("phase-", "Phase ")).join(", ")
       : "--"
-    lines.push(`- Depends on: ${deps}`)
+    lines.push(deps ? `- Depends on: ${deps}` : "- Depends on:")
     lines.push(`- User Notes: ${phase.user_notes || ""}`)
     lines.push("")
   }
