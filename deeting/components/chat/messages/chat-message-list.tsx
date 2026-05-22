@@ -9,6 +9,7 @@ import { MessageItem } from "./message-item"
 import { AIResponseBubble } from "./ai-response-bubble"
 import { cn } from "@/lib/utils"
 import type { Message, ChatAssistant } from "@/store/chat-store"
+import type { ChatFeedbackReasonPayload } from "@/lib/chat/feedback-payload"
 import { useI18n } from "@/hooks/use-i18n"
 import { deriveAssistantActivityState } from "@/lib/chat/assistant-activity"
 
@@ -57,8 +58,8 @@ interface ChatMessageListProps {
   statusCode: string | null
   statusMeta: Record<string, unknown> | null
   onRegenerate?: (messageId: string) => void
-  onLike?: (messageId: string) => void
-  onDislike?: (messageId: string) => void
+  onLike?: (messageId: string, payload?: ChatFeedbackReasonPayload) => void | Promise<void>
+  onDislike?: (messageId: string, payload?: ChatFeedbackReasonPayload) => void | Promise<void>
   onCompareWithModel?: (messageId: string, modelValue: string) => void
   onFinalizeCompare?: (messageId: string, modelKey: string) => void
 }

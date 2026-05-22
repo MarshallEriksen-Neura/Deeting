@@ -30,6 +30,19 @@ Keep runtime marker contracts stable and non-destructive when overlays are appli
 - Consult official documentation before implementing with SDKs, frameworks, or APIs.
 </operating_principles>
 
+<karpathy_guidelines>
+These guidelines are behavioral constraints for coding, reviewing, and refactoring work.
+They bias toward caution and simplicity; for trivial tasks, apply judgment without adding ceremony.
+
+- Think before coding: state important assumptions, surface tradeoffs, and ask only when uncertainty materially changes the implementation.
+- Prefer simplicity first: implement the minimum code that solves the requested problem; avoid speculative features, one-off abstractions, and configurability that was not requested.
+- Keep changes surgical: touch only the files and lines needed for the task, match existing style, and do not refactor adjacent code just because it looks improvable.
+- Clean up only the consequences of your own edit: remove imports, variables, functions, or files made unused by the current change, but leave pre-existing unrelated dead code unless explicitly asked.
+- Make work goal-driven: translate non-trivial tasks into verifiable success criteria, then loop until those criteria are checked.
+- For multi-step work, keep a brief plan where each step has a matching verification signal.
+- Every changed line should trace directly to the user's request or to verification required to prove the request is complete.
+</karpathy_guidelines>
+
 ---
 
 <delegation_rules>

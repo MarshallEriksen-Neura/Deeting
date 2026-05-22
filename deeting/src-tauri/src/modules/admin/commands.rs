@@ -191,6 +191,8 @@ pub async fn create_local_trace_feedback(
             confidence: posterior_signal.confidence,
             payload_json: serde_json::json!({
                 "feedback_score": feedback.score,
+                "feedback_comment": feedback.comment.clone(),
+                "feedback_tags": feedback.tags.clone(),
                 "trace_id": feedback.trace_id.clone(),
                 "posterior_source": posterior_signal.source.as_str(),
                 "posterior_signal": posterior_signal.signal.as_str(),

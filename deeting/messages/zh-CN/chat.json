@@ -944,6 +944,33 @@
       "copied": "已复制",
       "saveToWiki": "沉淀到 Wiki"
     },
+    "feedback": {
+      "dialog": {
+        "positiveTitle": "这次哪里做得好？",
+        "positiveDescription": "可以补充一个原因，帮助后续相似任务复用这条信号。",
+        "negativeTitle": "这次哪里不对？",
+        "negativeDescription": "记录负反馈前，请选择原因或补一句说明。",
+        "commentPlaceholder": "补充一条简短说明...",
+        "negativeRequired": "负反馈至少需要一个原因或一条简短说明。",
+        "cancel": "取消",
+        "submit": "提交反馈",
+        "submitting": "提交中..."
+      },
+      "reasons": {
+        "meets_request": "满足请求",
+        "delivered_artifact": "交付了产物",
+        "good_reasoning": "推理有帮助",
+        "good_format": "格式合适",
+        "other_positive": "其他正向原因",
+        "missing_artifact": "缺少产物",
+        "wrong_requirement": "理解错需求",
+        "fact_error": "事实错误",
+        "format_error": "格式错误",
+        "too_generic": "过于泛泛",
+        "unsafe_or_overreach": "越界或过度操作",
+        "other_negative": "其他负向原因"
+      }
+    },
     "compare": {
       "current": "当前",
       "actions": {

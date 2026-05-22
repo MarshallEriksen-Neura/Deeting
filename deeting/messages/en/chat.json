@@ -944,6 +944,33 @@
       "copied": "Copied",
       "saveToWiki": "Save to LLM Wiki"
     },
+    "feedback": {
+      "dialog": {
+        "positiveTitle": "What worked?",
+        "positiveDescription": "Add an optional reason so similar future tasks can reuse this signal.",
+        "negativeTitle": "What went wrong?",
+        "negativeDescription": "Pick a reason or add a note before recording negative feedback.",
+        "commentPlaceholder": "Add a short detail...",
+        "negativeRequired": "Negative feedback needs at least one reason or a short note.",
+        "cancel": "Cancel",
+        "submit": "Submit feedback",
+        "submitting": "Submitting..."
+      },
+      "reasons": {
+        "meets_request": "Met the request",
+        "delivered_artifact": "Delivered artifact",
+        "good_reasoning": "Useful reasoning",
+        "good_format": "Good format",
+        "other_positive": "Other positive",
+        "missing_artifact": "Missing artifact",
+        "wrong_requirement": "Wrong requirement",
+        "fact_error": "Fact error",
+        "format_error": "Format error",
+        "too_generic": "Too generic",
+        "unsafe_or_overreach": "Overreach",
+        "other_negative": "Other negative"
+      }
+    },
     "compare": {
       "current": "Current",
       "actions": {

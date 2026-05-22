@@ -13,6 +13,7 @@ import { MarkdownViewer } from "@/components/chat/markdown-viewer"
 import { useChatStore, type Message, type ChatAssistant } from "@/store/chat-store"
 import { useI18n } from "@/hooks/use-i18n"
 import type { ChatAttachment } from "@/lib/chat/message-content"
+import type { ChatFeedbackReasonPayload } from "@/lib/chat/feedback-payload"
 import { ImageLightbox } from "@/ui/common/image-lightbox"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
 import { formatFileSize } from "@/lib/utils/file"
@@ -34,8 +35,8 @@ interface MessageItemProps {
   lastAssistantId?: string
   isTyping?: boolean
   onRegenerate?: (messageId: string) => void
-  onLike?: (messageId: string) => void
-  onDislike?: (messageId: string) => void
+  onLike?: (messageId: string, payload?: ChatFeedbackReasonPayload) => void | Promise<void>
+  onDislike?: (messageId: string, payload?: ChatFeedbackReasonPayload) => void | Promise<void>
   onCopy?: (messageId: string) => void
   onCompareWithModel?: (messageId: string, modelValue: string) => void
   onFinalizeCompare?: (messageId: string, modelKey: string) => void

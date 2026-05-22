@@ -4,6 +4,7 @@ import { create } from "zustand"
 import { persist, createJSONStorage } from "zustand/middleware"
 import type { ChatImageAttachment } from "@/lib/chat/message-content"
 import type { Message, MessageRole } from "@/lib/chat/message-types"
+import type { ChatFeedbackReasonPayload } from "@/lib/chat/feedback-payload"
 import type { ModelInfo } from "@/lib/api/models"
 import type { ChatPageContextAttachment } from "@/lib/browser/page-context"
 import { loadConversationHistoryPage } from "@/lib/chat/history-loader"
@@ -280,7 +281,11 @@ interface ChatStore {
   }) => void
   clearStatus: () => void
   setErrorMessage: (error: string | null) => void
-  sendFeedback: (messageId: string, score: number) => Promise<void>
+  sendFeedback: (
+    messageId: string,
+    score: number,
+    payload?: ChatFeedbackReasonPayload
+  ) => Promise<void>
 
   // === 兼容 Actions（逐步废弃）===
   loadHistory: (sessionId: string) => Promise<void>
@@ -757,7 +762,7 @@ export const useChatStore = create<ChatStore>()(
 
       setErrorMessage: (errorMessage) => set({ errorMessage }),
 
-      sendFeedback: async (messageId: string, score: number) => {
+      sendFeedback: async (messageId: string, score: number, payload) => {
         const { messages } = get()
         const message = messages.find((m) => m.id === messageId)
         if (!message) return
@@ -773,14 +778,24 @@ export const useChatStore = create<ChatStore>()(
           await createTraceFeedback({
             trace_id: traceId,
             score,
+            comment: payload?.comment ?? null,
+            tags: payload?.tags ?? null,
           })
 
           // 更新本地状态
-          const metaInfo = { ...(message.metaInfo || {}), feedback_score: score }
           set((state) => ({
-            messages: state.messages.map((m) =>
-              m.id === messageId ? { ...m, metaInfo } : m
-            ),
+            messages: state.messages.map((m) => {
+              if (m.id !== messageId) return m
+              return {
+                ...m,
+                metaInfo: {
+                  ...(m.metaInfo || {}),
+                  feedback_score: score,
+                  feedback_comment: payload?.comment ?? null,
+                  feedback_tags: payload?.tags ?? null,
+                },
+              }
+            }),
           }))
         } catch (error) {
           console.error("Failed to send feedback:", error)
@@ -934,4 +949,3 @@ export const useChatInput = () =>
     setPageContext: state.setPageContext,
     clearPageContext: state.clearPageContext,
   }))
-

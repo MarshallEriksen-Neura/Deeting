@@ -15,6 +15,7 @@ import {
   isWorkflowTerminal,
 } from "@/lib/workflow/presentation"
 import type { Message } from "@/store/chat-store"
+import type { ChatFeedbackReasonPayload } from "@/lib/chat/feedback-payload"
 
 /**
  * ChatContent - 聊天内容组件（重构版）
@@ -189,8 +190,8 @@ export function ChatContent({ agent }: ChatContentProps) {
         statusCode={statusCode}
         statusMeta={statusMeta}
         onRegenerate={regenerateMessage}
-        onLike={(id) => void sendFeedback(id, 1)}
-        onDislike={(id) => void sendFeedback(id, -1)}
+        onLike={(id, payload?: ChatFeedbackReasonPayload) => sendFeedback(id, 1, payload)}
+        onDislike={(id, payload?: ChatFeedbackReasonPayload) => sendFeedback(id, -1, payload)}
         onCompareWithModel={compareWithModel}
         onFinalizeCompare={finalizeCompareWinner}
       />
