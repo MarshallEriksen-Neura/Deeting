@@ -133,6 +133,8 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::mcp::commands::tool_approval_impl::approve_mcp_tool,
         crate::modules::mcp::commands::tool_approval_impl::reject_mcp_tool,
         crate::modules::mcp::commands::tool_approval_impl::recover_local_chat_execution,
+        crate::modules::mcp::commands::tool_approval_impl::get_local_runtime_transition_trace_verdicts,
+        crate::modules::mcp::commands::tool_approval_impl::list_local_runtime_transition_trace_verdicts,
         crate::modules::mcp::commands::tool_approval_impl::delete_tool_approval_rule,
         crate::modules::mcp::commands::tool_approval_impl::clear_tool_approval_rules,
         crate::modules::mcp::commands::tool_approval_impl::reset_tool_approval_learning,

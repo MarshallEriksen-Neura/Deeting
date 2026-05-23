@@ -430,6 +430,50 @@ pub(crate) async fn load_execution_graph_snapshot(
     Ok(Some(payload))
 }
 
+pub(crate) async fn list_execution_graph_snapshots_for_session(
+    store: &McpStore,
+    session_id: &str,
+    limit: Option<i64>,
+) -> Result<Vec<serde_json::Value>, McpError> {
+    let normalized_session_id = session_id.trim();
+    if normalized_session_id.is_empty() {
+        return Err(McpError::validation("session_id is required"));
+    }
+    let limit = limit.unwrap_or(20).clamp(1, 100);
+    let rows = sqlx::query(
+        r#"
+        SELECT execution_id, graph_payload_json
+        FROM local_execution_graph_run
+        WHERE session_id = ?
+        ORDER BY updated_at_unix_ms DESC
+        LIMIT ?
+        "#,
+    )
+    .bind(normalized_session_id)
+    .bind(limit)
+    .fetch_all(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    rows.into_iter()
+        .map(|row| {
+            let execution_id = row
+                .try_get::<String, _>("execution_id")
+                .map_err(|err| McpError::Storage(err.to_string()))?;
+            let payload_json = row
+                .try_get::<String, _>("graph_payload_json")
+                .map_err(|err| McpError::Storage(err.to_string()))?;
+            let mut payload: serde_json::Value = serde_json::from_str(&payload_json)
+                .map_err(|err| McpError::Storage(err.to_string()))?;
+            if let Some(object) = payload.as_object_mut() {
+                object
+                    .entry("execution_id".to_string())
+                    .or_insert_with(|| serde_json::Value::String(execution_id));
+            }
+            Ok(payload)
+        })
+        .collect()
+}
 pub(crate) async fn persist_execution_graph_runtime_context(
     store: &McpStore,
     execution_id: &str,
@@ -594,11 +638,13 @@ pub(crate) async fn list_execution_graph_runtime_contexts(
 #[cfg(test)]
 mod tests {
     use super::{
-        delete_execution_graph_runtime_context, load_execution_graph_snapshot,
-        migrate_execution_graph_runtime_bootstrap, persist_execution_graph_runtime_context,
+        delete_execution_graph_runtime_context, list_execution_graph_snapshots_for_session,
+        load_execution_graph_snapshot, migrate_execution_graph_runtime_bootstrap,
+        persist_execution_graph_runtime_context, persist_execution_graph_snapshot,
     };
     use crate::modules::mcp::store::McpStore;
     use mcp_session::conversation::LocalConversationCreateRequest;
+    use serde_json::json;
     use uuid::Uuid;
 
     async fn create_test_store(name: &str) -> McpStore {
@@ -630,6 +676,122 @@ mod tests {
         assert!(snapshot.is_none());
     }
 
+    #[tokio::test]
+    async fn persist_and_load_graph_preserves_runtime_transition_events() {
+        let store = create_test_store("execution-graph-runtime-transition-events").await;
+        store.init().await.expect("init store");
+        let graph = json!({
+            "execution_id": "graph-transition-1",
+            "session_id": "session-1",
+            "route": "direct",
+            "plane": "response_only",
+            "request_id": "request-1",
+            "nodes": [],
+            "events": [{
+                "event_id": "event:runtime_transition:0",
+                "node_id": null,
+                "event_type": "runtime_transition.decision",
+                "payload": {
+                    "transition_id": "runtime-transition:call-1",
+                    "trace_id": "trace-1",
+                    "request_id": "request-1",
+                    "required_artifact": "diting_think_preflight",
+                    "enforcement": "shadow"
+                }
+            }],
+            "metadata": {"trace_id": "trace-1"}
+        });
+
+        persist_execution_graph_snapshot(
+            &store,
+            &graph,
+            "session-1",
+            "desktop_local_chat",
+            Some("request-1"),
+            Some("active"),
+        )
+        .await
+        .expect("persist graph snapshot");
+
+        let loaded = load_execution_graph_snapshot(&store, "graph-transition-1")
+            .await
+            .expect("load graph snapshot")
+            .expect("stored graph snapshot");
+
+        assert_eq!(
+            loaded["events"][0]["event_type"],
+            json!("runtime_transition.decision")
+        );
+        assert_eq!(
+            loaded["events"][0]["payload"]["transition_id"],
+            json!("runtime-transition:call-1")
+        );
+    }
+
+    #[tokio::test]
+    async fn list_graph_snapshots_for_session_returns_recent_graphs_with_execution_ids() {
+        let store = create_test_store("execution-graph-session-list").await;
+        store.init().await.expect("init store");
+
+        sqlx::query(
+            r#"
+            INSERT INTO local_execution_graph_run (
+              execution_id, session_id, route, plane, status, root_execution_id, request_id,
+              source_kind, graph_payload_json, created_at_unix_ms, updated_at_unix_ms
+            ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind("graph-session-old")
+        .bind("session-list")
+        .bind("direct")
+        .bind("response_only")
+        .bind("completed")
+        .bind("request-old")
+        .bind("desktop_local_chat")
+        .bind(
+            json!({
+                "execution_id": "graph-session-old",
+                "events": []
+            })
+            .to_string(),
+        )
+        .bind(10_i64)
+        .bind(10_i64)
+        .execute(&store.write_pool)
+        .await
+        .expect("insert old graph");
+
+        sqlx::query(
+            r#"
+            INSERT INTO local_execution_graph_run (
+              execution_id, session_id, route, plane, status, root_execution_id, request_id,
+              source_kind, graph_payload_json, created_at_unix_ms, updated_at_unix_ms
+            ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind("graph-session-new")
+        .bind("session-list")
+        .bind("direct")
+        .bind("response_only")
+        .bind("completed")
+        .bind("request-new")
+        .bind("desktop_local_chat")
+        .bind(json!({ "events": [] }).to_string())
+        .bind(20_i64)
+        .bind(20_i64)
+        .execute(&store.write_pool)
+        .await
+        .expect("insert new graph");
+
+        let snapshots =
+            list_execution_graph_snapshots_for_session(&store, "session-list", Some(10))
+                .await
+                .expect("list session graphs");
+
+        assert_eq!(snapshots.len(), 2);
+        assert_eq!(snapshots[0]["execution_id"], json!("graph-session-new"));
+        assert_eq!(snapshots[1]["execution_id"], json!("graph-session-old"));
+    }
     #[tokio::test]
     async fn delete_runtime_context_removes_active_execution_state() {
         let store = create_test_store("execution-graph-runtime-context-delete").await;

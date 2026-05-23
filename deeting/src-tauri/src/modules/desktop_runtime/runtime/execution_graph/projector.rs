@@ -4,6 +4,11 @@ use super::types::{
     LocalExecutionGraphNode, LocalExecutionGraphNodeStatus, LocalExecutionGraphNodeType,
     LocalExecutionGraphSnapshot, LocalExecutionGraphStateScope, EXECUTION_GRAPH_SCHEMA_VERSION,
 };
+use crate::modules::desktop_runtime::runtime::runtime_transition::projection::{
+    RUNTIME_TRANSITION_CORRELATION_BLOCK_TYPE, RUNTIME_TRANSITION_CORRELATION_EVENT_TYPE,
+    RUNTIME_TRANSITION_DECISION_BLOCK_TYPE, RUNTIME_TRANSITION_DECISION_EVENT_TYPE,
+};
+use crate::modules::desktop_runtime::runtime::runtime_transition::trace_contract::project_runtime_transition_trace_verdicts;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
@@ -61,6 +66,28 @@ pub(crate) fn project_execution_graph_snapshot(
             .and_then(Value::as_str)
             .unwrap_or_default();
         match block_type {
+            RUNTIME_TRANSITION_DECISION_BLOCK_TYPE => {
+                events.push(LocalExecutionGraphEvent {
+                    event_id: format!("event:runtime_transition:{index}"),
+                    node_id: None,
+                    event_type: RUNTIME_TRANSITION_DECISION_EVENT_TYPE.to_string(),
+                    payload: block
+                        .get("payload")
+                        .cloned()
+                        .unwrap_or_else(|| block.clone()),
+                });
+            }
+            RUNTIME_TRANSITION_CORRELATION_BLOCK_TYPE => {
+                events.push(LocalExecutionGraphEvent {
+                    event_id: format!("event:runtime_transition_correlation:{index}"),
+                    node_id: None,
+                    event_type: RUNTIME_TRANSITION_CORRELATION_EVENT_TYPE.to_string(),
+                    payload: block
+                        .get("payload")
+                        .cloned()
+                        .unwrap_or_else(|| block.clone()),
+                });
+            }
             "tool_call" => {
                 let call_id = block
                     .get("callId")
@@ -203,6 +230,10 @@ pub(crate) fn project_execution_graph_snapshot(
         output_payload: input.response_content.clone(),
     });
 
+    let graph_event_value = json!({ "events": events.clone() });
+    let runtime_transition_trace_verdicts =
+        project_runtime_transition_trace_verdicts(None, Some(&graph_event_value));
+
     LocalExecutionGraphSnapshot {
         schema_version: EXECUTION_GRAPH_SCHEMA_VERSION,
         execution_id,
@@ -218,6 +249,7 @@ pub(crate) fn project_execution_graph_snapshot(
             "trace_id": input.trace_id,
             "tool_trace_block_count": input.tool_trace_blocks.len(),
             "has_delegated_execution": input.delegated_execution_tree.is_some(),
+            "runtime_transition_trace_verdicts": runtime_transition_trace_verdicts,
         }),
     }
 }
@@ -315,7 +347,7 @@ fn build_graph_tool_result_block(
             "callId": call_id,
             "toolName": tool_name,
             "status": "requires_approval",
-            "result": node.output_payload.clone().unwrap_or_else(|| json!({})),
+            "result": graph_tool_result_payload(node, json!({})),
         })),
         LocalExecutionGraphNodeStatus::Approved | LocalExecutionGraphNodeStatus::Success => {
             Some(json!({
@@ -323,7 +355,7 @@ fn build_graph_tool_result_block(
                 "callId": call_id,
                 "toolName": tool_name,
                 "status": "success",
-                "result": node.output_payload.clone().unwrap_or_else(|| json!({})),
+                "result": graph_tool_result_payload(node, json!({})),
             }))
         }
         LocalExecutionGraphNodeStatus::Rejected
@@ -334,9 +366,17 @@ fn build_graph_tool_result_block(
             "callId": call_id,
             "toolName": tool_name,
             "status": "error",
-            "result": node.output_payload.clone().unwrap_or_else(|| json!({"error":"tool call failed"})),
+            "result": graph_tool_result_payload(node, json!({"error":"tool call failed"})),
         })),
     }
+}
+
+fn graph_tool_result_payload(node: &LocalExecutionGraphNode, fallback: Value) -> Value {
+    node.output_payload
+        .as_ref()
+        .and_then(|payload| payload.get("result").cloned())
+        .or_else(|| node.output_payload.clone())
+        .unwrap_or(fallback)
 }
 
 fn resolve_execution_id(input: &GraphProjectionInput) -> String {
@@ -495,6 +535,93 @@ mod tests {
             .find(|node| node.node_id == "finalize:1")
             .expect("finalize node");
         assert_eq!(finalize.status, LocalExecutionGraphNodeStatus::Pending);
+    }
+
+    #[test]
+    fn project_execution_graph_snapshot_records_runtime_transition_decision() {
+        let snapshot = project_execution_graph_snapshot(GraphProjectionInput {
+            session_id: "session-1".to_string(),
+            route: "direct".to_string(),
+            plane: "response_only".to_string(),
+            trace_id: Some("trace-transition".to_string()),
+            request_id: Some("request-transition".to_string()),
+            root_execution_id: Some("root-1".to_string()),
+            response_content: None,
+            tool_trace_blocks: vec![json!({
+                "type": "runtime_transition_decision",
+                "payload": {
+                    "event_type": "runtime_transition.decision",
+                    "decision_id": "hook-decision:runtime-transition:call-1",
+                    "transition_id": "runtime-transition:call-1",
+                    "trace_id": "trace-transition",
+                    "request_id": "request-transition",
+                    "session_id": "session-1",
+                    "source": "provider_response",
+                    "required_artifact": "diting_think_preflight",
+                    "enforcement": "shadow"
+                }
+            })],
+            delegated_execution_tree: None,
+        });
+
+        let event = snapshot
+            .events
+            .iter()
+            .find(|event| event.event_type == "runtime_transition.decision")
+            .expect("runtime transition decision event");
+
+        assert_eq!(event.node_id, None);
+        assert_eq!(
+            event.payload["transition_id"],
+            json!("runtime-transition:call-1")
+        );
+        assert_eq!(event.payload["trace_id"], json!("trace-transition"));
+        assert_eq!(event.payload["request_id"], json!("request-transition"));
+        assert_eq!(
+            event.payload["required_artifact"],
+            json!("diting_think_preflight")
+        );
+        assert_eq!(event.payload["enforcement"], json!("shadow"));
+
+        assert!(snapshot
+            .events
+            .iter()
+            .all(|event| event.event_type != "projection.ignored_block"));
+    }
+    #[test]
+    fn project_execution_graph_snapshot_records_runtime_transition_correlation() {
+        let snapshot = project_execution_graph_snapshot(GraphProjectionInput {
+            session_id: "session-1".to_string(),
+            route: "direct".to_string(),
+            plane: "response_only".to_string(),
+            trace_id: Some("trace-transition".to_string()),
+            request_id: Some("request-transition".to_string()),
+            root_execution_id: Some("root-1".to_string()),
+            response_content: None,
+            tool_trace_blocks: vec![json!({
+                "type": "runtime_transition_correlation",
+                "payload": {
+                    "event_type": "runtime_transition.correlation",
+                    "transition_id": "runtime-transition:monitor-checkpoint:monitor-exec-1",
+                    "outcome": "unverified",
+                    "evidence_refs": ["monitor_policy_result:monitor-exec-1:0"]
+                }
+            })],
+            delegated_execution_tree: None,
+        });
+
+        let event = snapshot
+            .events
+            .iter()
+            .find(|event| event.event_type == "runtime_transition.correlation")
+            .expect("runtime transition correlation event");
+
+        assert_eq!(event.node_id, None);
+        assert_eq!(
+            event.payload["transition_id"],
+            json!("runtime-transition:monitor-checkpoint:monitor-exec-1")
+        );
+        assert_eq!(event.payload["outcome"], json!("unverified"));
     }
 
     #[test]

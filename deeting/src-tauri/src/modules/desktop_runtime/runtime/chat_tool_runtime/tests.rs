@@ -401,6 +401,92 @@ fn enrich_response_with_tool_trace_includes_error_result_blocks() {
 }
 
 #[test]
+fn attach_runtime_transition_events_appends_graph_projectable_trace_blocks() {
+    let response = serde_json::json!({
+        "content": "done",
+        "tool_trace_blocks": [
+            { "type": "tool_call", "callId": "call-1", "toolName": "search_sdk", "status": "running" }
+        ]
+    });
+    let blocks = vec![serde_json::json!({
+        "type": "runtime_transition_decision",
+        "payload": {
+            "event_type": "runtime_transition.decision",
+            "decision_id": "hook-decision:runtime-transition:call-1",
+            "transition_id": "runtime-transition:call-1",
+            "trace_id": "trace-1",
+            "request_id": "request-1",
+            "session_id": "session-1",
+            "required_artifact": "diting_think_preflight",
+            "enforcement": "shadow"
+        }
+    })];
+
+    let enriched = attach_runtime_transition_events(response, &blocks);
+
+    let events = enriched
+        .get("runtime_transition_events")
+        .and_then(serde_json::Value::as_array)
+        .expect("runtime transition events");
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        events[0]["transition_id"],
+        serde_json::json!("runtime-transition:call-1")
+    );
+
+    let trace_blocks = enriched
+        .get("tool_trace_blocks")
+        .and_then(serde_json::Value::as_array)
+        .expect("tool trace blocks");
+    assert_eq!(trace_blocks.len(), 2);
+    assert_eq!(trace_blocks[0]["type"], serde_json::json!("tool_call"));
+    assert_eq!(
+        trace_blocks[1]["type"],
+        serde_json::json!("runtime_transition_decision")
+    );
+    assert_eq!(
+        trace_blocks[1]["payload"]["required_artifact"],
+        serde_json::json!("diting_think_preflight")
+    );
+}
+#[test]
+fn attach_runtime_transition_events_preserves_answer_only_content() {
+    let response = serde_json::json!({
+        "content": "Plain answer only.",
+        "role": "assistant"
+    });
+    let blocks = vec![serde_json::json!({
+        "type": "runtime_transition_decision",
+        "payload": {
+            "event_type": "runtime_transition.decision",
+            "decision_id": "hook-decision:runtime-transition:final-answer:trace-1",
+            "transition_id": "runtime-transition:final-answer:trace-1",
+            "trace_id": "trace-1",
+            "request_id": "request-1",
+            "session_id": "session-1",
+            "required_artifact": "verification_plan",
+            "enforcement": "shadow"
+        }
+    })];
+
+    let enriched = attach_runtime_transition_events(response, &blocks);
+
+    assert_eq!(
+        enriched.get("content"),
+        Some(&serde_json::json!("Plain answer only."))
+    );
+    assert_eq!(enriched.get("role"), Some(&serde_json::json!("assistant")));
+    assert_eq!(
+        enriched["runtime_transition_events"][0]["required_artifact"],
+        serde_json::json!("verification_plan")
+    );
+    assert!(enriched["content"]
+        .as_str()
+        .expect("content text")
+        .find("runtime_transition")
+        .is_none());
+}
+#[test]
 fn enrich_response_with_tool_trace_falls_back_to_execution_graph_blocks() {
     let response = serde_json::json!({
         "content": "",
@@ -814,8 +900,31 @@ fn attach_execution_graph_to_response_force_rebuild_replaces_stale_graph() {
                 { "node_id": "approval_gate:call-1", "node_type": "approval_gate", "status": "waiting_approval" }
             ]
         },
+        "runtime_transition_events": [{
+            "event_type": "runtime_transition.decision",
+            "decision_id": "hook-decision:runtime-transition:call-1",
+            "transition_id": "runtime-transition:call-1",
+            "trace_id": "trace-1",
+            "request_id": "request-1",
+            "session_id": "session-1",
+            "required_artifact": "diting_think_preflight",
+            "enforcement": "shadow"
+        }],
         "tool_trace_blocks": [
-            { "type": "text", "content": "final answer" }
+            { "type": "text", "content": "final answer" },
+            {
+                "type": "runtime_transition_decision",
+                "payload": {
+                    "event_type": "runtime_transition.decision",
+                    "decision_id": "hook-decision:runtime-transition:call-1",
+                    "transition_id": "runtime-transition:call-1",
+                    "trace_id": "trace-1",
+                    "request_id": "request-1",
+                    "session_id": "session-1",
+                    "required_artifact": "diting_think_preflight",
+                    "enforcement": "shadow"
+                }
+            }
         ]
     });
 
@@ -834,6 +943,23 @@ fn attach_execution_graph_to_response_force_rebuild_replaces_stale_graph() {
             .and_then(serde_json::Value::as_str),
         Some("graph-stale")
     );
+    assert_eq!(
+        response["execution_graph"]["metadata"]["trace_id"],
+        serde_json::json!("trace-1")
+    );
+    assert_eq!(
+        response["execution_graph"]["request_id"],
+        serde_json::json!("request-1")
+    );
+    assert!(response["execution_graph"]["events"]
+        .as_array()
+        .expect("graph events")
+        .iter()
+        .any(
+            |event| event["event_type"] == serde_json::json!("runtime_transition.decision")
+                && event["payload"]["transition_id"]
+                    == serde_json::json!("runtime-transition:call-1")
+        ));
 }
 
 #[test]
@@ -875,6 +1001,7 @@ fn build_max_rounds_exceeded_response_appends_visible_notice() {
                 }
             ]
         })),
+        runtime_transition_blocks: Vec::new(),
         realtime_emitter: LocalRealtimeToolTraceEmitter::new(
             None,
             Some("trace-max-rounds-1"),
@@ -955,6 +1082,7 @@ fn rewind_round_for_post_approval_continuation_does_not_consume_user_round_budge
         terminal_context: None,
         workflow_context: None,
         last_response: None,
+        runtime_transition_blocks: Vec::new(),
         realtime_emitter: LocalRealtimeToolTraceEmitter::new(
             None,
             Some("trace-approval-round-1"),

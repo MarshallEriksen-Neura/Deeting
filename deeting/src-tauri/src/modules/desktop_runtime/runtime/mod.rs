@@ -15,6 +15,7 @@ pub mod posterior_signal;
 pub mod prompt_assets;
 pub mod prompt_plan;
 pub mod route_selector;
+pub mod runtime_transition;
 pub mod search_feedback;
 pub mod semantic_recall;
 pub mod skill_context;
@@ -35,6 +36,7 @@ pub(crate) use assistant_persistence::{
     mark_local_assistant_postprocess_completed, persist_local_assistant_turn,
 };
 pub(crate) use capability_contract::CapabilityExecutionContract;
+pub(crate) use capability_discovery::project_capability_search_result_transition_blocks;
 #[cfg(test)]
 pub(crate) use chat_completion::normalize_chat_completion_response;
 pub(crate) use chat_completion::{
@@ -62,9 +64,9 @@ pub(crate) use execution_graph::{
 };
 pub(crate) use execution_graph_store::{
     delete_execution_graph_runtime_context, list_execution_graph_runtime_contexts,
-    load_execution_graph_runtime_context, load_execution_graph_snapshot,
-    migrate_execution_graph_runtime_bootstrap, persist_execution_graph_runtime_context,
-    persist_execution_graph_snapshot,
+    list_execution_graph_snapshots_for_session, load_execution_graph_runtime_context,
+    load_execution_graph_snapshot, migrate_execution_graph_runtime_bootstrap,
+    persist_execution_graph_runtime_context, persist_execution_graph_snapshot,
 };
 pub(crate) use execution_plane::{
     build_delegated_result_feedback_messages, run_local_execution_plane, DelegatedExecutionKind,

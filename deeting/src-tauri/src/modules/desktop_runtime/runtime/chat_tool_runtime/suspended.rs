@@ -39,7 +39,8 @@ impl SuspendedChatToolExecution {
         _pending_call_id: String,
         _pending_tool_name: String,
     ) -> Self {
-        let tool_trace_blocks = build_local_tool_trace_blocks(pending_tool_call_meta);
+        let mut tool_trace_blocks = build_local_tool_trace_blocks(pending_tool_call_meta);
+        tool_trace_blocks.extend(state.runtime_transition_blocks.clone());
         let execution_graph = project_execution_graph_snapshot(GraphProjectionInput {
             session_id: state.session_id.clone(),
             route: state.execution_policy.route.as_str().to_string(),
@@ -104,6 +105,7 @@ impl SuspendedChatToolExecution {
             terminal_context: self.terminal_context,
             workflow_context: self.workflow_context,
             last_response: self.last_response,
+            runtime_transition_blocks: Vec::new(),
             diting_think_consumed: false,
             captured_reasoning: None,
             realtime_emitter: LocalRealtimeToolTraceEmitter::new(

@@ -8,15 +8,15 @@ use super::{
     install_local_skill_from_onboarding_request, list_execution_graph_runtime_contexts,
     load_execution_graph_runtime_context, load_execution_graph_snapshot,
     persist_execution_graph_runtime_context, persist_execution_graph_snapshot,
-    project_execution_graph_blocks_from_value, project_execution_graph_snapshot,
-    read_skill_resource_from_args, request_provider_chat_completion,
-    resolve_local_capability_activation_state, resolve_provider_tool_name_for_execution,
-    resolve_tool_trace_call_id, search_feedback::search_feedback_context_from_tool_call_meta,
-    ActiveSkillContextState, CapabilityExecutionContract, DelegatedExecutionKind,
-    DelegatedExecutionPacketReceipt, DelegatedExecutionRecord, DelegatedExecutionSelection,
-    DelegatedExecutionStatus, DelegatedExecutionTarget, GraphProjectionInput,
-    LocalCapabilityActivationState, LocalExecutionPolicy, WorkerTaskPacketInput,
-    LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
+    project_capability_search_result_transition_blocks, project_execution_graph_blocks_from_value,
+    project_execution_graph_snapshot, read_skill_resource_from_args,
+    request_provider_chat_completion, resolve_local_capability_activation_state,
+    resolve_provider_tool_name_for_execution, resolve_tool_trace_call_id,
+    search_feedback::search_feedback_context_from_tool_call_meta, ActiveSkillContextState,
+    CapabilityExecutionContract, DelegatedExecutionKind, DelegatedExecutionPacketReceipt,
+    DelegatedExecutionRecord, DelegatedExecutionSelection, DelegatedExecutionStatus,
+    DelegatedExecutionTarget, GraphProjectionInput, LocalCapabilityActivationState,
+    LocalExecutionPolicy, WorkerTaskPacketInput, LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION,
 };
 use crate::modules::ai_upstream::ReasoningRequestConfig;
 use crate::modules::custom_task_agents::runtime::preview_custom_task_agent_with_parent_model;
@@ -31,6 +31,14 @@ use crate::modules::desktop_runtime::context_orchestrator::{
 use crate::modules::desktop_runtime::runtime::execution_plane::{
     DelegatedExecutionAction, DelegatedExecutionChildRecord,
 };
+use crate::modules::desktop_runtime::runtime::runtime_transition::projection::{
+    attach_runtime_transition_blocks_to_response, hook_provenance_for_required_artifact,
+    project_execution_observation_decision_blocks, project_final_answer_decision_blocks,
+    project_tool_call_proposal_decision_blocks, project_tool_execution_correlation_blocks,
+    ExecutionObservationProjectionInput, FinalAnswerProjectionInput,
+    ToolCallProposalProjectionInput,
+};
+use crate::modules::desktop_runtime::runtime::runtime_transition::types::RequiredArtifact;
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
 use crate::modules::mcp::commands::support::*;
@@ -254,6 +262,7 @@ enum LocalToolCallProcessingOutcome {
         tool_call_meta: Vec<serde_json::Value>,
         results: Vec<String>,
         skill_context_update: Option<ActiveSkillContextState>,
+        runtime_transition_blocks: Vec<serde_json::Value>,
     },
     Interrupted {
         approval_tokens: Vec<String>,
@@ -261,6 +270,7 @@ enum LocalToolCallProcessingOutcome {
         results: Vec<String>,
         capability_update: Option<LocalCapabilityTransition>,
         skill_context_update: Option<ActiveSkillContextState>,
+        runtime_transition_blocks: Vec<serde_json::Value>,
     },
 }
 
@@ -287,6 +297,7 @@ struct LocalChatToolRuntimeState {
     terminal_context: Option<serde_json::Value>,
     workflow_context: Option<serde_json::Value>,
     last_response: Option<serde_json::Value>,
+    runtime_transition_blocks: Vec<serde_json::Value>,
     realtime_emitter: LocalRealtimeToolTraceEmitter,
     // Selected knowledge file IDs supplied by the workflow context manifest,
     // used as a fallback when the model calls `context_search` with
@@ -297,6 +308,13 @@ struct LocalChatToolRuntimeState {
 struct LocalChatToolRuntimeOutput {
     response: serde_json::Value,
     captured_reasoning: Option<String>,
+}
+
+fn attach_runtime_transition_events(
+    response: serde_json::Value,
+    runtime_transition_blocks: &[serde_json::Value],
+) -> serde_json::Value {
+    attach_runtime_transition_blocks_to_response(response, runtime_transition_blocks)
 }
 
 fn backfill_captured_reasoning(response: &mut serde_json::Value, captured_reasoning: Option<&str>) {
@@ -407,6 +425,7 @@ pub(crate) async fn run_local_chat_complete_with_tools(
         terminal_context,
         workflow_context,
         last_response: None,
+        runtime_transition_blocks: Vec::new(),
         realtime_emitter: LocalRealtimeToolTraceEmitter::new(
             event_tx,
             Some(trace_id.as_str()),
@@ -491,19 +510,45 @@ async fn continue_local_chat_complete_with_tools(
         .map_err(to_string)?;
         state.runtime_metrics.observe_response(&response);
 
-        if extract_chat_tool_calls(&response).is_empty() {
+        let tool_calls = extract_chat_tool_calls(&response);
+        if tool_calls.is_empty() {
             let effective_tool_call_meta = build_state_effective_tool_call_meta(&state);
+            state
+                .runtime_transition_blocks
+                .extend(project_final_answer_decision_blocks(
+                    FinalAnswerProjectionInput {
+                        trace_id: state.trace_id.as_str(),
+                        request_id: state.request_id.as_deref(),
+                        session_id: state.session_id.as_str(),
+                        response_has_verification_evidence: !effective_tool_call_meta.is_empty(),
+                    },
+                ));
+            let response = enrich_response_with_tool_trace(
+                response,
+                &effective_tool_call_meta,
+                state.realtime_emitter.emitted_any,
+                &state.runtime_metrics,
+            );
             return Ok(LocalChatToolRuntimeOutput {
                 captured_reasoning: state.captured_reasoning.clone(),
-                response: enrich_response_with_tool_trace(
+                response: attach_runtime_transition_events(
                     response,
-                    &effective_tool_call_meta,
-                    state.realtime_emitter.emitted_any,
-                    &state.runtime_metrics,
+                    &state.runtime_transition_blocks,
                 ),
             });
         }
 
+        state
+            .runtime_transition_blocks
+            .extend(project_tool_call_proposal_decision_blocks(
+                ToolCallProposalProjectionInput {
+                    trace_id: state.trace_id.as_str(),
+                    request_id: state.request_id.as_deref(),
+                    session_id: state.session_id.as_str(),
+                    round: state.round,
+                    tool_calls: &tool_calls,
+                },
+            ));
         let prior_tool_call_meta = build_state_effective_tool_call_meta(&state);
         state.last_response = Some(response.clone());
         let state_snapshot = LocalChatToolRuntimeState {
@@ -529,6 +574,7 @@ async fn continue_local_chat_complete_with_tools(
             terminal_context: state.terminal_context.clone(),
             workflow_context: state.workflow_context.clone(),
             last_response: state.last_response.clone(),
+            runtime_transition_blocks: state.runtime_transition_blocks.clone(),
             realtime_emitter: LocalRealtimeToolTraceEmitter::new(
                 None,
                 Some(state.trace_id.as_str()),
@@ -555,7 +601,11 @@ async fn continue_local_chat_complete_with_tools(
                 tool_call_meta,
                 results,
                 skill_context_update,
+                runtime_transition_blocks,
             } => {
+                state
+                    .runtime_transition_blocks
+                    .extend(runtime_transition_blocks);
                 if let Some(update) = skill_context_update {
                     state.active_skill_context = Some(update);
                 }
@@ -577,6 +627,23 @@ async fn continue_local_chat_complete_with_tools(
                     &response,
                     &tool_call_meta,
                 );
+                state
+                    .runtime_transition_blocks
+                    .extend(project_tool_execution_correlation_blocks(
+                        &state.runtime_transition_blocks,
+                        &canonical_tool_call_meta,
+                    ));
+                state.runtime_transition_blocks.extend(
+                    project_execution_observation_decision_blocks(
+                        ExecutionObservationProjectionInput {
+                            trace_id: state.trace_id.as_str(),
+                            request_id: state.request_id.as_deref(),
+                            session_id: state.session_id.as_str(),
+                            tool_call_meta: &canonical_tool_call_meta,
+                            result_count: results.len(),
+                        },
+                    ),
+                );
                 record_query_affinity_from_tool_meta(
                     app_state.mcp.store.as_ref(),
                     state.last_capability_snapshot.as_ref(),
@@ -588,11 +655,14 @@ async fn continue_local_chat_complete_with_tools(
                     current_tool_call_meta.extend(canonical_tool_call_meta.clone());
                     return Ok(LocalChatToolRuntimeOutput {
                         captured_reasoning: state.captured_reasoning.clone(),
-                        response: enrich_response_with_tool_trace(
-                            response,
-                            &current_tool_call_meta,
-                            state.realtime_emitter.emitted_any,
-                            &state.runtime_metrics,
+                        response: attach_runtime_transition_events(
+                            enrich_response_with_tool_trace(
+                                response,
+                                &current_tool_call_meta,
+                                state.realtime_emitter.emitted_any,
+                                &state.runtime_metrics,
+                            ),
+                            &state.runtime_transition_blocks,
                         ),
                     });
                 }
@@ -605,11 +675,14 @@ async fn continue_local_chat_complete_with_tools(
                     &canonical_tool_call_meta,
                     &results,
                 );
-                state.last_response = Some(enrich_response_with_tool_trace(
-                    response,
-                    &canonical_tool_call_meta,
-                    state.realtime_emitter.emitted_any,
-                    &state.runtime_metrics,
+                state.last_response = Some(attach_runtime_transition_events(
+                    enrich_response_with_tool_trace(
+                        response,
+                        &canonical_tool_call_meta,
+                        state.realtime_emitter.emitted_any,
+                        &state.runtime_metrics,
+                    ),
+                    &state.runtime_transition_blocks,
                 ));
             }
             LocalToolCallProcessingOutcome::Interrupted {
@@ -618,7 +691,11 @@ async fn continue_local_chat_complete_with_tools(
                 results,
                 capability_update,
                 skill_context_update,
+                runtime_transition_blocks,
             } => {
+                state
+                    .runtime_transition_blocks
+                    .extend(runtime_transition_blocks);
                 if let Some(update) = skill_context_update {
                     state.active_skill_context = Some(update);
                 }
@@ -627,6 +704,23 @@ async fn continue_local_chat_complete_with_tools(
                     &state.execution_policy,
                     &response,
                     &tool_call_meta,
+                );
+                state
+                    .runtime_transition_blocks
+                    .extend(project_tool_execution_correlation_blocks(
+                        &state.runtime_transition_blocks,
+                        &canonical_tool_call_meta,
+                    ));
+                state.runtime_transition_blocks.extend(
+                    project_execution_observation_decision_blocks(
+                        ExecutionObservationProjectionInput {
+                            trace_id: state.trace_id.as_str(),
+                            request_id: state.request_id.as_deref(),
+                            session_id: state.session_id.as_str(),
+                            tool_call_meta: &canonical_tool_call_meta,
+                            result_count: results.len(),
+                        },
+                    ),
                 );
                 let resolved_tool_call_meta =
                     tool_call_meta_with_resolved_ids(&canonical_tool_call_meta);
@@ -677,11 +771,14 @@ async fn continue_local_chat_complete_with_tools(
                 });
                 return Ok(LocalChatToolRuntimeOutput {
                     captured_reasoning: state.captured_reasoning.clone(),
-                    response: enrich_response_with_tool_trace(
-                        interrupted,
-                        &current_tool_call_meta,
-                        state.realtime_emitter.emitted_any,
-                        &state.runtime_metrics,
+                    response: attach_runtime_transition_events(
+                        enrich_response_with_tool_trace(
+                            interrupted,
+                            &current_tool_call_meta,
+                            state.realtime_emitter.emitted_any,
+                            &state.runtime_metrics,
+                        ),
+                        &state.runtime_transition_blocks,
                     ),
                 });
             }
@@ -1146,7 +1243,7 @@ async fn execute_delegate_task_tool(
         request_id: state.request_id.clone(),
         root_execution_id: Some(execution_id.clone()),
         response_content: None,
-        tool_trace_blocks: Vec::new(),
+        tool_trace_blocks: state.runtime_transition_blocks.clone(),
         delegated_execution_tree: Some(delegated_execution_tree),
     })
     .to_value();
@@ -1229,6 +1326,7 @@ async fn process_chat_tool_calls(
             tool_call_meta: Vec::new(),
             results: Vec::new(),
             skill_context_update: None,
+            runtime_transition_blocks: Vec::new(),
         };
     }
     let mut tool_call_meta = Vec::new();
@@ -1237,6 +1335,7 @@ async fn process_chat_tool_calls(
     let mut capability_update = None;
     let mut skill_context_update = None;
     let mut approval_tokens = Vec::new();
+    let mut runtime_transition_blocks = Vec::new();
 
     for (call_index, call) in tool_calls.into_iter().enumerate() {
         let requested_tool_name = call.name.trim().to_lowercase();
@@ -1281,6 +1380,10 @@ async fn process_chat_tool_calls(
                     submit_evolution_signal, EvolutionSignalClassification, EvolutionSignalDraft,
                     EvolutionSignalSource,
                 };
+                let hook_provenance = hook_provenance_for_required_artifact(
+                    &state.runtime_transition_blocks,
+                    RequiredArtifact::DitingThinkPreflight,
+                );
                 let payload = serde_json::json!({
                     "intent": call.arguments.get("intent").cloned().unwrap_or(serde_json::Value::Null),
                     "context_assessment": call.arguments.get("context_assessment").cloned().unwrap_or(serde_json::Value::Null),
@@ -1290,6 +1393,10 @@ async fn process_chat_tool_calls(
                     "trace_id": state.trace_id.clone(),
                     "session_id": state.session_id.clone(),
                     "request_id": state.request_id.clone(),
+                    "transition_id": hook_provenance.as_ref().and_then(|value| value.get("transition_id")).cloned().unwrap_or(serde_json::Value::Null),
+                    "required_artifact": hook_provenance.as_ref().and_then(|value| value.get("required_artifact")).cloned().unwrap_or(serde_json::Value::Null),
+                    "hook_decision_id": hook_provenance.as_ref().and_then(|value| value.get("hook_decision_id")).cloned().unwrap_or(serde_json::Value::Null),
+                    "enforcement": hook_provenance.as_ref().and_then(|value| value.get("enforcement")).cloned().unwrap_or(serde_json::Value::Null),
                 });
                 let draft = EvolutionSignalDraft {
                     source: EvolutionSignalSource::DeetingThink,
@@ -1367,6 +1474,7 @@ async fn process_chat_tool_calls(
                 terminal_context: state.terminal_context.clone(),
                 workflow_context: state.workflow_context.clone(),
                 last_response: state.last_response.clone(),
+                runtime_transition_blocks: state.runtime_transition_blocks.clone(),
                 diting_think_consumed: state.diting_think_consumed,
                 captured_reasoning: state.captured_reasoning.clone(),
                 selected_knowledge_file_ids: state.selected_knowledge_file_ids.clone(),
@@ -1559,6 +1667,12 @@ async fn process_chat_tool_calls(
                     continue;
                 }
             };
+            runtime_transition_blocks.push(execution_contract.project_runtime_transition_block(
+                state.trace_id.as_str(),
+                state.request_id.as_deref(),
+                state.session_id.as_str(),
+                call_id.as_str(),
+            ));
             if code.trim().is_empty() {
                 synthesized = true;
                 push_local_tool_call_error_meta(
@@ -1648,6 +1762,7 @@ async fn process_chat_tool_calls(
                 .get("code")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
+
             if code.trim().is_empty() {
                 synthesized = true;
                 push_local_tool_call_error_meta(
@@ -1773,7 +1888,16 @@ async fn process_chat_tool_calls(
                 &feedback_context,
             )
             .await;
+            let capability_transition_blocks = project_capability_search_result_transition_blocks(
+                state.trace_id.as_str(),
+                state.request_id.as_deref(),
+                state.session_id.as_str(),
+                call_id.as_str(),
+                query,
+                &search_bundle,
+            );
             let search_res = search_bundle.summary_payload;
+            runtime_transition_blocks.extend(capability_transition_blocks);
             *last_capability_snapshot = Some(search_bundle.full_payload);
             synthesized = true;
             let meta = serde_json::json!({"id":call_id.as_str(),"name":tool_name,"status":"success","result":search_res});
@@ -2324,6 +2448,7 @@ async fn process_chat_tool_calls(
             tool_call_meta,
             results,
             skill_context_update,
+            runtime_transition_blocks,
         }
     } else {
         LocalToolCallProcessingOutcome::Interrupted {
@@ -2332,6 +2457,7 @@ async fn process_chat_tool_calls(
             results,
             capability_update,
             skill_context_update,
+            runtime_transition_blocks,
         }
     }
 }

@@ -6,6 +6,7 @@ use crate::modules::desktop_runtime::runtime::chat_tool_runtime::inflight::mark_
 use crate::modules::desktop_runtime::runtime::execution_plane::{
     build_workflow_delegated_execution_session, DelegatedExecutionSession,
 };
+use crate::modules::desktop_runtime::runtime::runtime_transition::projection::runtime_transition_response_field;
 use sqlx::Row;
 
 async fn resume_delegated_runtime_with_session(
@@ -380,12 +381,14 @@ pub(super) fn attach_execution_graph_to_response(
         .and_then(serde_json::Value::as_array)
         .cloned()
         .unwrap_or_default();
+    let trace_id = runtime_transition_response_field(response, &tool_trace_blocks, "trace_id");
+    let request_id = runtime_transition_response_field(response, &tool_trace_blocks, "request_id");
     let execution_graph = project_execution_graph_snapshot(GraphProjectionInput {
         session_id: session_id.to_string(),
         route: execution_policy.route.as_str().to_string(),
         plane: execution_policy.plane.as_str().to_string(),
-        trace_id: None,
-        request_id: None,
+        trace_id,
+        request_id,
         root_execution_id: root_execution_id.map(str::to_string),
         response_content: response.get("content").cloned(),
         tool_trace_blocks,

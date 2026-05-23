@@ -2,6 +2,9 @@ use std::collections::{BTreeSet, HashSet};
 
 use serde_json::{json, Map, Value};
 
+use super::runtime_transition::projection::{
+    project_capability_exposure_decision_blocks, CapabilityExposureProjectionInput,
+};
 use super::search_feedback::{
     compute_feedback_boost, historical_affinity_from_rows, query_affinity_from_rows,
     SearchFeedbackContext,
@@ -53,6 +56,24 @@ impl SearchSdkDetailLevel {
 pub(crate) struct CapabilitySearchResultBundle {
     pub(crate) summary_payload: Value,
     pub(crate) full_payload: Value,
+}
+
+pub(crate) fn project_capability_search_result_transition_blocks(
+    trace_id: &str,
+    request_id: Option<&str>,
+    session_id: &str,
+    call_id: &str,
+    query: &str,
+    bundle: &CapabilitySearchResultBundle,
+) -> Vec<Value> {
+    project_capability_exposure_decision_blocks(CapabilityExposureProjectionInput {
+        trace_id,
+        request_id,
+        session_id,
+        call_id,
+        query,
+        full_payload: &bundle.full_payload,
+    })
 }
 
 #[derive(Clone)]
@@ -3184,6 +3205,44 @@ mod tests {
         );
     }
 
+    #[test]
+    fn capability_search_result_projects_transition_without_changing_payloads() {
+        let bundle = CapabilitySearchResultBundle {
+            summary_payload: json!({"capabilities": [{"name": "search_web"}]}),
+            full_payload: json!({
+                "detail_level": "full",
+                "routing_hint": {"direct_callable_capability_count": 1},
+                "capabilities": [{
+                    "name": "search_web",
+                    "invocation_mode": "direct",
+                    "status": {"callable": true}
+                }]
+            }),
+        };
+        let original_summary = bundle.summary_payload.clone();
+        let original_full = bundle.full_payload.clone();
+
+        let blocks = project_capability_search_result_transition_blocks(
+            "trace-1",
+            Some("request-1"),
+            "session-1",
+            "search-call-1",
+            "search web",
+            &bundle,
+        );
+
+        assert_eq!(bundle.summary_payload, original_summary);
+        assert_eq!(bundle.full_payload, original_full);
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(
+            blocks[0]["payload"]["required_artifact"],
+            json!("capability_lease")
+        );
+        assert_eq!(
+            blocks[1]["payload"]["required_artifact"],
+            json!("plan_draft")
+        );
+    }
     #[test]
     fn search_result_full_keeps_internal_top_level_metadata() {
         let profile = QueryProfile::from_query("search web tools");

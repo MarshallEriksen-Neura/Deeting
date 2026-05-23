@@ -1,5 +1,9 @@
 use serde_json::{json, Value};
 
+use super::runtime_transition::projection::{
+    project_capability_contract_decision_block, CapabilityContractProjectionInput,
+};
+
 const RESERVED_RUNTIME_META_TOOLS: &[&str] = &["query_task_policy"];
 
 fn sanitize_contract_allowed_tools(allowed_tools: Vec<String>) -> Vec<String> {
@@ -73,6 +77,23 @@ impl CapabilityExecutionContract {
             })
         }
     }
+
+    pub(crate) fn project_runtime_transition_block(
+        &self,
+        trace_id: &str,
+        request_id: Option<&str>,
+        session_id: &str,
+        call_id: &str,
+    ) -> Value {
+        project_capability_contract_decision_block(CapabilityContractProjectionInput {
+            trace_id,
+            request_id,
+            session_id,
+            call_id,
+            allowed_tools: &self.allowed_tools,
+            capability_snapshot: &self.capability_snapshot,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -122,6 +143,42 @@ mod tests {
         assert_eq!(contract.capability_snapshot, snapshot);
     }
 
+    #[test]
+    fn runtime_transition_projection_does_not_change_allowed_tools() {
+        let contract = CapabilityExecutionContract::from_runtime_inputs(
+            Some(&["search_web".to_string(), "execute_code_plan".to_string()]),
+            Some(&json!({
+                "capabilities": [{
+                    "name": "search_web",
+                    "invocation_mode": "direct",
+                    "status": {"callable": true}
+                }]
+            })),
+        );
+        let allowed_before = contract.allowed_tools.clone();
+
+        let block = contract.project_runtime_transition_block(
+            "trace-1",
+            Some("request-1"),
+            "session-1",
+            "execute-call-1",
+        );
+
+        assert_eq!(contract.allowed_tools, allowed_before);
+        assert_eq!(
+            contract.allowed_tools,
+            vec!["search_web", "query_task_policy"]
+        );
+        assert_eq!(block["payload"]["source"], json!("capability_contract"));
+        assert_eq!(
+            block["payload"]["required_artifact"],
+            json!("capability_lease")
+        );
+        assert_eq!(
+            block["payload"]["transition"]["metadata_json"]["allowed_tools"],
+            json!(allowed_before)
+        );
+    }
     #[test]
     fn embed_into_context_embeds_contract_into_context() {
         let contract = CapabilityExecutionContract::from_runtime_inputs(

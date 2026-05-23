@@ -409,6 +409,10 @@ mod tests {
             "trace_id": "trace-1",
             "session_id": "sess-1",
             "request_id": serde_json::Value::Null,
+            "transition_id": "runtime-transition:call-1",
+            "required_artifact": "diting_think_preflight",
+            "hook_decision_id": "hook-decision:runtime-transition:call-1",
+            "enforcement": "shadow",
         });
         assert!(payload.get("intent").is_some());
         assert!(payload.get("tool_plan").is_some());
@@ -417,6 +421,25 @@ mod tests {
         assert!(payload.get("trace_id").is_some());
         assert!(payload.get("session_id").is_some());
         assert!(payload.get("task_query").is_some());
+        assert_eq!(
+            payload["required_artifact"],
+            json!("diting_think_preflight")
+        );
+        assert_eq!(payload["enforcement"], json!("shadow"));
+    }
+
+    #[test]
+    fn deeting_think_provenance_does_not_grant_case_promotion() {
+        let mut signal = fixture_signal(
+            EvolutionSignalSource::DeetingThink,
+            EvolutionSignalClassification::Accepted,
+            Some("fp-x"),
+            None,
+        );
+        signal.payload_json = json!({"transition_id": "runtime-transition:call-1"});
+
+        assert_eq!(route_case_type(&signal), None);
+        assert!(!should_build_negative_case(&signal));
     }
 
     #[test]

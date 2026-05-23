@@ -2,9 +2,10 @@ use super::{
     runtime::{ApprovePersistMode, RejectPersistMode},
     support::*,
 };
+use crate::modules::desktop_runtime::runtime::runtime_transition::trace_contract::runtime_transition_trace_verdict_response;
 use crate::modules::desktop_runtime::runtime::{
     dispatch_local_chat_execution_run_command, list_canonical_pending_local_approval_snapshots,
-    ExecutionRunCommand,
+    list_execution_graph_snapshots_for_session, load_execution_graph_snapshot, ExecutionRunCommand,
 };
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::policy::PersistedApprovalAction;
@@ -41,6 +42,27 @@ fn require_approval_token(value: Option<String>) -> Result<String, String> {
         .map(|item| item.trim().to_string())
         .filter(|item| !item.is_empty())
         .ok_or_else(|| "approval token is required".to_string())
+}
+
+fn require_session_id(
+    session_id: Option<String>,
+    session_id_camel: Option<String>,
+) -> Result<String, String> {
+    session_id
+        .or(session_id_camel)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "session_id is required".to_string())
+}
+fn require_execution_graph_execution_id(
+    execution_graph_execution_id: Option<String>,
+    execution_graph_execution_id_camel: Option<String>,
+) -> Result<String, String> {
+    execution_graph_execution_id
+        .or(execution_graph_execution_id_camel)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "execution_graph_execution_id is required".to_string())
 }
 
 fn resolve_requested_execution_graph_id(
@@ -326,6 +348,50 @@ pub async fn reject_mcp_tool(
 }
 
 #[tauri::command]
+pub async fn list_local_runtime_transition_trace_verdicts(
+    state: State<'_, AppState>,
+    session_id: Option<String>,
+    #[allow(non_snake_case)] sessionId: Option<String>,
+    limit: Option<i64>,
+) -> Result<Vec<Value>, String> {
+    let session_id = require_session_id(session_id, sessionId)?;
+    let execution_graphs =
+        list_execution_graph_snapshots_for_session(state.mcp.store.as_ref(), &session_id, limit)
+            .await
+            .map_err(to_string)?;
+
+    Ok(execution_graphs
+        .iter()
+        .map(|execution_graph| {
+            let execution_id = execution_graph
+                .get("execution_id")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            runtime_transition_trace_verdict_response(execution_id, execution_graph)
+        })
+        .collect())
+}
+#[tauri::command]
+pub async fn get_local_runtime_transition_trace_verdicts(
+    state: State<'_, AppState>,
+    execution_graph_execution_id: Option<String>,
+    #[allow(non_snake_case)] executionGraphExecutionId: Option<String>,
+) -> Result<Value, String> {
+    let execution_id = require_execution_graph_execution_id(
+        execution_graph_execution_id,
+        executionGraphExecutionId,
+    )?;
+    let execution_graph = load_execution_graph_snapshot(state.mcp.store.as_ref(), &execution_id)
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| format!("execution graph not found: {execution_id}"))?;
+
+    Ok(runtime_transition_trace_verdict_response(
+        &execution_id,
+        &execution_graph,
+    ))
+}
+#[tauri::command]
 pub async fn recover_local_chat_execution(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
@@ -356,7 +422,6 @@ pub async fn recover_local_chat_execution(
 #[cfg(test)]
 mod tests {
     use super::resolve_requested_execution_graph_id;
-
     #[test]
     fn resolve_requested_execution_graph_id_prefers_explicit_request() {
         assert_eq!(

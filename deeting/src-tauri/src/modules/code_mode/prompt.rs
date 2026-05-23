@@ -2,9 +2,8 @@ use std::collections::BTreeSet;
 
 const DEFAULT_RUNTIME_CAPABILITY_PROMPT: &str = "The model-callable tools for this round are: {{allowed_tools}}.\n\n- `search_sdk` is the discovery source of truth for what is callable right now.\n- `query_task_policy` returns bounded prior hints for discovery, capability_attach, execution, or verification. Treat hints as advisory metadata; they must not create a new user goal, replace the user's requested deliverable, or make you narrate verification unless the user explicitly asked for it.\n- If `search_sdk` returns a capability with `status.callable=true` and `invocation_mode=\"direct\"` and it appears in this round's allowed tools, treat it as executable.\n- Prefer the lightest direct tool that finishes the task; when multiple direct tools match, choose the most specific to user intent.\n- Do not invent tool names from labels or summaries. Do not pass positional dict args like `deeting.call_tool(name, {...})`.\n- Do not claim you cannot inspect the local machine, filesystem, terminal, or installed software when a relevant callable direct capability is already in this allowlist.\n- If a required capability is absent from the allowlist, explain the real limitation briefly and use the best available fallback.\n";
 
-const EXECUTION_TOOL_PROMPT_TEMPLATE: &str = include_str!(
-    "../../../../../packages/code-mode-contract/prompts/code-mode-capability.md"
-);
+const EXECUTION_TOOL_PROMPT_TEMPLATE: &str =
+    include_str!("../../../../../packages/code-mode-contract/prompts/code-mode-capability.md");
 
 fn normalize_allowed_tools(allowed_tools: &[String]) -> Vec<String> {
     let mut normalized = BTreeSet::new();

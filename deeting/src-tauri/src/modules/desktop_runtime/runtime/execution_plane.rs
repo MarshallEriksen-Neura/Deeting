@@ -2,6 +2,7 @@ mod direct_handler;
 mod worker_handler;
 
 use super::control_plane::LocalExecutionPlane;
+use super::runtime_transition::projection::merge_runtime_transition_events_into_trace_blocks;
 use super::{
     build_local_tool_trace_blocks, project_execution_graph_snapshot,
     run_local_chat_complete_with_tools, GraphProjectionInput, LocalExecutionPolicy,
@@ -850,6 +851,8 @@ where
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
+    let tool_trace_blocks =
+        merge_runtime_transition_events_into_trace_blocks(tool_trace_blocks, &response_json);
     let execution_graph = project_execution_graph_snapshot(GraphProjectionInput {
         session_id: request.session_id.clone(),
         route: request.execution_policy.route.as_str().to_string(),

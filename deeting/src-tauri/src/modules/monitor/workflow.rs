@@ -404,7 +404,7 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorParseResultStep {
                 })),
             ));
             ctx.next_event_seq += 1;
-            // Slice 2: emit monitor_observation evolution signal.
+            // Emit monitor result as runtime-transition correlation evidence.
             // classification=Unknown — monitor observation is not by itself a
             // judgment. Monitor signals MUST NOT influence task_policy_priors;
             // they only land in evolution_signals for inspection. monitor_log_id
@@ -414,6 +414,9 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorParseResultStep {
                 use crate::modules::desktop_runtime::runtime::evolution::{
                     submit_evolution_signal, EvolutionSignalClassification, EvolutionSignalDraft,
                     EvolutionSignalSource,
+                };
+                use crate::modules::desktop_runtime::runtime::runtime_transition::projection::{
+                    monitor_checkpoint_correlation_signal_payload, MonitorCheckpointProjectionInput,
                 };
                 let draft = EvolutionSignalDraft {
                     source: EvolutionSignalSource::MonitorObservation,
@@ -425,14 +428,47 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorParseResultStep {
                     monitor_log_id: None,
                     fingerprint_key: None,
                     confidence: 0.0,
-                    payload_json: json!({
-                        "strategy_tag": ctx.strategy_tag,
-                        "observations": ctx.observations,
-                        "is_significant_change": ctx.is_significant_change,
-                        "change_summary": ctx.change_summary,
-                        "monitor_task_id": ctx.task.id,
-                        "monitor_execution_id": ctx.execution_id,
-                    }),
+                    payload_json: {
+                        let observation_evidence = ctx
+                            .observations
+                            .as_ref()
+                            .map(|value| match value {
+                                Value::Array(items) => items
+                                    .iter()
+                                    .filter_map(|item| {
+                                        item.as_str()
+                                            .map(str::to_string)
+                                            .or_else(|| (!item.is_null()).then(|| item.to_string()))
+                                    })
+                                    .collect::<Vec<_>>(),
+                                Value::Null => Vec::new(),
+                                other => vec![other.to_string()],
+                            })
+                            .unwrap_or_default();
+                        let projection_input = MonitorCheckpointProjectionInput {
+                            monitor_task_id: ctx.task.id.as_str(),
+                            monitor_execution_id: ctx.execution_id.as_str(),
+                            strategy_tag: ctx.strategy_tag.as_deref(),
+                            observations: &observation_evidence,
+                        };
+                        let mut payload =
+                            monitor_checkpoint_correlation_signal_payload(projection_input);
+                        if let Some(object) = payload.as_object_mut() {
+                            object.insert("strategy_tag".to_string(), json!(ctx.strategy_tag));
+                            object.insert("observations".to_string(), json!(ctx.observations));
+                            object.insert(
+                                "is_significant_change".to_string(),
+                                json!(ctx.is_significant_change),
+                            );
+                            object.insert("change_summary".to_string(), json!(ctx.change_summary));
+                            object.insert("monitor_task_id".to_string(), json!(ctx.task.id));
+                            object.insert(
+                                "monitor_execution_id".to_string(),
+                                json!(ctx.execution_id),
+                            );
+                        }
+                        payload
+                    },
                     note: None,
                 };
                 if let Err(err) = submit_evolution_signal(mcp_store.as_ref(), draft).await {
