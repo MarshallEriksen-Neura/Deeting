@@ -190,7 +190,7 @@ fn verify_answer_only_trace(
         .map(|response| {
             runtime_transition_events(response).any(|event| {
                 event.get("required_artifact").and_then(Value::as_str) == Some("verification_plan")
-                    && event.get("enforcement").and_then(Value::as_str) == Some("shadow")
+                    && event.get("enforcement").and_then(Value::as_str) == Some("enforced")
             })
         })
         .unwrap_or(false);
@@ -208,13 +208,13 @@ fn verify_answer_only_trace(
                         .get("payload")
                         .and_then(|payload| payload.get("enforcement"))
                         .and_then(Value::as_str)
-                        == Some("shadow")
+                        == Some("enforced")
             })
         })
         .unwrap_or(false);
     if !response_has_verification_plan && !graph_has_verification_plan {
         missing.push(
-            "answer-only trace must carry a shadow verification_plan runtime transition event"
+            "answer-only trace must carry an enforced verification_plan runtime transition event"
                 .to_string(),
         );
     }
@@ -243,10 +243,10 @@ fn verify_tool_call_trace(graph: Option<&Value>) -> RuntimeTransitionTraceVerdic
                 .get("payload")
                 .and_then(|payload| payload.get("enforcement"))
                 .and_then(Value::as_str)
-                == Some("shadow")
+                == Some("enforced")
     }) {
         missing.push(
-            "tool-call graph must contain a shadow diting_think_preflight transition decision"
+            "tool-call graph must contain an enforced diting_think_preflight transition decision"
                 .to_string(),
         );
     }
@@ -336,14 +336,14 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn answer_only_contract_requires_hidden_shadow_verification_event() {
+    fn answer_only_contract_requires_hidden_policy_guidance_verification_event() {
         let verdict = verify_runtime_transition_trace_contract(
             RuntimeTransitionTraceScenario::AnswerOnly,
             Some(&json!({
                 "content": "Plain answer.",
                 "runtime_transition_events": [{
                     "required_artifact": "verification_plan",
-                    "enforcement": "shadow"
+                    "enforcement": "enforced"
                 }]
             })),
             None,
@@ -365,7 +365,7 @@ mod tests {
                     "event_type": "runtime_transition.decision",
                     "payload": {
                         "required_artifact": "verification_plan",
-                        "enforcement": "shadow"
+                        "enforcement": "enforced"
                     }
                 }]
             })),
@@ -380,7 +380,7 @@ mod tests {
                     "event_type": "runtime_transition.decision",
                     "payload": {
                         "required_artifact": "verification_plan",
-                        "enforcement": "shadow"
+                        "enforcement": "enforced"
                     }
                 }]
             })),
@@ -402,7 +402,7 @@ mod tests {
                         "event_type": "runtime_transition.decision",
                         "payload": {
                             "required_artifact": "diting_think_preflight",
-                            "enforcement": "shadow"
+                            "enforcement": "enforced"
                         }
                     },
                     {
@@ -462,7 +462,7 @@ mod tests {
                 "content": "Plain answer.",
                 "runtime_transition_events": [{
                     "required_artifact": "verification_plan",
-                    "enforcement": "shadow"
+                    "enforcement": "enforced"
                 }]
             })),
             Some(&json!({
@@ -471,7 +471,7 @@ mod tests {
                         "event_type": "runtime_transition.decision",
                         "payload": {
                             "required_artifact": "diting_think_preflight",
-                            "enforcement": "shadow"
+                            "enforcement": "enforced"
                         }
                     },
                     {

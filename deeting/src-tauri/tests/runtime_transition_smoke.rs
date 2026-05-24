@@ -21,12 +21,6 @@ pub mod runtime_transition {
     pub mod types {
         include!("../src/modules/desktop_runtime/runtime/runtime_transition/types.rs");
     }
-    pub mod decision {
-        include!("../src/modules/desktop_runtime/runtime/runtime_transition/decision.rs");
-    }
-    pub mod policy {
-        include!("../src/modules/desktop_runtime/runtime/runtime_transition/policy.rs");
-    }
     pub mod projection {
         include!("../src/modules/desktop_runtime/runtime/runtime_transition/projection.rs");
     }
@@ -134,7 +128,7 @@ fn runtime_transition_smoke_projects_tool_task_trace_to_graph_metadata() {
     let graph = project_execution_graph_snapshot(GraphProjectionInput {
         session_id: "session-1".to_string(),
         route: "direct".to_string(),
-        plane: "local".to_string(),
+        phase_step_type: "direct_chat".to_string(),
         trace_id: Some("trace-tool-1".to_string()),
         request_id: Some("request-tool-1".to_string()),
         root_execution_id: None,
@@ -162,7 +156,7 @@ fn runtime_transition_smoke_projects_tool_task_trace_to_graph_metadata() {
         decision.payload["required_artifact"],
         json!("diting_think_preflight")
     );
-    assert_eq!(decision.payload["enforcement"], json!("shadow"));
+    assert_eq!(decision.payload["enforcement"], json!("advisory"));
     assert_eq!(
         correlation.payload["transition_id"],
         json!("runtime-transition:call-graph-1")
@@ -188,7 +182,7 @@ fn runtime_transition_smoke_records_search_sdk_capability_exposure_in_graph_meta
     let graph = project_execution_graph_snapshot(GraphProjectionInput {
         session_id: "session-1".to_string(),
         route: "direct".to_string(),
-        plane: "local".to_string(),
+        phase_step_type: "direct_chat".to_string(),
         trace_id: Some("trace-capability-1".to_string()),
         request_id: Some("request-capability-1".to_string()),
         root_execution_id: None,
@@ -259,7 +253,7 @@ fn runtime_transition_smoke_matches_manual_trace_acceptance_matrix() {
     let tool_graph = project_execution_graph_snapshot(GraphProjectionInput {
         session_id: "session-1".to_string(),
         route: "direct".to_string(),
-        plane: "local".to_string(),
+        phase_step_type: "direct_chat".to_string(),
         trace_id: Some("trace-tool-manual".to_string()),
         request_id: Some("request-tool-manual".to_string()),
         root_execution_id: None,
@@ -299,7 +293,7 @@ fn runtime_transition_smoke_matches_manual_trace_acceptance_matrix() {
     let capability_graph = project_execution_graph_snapshot(GraphProjectionInput {
         session_id: "session-1".to_string(),
         route: "direct".to_string(),
-        plane: "local".to_string(),
+        phase_step_type: "direct_chat".to_string(),
         trace_id: Some("trace-capability-manual".to_string()),
         request_id: Some("request-capability-manual".to_string()),
         root_execution_id: None,
@@ -331,7 +325,7 @@ fn runtime_transition_smoke_projects_queryable_trace_verdict_response() {
                 "event_type": "runtime_transition.decision",
                 "payload": {
                     "required_artifact": "diting_think_preflight",
-                    "enforcement": "shadow"
+                    "enforcement": "advisory"
                 }
             },
             {

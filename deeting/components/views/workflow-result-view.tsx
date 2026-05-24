@@ -11,7 +11,6 @@ import {
   FileJson,
   FileText,
   Loader2,
-  RotateCcw,
 } from "lucide-react"
 import { toast } from "sonner"
 import { MarkdownViewer } from "@/components/chat/markdown-viewer"
@@ -21,8 +20,6 @@ import {
   exportWorkflowArtifact,
   getWorkflowArtifactContent,
   openWorkflowArtifact,
-  rerunPhase,
-  resumeWorkflow,
 } from "@/lib/workflow/commands"
 import {
   isUserVisibleWorkflowArtifactRef,
@@ -79,31 +76,13 @@ export default function WorkflowResultView({ data }: NativeViewProps) {
         ? "等待你处理"
         : "需要处理"
   const resultDescription = needsDecision
-    ? "当前阶段没有顺利完成。你可以先重新执行这个阶段；如果认为结果已经足够，也可以确认继续后续阶段。"
+    ? "当前阶段没有顺利完成。后续介入请通过聊天输入表达。"
     : isFailure
-      ? "执行已经停止。已完成的阶段会保留，可以重新执行失败的步骤。"
+      ? "执行已经停止。已完成的阶段会保留。"
       : "已生成最终阶段结果，下面是本次执行的主要产出。"
   const shouldRenderSummary = Boolean(payload.summary && (isFailure || needsDecision))
   const visibleArtifacts = payload.artifacts.filter((artifact) => isUserVisibleWorkflowArtifactRef(artifact.ref))
   const completedSteps = payload.steps.filter((s) => s.status === "succeeded").length
-
-  const rerunFocusedPhase = async () => {
-    if (!payload.focus_phase_id) return
-    try {
-      await rerunPhase({ run_id: payload.run_id, phase_id: payload.focus_phase_id })
-      toast.success(`Phase ${payload.focus_phase_id} queued for rerun`)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error))
-    }
-  }
-
-  const resumePausedWorkflow = async () => {
-    try {
-      await resumeWorkflow(payload.run_id)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error))
-    }
-  }
 
   const openResultDialog = async (phaseId?: string | null) => {
     const targetPhaseId = phaseId ?? payload.focus_phase_id
@@ -169,18 +148,6 @@ export default function WorkflowResultView({ data }: NativeViewProps) {
               <Button size="sm" variant="outline" className="h-8 rounded-[10px] px-3 text-xs" onClick={() => void openResultDialog(payload.focus_phase_id)}>
                 <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
                 查看完整结果
-              </Button>
-            ) : null}
-            {isFailure && payload.focus_phase_id ? (
-              <Button size="sm" variant="outline" className="h-8 rounded-[10px] px-3 text-xs" onClick={() => void rerunFocusedPhase()}>
-                <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-                重新执行
-              </Button>
-            ) : null}
-            {payload.status === "awaiting_plan_edit" ? (
-              <Button size="sm" variant="outline" className="h-8 rounded-[10px] px-3 text-xs" onClick={() => void resumePausedWorkflow()}>
-                <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-                确认继续
               </Button>
             ) : null}
           </div>

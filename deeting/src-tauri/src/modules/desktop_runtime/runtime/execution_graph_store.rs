@@ -211,8 +211,9 @@ async fn persist_execution_graph_snapshot_once(
         .and_then(serde_json::Value::as_str)
         .unwrap_or("unknown")
         .to_string();
-    let plane = execution_graph
-        .get("plane")
+    let phase_step_type = execution_graph
+        .get("phase_step_type")
+        .or_else(|| execution_graph.get("plane"))
         .and_then(serde_json::Value::as_str)
         .unwrap_or("unknown")
         .to_string();
@@ -268,7 +269,7 @@ async fn persist_execution_graph_snapshot_once(
     .bind(&execution_id)
     .bind(session_id.trim())
     .bind(&route)
-    .bind(&plane)
+    .bind(&phase_step_type)
     .bind(&graph_status)
     .bind(root_execution_id)
     .bind(request_id.map(str::trim).filter(|value| !value.is_empty()))
@@ -684,7 +685,7 @@ mod tests {
             "execution_id": "graph-transition-1",
             "session_id": "session-1",
             "route": "direct",
-            "plane": "response_only",
+            "phase_step_type": "direct_chat",
             "request_id": "request-1",
             "nodes": [],
             "events": [{
@@ -696,7 +697,7 @@ mod tests {
                     "trace_id": "trace-1",
                     "request_id": "request-1",
                     "required_artifact": "diting_think_preflight",
-                    "enforcement": "shadow"
+                    "enforcement": "enforced"
                 }
             }],
             "metadata": {"trace_id": "trace-1"}
@@ -744,13 +745,14 @@ mod tests {
         .bind("graph-session-old")
         .bind("session-list")
         .bind("direct")
-        .bind("response_only")
+        .bind("direct_chat")
         .bind("completed")
         .bind("request-old")
         .bind("desktop_local_chat")
         .bind(
             json!({
                 "execution_id": "graph-session-old",
+                "phase_step_type": "direct_chat",
                 "events": []
             })
             .to_string(),
@@ -772,11 +774,11 @@ mod tests {
         .bind("graph-session-new")
         .bind("session-list")
         .bind("direct")
-        .bind("response_only")
+        .bind("direct_chat")
         .bind("completed")
         .bind("request-new")
         .bind("desktop_local_chat")
-        .bind(json!({ "events": [] }).to_string())
+        .bind(json!({ "phase_step_type": "direct_chat", "events": [] }).to_string())
         .bind(20_i64)
         .bind(20_i64)
         .execute(&store.write_pool)
@@ -808,14 +810,14 @@ mod tests {
         .bind("graph-runtime-1")
         .bind("session-1")
         .bind("chat")
-        .bind("local")
+        .bind("direct_chat")
         .bind("waiting_approval")
         .bind("desktop_local_chat_waiting_approval")
         .bind(
             serde_json::json!({
                 "execution_id": "graph-runtime-1",
                 "route": "chat",
-                "plane": "local",
+                "phase_step_type": "direct_chat",
                 "nodes": [],
                 "events": []
             })

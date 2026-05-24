@@ -53,7 +53,7 @@ const PRIOR_FETCH_LIMIT: usize = 32;
 const PRIORS_SUMMARY_LIMIT: usize = 3;
 
 /// Threshold for the `favor` / `avoid` disposition labels. Matches the
-/// ±0.15 thresholds used by `sovereign::Advisory::gate_meta`.
+/// ±0.15 thresholds used by `sovereign::PolicyGuidance::gate_meta`.
 const DISPOSITION_THRESHOLD: f64 = 0.15;
 
 pub(crate) async fn build_cold_start_packet(

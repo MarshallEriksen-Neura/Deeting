@@ -18,9 +18,7 @@ use crate::modules::desktop_runtime::runtime::prompt_plan::{
     router_prompt_default_local_context, router_prompt_response_language_for_locale_pref,
 };
 #[cfg(test)]
-use crate::modules::desktop_runtime::runtime::route_selector::{
-    select_local_route, LocalRouteKind,
-};
+use mcp_runtime::route::{select_local_route, LocalRouteKind};
 use crate::modules::desktop_runtime::runtime::sovereign::{
     PosteriorSignalIngress, UserActionIngress,
 };
@@ -28,8 +26,8 @@ use crate::modules::desktop_runtime::runtime::{
     apply_policy_delta, build_default_local_execution_policy, evaluate_task_learning_with_runtime,
     mark_local_assistant_postprocess_completed, persist_local_assistant_turn,
     project_execution_graph_blocks_from_value, resolve_local_model_pool_connection,
-    resolve_posterior_signal_ingress, resolve_provider_model_connection, run_local_execution_plane,
-    LocalExecutionRequest,
+    resolve_posterior_signal_ingress, resolve_provider_model_connection,
+    run_local_runtime_composition_entrypoint, LocalExecutionRequest,
 };
 #[cfg(test)]
 use crate::modules::desktop_runtime::runtime::{
@@ -448,7 +446,7 @@ pub async fn execute_local_orchestrated_chat(
         .or_else(|| ctx.execution_policy.clone())
         .clone()
         .unwrap_or_else(build_default_local_execution_policy);
-    let execution_outcome = run_local_execution_plane(
+    let execution_outcome = run_local_runtime_composition_entrypoint(
         LocalExecutionRequest {
             app_handle: app_handle.clone(),
             app_state: app_state.clone(),

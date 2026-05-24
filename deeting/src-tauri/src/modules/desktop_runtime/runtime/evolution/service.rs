@@ -412,7 +412,7 @@ mod tests {
             "transition_id": "runtime-transition:call-1",
             "required_artifact": "diting_think_preflight",
             "hook_decision_id": "hook-decision:runtime-transition:call-1",
-            "enforcement": "shadow",
+            "enforcement": "enforced",
         });
         assert!(payload.get("intent").is_some());
         assert!(payload.get("tool_plan").is_some());
@@ -425,7 +425,7 @@ mod tests {
             payload["required_artifact"],
             json!("diting_think_preflight")
         );
-        assert_eq!(payload["enforcement"], json!("shadow"));
+        assert_eq!(payload["enforcement"], json!("enforced"));
     }
 
     #[test]

@@ -92,7 +92,8 @@ pub(crate) struct LocalExecutionGraphSnapshot {
     pub(crate) execution_id: String,
     pub(crate) session_id: String,
     pub(crate) route: String,
-    pub(crate) plane: String,
+    #[serde(alias = "plane")]
+    pub(crate) phase_step_type: String,
     pub(crate) request_id: Option<String>,
     pub(crate) root_execution_id: Option<String>,
     pub(crate) nodes: Vec<LocalExecutionGraphNode>,

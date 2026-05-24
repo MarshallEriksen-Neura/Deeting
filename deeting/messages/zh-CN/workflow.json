@@ -32,6 +32,11 @@
     "compilerErrors": "计划检查失败",
     "goalLabel": "目标"
   },
+  "runtimePlan": {
+    "title": "运行计划",
+    "version": "快照 v{version}",
+    "empty": "还没有可用的已编译阶段。"
+  },
   "execution": {
     "title": "执行中",
     "needsDecisionTitle": "需要你处理",

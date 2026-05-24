@@ -2302,6 +2302,7 @@ dependencies = [
  "clipboard-win",
  "core-foundation 0.10.1",
  "core-graphics",
+ "desktop-runtime-core",
  "dirs 5.0.1",
  "encoding_rs",
  "futures-util",
@@ -2421,6 +2422,15 @@ dependencies = [
  "quote",
  "rustc_version",
  "syn 2.0.114",
+]
+
+[[package]]
+name = "desktop-runtime-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -5332,6 +5342,7 @@ dependencies = [
 name = "mcp-runtime"
 version = "0.1.0"
 dependencies = [
+ "desktop-runtime-core",
  "mcp-core",
  "serde",
  "serde_json",

@@ -32,6 +32,11 @@
     "compilerErrors": "Plan checks failed",
     "goalLabel": "Goal"
   },
+  "runtimePlan": {
+    "title": "Runtime plan",
+    "version": "Snapshot v{version}",
+    "empty": "No compiled phases are available yet."
+  },
   "execution": {
     "title": "Execution",
     "needsDecisionTitle": "Needs your decision",

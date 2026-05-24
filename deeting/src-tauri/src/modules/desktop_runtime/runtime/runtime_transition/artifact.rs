@@ -70,7 +70,7 @@ mod tests {
     fn plan_draft_describes_adaptation_not_fixed_tool_order() {
         let artifact = PlanDraftArtifact {
             intent: "inspect runtime boundary".to_string(),
-            constraints: vec!["shadow only".to_string()],
+            constraints: vec!["enforced runtime audit".to_string()],
             known_facts: vec!["search_sdk can widen capabilities".to_string()],
             unknowns: vec!["which tool will be needed".to_string()],
             adaptation_rules: vec!["revise after capability discovery".to_string()],

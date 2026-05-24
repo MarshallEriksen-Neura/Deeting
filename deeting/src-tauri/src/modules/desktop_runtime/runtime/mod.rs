@@ -14,7 +14,6 @@ pub mod execution_plane;
 pub mod posterior_signal;
 pub mod prompt_assets;
 pub mod prompt_plan;
-pub mod route_selector;
 pub mod runtime_transition;
 pub mod search_feedback;
 pub mod semantic_recall;
@@ -27,7 +26,6 @@ pub mod tool_result_blocks;
 pub mod tool_trace;
 pub mod worker_dispatch;
 
-pub(crate) use crate::modules::mcp::commands::runtime::execute_or_queue_mcp_tool_call_with_tool_ref;
 pub(crate) use crate::modules::skills::onboarding::install_local_skill_from_onboarding_request;
 pub(crate) use activation::{
     resolve_local_capability_activation_state, LocalCapabilityActivationState,
@@ -69,15 +67,17 @@ pub(crate) use execution_graph_store::{
     persist_execution_graph_runtime_context, persist_execution_graph_snapshot,
 };
 pub(crate) use execution_plane::{
-    build_delegated_result_feedback_messages, run_local_execution_plane, DelegatedExecutionKind,
+    build_delegated_result_feedback_messages, run_local_runtime_composition_entrypoint,
+    DelegatedExecutionKind,
     DelegatedExecutionPacketReceipt, DelegatedExecutionRecord, DelegatedExecutionSelection,
     DelegatedExecutionStatus, DelegatedExecutionTarget, LocalExecutionRequest,
+    EXECUTION_TREE_SCHEMA_VERSION,
 };
 pub(crate) use posterior_signal::{
     resolve_posterior_signal, resolve_posterior_signal_ingress, should_apply_posterior_signal,
     PosteriorSignalInput,
 };
-pub(crate) use route_selector::{
+pub(crate) use mcp_runtime::route::{
     render_local_route_prompt, select_local_route_with_evidence, LocalRouteDecision, LocalRouteKind,
 };
 pub(crate) use semantic_recall::should_run_semantic_recall;
@@ -113,5 +113,5 @@ pub(crate) use tool_trace::{
     resolve_tool_trace_call_id,
 };
 pub(crate) use worker_dispatch::{
-    build_worker_task_packet, select_worker_custom_task_agent, WorkerTaskPacketInput,
+    select_worker_custom_task_agent,
 };

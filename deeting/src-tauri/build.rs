@@ -3,12 +3,26 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn main() {
+    configure_windows_test_manifest();
+
     if let Err(err) = build_boxlite_sidecar() {
         println!(
             "cargo:warning=failed to build deeting-boxlite-sidecar: {err}. Sandbox WSL backend will fall back to host-python at runtime."
         );
     }
     tauri_build::build()
+}
+
+fn configure_windows_test_manifest() {
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+        return;
+    }
+
+    println!(
+        "cargo:rustc-link-arg=/MANIFESTDEPENDENCY:type='win32' \
+name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
+processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'"
+    );
 }
 
 fn build_boxlite_sidecar() -> Result<(), String> {

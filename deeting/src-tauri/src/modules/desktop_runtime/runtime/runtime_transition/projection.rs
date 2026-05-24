@@ -1,10 +1,8 @@
 use super::artifact::RuntimeTransitionCorrelationOutcome;
-use super::decision::decide_transition;
-use super::policy::RuntimeTransitionHookPolicy;
 use super::trace_contract::project_runtime_transition_trace_verdicts;
 use super::types::{
-    EffectScope, EvidenceRef, HookDecision, ProposedAction, RequiredArtifact, RuntimeStateKind,
-    RuntimeTransition, TransitionSource,
+    EffectScope, EvidenceRef, HookDecision, HookEnforcementMode, ProposedAction, RequiredArtifact,
+    RuntimeStateKind, RuntimeTransition, TransitionSource,
 };
 use mcp_core::types::LocalChatToolCall;
 use serde_json::{json, Value};
@@ -254,7 +252,7 @@ pub(crate) fn project_tool_call_proposal_decision_blocks(
                     "extra_content": call.extra_content,
                 }),
             };
-            decide_transition_block(&transition)
+            project_transition_audit_block(&transition)
         })
         .collect()
 }
@@ -305,7 +303,7 @@ pub(crate) fn project_capability_exposure_decision_blocks(
         }),
     };
 
-    let mut blocks = vec![decide_transition_block(&transition)];
+    let mut blocks = vec![project_transition_audit_block(&transition)];
     if direct_callable_count > 0 {
         let plan_transition = RuntimeTransition {
             transition_id: format!(
@@ -332,7 +330,7 @@ pub(crate) fn project_capability_exposure_decision_blocks(
                 "artifact_shape": "intent_constraints_unknowns_adaptation_rules_verification_targets",
             }),
         };
-        blocks.push(decide_transition_block(&plan_transition));
+        blocks.push(project_transition_audit_block(&plan_transition));
     }
 
     blocks
@@ -362,7 +360,7 @@ pub(crate) fn project_capability_contract_decision_block(
         }),
     };
 
-    decide_transition_block(&transition)
+    project_transition_audit_block(&transition)
 }
 
 pub(crate) fn project_final_answer_decision_blocks(
@@ -400,13 +398,10 @@ pub(crate) fn project_final_answer_decision_blocks(
         }),
     };
 
-    match decide_transition(
-        &transition,
-        &RuntimeTransitionHookPolicy::current().decision_context(&transition),
-    ) {
-        HookDecision::Allow { .. } => Vec::new(),
-        decision => vec![runtime_transition_decision_block(&transition, &decision)],
-    }
+    runtime_transition_audit_decision(&transition)
+        .map(|decision| runtime_transition_decision_block(&transition, &decision))
+        .into_iter()
+        .collect()
 }
 
 pub(crate) fn project_tool_execution_correlation_blocks(
@@ -521,7 +516,7 @@ pub(crate) fn project_execution_observation_decision_blocks(
         }),
     };
 
-    vec![decide_transition_block(&transition)]
+    vec![project_transition_audit_block(&transition)]
 }
 
 pub(crate) fn project_monitor_checkpoint_decision_block(
@@ -562,7 +557,7 @@ pub(crate) fn project_monitor_checkpoint_decision_block(
         }),
     };
 
-    decide_transition_block(&transition)
+    project_transition_audit_block(&transition)
 }
 
 pub(crate) fn monitor_checkpoint_correlation_signal_payload(
@@ -708,10 +703,64 @@ pub(crate) fn runtime_transition_decision_event_payload(
     })
 }
 
-fn decide_transition_block(transition: &RuntimeTransition) -> Value {
-    let policy = RuntimeTransitionHookPolicy::current();
-    let decision = decide_transition(transition, &policy.decision_context(transition));
+fn project_transition_audit_block(transition: &RuntimeTransition) -> Value {
+    let decision = runtime_transition_audit_decision(transition).unwrap_or(HookDecision::Allow {
+        reason: "transition is audit-only and does not require a runtime artifact".to_string(),
+    });
     runtime_transition_decision_block(transition, &decision)
+}
+
+fn runtime_transition_audit_decision(transition: &RuntimeTransition) -> Option<HookDecision> {
+    match transition.proposed_action {
+        ProposedAction::DirectAnswer | ProposedAction::Noop => None,
+        ProposedAction::DraftPlan => Some(require_artifact(
+            RequiredArtifact::PlanDraft,
+            "transition uncertainty should be captured as adaptive planning context",
+        )),
+        ProposedAction::ExecuteTool => Some(require_artifact(
+            RequiredArtifact::DitingThinkPreflight,
+            "tool execution proposal crosses from model output into runtime action",
+        )),
+        ProposedAction::ExposeCapability | ProposedAction::AdmitExecutableCapability => {
+            Some(require_artifact(
+                RequiredArtifact::CapabilityLease,
+                "dynamic capability exposure should be correlated as capability lease evidence",
+            ))
+        }
+        ProposedAction::RevisePlan => Some(require_artifact(
+            RequiredArtifact::PlanRevision,
+            "runtime observation indicates plan assumptions may need revision",
+        )),
+        ProposedAction::VerifyFinalAnswer => {
+            if transition.to_state == RuntimeStateKind::Finalized {
+                return None;
+            }
+            if transition.observed_evidence.is_empty()
+                || matches!(
+                    transition.effect_scope,
+                    EffectScope::Workspace | EffectScope::External
+                )
+            {
+                return Some(require_artifact(
+                    RequiredArtifact::VerificationPlan,
+                    "final answer proposal needs explicit verification evidence before completion",
+                ));
+            }
+            None
+        }
+        ProposedAction::RecordMonitorCheckpoint => Some(require_artifact(
+            RequiredArtifact::MonitorCheckpoint,
+            "monitor output is captured as correlation evidence",
+        )),
+    }
+}
+
+fn require_artifact(artifact: RequiredArtifact, reason: &str) -> HookDecision {
+    HookDecision::RequireArtifact {
+        artifact,
+        reason: reason.to_string(),
+        enforcement: HookEnforcementMode::Enforced,
+    }
 }
 
 fn tool_result_matches_transition_call_id(item: &Value, call_id: &str) -> bool {
@@ -805,7 +854,7 @@ mod tests {
             "transition_id": "runtime-transition:call-1",
             "trace_id": "trace-1",
             "required_artifact": "diting_think_preflight",
-            "enforcement": "shadow"
+            "enforcement": "enforced"
         });
         let response = json!({
             "runtime_transition_events": [event.clone()],
@@ -851,7 +900,7 @@ mod tests {
         );
     }
     #[test]
-    fn projects_tool_call_proposals_as_shadow_decision_events() {
+    fn projects_tool_call_proposals_as_policy_guidance_audit_events() {
         let calls = vec![LocalChatToolCall {
             id: Some("call-1".to_string()),
             name: "shell_execute".to_string(),
@@ -885,11 +934,11 @@ mod tests {
             events[0]["payload"]["required_artifact"],
             json!("diting_think_preflight")
         );
-        assert_eq!(events[0]["payload"]["enforcement"], json!("shadow"));
+        assert_eq!(events[0]["payload"]["enforcement"], json!("enforced"));
     }
 
     #[test]
-    fn projects_capability_exposure_as_shadow_lease() {
+    fn projects_capability_exposure_as_policy_guidance_lease() {
         let events =
             project_capability_exposure_decision_blocks(CapabilityExposureProjectionInput {
                 trace_id: "trace-1",
@@ -949,7 +998,7 @@ mod tests {
     }
 
     #[test]
-    fn final_answer_with_evidence_does_not_emit_shadow_obligation() {
+    fn final_answer_with_evidence_does_not_emit_audit_obligation() {
         let events = project_final_answer_decision_blocks(FinalAnswerProjectionInput {
             trace_id: "trace-1",
             request_id: Some("request-1"),
@@ -1147,7 +1196,7 @@ mod tests {
             &HookDecision::RequireArtifact {
                 artifact: RequiredArtifact::DitingThinkPreflight,
                 reason: "test".to_string(),
-                enforcement: super::super::types::HookEnforcementMode::Shadow,
+                enforcement: super::super::types::HookEnforcementMode::Enforced,
             },
         )];
 
@@ -1156,6 +1205,6 @@ mod tests {
                 .expect("provenance");
 
         assert_eq!(provenance["transition_id"], json!("transition-1"));
-        assert_eq!(provenance["enforcement"], json!("shadow"));
+        assert_eq!(provenance["enforcement"], json!("enforced"));
     }
 }

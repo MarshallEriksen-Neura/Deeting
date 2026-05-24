@@ -1,4 +1,12 @@
-use super::*;
+use super::runtime_metrics::RuntimeMetricsAccumulator;
+use super::runtime_state::LocalChatToolRuntimeState;
+use super::streaming::LocalRealtimeToolTraceEmitter;
+use super::lifecycle::SuspendedChatToolExecution;
+use crate::modules::desktop_runtime::runtime::{
+    append_streamable_local_tool_result_blocks, build_local_tool_trace_blocks,
+    project_execution_graph_blocks_from_value, project_execution_graph_snapshot,
+    resolve_tool_trace_call_id, GraphProjectionInput, LocalExecutionPolicy,
+};
 
 pub(super) fn enrich_response_with_tool_trace(
     mut response: serde_json::Value,
@@ -348,7 +356,7 @@ pub(super) fn canonicalize_tool_call_meta_via_graph(
     let graph = project_execution_graph_snapshot(GraphProjectionInput {
         session_id: session_id.to_string(),
         route: execution_policy.route.as_str().to_string(),
-        plane: execution_policy.plane.as_str().to_string(),
+        phase_step_type: execution_policy.initial_phase_step_name().to_string(),
         trace_id: None,
         request_id: None,
         root_execution_id: None,
@@ -793,7 +801,7 @@ pub(crate) fn apply_rejected_tool_result_to_execution_graph_value(
         "cancelled",
         Some(rejection_payload.clone()),
     );
-    update_finalize_node_status(execution_graph, "cancelled");
+    update_finalize_node_status(execution_graph, "success");
     append_execution_graph_event(
         execution_graph,
         gate_node_id.as_str(),

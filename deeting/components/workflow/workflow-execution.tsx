@@ -1,6 +1,6 @@
 "use client"
 
-import { AlertTriangle, ArrowLeft, CheckCircle2, Loader2, RotateCcw } from "lucide-react"
+import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { useI18n } from "@/hooks/use-i18n"
 import { MarkdownViewer } from "@/components/chat/markdown-viewer"
@@ -29,11 +29,7 @@ interface WorkflowExecutionProps {
   failureFocusPhaseId: string | null
   expandedPhaseIds: Set<string>
   onToggleExpand: (phaseId: string) => void
-  onRerunPhase: (phaseId: string) => void
   onViewResult: (phaseId: string) => void
-  onResumeWorkflow?: () => void
-  onBack: () => void
-  onCancel?: () => void
 }
 
 const runStatusBadge: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -54,11 +50,7 @@ export function WorkflowExecution({
   failureFocusPhaseId,
   expandedPhaseIds,
   onToggleExpand,
-  onRerunPhase,
   onViewResult,
-  onResumeWorkflow,
-  onBack,
-  onCancel,
 }: WorkflowExecutionProps) {
   const t = useI18n("workflow")
 
@@ -67,7 +59,6 @@ export function WorkflowExecution({
   const totalPhases = snapshotPhases.length || sortedSteps.length
   const succeededCount = sortedSteps.filter((s) => s.status === "succeeded").length
   const progressPercent = totalPhases > 0 ? Math.round((succeededCount / totalPhases) * 100) : 0
-  const isRunning = run.status === "running"
   const needsConfirmation = run.status === "awaiting_plan_edit"
   const focusStep =
     run.status === "failed" || run.status === "cancelled"
@@ -86,9 +77,6 @@ export function WorkflowExecution({
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[color:var(--ios-shell-border)] px-5 py-4">
         <div className="flex items-center gap-3">
-          <Button variant="ios" size="icon-sm" className="size-8" onClick={onBack}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-semibold tracking-tight">{headerTitle}</h2>
             <Badge variant={badge.variant} className="h-5 shrink-0 rounded-[4px] px-1.5 font-mono text-[10px] uppercase tracking-wider">
@@ -96,13 +84,7 @@ export function WorkflowExecution({
             </Badge>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {isRunning && onCancel && (
-            <Button variant="ios" size="sm" className="text-xs" onClick={onCancel}>
-              {t("execution.cancel")}
-            </Button>
-          )}
-        </div>
+        <div className="flex items-center gap-2" />
       </div>
 
       {/* Progress */}
@@ -116,18 +98,14 @@ export function WorkflowExecution({
 
       {needsConfirmation && decisionStep ? (
         <WorkflowDecisionPanel
-          run={run}
           step={decisionStep}
           auditDecision={latestPlanAuditDecision}
-          onRerun={decisionStep.status === "failed" ? () => onRerunPhase(decisionStep.phase_id) : undefined}
-          onResume={onResumeWorkflow}
           onViewResult={decisionStep.status === "succeeded" ? () => onViewResult(decisionStep.phase_id) : undefined}
         />
       ) : focusStep ? (
         <WorkflowFocusPanel
           run={run}
           step={focusStep}
-          onRerun={focusStep.status === "failed" ? () => onRerunPhase(focusStep.phase_id) : undefined}
           onViewResult={focusStep.status === "succeeded" ? () => onViewResult(focusStep.phase_id) : undefined}
         />
       ) : null}
@@ -151,7 +129,6 @@ export function WorkflowExecution({
                     step.phase_id === failureFocusPhaseId
                   }
                   onToggleExpand={() => onToggleExpand(step.phase_id)}
-                  onRerun={step.status === "failed" ? () => onRerunPhase(step.phase_id) : undefined}
                   onViewResult={step.status === "succeeded" ? () => onViewResult(step.phase_id) : undefined}
                 />
               ))
@@ -236,15 +213,10 @@ function compareStepRecency(a: WorkflowStepRun, b: WorkflowStepRun): number {
 function WorkflowDecisionPanel({
   step,
   auditDecision,
-  onRerun,
-  onResume,
   onViewResult,
 }: {
-  run: WorkflowRun
   step: WorkflowStepRun
   auditDecision?: PlanAuditDecision | null
-  onRerun?: () => void
-  onResume?: () => void
   onViewResult?: () => void
 }) {
   const t = useI18n("workflow")
@@ -301,17 +273,6 @@ function WorkflowDecisionPanel({
               ) : null}
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
-              {onRerun ? (
-                <Button variant="ios" size="sm" className="h-8 rounded-[10px] px-3 text-xs" onClick={onRerun}>
-                  <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-                  {t("execution.fixByRerun")}
-                </Button>
-              ) : null}
-              {onResume ? (
-                <Button variant="outline" size="sm" className="h-8 rounded-[10px] px-3 text-xs" onClick={onResume}>
-                  {t("execution.continueAnyway")}
-                </Button>
-              ) : null}
               {onViewResult ? (
                 <Button variant="ghost" size="sm" className="h-8 rounded-[10px] px-2 text-xs" onClick={onViewResult}>
                   {t("execution.viewResult")}
@@ -328,12 +289,10 @@ function WorkflowDecisionPanel({
 function WorkflowFocusPanel({
   run,
   step,
-  onRerun,
   onViewResult,
 }: {
   run: WorkflowRun
   step: WorkflowStepRun
-  onRerun?: () => void
   onViewResult?: () => void
 }) {
   const t = useI18n("workflow")
@@ -390,11 +349,6 @@ function WorkflowFocusPanel({
               {onViewResult && (
                 <Button variant="ios" size="xs" className="h-7 rounded-[8px] px-2 text-[10px]" onClick={onViewResult}>
                   {t("result.viewFullResult")}
-                </Button>
-              )}
-              {onRerun && (
-                <Button variant="ios" size="xs" className="h-7 rounded-[8px] px-2 text-[10px]" onClick={onRerun}>
-                  {t("execution.rerunPhase")}
                 </Button>
               )}
             </div>

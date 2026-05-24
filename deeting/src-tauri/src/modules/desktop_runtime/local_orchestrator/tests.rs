@@ -510,9 +510,9 @@ fn build_route_selection_status_meta_embeds_execution_policy() {
     assert_eq!(meta.get("route").and_then(Value::as_str), Some("worker"));
     assert_eq!(
         meta.get("execution_policy")
-            .and_then(|value| value.get("plane"))
+            .and_then(|value| value.get("initial_phase_step"))
             .and_then(Value::as_str),
-        Some("worker_reasoning")
+        Some("delegated_worker")
     );
 }
 

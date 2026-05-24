@@ -295,7 +295,7 @@ mod tests {
         let execution_graph = serde_json::json!({
             "execution_id": "assistant-pending-graph-1",
             "route": "chat",
-            "plane": "local",
+            "phase_step_type": "direct_chat",
             "metadata": { "status": "completed" },
             "nodes": [],
             "events": []

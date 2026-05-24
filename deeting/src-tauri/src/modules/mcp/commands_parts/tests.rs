@@ -4034,7 +4034,7 @@ for raw_line in sys.stdin:
             "execution_id": "graph-exec-1",
             "session_id": "session-1",
             "route": "chat",
-            "plane": "local",
+            "phase_step_type": "direct_chat",
             "nodes": [
                 {
                     "node_id": "approval_gate:call-session-1",

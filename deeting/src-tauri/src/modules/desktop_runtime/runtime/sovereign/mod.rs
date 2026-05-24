@@ -174,10 +174,10 @@ pub(crate) trait Ingress: Send + Sync {
 }
 
 // ---------------------------------------------------------------------------
-// Advisory (what The Self returns)
+// PolicyGuidance (what The Self returns)
 // ---------------------------------------------------------------------------
 
-/// Advisory returned by [`Self_::consult`].
+/// PolicyGuidance returned by [`Self_::consult`].
 ///
 /// Thin wrapper around `TaskPolicyHint` at v2 — callers should program
 /// against this type, not against the raw hint. Future revisions may enrich
@@ -186,14 +186,14 @@ pub(crate) trait Ingress: Send + Sync {
 /// [`Self_`] instead of calling `task_learning::query_task_policy_hint`
 /// directly.
 ///
-/// [`Advisory::as_raw`] is a transitional escape hatch for Phase 3 call-site
+/// [`PolicyGuidance::as_raw`] is a transitional escape hatch for Phase 3 call-site
 /// migration; new code should prefer the typed accessors.
 #[derive(Debug, Clone)]
-pub(crate) struct Advisory {
+pub(crate) struct PolicyGuidance {
     hint: super::task_learning::TaskPolicyHint,
 }
 
-impl Advisory {
+impl PolicyGuidance {
     pub(crate) fn from_hint(hint: super::task_learning::TaskPolicyHint) -> Self {
         Self { hint }
     }
@@ -285,7 +285,7 @@ impl Self_ {
         locus: DecisionLocus,
         query: &str,
         limit: usize,
-    ) -> Advisory {
+    ) -> PolicyGuidance {
         let hint = super::task_learning::query_task_policy_hint(
             store,
             query,
@@ -293,7 +293,7 @@ impl Self_ {
             limit,
         )
         .await;
-        Advisory::from_hint(hint)
+        PolicyGuidance::from_hint(hint)
     }
 
     /// Transitional sovereign entry point for stringly decision-point callers.
@@ -307,14 +307,14 @@ impl Self_ {
         decision_point: &str,
         query: &str,
         limit: usize,
-    ) -> Advisory {
+    ) -> PolicyGuidance {
         if let Some(locus) = DecisionLocus::from_canonical_str(decision_point) {
             return Self::consult(store, locus, query, limit).await;
         }
 
         let hint =
             super::task_learning::query_task_policy_hint(store, query, decision_point, limit).await;
-        Advisory::from_hint(hint)
+        PolicyGuidance::from_hint(hint)
     }
 }
 
@@ -403,7 +403,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Phase 2: Advisory wrapper
+    // Phase 2: PolicyGuidance wrapper
     // -----------------------------------------------------------------
 
     fn hint_from_json(value: serde_json::Value) -> super::super::task_learning::TaskPolicyHint {
@@ -424,7 +424,7 @@ mod tests {
     }
 
     #[test]
-    fn advisory_weight_for_missing_action_is_zero() {
+    fn policy_guidance_weight_for_missing_action_is_zero() {
         let hint = hint_from_json(serde_json::json!({
             "query": "q",
             "decision_point": "route",
@@ -434,13 +434,13 @@ mod tests {
             "priors": [],
             "guidance": null,
         }));
-        let advisory = Advisory::from_hint(hint);
-        assert_eq!(advisory.weight_for("direct"), 0.0);
-        assert!(advisory.recommended_action().is_none());
+        let guidance = PolicyGuidance::from_hint(hint);
+        assert_eq!(guidance.weight_for("direct"), 0.0);
+        assert!(guidance.recommended_action().is_none());
     }
 
     #[test]
-    fn advisory_weight_for_present_action_returns_effective_weight() {
+    fn policy_guidance_weight_for_present_action_returns_effective_weight() {
         let hint = hint_from_json(serde_json::json!({
             "query": "q",
             "decision_point": "route",
@@ -458,16 +458,16 @@ mod tests {
             }],
             "guidance": null,
         }));
-        let advisory = Advisory::from_hint(hint);
-        assert_eq!(advisory.weight_for("direct"), 0.7);
-        assert_eq!(advisory.weight_for("worker"), 0.0);
-        assert_eq!(advisory.recommended_action(), Some("direct"));
+        let guidance = PolicyGuidance::from_hint(hint);
+        assert_eq!(guidance.weight_for("direct"), 0.7);
+        assert_eq!(guidance.weight_for("worker"), 0.0);
+        assert_eq!(guidance.recommended_action(), Some("direct"));
     }
 
     /// The ±0.15 thresholds must match `task_policy_gate_meta` exactly so
     /// Phase 3 call-site migration introduces zero behavior drift.
     #[test]
-    fn advisory_gate_meta_dispositions_track_threshold() {
+    fn policy_guidance_gate_meta_dispositions_track_threshold() {
         let hint = hint_from_json(serde_json::json!({
             "query": "q",
             "decision_point": "discovery",
@@ -481,23 +481,23 @@ mod tests {
             ],
             "guidance": null,
         }));
-        let advisory = Advisory::from_hint(hint);
+        let guidance = PolicyGuidance::from_hint(hint);
         assert_eq!(
-            advisory.gate_meta("strong_push")["disposition"],
+            guidance.gate_meta("strong_push")["disposition"],
             "encourage"
         );
         assert_eq!(
-            advisory.gate_meta("strong_pull")["disposition"],
+            guidance.gate_meta("strong_pull")["disposition"],
             "discourage"
         );
-        assert_eq!(advisory.gate_meta("quiet")["disposition"], "neutral");
-        assert_eq!(advisory.gate_meta("unknown")["disposition"], "neutral");
+        assert_eq!(guidance.gate_meta("quiet")["disposition"], "neutral");
+        assert_eq!(guidance.gate_meta("unknown")["disposition"], "neutral");
     }
 
     /// Boundary case: the exact threshold ±0.15 is "encourage"/"discourage",
     /// not "neutral". Matches the strict `>=` / `<=` in `task_policy_gate_meta`.
     #[test]
-    fn advisory_gate_meta_boundary_thresholds_are_inclusive() {
+    fn policy_guidance_gate_meta_boundary_thresholds_are_inclusive() {
         let hint = hint_from_json(serde_json::json!({
             "query": "q",
             "decision_point": "route",
@@ -510,8 +510,8 @@ mod tests {
             ],
             "guidance": null,
         }));
-        let advisory = Advisory::from_hint(hint);
-        assert_eq!(advisory.gate_meta("edge_up")["disposition"], "encourage");
-        assert_eq!(advisory.gate_meta("edge_down")["disposition"], "discourage");
+        let guidance = PolicyGuidance::from_hint(hint);
+        assert_eq!(guidance.gate_meta("edge_up")["disposition"], "encourage");
+        assert_eq!(guidance.gate_meta("edge_down")["disposition"], "discourage");
     }
 }

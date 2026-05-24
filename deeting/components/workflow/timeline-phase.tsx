@@ -12,7 +12,6 @@ interface TimelinePhaseProps {
   isActive: boolean
   isExpanded: boolean
   onToggleExpand: () => void
-  onRerun?: () => void
   onViewResult?: () => void
 }
 
@@ -34,7 +33,6 @@ export function TimelinePhase({
   isActive,
   isExpanded,
   onToggleExpand,
-  onRerun,
   onViewResult,
 }: TimelinePhaseProps) {
   const t = useI18n("workflow")
@@ -100,16 +98,6 @@ export function TimelinePhase({
         {isFailed && step.error && (
           <div className="mt-2 border-l-2 border-rose-500/40 bg-rose-500/5 py-2 pl-3 pr-2">
             <p className="font-mono text-[11px] text-rose-600/80 dark:text-rose-400/80">{step.error}</p>
-            {onRerun && (
-              <Button
-                variant="ghost"
-                size="xs"
-                className="mt-2 h-6 px-2 text-[10px] font-mono hover:bg-rose-500/10 hover:text-rose-600"
-                onClick={onRerun}
-              >
-                {'>'} {t("execution.rerunPhase")}
-              </Button>
-            )}
           </div>
         )}
 

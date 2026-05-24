@@ -1,8 +1,16 @@
 use super::classify_local_tool_execution_error_code;
 use super::*;
+use super::lifecycle::persistable_inflight_context_from_value;
+use super::tool_meta::build_tool_call_meta_from_execution_graph;
 use crate::modules::desktop_runtime::runtime::LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE;
 use crate::modules::desktop_runtime::runtime::{
     build_default_local_execution_policy, build_local_tool_call_install_gate_error_meta,
+    CapabilityExecutionContract, DelegatedExecutionKind, DelegatedExecutionPacketReceipt,
+    DelegatedExecutionRecord, DelegatedExecutionSelection, DelegatedExecutionStatus,
+    DelegatedExecutionTarget,
+};
+use crate::modules::desktop_runtime::runtime::execution_plane::{
+    DelegatedExecutionAction, DelegatedExecutionChildRecord,
 };
 
 #[test]
@@ -321,7 +329,7 @@ fn structured_tool_replay_messages_fall_back_to_execution_graph_when_meta_missin
             "execution_id": "graph-exec-1",
             "session_id": "session-1",
             "route": "direct",
-            "plane": "response_only",
+            "phase_step_type": "direct_chat",
             "request_id": null,
             "root_execution_id": null,
             "nodes": [
@@ -418,7 +426,7 @@ fn attach_runtime_transition_events_appends_graph_projectable_trace_blocks() {
             "request_id": "request-1",
             "session_id": "session-1",
             "required_artifact": "diting_think_preflight",
-            "enforcement": "shadow"
+            "enforcement": "enforced"
         }
     })];
 
@@ -465,7 +473,7 @@ fn attach_runtime_transition_events_preserves_answer_only_content() {
             "request_id": "request-1",
             "session_id": "session-1",
             "required_artifact": "verification_plan",
-            "enforcement": "shadow"
+            "enforcement": "enforced"
         }
     })];
 
@@ -495,7 +503,7 @@ fn enrich_response_with_tool_trace_falls_back_to_execution_graph_blocks() {
             "execution_id": "graph-exec-1",
             "session_id": "session-1",
             "route": "direct",
-            "plane": "response_only",
+            "phase_step_type": "direct_chat",
             "request_id": null,
             "root_execution_id": null,
             "nodes": [
@@ -789,7 +797,7 @@ fn build_persisted_resume_assistant_blocks_falls_back_to_execution_graph_blocks(
             "execution_id": "graph-exec-1",
             "session_id": "session-1",
             "route": "direct",
-            "plane": "response_only",
+            "phase_step_type": "direct_chat",
             "request_id": null,
             "root_execution_id": null,
             "nodes": [
@@ -908,7 +916,7 @@ fn attach_execution_graph_to_response_force_rebuild_replaces_stale_graph() {
             "request_id": "request-1",
             "session_id": "session-1",
             "required_artifact": "diting_think_preflight",
-            "enforcement": "shadow"
+            "enforcement": "enforced"
         }],
         "tool_trace_blocks": [
             { "type": "text", "content": "final answer" },
@@ -922,7 +930,7 @@ fn attach_execution_graph_to_response_force_rebuild_replaces_stale_graph() {
                     "request_id": "request-1",
                     "session_id": "session-1",
                     "required_artifact": "diting_think_preflight",
-                    "enforcement": "shadow"
+                    "enforcement": "enforced"
                 }
             }
         ]

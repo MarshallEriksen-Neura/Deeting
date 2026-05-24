@@ -16,7 +16,7 @@ use std::collections::HashMap;
 pub(crate) struct GraphProjectionInput {
     pub(crate) session_id: String,
     pub(crate) route: String,
-    pub(crate) plane: String,
+    pub(crate) phase_step_type: String,
     pub(crate) trace_id: Option<String>,
     pub(crate) request_id: Option<String>,
     pub(crate) root_execution_id: Option<String>,
@@ -41,7 +41,7 @@ pub(crate) fn project_execution_graph_snapshot(
         metadata: json!({
             "round": 1,
             "route": input.route,
-            "plane": input.plane,
+            "phase_step_type": input.phase_step_type,
         }),
         input_payload: None,
         output_payload: input.response_content.clone(),
@@ -239,7 +239,7 @@ pub(crate) fn project_execution_graph_snapshot(
         execution_id,
         session_id: input.session_id,
         route: input.route,
-        plane: input.plane,
+        phase_step_type: input.phase_step_type,
         request_id: input.request_id,
         root_execution_id: input.root_execution_id,
         nodes,
@@ -412,7 +412,7 @@ fn resolve_execution_id(input: &GraphProjectionInput) -> String {
                 .filter(|value| !value.is_empty())
                 .map(|value| format!("local-trace:{value}"))
         })
-        .unwrap_or_else(|| format!("local-session:{}:{}", input.session_id, input.plane))
+        .unwrap_or_else(|| format!("local-session:{}:{}", input.session_id, input.phase_step_type))
 }
 
 fn map_tool_call_status(status: Option<&str>) -> LocalExecutionGraphNodeStatus {
@@ -461,7 +461,7 @@ mod tests {
         let snapshot = project_execution_graph_snapshot(GraphProjectionInput {
             session_id: "session-1".to_string(),
             route: "direct".to_string(),
-            plane: "response_only".to_string(),
+            phase_step_type: "direct_chat".to_string(),
             trace_id: Some("trace-1".to_string()),
             request_id: Some("req-1".to_string()),
             root_execution_id: None,
@@ -504,7 +504,7 @@ mod tests {
         let snapshot = project_execution_graph_snapshot(GraphProjectionInput {
             session_id: "session-1".to_string(),
             route: "direct".to_string(),
-            plane: "response_only".to_string(),
+            phase_step_type: "direct_chat".to_string(),
             trace_id: Some("trace-approval".to_string()),
             request_id: None,
             root_execution_id: Some("root-1".to_string()),
@@ -542,7 +542,7 @@ mod tests {
         let snapshot = project_execution_graph_snapshot(GraphProjectionInput {
             session_id: "session-1".to_string(),
             route: "direct".to_string(),
-            plane: "response_only".to_string(),
+            phase_step_type: "direct_chat".to_string(),
             trace_id: Some("trace-transition".to_string()),
             request_id: Some("request-transition".to_string()),
             root_execution_id: Some("root-1".to_string()),
@@ -558,7 +558,7 @@ mod tests {
                     "session_id": "session-1",
                     "source": "provider_response",
                     "required_artifact": "diting_think_preflight",
-                    "enforcement": "shadow"
+                    "enforcement": "enforced"
                 }
             })],
             delegated_execution_tree: None,
@@ -581,7 +581,7 @@ mod tests {
             event.payload["required_artifact"],
             json!("diting_think_preflight")
         );
-        assert_eq!(event.payload["enforcement"], json!("shadow"));
+        assert_eq!(event.payload["enforcement"], json!("enforced"));
 
         assert!(snapshot
             .events
@@ -593,7 +593,7 @@ mod tests {
         let snapshot = project_execution_graph_snapshot(GraphProjectionInput {
             session_id: "session-1".to_string(),
             route: "direct".to_string(),
-            plane: "response_only".to_string(),
+            phase_step_type: "direct_chat".to_string(),
             trace_id: Some("trace-transition".to_string()),
             request_id: Some("request-transition".to_string()),
             root_execution_id: Some("root-1".to_string()),
@@ -629,7 +629,7 @@ mod tests {
         let snapshot = project_execution_graph_snapshot(GraphProjectionInput {
             session_id: "session-1".to_string(),
             route: "direct".to_string(),
-            plane: "response_only".to_string(),
+            phase_step_type: "direct_chat".to_string(),
             trace_id: Some("trace-blocks".to_string()),
             request_id: None,
             root_execution_id: Some("root-1".to_string()),

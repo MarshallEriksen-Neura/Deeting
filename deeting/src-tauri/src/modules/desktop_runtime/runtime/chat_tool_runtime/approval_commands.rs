@@ -1,4 +1,18 @@
-use super::*;
+use super::lifecycle::{
+    derive_pending_approvals_from_graph, load_suspended_chat_tool_execution_for_resume,
+    materialize_pending_local_approval_from_runtime_context,
+    persist_suspended_execution_graph_runtime, project_local_chat_approval_state_payload,
+    recover_local_chat_execution_from_action, resume_suspended_chat_tool_execution_after_approval,
+    InFlightExecutionStage,
+};
+use super::tool_meta::{
+    apply_rejected_tool_result_to_execution_graph_value, mark_approval_gate_approving,
+};
+use crate::modules::desktop_runtime::runtime::{
+    delete_execution_graph_runtime_context, load_execution_graph_snapshot,
+    persist_execution_graph_snapshot,
+};
+use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::commands::runtime::approve_pending_tool_with_context_and_mode;
 use crate::modules::mcp::commands::support::Value;
 use crate::modules::mcp::policy::PersistedApprovalAction;

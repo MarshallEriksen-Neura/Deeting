@@ -1,5 +1,5 @@
 use crate::modules::mcp::commands::common_impl::to_string;
-use crate::modules::mcp::commands::support::*;
+use crate::modules::mcp::store::McpStore;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct LocalCapabilityActivationState {
@@ -9,7 +9,7 @@ pub(crate) struct LocalCapabilityActivationState {
 }
 
 pub(crate) async fn resolve_local_capability_activation_state(
-    app_state: &AppState,
+    store: &McpStore,
     capability_id: &str,
 ) -> Result<LocalCapabilityActivationState, String> {
     let normalized_capability_id = capability_id.trim().to_string();
@@ -17,9 +17,7 @@ pub(crate) async fn resolve_local_capability_activation_state(
         return Err("capability_id is required".to_string());
     }
 
-    let enabled_capability_ids = app_state
-        .mcp
-        .store
+    let enabled_capability_ids = store
         .list_enabled_local_assistant_ids()
         .await
         .map_err(to_string)?;
@@ -30,9 +28,7 @@ pub(crate) async fn resolve_local_capability_activation_state(
         ));
     }
 
-    let version = app_state
-        .mcp
-        .store
+    let version = store
         .get_local_assistant_current_version(&normalized_capability_id)
         .await
         .map_err(to_string)?

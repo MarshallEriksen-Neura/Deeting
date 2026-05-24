@@ -1,3 +1,5 @@
+use desktop_runtime_core::PhaseStepType;
+use serde::de;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -59,30 +61,101 @@ impl RuntimeDiscoveryBundle {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum LocalExecutionPlane {
-    ResponseOnly,
-    WorkerReasoning,
-}
-
-impl LocalExecutionPlane {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::ResponseOnly => "response_only",
-            Self::WorkerReasoning => "worker_reasoning",
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct LocalExecutionPolicy {
     pub route: LocalRouteKind,
-    pub plane: LocalExecutionPlane,
+    pub initial_phase_step: PhaseStepType,
     pub allowed_tool_names: Vec<String>,
     pub inject_execution_protocol: bool,
     pub allow_worker_delegation: bool,
     pub prefer_workflow_runtime: bool,
     pub capability_snapshot: Option<Value>,
+}
+
+impl<'de> Deserialize<'de> for LocalExecutionPolicy {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| de::Error::custom("LocalExecutionPolicy must be an object"))?;
+        let route = object
+            .get("route")
+            .cloned()
+            .map(serde_json::from_value)
+            .transpose()
+            .map_err(de::Error::custom)?
+            .unwrap_or(LocalRouteKind::Direct);
+        let initial_phase_step = object
+            .get("initial_phase_step")
+            .cloned()
+            .map(serde_json::from_value)
+            .transpose()
+            .map_err(de::Error::custom)?
+            .or_else(|| legacy_plane_phase_step(object.get("plane")))
+            .unwrap_or_else(|| default_phase_step_for_route(&route));
+        let allowed_tool_names = object
+            .get("allowed_tool_names")
+            .cloned()
+            .map(serde_json::from_value)
+            .transpose()
+            .map_err(de::Error::custom)?
+            .unwrap_or_default();
+        let inject_execution_protocol = object
+            .get("inject_execution_protocol")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let allow_worker_delegation = object
+            .get("allow_worker_delegation")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let prefer_workflow_runtime = object
+            .get("prefer_workflow_runtime")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let capability_snapshot = object
+            .get("capability_snapshot")
+            .filter(|value| !value.is_null())
+            .cloned();
+
+        Ok(Self {
+            route,
+            initial_phase_step,
+            allowed_tool_names,
+            inject_execution_protocol,
+            allow_worker_delegation,
+            prefer_workflow_runtime,
+            capability_snapshot,
+        })
+    }
+}
+
+fn legacy_plane_phase_step(value: Option<&Value>) -> Option<PhaseStepType> {
+    match value.and_then(Value::as_str) {
+        Some("ResponseOnly") | Some("response_only") => Some(PhaseStepType::DirectChat),
+        Some("WorkerReasoning") | Some("worker_reasoning") => Some(PhaseStepType::DelegatedWorker),
+        _ => None,
+    }
+}
+
+fn default_phase_step_for_route(route: &LocalRouteKind) -> PhaseStepType {
+    match route {
+        LocalRouteKind::Direct => PhaseStepType::DirectChat,
+        LocalRouteKind::Worker => PhaseStepType::DelegatedWorker,
+    }
+}
+
+pub fn phase_step_type_name(step_type: PhaseStepType) -> &'static str {
+    match step_type {
+        PhaseStepType::DirectChat => "direct_chat",
+        PhaseStepType::ToolCall => "tool_call",
+        PhaseStepType::DelegatedWorker => "delegated_worker",
+        PhaseStepType::DelegatedWorkflow => "delegated_workflow",
+        PhaseStepType::CapabilityAdmit => "capability_admit",
+        PhaseStepType::VerifyFinal => "verify_final",
+    }
 }
 
 #[allow(dead_code)]
@@ -97,6 +170,10 @@ pub struct LocalControlPlaneResult {
 }
 
 impl LocalExecutionPolicy {
+    pub fn initial_phase_step_name(&self) -> &'static str {
+        phase_step_type_name(self.initial_phase_step)
+    }
+
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn allows_tool(&self, tool_name: &str) -> bool {
         let normalized = tool_name.trim().to_lowercase();
@@ -127,7 +204,7 @@ impl LocalExecutionPolicy {
 pub fn build_default_local_execution_policy() -> LocalExecutionPolicy {
     LocalExecutionPolicy {
         route: LocalRouteKind::Direct,
-        plane: LocalExecutionPlane::ResponseOnly,
+        initial_phase_step: PhaseStepType::DirectChat,
         allowed_tool_names: Vec::new(),
         inject_execution_protocol: false,
         allow_worker_delegation: false,
@@ -171,7 +248,7 @@ pub fn build_local_execution_policy(decision: &LocalRouteDecision) -> LocalExecu
     match decision.route {
         LocalRouteKind::Direct => LocalExecutionPolicy {
             route: LocalRouteKind::Direct,
-            plane: LocalExecutionPlane::ResponseOnly,
+            initial_phase_step: PhaseStepType::DirectChat,
             allowed_tool_names: resident_capability_control_tool_names(),
             inject_execution_protocol: false,
             allow_worker_delegation: false,
@@ -180,7 +257,7 @@ pub fn build_local_execution_policy(decision: &LocalRouteDecision) -> LocalExecu
         },
         LocalRouteKind::Worker => LocalExecutionPolicy {
             route: LocalRouteKind::Worker,
-            plane: LocalExecutionPlane::WorkerReasoning,
+            initial_phase_step: PhaseStepType::DelegatedWorker,
             allowed_tool_names: full_execution_tool_names(),
             inject_execution_protocol: true,
             allow_worker_delegation: true,
@@ -193,7 +270,7 @@ pub fn build_local_execution_policy(decision: &LocalRouteDecision) -> LocalExecu
 pub fn build_local_execution_policy_status_meta(policy: &LocalExecutionPolicy) -> Value {
     json!({
         "route": policy.route.as_str(),
-        "plane": policy.plane.as_str(),
+        "initial_phase_step": phase_step_type_name(policy.initial_phase_step),
         "allowed_tool_names": policy.allowed_tool_names,
         "inject_execution_protocol": policy.inject_execution_protocol,
         "allow_worker_delegation": policy.allow_worker_delegation,
@@ -318,6 +395,22 @@ mod tests {
     }
 
     #[test]
+    fn local_execution_policy_deserializes_legacy_plane_as_phase_step() {
+        let policy: LocalExecutionPolicy = serde_json::from_value(json!({
+            "route": "worker",
+            "plane": "worker_reasoning",
+            "allowed_tool_names": [],
+            "inject_execution_protocol": true,
+            "allow_worker_delegation": true,
+            "prefer_workflow_runtime": false,
+        }))
+        .expect("legacy plane policy should deserialize");
+
+        assert_eq!(policy.route, LocalRouteKind::Worker);
+        assert_eq!(policy.initial_phase_step, PhaseStepType::DelegatedWorker);
+    }
+
+    #[test]
     fn status_meta_includes_prefer_workflow_runtime_flag() {
         let mut policy = build_default_local_execution_policy();
         policy.prefer_workflow_runtime = true;
@@ -425,7 +518,7 @@ mod tests {
     fn effective_allowed_tool_names_merges_snapshot_direct_capabilities_without_legacy_field() {
         let policy = LocalExecutionPolicy {
             route: LocalRouteKind::Worker,
-            plane: LocalExecutionPlane::WorkerReasoning,
+            initial_phase_step: PhaseStepType::DelegatedWorker,
             allowed_tool_names: vec!["search_sdk".to_string()],
             inject_execution_protocol: true,
             allow_worker_delegation: true,

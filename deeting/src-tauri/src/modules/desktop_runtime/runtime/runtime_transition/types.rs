@@ -114,8 +114,6 @@ pub(crate) enum RequiredArtifact {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum HookEnforcementMode {
-    Shadow,
-    Advisory,
     Enforced,
 }
 
@@ -179,7 +177,7 @@ mod tests {
         let decision = HookDecision::RequireArtifact {
             artifact: RequiredArtifact::DitingThinkPreflight,
             reason: "tool proposal crosses execution boundary".to_string(),
-            enforcement: HookEnforcementMode::Shadow,
+            enforcement: HookEnforcementMode::Enforced,
         };
 
         assert_eq!(
@@ -188,7 +186,7 @@ mod tests {
                 "require_artifact": {
                     "artifact": "diting_think_preflight",
                     "reason": "tool proposal crosses execution boundary",
-                    "enforcement": "shadow"
+                    "enforcement": "enforced"
                 }
             })
         );

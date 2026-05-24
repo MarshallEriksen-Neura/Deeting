@@ -326,7 +326,10 @@ fn build_secondary_evidence(
 ) -> Vec<String> {
     let mut evidence = Vec::new();
     evidence.push(format!("route:{}", execution_policy.route.as_str()));
-    evidence.push(format!("plane:{}", execution_policy.plane.as_str()));
+    evidence.push(format!(
+        "phase_step_type:{}",
+        execution_policy.initial_phase_step_name()
+    ));
     evidence.push(format!("finish_reason:{finish_reason}"));
     if let Some(route_decision) = route_decision {
         evidence.extend(
@@ -753,13 +756,13 @@ mod tests {
     use crate::modules::desktop_runtime::runtime::{
         LocalExecutionPolicy, LocalRouteDecision, LocalRouteKind,
     };
-    use mcp_runtime::policy::LocalExecutionPlane;
+    use desktop_runtime_core::PhaseStepType;
     use mcp_runtime::route::{RouteEvidence, TaskProfile};
 
-    fn policy(route: LocalRouteKind, plane: LocalExecutionPlane) -> LocalExecutionPolicy {
+    fn policy(route: LocalRouteKind, initial_phase_step: PhaseStepType) -> LocalExecutionPolicy {
         LocalExecutionPolicy {
             route,
-            plane,
+            initial_phase_step,
             allowed_tool_names: vec![],
             inject_execution_protocol: false,
             allow_worker_delegation: false,
@@ -813,7 +816,7 @@ mod tests {
         let evaluation = evaluate_task_learning(
             &build_task_fingerprint("Investigate the current local runtime capabilities"),
             Some(&route_decision(LocalRouteKind::Direct)),
-            &policy(LocalRouteKind::Direct, LocalExecutionPlane::ResponseOnly),
+            &policy(LocalRouteKind::Direct, PhaseStepType::DirectChat),
             "The runtime failed.",
             true,
             "error",
@@ -835,7 +838,7 @@ mod tests {
         let evaluation = evaluate_task_learning(
             &build_task_fingerprint("Create a local JSON artifact"),
             Some(&route_decision(LocalRouteKind::Worker)),
-            &policy(LocalRouteKind::Worker, LocalExecutionPlane::WorkerReasoning),
+            &policy(LocalRouteKind::Worker, PhaseStepType::DelegatedWorker),
             "Finished and wrote the artifact.",
             false,
             "stop",
@@ -870,7 +873,7 @@ mod tests {
         let evaluation = evaluate_task_learning(
             &build_task_fingerprint("analyze the desktop worker route"),
             Some(&route_decision(LocalRouteKind::Worker)),
-            &policy(LocalRouteKind::Worker, LocalExecutionPlane::WorkerReasoning),
+            &policy(LocalRouteKind::Worker, PhaseStepType::DelegatedWorker),
             "Research worker completed the analysis.",
             false,
             "stop",
@@ -906,7 +909,7 @@ mod tests {
         let evaluation = evaluate_task_learning(
             &build_task_fingerprint("diagnose the workflow delegation path"),
             Some(&route_decision(LocalRouteKind::Worker)),
-            &policy(LocalRouteKind::Worker, LocalExecutionPlane::WorkerReasoning),
+            &policy(LocalRouteKind::Worker, PhaseStepType::DelegatedWorker),
             "",
             true,
             "error",
