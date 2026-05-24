@@ -30,43 +30,54 @@ mod tool_meta;
 pub(crate) use approval_commands::{
     dispatch_local_chat_execution_run_command, ExecutionRunCommand,
 };
-use tool_execution::process_chat_tool_calls;
+pub(crate) use frame_tools::DitingThinkExtract;
+use frame_tools::{inject_diting_think_tool, DITING_THINK_TOOL_NAME};
+use lifecycle::finalize_tool_round;
 #[cfg(test)]
 use lifecycle::mark_delegated_wait_event_consumed;
 use lifecycle::runtime_state_from_persisted_context;
 #[cfg(test)]
 use lifecycle::PersistedPendingApproval;
-pub(crate) use lifecycle::{
-    build_persisted_chat_runtime_context_from_execution_request,
-    collect_waiting_approval_tokens_from_graph, derive_pending_approvals_from_graph,
-    list_canonical_pending_local_approval_snapshots, load_suspended_chat_tool_execution_for_resume,
-    materialize_pending_local_approval_from_runtime_context,
-    persist_suspended_execution_graph_runtime,
-    serialize_delegated_runtime_context,
-    serialize_delegated_workflow_runtime_context,
-};
-pub(crate) use lifecycle::{serialize_inflight_runtime_context, InFlightExecutionStage};
+pub(crate) use lifecycle::SuspendedChatToolExecution;
 #[cfg(test)]
 use lifecycle::{
     attach_execution_graph_to_response, build_local_chat_resume_continuation_blocks,
     build_persisted_resume_assistant_blocks, build_persisted_resume_assistant_meta,
 };
 pub(crate) use lifecycle::{
+    build_persisted_chat_runtime_context_from_execution_request,
+    collect_waiting_approval_tokens_from_graph, derive_pending_approvals_from_graph,
+    list_canonical_pending_local_approval_snapshots, load_suspended_chat_tool_execution_for_resume,
+    materialize_pending_local_approval_from_runtime_context,
+    persist_suspended_execution_graph_runtime, serialize_delegated_runtime_context,
+    serialize_delegated_workflow_runtime_context,
+};
+#[cfg(test)]
+use lifecycle::{build_structured_tool_replay_messages, serialize_tool_replay_content};
+pub(crate) use lifecycle::{
     project_local_chat_approval_state_payload, recover_inflight_local_execution_state,
     recover_local_chat_execution_from_action, resume_delegated_runtime_after_custom_task_agent_run,
     resume_suspended_chat_tool_execution_after_approval, wake_delegated_runtime_for_workflow_run,
 };
-use lifecycle::finalize_tool_round;
-#[cfg(test)]
-use lifecycle::{build_structured_tool_replay_messages, serialize_tool_replay_content};
-pub(crate) use lifecycle::SuspendedChatToolExecution;
-use frame_tools::{inject_diting_think_tool, DITING_THINK_TOOL_NAME};
+pub(crate) use lifecycle::{serialize_inflight_runtime_context, InFlightExecutionStage};
 use runtime_metrics::RuntimeMetricsAccumulator;
+#[cfg(test)]
+use runtime_state::classify_local_tool_execution_error_code;
 use runtime_state::{
     backfill_captured_reasoning, build_max_rounds_exceeded_response,
     clone_runtime_state_for_tool_execution, extract_initial_task_query,
     resolve_child_agent_max_rounds, rewind_round_for_post_approval_continuation,
     LocalChatToolRuntimeOutput, LocalChatToolRuntimeState, LocalToolCallProcessingOutcome,
+};
+use streaming::LocalRealtimeToolTraceEmitter;
+use tool_execution::process_chat_tool_calls;
+#[cfg(test)]
+use tool_meta::{
+    apply_approved_tool_result_to_execution_graph, canonicalize_tool_name_for_allowed_list,
+    resolve_local_tool_call_id, strip_stale_resume_response_metadata,
+};
+pub(crate) use tool_meta::{
+    apply_rejected_tool_result_to_execution_graph_value, mark_approval_gate_approving,
 };
 use tool_meta::{
     build_state_effective_tool_call_meta, canonicalize_tool_call_meta_via_graph,
@@ -74,23 +85,28 @@ use tool_meta::{
     last_response_content_or_empty, record_query_affinity_from_tool_meta,
     tool_call_meta_with_resolved_ids,
 };
-pub(crate) use tool_meta::{
-    apply_rejected_tool_result_to_execution_graph_value, mark_approval_gate_approving,
-};
-#[cfg(test)]
-use runtime_state::classify_local_tool_execution_error_code;
-use streaming::LocalRealtimeToolTraceEmitter;
-#[cfg(test)]
-use tool_meta::{
-    apply_approved_tool_result_to_execution_graph, canonicalize_tool_name_for_allowed_list,
-    resolve_local_tool_call_id, strip_stale_resume_response_metadata,
-};
 
 fn attach_runtime_transition_events(
     response: serde_json::Value,
     runtime_transition_blocks: &[serde_json::Value],
 ) -> serde_json::Value {
     attach_runtime_transition_blocks_to_response(response, runtime_transition_blocks)
+}
+
+fn attach_diting_think_frame_extract(
+    mut response: serde_json::Value,
+    extract: Option<&DitingThinkExtract>,
+) -> serde_json::Value {
+    let Some(extract) = extract else {
+        return response;
+    };
+    if let Some(object) = response.as_object_mut() {
+        object.insert(
+            "diting_think_frame_extract".to_string(),
+            serde_json::to_value(extract).unwrap_or(serde_json::Value::Null),
+        );
+    }
+    response
 }
 
 pub(crate) async fn run_local_chat_complete_with_tools(
@@ -166,6 +182,7 @@ pub(crate) async fn run_local_chat_complete_with_tools(
         active_skill_context: None,
         diting_think_consumed: false,
         captured_reasoning: None,
+        captured_frame_extract: None,
         runtime_metrics: RuntimeMetricsAccumulator::default(),
         last_capability_snapshot: execution_policy.capability_snapshot.clone(),
         terminal_context,
@@ -183,7 +200,7 @@ pub(crate) async fn run_local_chat_complete_with_tools(
         .await
         .map(|mut output| {
             backfill_captured_reasoning(&mut output.response, output.captured_reasoning.as_deref());
-            output.response
+            attach_diting_think_frame_extract(output.response, output.captured_frame_extract.as_ref())
         })
 }
 
@@ -207,6 +224,7 @@ async fn continue_local_chat_complete_with_tools(
             let fallback = build_max_rounds_exceeded_response(&state);
             return Ok(LocalChatToolRuntimeOutput {
                 captured_reasoning: state.captured_reasoning.clone(),
+                captured_frame_extract: state.captured_frame_extract.clone(),
                 response: enrich_response_with_tool_trace(
                     fallback,
                     &effective_tool_call_meta,
@@ -268,6 +286,7 @@ async fn continue_local_chat_complete_with_tools(
             );
             return Ok(LocalChatToolRuntimeOutput {
                 captured_reasoning: state.captured_reasoning.clone(),
+                captured_frame_extract: state.captured_frame_extract.clone(),
                 response: attach_runtime_transition_events(
                     response,
                     &state.runtime_transition_blocks,
@@ -309,10 +328,14 @@ async fn continue_local_chat_complete_with_tools(
                 results,
                 skill_context_update,
                 runtime_transition_blocks,
+                captured_frame_extract,
             } => {
                 state
                     .runtime_transition_blocks
                     .extend(runtime_transition_blocks);
+                if captured_frame_extract.is_some() {
+                    state.captured_frame_extract = captured_frame_extract;
+                }
                 if let Some(update) = skill_context_update {
                     state.active_skill_context = Some(update);
                 }
@@ -362,6 +385,7 @@ async fn continue_local_chat_complete_with_tools(
                     current_tool_call_meta.extend(canonical_tool_call_meta.clone());
                     return Ok(LocalChatToolRuntimeOutput {
                         captured_reasoning: state.captured_reasoning.clone(),
+                        captured_frame_extract: state.captured_frame_extract.clone(),
                         response: attach_runtime_transition_events(
                             enrich_response_with_tool_trace(
                                 response,
@@ -399,10 +423,14 @@ async fn continue_local_chat_complete_with_tools(
                 capability_update,
                 skill_context_update,
                 runtime_transition_blocks,
+                captured_frame_extract,
             } => {
                 state
                     .runtime_transition_blocks
                     .extend(runtime_transition_blocks);
+                if captured_frame_extract.is_some() {
+                    state.captured_frame_extract = captured_frame_extract;
+                }
                 if let Some(update) = skill_context_update {
                     state.active_skill_context = Some(update);
                 }
@@ -462,6 +490,7 @@ async fn continue_local_chat_complete_with_tools(
                 });
                 return Ok(LocalChatToolRuntimeOutput {
                     captured_reasoning: state.captured_reasoning.clone(),
+                    captured_frame_extract: state.captured_frame_extract.clone(),
                     response: attach_runtime_transition_events(
                         enrich_response_with_tool_trace(
                             interrupted,

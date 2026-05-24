@@ -1,8 +1,8 @@
+use super::suspended_default_context::fallback_chat_runtime_context_for_execution_graph;
 use super::{
     filter_pending_approvals_by_graph, persistable_inflight_context_from_value,
     runtime_state_from_persisted_context, SuspendedChatToolExecution,
 };
-use super::suspended_default_context::fallback_chat_runtime_context_for_execution_graph;
 use crate::modules::desktop_runtime::runtime::{
     load_execution_graph_runtime_context, load_execution_graph_snapshot,
 };
@@ -67,6 +67,7 @@ pub(super) async fn suspended_from_persisted_execution(
         reasoning_effort: state.reasoning_effort.clone(),
         active_capability: state.active_capability.clone(),
         active_skill_context: state.active_skill_context.clone(),
+        captured_frame_extract: state.captured_frame_extract.clone(),
         runtime_metrics: state.runtime_metrics.clone(),
         last_capability_snapshot: state.last_capability_snapshot.clone(),
         terminal_context: state.terminal_context.clone(),

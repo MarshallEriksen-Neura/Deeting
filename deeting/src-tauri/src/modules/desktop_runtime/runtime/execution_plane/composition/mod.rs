@@ -9,7 +9,11 @@ use self::components::runtime_components::{
     DeetingRuntimeEventStore, DeetingTier2Validator,
 };
 use super::{LocalExecutionOutcome, LocalExecutionRequest};
-use desktop_runtime_core::{RuntimeComponents, RuntimeComposition, RuntimeTickResult};
+use crate::modules::desktop_runtime::runtime::chat_tool_runtime::DitingThinkExtract;
+use desktop_runtime_core::{
+    Assumption, Fact, Rule, RuntimeComponents, RuntimeComposition, RuntimeTickResult,
+    VerificationTarget, WorldModelFrame,
+};
 use serde_json::{json, Value};
 
 pub(crate) async fn run_local_runtime_composition<F>(
@@ -69,18 +73,23 @@ fn attach_runtime_result_to_outcome(
     result: &RuntimeTickResult,
 ) {
     let committed_phases = result.plan.committed_phases.clone();
+    let frame = refreshed_frame_with_diting_extract(
+        result.frame.clone(),
+        outcome.captured_frame_extract.as_ref(),
+    );
     let summary = json!({
-        "frame_version_id": result.frame.frame_version_id.clone(),
+        "frame_version_id": frame.frame_version_id.clone(),
         "plan_id": result.plan.plan_id.clone(),
+        "fingerprint_key": frame.fingerprint_key.clone(),
         "committed_phases": committed_phases,
-        "execution_strategy": result.frame.execution_strategy,
+        "execution_strategy": frame.execution_strategy,
         "validation": result.validation.clone(),
         "decision": result.decision.clone(),
         "final_answer": result.final_answer.clone(),
     });
     let artifact = json!({
         "summary": summary,
-        "frame": result.frame.clone(),
+        "frame": frame.clone(),
         "plan": result.plan.clone(),
     });
 
@@ -91,11 +100,19 @@ fn attach_runtime_result_to_outcome(
         if let Some(metadata_object) = metadata.as_object_mut() {
             metadata_object.insert(
                 "frame_version_id".to_string(),
-                Value::String(result.frame.frame_version_id.clone()),
+                Value::String(frame.frame_version_id.clone()),
             );
             metadata_object.insert(
                 "plan_id".to_string(),
                 Value::String(result.plan.plan_id.clone()),
+            );
+            metadata_object.insert(
+                "fingerprint_key".to_string(),
+                frame
+                    .fingerprint_key
+                    .clone()
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
             );
             metadata_object.insert(
                 "committed_phases".to_string(),
@@ -115,4 +132,46 @@ fn attach_runtime_result_to_outcome(
             outcome.execution_graph.clone(),
         );
     }
+}
+
+fn refreshed_frame_with_diting_extract(
+    mut frame: WorldModelFrame,
+    extract: Option<&DitingThinkExtract>,
+) -> WorldModelFrame {
+    let Some(extract) = extract else {
+        return frame;
+    };
+
+    frame
+        .known_facts
+        .extend(extract.facts.iter().enumerate().map(|(index, statement)| Fact {
+            id: format!("diting-fact-{index}"),
+            statement: statement.clone(),
+            source: "diting_think".to_string(),
+        }));
+    frame
+        .assumptions
+        .extend(extract.assumptions.iter().enumerate().map(|(index, statement)| {
+            Assumption {
+                id: format!("diting-assumption-{index}"),
+                statement: statement.clone(),
+            }
+        }));
+    frame.verification_targets.extend(
+        extract
+            .verification_targets
+            .iter()
+            .enumerate()
+            .map(|(index, description)| VerificationTarget {
+                id: format!("diting-vt-{index}"),
+                description: description.clone(),
+            }),
+    );
+    frame
+        .adaptation_rules
+        .extend(extract.rules.iter().enumerate().map(|(index, instruction)| Rule {
+            id: format!("diting-rule-{index}"),
+            instruction: instruction.clone(),
+        }));
+    frame
 }

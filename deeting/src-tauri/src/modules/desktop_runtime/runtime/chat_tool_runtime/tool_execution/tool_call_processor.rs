@@ -1,5 +1,7 @@
 use super::super::context_tools::{is_terminal_context_tool, is_workflow_plan_tool};
-use super::super::frame_tools::DITING_THINK_TOOL_NAME;
+use super::super::frame_tools::{
+    parse_diting_think_arguments, DitingThinkExtract, DITING_THINK_TOOL_NAME,
+};
 use super::super::lifecycle::{
     clear_execution_graph_runtime_context, persist_running_tool_execution_runtime,
 };
@@ -48,6 +50,7 @@ pub(crate) async fn process_chat_tool_calls(
             tool_call_meta: Vec::new(),
             results: Vec::new(),
             skill_context_update: None,
+            captured_frame_extract: None,
             runtime_transition_blocks: Vec::new(),
         };
     }
@@ -57,6 +60,7 @@ pub(crate) async fn process_chat_tool_calls(
     let mut capability_update = None;
     let mut skill_context_update = None;
     let mut approval_tokens = Vec::new();
+    let mut captured_frame_extract: Option<DitingThinkExtract> = state.captured_frame_extract.clone();
     let mut runtime_transition_blocks = Vec::new();
 
     for (call_index, call) in tool_calls.into_iter().enumerate() {
@@ -78,6 +82,7 @@ pub(crate) async fn process_chat_tool_calls(
         if tool_name == DITING_THINK_TOOL_NAME {
             realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
             let preflight = build_diting_think_tool_result(call_id.as_str(), &call.arguments);
+            captured_frame_extract = Some(parse_diting_think_arguments(&call.arguments));
             synthesized = true;
             realtime_emitter.emit_tool_result_meta(&preflight.meta);
             tool_call_meta.push(preflight.meta);
@@ -483,6 +488,7 @@ pub(crate) async fn process_chat_tool_calls(
             tool_call_meta,
             results,
             skill_context_update,
+            captured_frame_extract,
             runtime_transition_blocks,
         }
     } else {
@@ -492,6 +498,7 @@ pub(crate) async fn process_chat_tool_calls(
             results,
             capability_update,
             skill_context_update,
+            captured_frame_extract,
             runtime_transition_blocks,
         }
     }

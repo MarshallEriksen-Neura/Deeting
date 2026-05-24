@@ -2,6 +2,7 @@ use super::super::LocalExecutionPolicy;
 use super::chat_completion::PolicyScopedChatCompletionInput;
 use super::execution_graph_projection::ExecutionGraphContext;
 use super::DelegatedExecutionSession;
+use crate::modules::desktop_runtime::runtime::chat_tool_runtime::DitingThinkExtract;
 use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
@@ -40,6 +41,7 @@ pub(crate) struct LocalExecutionOutcome {
     pub(crate) delegated_execution: Option<DelegatedExecutionSession>,
     pub(crate) execution_graph: Value,
     pub(crate) response_json: Value,
+    pub(crate) captured_frame_extract: Option<DitingThinkExtract>,
 }
 
 impl LocalExecutionRequest {

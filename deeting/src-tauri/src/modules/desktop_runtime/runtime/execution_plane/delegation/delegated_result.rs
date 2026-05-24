@@ -56,5 +56,6 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane) fn build_direc
         delegated_execution: Some(execution),
         execution_graph,
         response_json,
+        captured_frame_extract: None,
     }
 }

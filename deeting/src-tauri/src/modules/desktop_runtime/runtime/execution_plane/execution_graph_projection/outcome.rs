@@ -1,8 +1,9 @@
 use super::super::super::runtime_transition::projection::merge_runtime_transition_events_into_trace_blocks;
+use super::super::super::chat_tool_runtime::DitingThinkExtract;
+use super::super::{DelegatedExecutionSession, DelegatedExecutionStatus, LocalExecutionOutcome};
 use super::snapshot::{
     project_local_execution_graph, ExecutionGraphContext, ExecutionGraphProjection,
 };
-use super::super::{DelegatedExecutionSession, DelegatedExecutionStatus, LocalExecutionOutcome};
 use serde_json::{json, Value};
 
 pub(in crate::modules::desktop_runtime::runtime::execution_plane) fn running_delegated_execution_outcome(
@@ -31,6 +32,7 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane) fn running_del
         delegated_execution: Some(delegated_execution),
         execution_graph,
         response_json,
+        captured_frame_extract: None,
     }
 }
 
@@ -39,6 +41,10 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane) fn completed_c
     response_json: Value,
     delegated_execution: Option<DelegatedExecutionSession>,
 ) -> LocalExecutionOutcome {
+    let captured_frame_extract = response_json
+        .get("diting_think_frame_extract")
+        .cloned()
+        .and_then(|value| serde_json::from_value::<DitingThinkExtract>(value).ok());
     let delegated_execution_tree = delegated_execution.as_ref().map(|execution| {
         execution
             .record
@@ -67,5 +73,6 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane) fn completed_c
         delegated_execution,
         execution_graph,
         response_json,
+        captured_frame_extract,
     }
 }

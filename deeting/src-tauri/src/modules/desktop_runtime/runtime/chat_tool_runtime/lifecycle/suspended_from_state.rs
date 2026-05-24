@@ -47,6 +47,7 @@ impl SuspendedChatToolExecution {
             reasoning_effort: state.reasoning_effort.clone(),
             active_capability: state.active_capability.clone(),
             active_skill_context: state.active_skill_context.clone(),
+            captured_frame_extract: state.captured_frame_extract.clone(),
             runtime_metrics: state.runtime_metrics.clone(),
             last_capability_snapshot: state.last_capability_snapshot.clone(),
             terminal_context: state.terminal_context.clone(),

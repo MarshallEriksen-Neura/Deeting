@@ -1,16 +1,16 @@
 use super::classify_local_tool_execution_error_code;
-use super::*;
 use super::lifecycle::persistable_inflight_context_from_value;
 use super::tool_meta::build_tool_call_meta_from_execution_graph;
+use super::*;
+use crate::modules::desktop_runtime::runtime::execution_plane::{
+    DelegatedExecutionAction, DelegatedExecutionChildRecord,
+};
 use crate::modules::desktop_runtime::runtime::LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE;
 use crate::modules::desktop_runtime::runtime::{
     build_default_local_execution_policy, build_local_tool_call_install_gate_error_meta,
     CapabilityExecutionContract, DelegatedExecutionKind, DelegatedExecutionPacketReceipt,
     DelegatedExecutionRecord, DelegatedExecutionSelection, DelegatedExecutionStatus,
     DelegatedExecutionTarget,
-};
-use crate::modules::desktop_runtime::runtime::execution_plane::{
-    DelegatedExecutionAction, DelegatedExecutionChildRecord,
 };
 
 #[test]
@@ -996,6 +996,7 @@ fn build_max_rounds_exceeded_response_appends_visible_notice() {
         runtime_metrics: RuntimeMetricsAccumulator::default(),
         diting_think_consumed: false,
         captured_reasoning: None,
+        captured_frame_extract: None,
         last_capability_snapshot: None,
         terminal_context: None,
         workflow_context: None,
@@ -1086,6 +1087,7 @@ fn rewind_round_for_post_approval_continuation_does_not_consume_user_round_budge
         runtime_metrics: RuntimeMetricsAccumulator::default(),
         diting_think_consumed: false,
         captured_reasoning: None,
+        captured_frame_extract: None,
         last_capability_snapshot: None,
         terminal_context: None,
         workflow_context: None,

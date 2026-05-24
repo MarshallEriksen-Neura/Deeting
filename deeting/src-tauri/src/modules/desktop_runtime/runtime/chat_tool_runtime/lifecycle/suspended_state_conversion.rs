@@ -30,6 +30,7 @@ impl SuspendedChatToolExecution {
             runtime_transition_blocks: Vec::new(),
             diting_think_consumed: false,
             captured_reasoning: None,
+            captured_frame_extract: self.captured_frame_extract,
             realtime_emitter: LocalRealtimeToolTraceEmitter::new(
                 None,
                 Some(self.trace_id.as_str()),

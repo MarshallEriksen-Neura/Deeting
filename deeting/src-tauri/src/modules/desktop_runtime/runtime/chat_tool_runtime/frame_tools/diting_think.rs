@@ -1,6 +1,85 @@
-pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) const DITING_THINK_TOOL_NAME: &str = "diting_think";
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
-pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn inject_diting_think_tool(
+pub(crate) const DITING_THINK_TOOL_NAME:
+    &str = "diting_think";
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct DitingThinkExtract {
+    pub facts: Vec<String>,
+    pub assumptions: Vec<String>,
+    pub verification_targets: Vec<String>,
+    pub rules: Vec<String>,
+}
+
+pub(crate) fn parse_diting_think_arguments(args: &Value) -> DitingThinkExtract {
+    let facts = args
+        .get("context_assessment")
+        .and_then(Value::as_str)
+        .map(split_sentences)
+        .unwrap_or_default();
+    let assumptions = facts
+        .iter()
+        .filter(|sentence| is_assumption_sentence(sentence))
+        .cloned()
+        .collect();
+    let verification_targets = args
+        .get("tool_plan")
+        .and_then(Value::as_str)
+        .map(split_step_entries)
+        .unwrap_or_default();
+    let rules = args
+        .get("constraints")
+        .and_then(Value::as_str)
+        .map(split_step_entries)
+        .unwrap_or_default();
+
+    DitingThinkExtract {
+        facts,
+        assumptions,
+        verification_targets,
+        rules,
+    }
+}
+
+fn split_sentences(input: &str) -> Vec<String> {
+    input
+        .split(|ch| matches!(ch, '.' | '。' | ';' | '；'))
+        .map(clean_entry)
+        .filter(|entry| !entry.is_empty())
+        .collect()
+}
+
+fn split_step_entries(input: &str) -> Vec<String> {
+    input
+        .lines()
+        .flat_map(|line| line.split(|ch| matches!(ch, '.' | '。' | ';' | '；')))
+        .map(clean_entry)
+        .filter(|entry| !entry.is_empty())
+        .collect()
+}
+
+fn clean_entry(value: &str) -> String {
+    value
+        .trim()
+        .trim_start_matches(|ch: char| {
+            ch.is_ascii_digit()
+                || matches!(ch, '-' | '*' | '+' | ')' | '(' | ':' | '：' | '、')
+                || ch.is_whitespace()
+        })
+        .trim()
+        .to_string()
+}
+
+fn is_assumption_sentence(sentence: &str) -> bool {
+    let normalized = sentence.to_ascii_lowercase();
+    sentence.contains("假设")
+        || sentence.contains("可能")
+        || normalized.contains("likely")
+        || normalized.contains("assume")
+}
+
+pub(crate) fn inject_diting_think_tool(
     tools: Option<serde_json::Value>,
 ) -> Option<serde_json::Value> {
     let diting_think_entry = serde_json::json!({
@@ -43,7 +122,9 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn inject_di
     }
 }
 
-pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn format_diting_think_reasoning(arguments: &serde_json::Value) -> String {
+pub(crate) fn format_diting_think_reasoning(
+    arguments: &serde_json::Value,
+) -> String {
     let mut parts = Vec::new();
     if let Some(intent) = arguments
         .get("intent")

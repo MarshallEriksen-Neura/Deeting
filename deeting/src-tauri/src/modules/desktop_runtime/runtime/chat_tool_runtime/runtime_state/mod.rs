@@ -1,3 +1,4 @@
+use super::frame_tools::DitingThinkExtract;
 use super::lifecycle::extract_resume_response_text;
 use super::runtime_metrics::RuntimeMetricsAccumulator;
 use super::streaming::LocalRealtimeToolTraceEmitter;
@@ -8,12 +9,14 @@ use crate::modules::desktop_runtime::runtime::{
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
 use crate::modules::mcp::commands::support::LocalChatInputMessage;
 
-pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) enum LocalToolCallProcessingOutcome {
+pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) enum LocalToolCallProcessingOutcome
+{
     Completed {
         synthesized: bool,
         tool_call_meta: Vec<serde_json::Value>,
         results: Vec<String>,
         skill_context_update: Option<ActiveSkillContextState>,
+        captured_frame_extract: Option<DitingThinkExtract>,
         runtime_transition_blocks: Vec<serde_json::Value>,
     },
     Interrupted {
@@ -22,44 +25,68 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) enum LocalTo
         results: Vec<String>,
         capability_update: Option<LocalCapabilityTransition>,
         skill_context_update: Option<ActiveSkillContextState>,
+        captured_frame_extract: Option<DitingThinkExtract>,
         runtime_transition_blocks: Vec<serde_json::Value>,
     },
 }
 
-pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) struct LocalChatToolRuntimeState {
+pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) struct LocalChatToolRuntimeState
+{
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) max_rounds: usize,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) round: usize,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) trace_id: String,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) request_id: Option<String>,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) execution_policy: LocalExecutionPolicy,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) model_connection: LocalModelConnection,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) orchestrated_messages: Vec<LocalChatInputMessage>,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) execution_policy:
+        LocalExecutionPolicy,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) model_connection:
+        LocalModelConnection,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) orchestrated_messages:
+        Vec<LocalChatInputMessage>,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) task_query: Option<String>,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) session_id: String,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) temperature: Option<f32>,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) max_tokens: Option<u32>,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) reasoning_enabled: Option<bool>,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) reasoning_effort: Option<String>,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) active_capability: Option<LocalCapabilityActivationState>,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) active_skill_context: Option<ActiveSkillContextState>,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) reasoning_enabled:
+        Option<bool>,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) reasoning_effort:
+        Option<String>,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) active_capability:
+        Option<LocalCapabilityActivationState>,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) active_skill_context:
+        Option<ActiveSkillContextState>,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) diting_think_consumed: bool,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) captured_reasoning: Option<String>,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) runtime_metrics: RuntimeMetricsAccumulator,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) last_capability_snapshot: Option<serde_json::Value>,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) terminal_context: Option<serde_json::Value>,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) workflow_context: Option<serde_json::Value>,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) last_response: Option<serde_json::Value>,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) runtime_transition_blocks: Vec<serde_json::Value>,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) realtime_emitter: LocalRealtimeToolTraceEmitter,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) captured_reasoning:
+        Option<String>,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) captured_frame_extract:
+        Option<DitingThinkExtract>,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) runtime_metrics:
+        RuntimeMetricsAccumulator,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) last_capability_snapshot:
+        Option<serde_json::Value>,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) terminal_context:
+        Option<serde_json::Value>,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) workflow_context:
+        Option<serde_json::Value>,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) last_response:
+        Option<serde_json::Value>,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) runtime_transition_blocks:
+        Vec<serde_json::Value>,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) realtime_emitter:
+        LocalRealtimeToolTraceEmitter,
     // Selected knowledge file IDs supplied by the workflow context manifest,
     // used as a fallback when the model calls `context_search` with
     // `scope: "selected"` but omits `filters.selected_file_ids`.
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) selected_knowledge_file_ids: Vec<String>,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) selected_knowledge_file_ids:
+        Vec<String>,
 }
 
-pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) struct LocalChatToolRuntimeOutput {
+pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) struct LocalChatToolRuntimeOutput
+{
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) response: serde_json::Value,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) captured_reasoning: Option<String>,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) captured_reasoning:
+        Option<String>,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) captured_frame_extract:
+        Option<DitingThinkExtract>,
 }
 
 pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn clone_runtime_state_for_tool_execution(
@@ -84,6 +111,7 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn clone_run
         active_skill_context: state.active_skill_context.clone(),
         diting_think_consumed: state.diting_think_consumed,
         captured_reasoning: state.captured_reasoning.clone(),
+        captured_frame_extract: state.captured_frame_extract.clone(),
         runtime_metrics: state.runtime_metrics.clone(),
         last_capability_snapshot: state.last_capability_snapshot.clone(),
         terminal_context: state.terminal_context.clone(),
