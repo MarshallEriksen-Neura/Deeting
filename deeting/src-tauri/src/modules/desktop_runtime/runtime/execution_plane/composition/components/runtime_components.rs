@@ -3,11 +3,12 @@ use super::super::super::LocalExecutionRequest;
 use super::super::phase_step::phase_step_type_name;
 use super::frame_bootstrap;
 use crate::modules::mcp::store::McpStore;
+use crate::modules::desktop_runtime::runtime::task_learning::ACTION_VERIFICATION_STRONGER_CHECKS;
 use desktop_runtime_core::{
-    EventStore, FrameArtifactGenerator, FrameBootstrapOutput, FrameRefreshRequest, FrameValidation,
-    InterruptionChannel, PhaseProposal, PhaseProposalGenerator, PhaseStepType, PlanArtifact,
-    RuntimeCoreResult, RuntimeEvent, TaskInputSource, Tier2Validator, UserInput, UserInterruption,
-    WorldModelFrame,
+    ConfidenceLevel, EventStore, FrameArtifactGenerator, FrameBootstrapOutput, FrameRefreshRequest,
+    FrameValidation, InterruptionChannel, PhaseProposal, PhaseProposalGenerator, PhaseStepType,
+    PlanArtifact, RuntimeCoreResult, RuntimeEvent, TaskInputSource, Tier2Validator, UserInput,
+    UserInterruption, WorldModelFrame,
 };
 use serde_json::json;
 use std::sync::Arc;
@@ -85,9 +86,26 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) s
 impl Tier2Validator for DeetingTier2Validator {
     fn validate_frame(
         &mut self,
-        _frame: &WorldModelFrame,
-        _plan: Option<&PlanArtifact>,
+        frame: &WorldModelFrame,
+        plan: Option<&PlanArtifact>,
     ) -> RuntimeCoreResult<FrameValidation> {
+        let has_stronger_checks_prior = frame.memory_priors.iter().any(|prior| {
+            prior.id == ACTION_VERIFICATION_STRONGER_CHECKS
+                && matches!(prior.confidence, ConfidenceLevel::High)
+        });
+        let plan_has_verification = plan.is_some_and(|plan| {
+            plan.committed_phases
+                .iter()
+                .any(|phase| matches!(phase.step_type, PhaseStepType::VerifyFinal))
+        });
+        if has_stronger_checks_prior && !plan_has_verification {
+            return Ok(FrameValidation {
+                is_valid: false,
+                reason: "stronger_checks prior cached but no VerifyFinal phase planned"
+                    .to_string(),
+            });
+        }
+
         Ok(FrameValidation {
             is_valid: true,
             reason: "local runtime frame accepted".to_string(),
@@ -165,5 +183,36 @@ impl EventStore for DeetingRuntimeEventStore {
     fn append_event(&mut self, event: RuntimeEvent) -> RuntimeCoreResult<()> {
         self.events.push(event);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use desktop_runtime_core::{ExecutionStrategy, FrameProvenance, Prior};
+
+    #[test]
+    fn stronger_checks_prior_requires_verify_final_phase() {
+        let mut frame = WorldModelFrame::new(
+            "frame-stronger-checks",
+            "session-1",
+            "task-1",
+            "verify the implementation",
+            ExecutionStrategy::Hybrid,
+            FrameProvenance::bootstrap("test"),
+        );
+        frame.memory_priors.push(Prior {
+            id: ACTION_VERIFICATION_STRONGER_CHECKS.to_string(),
+            statement: "cached verification prior".to_string(),
+            confidence: ConfidenceLevel::High,
+        });
+        let plan = PlanArtifact::from_frame("plan-stronger-checks", &frame);
+
+        let validation = DeetingTier2Validator::default()
+            .validate_frame(&frame, Some(&plan))
+            .expect("validate frame");
+
+        assert!(!validation.is_valid);
+        assert!(validation.reason.contains("stronger_checks"));
     }
 }
