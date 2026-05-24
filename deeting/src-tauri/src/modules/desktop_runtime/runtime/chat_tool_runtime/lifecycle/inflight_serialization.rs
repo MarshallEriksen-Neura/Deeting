@@ -1,7 +1,5 @@
-use super::{
-    InFlightExecutionStage, PersistedChatToolRuntimeContext, PersistedPendingApproval,
-};
 use super::inflight_context_value::serialize_inflight_runtime_context_with_delegation;
+use super::{InFlightExecutionStage, PersistedChatToolRuntimeContext, PersistedPendingApproval};
 
 pub(crate) fn serialize_inflight_runtime_context(
     stage: InFlightExecutionStage,

@@ -18,19 +18,19 @@ pub(crate) use dispatch::run_local_runtime_composition_entrypoint;
 pub(crate) use request::{LocalExecutionOutcome, LocalExecutionRequest};
 
 #[cfg(test)]
-use delegation::should_return_delegated_result_directly;
-#[cfg(test)]
 use composition::phase_step::initial_phase_step_for_policy;
+#[cfg(test)]
+use delegation::should_return_delegated_result_directly;
 
 #[cfg(test)]
 mod tests {
+    use super::user_input::latest_user_message;
     use super::*;
     use crate::modules::desktop_runtime::runtime::{
         build_default_local_execution_policy, build_local_execution_policy,
     };
-    use super::user_input::latest_user_message;
-    use mcp_core::types::LocalChatInputMessage;
     use desktop_runtime_core::PhaseStepType;
+    use mcp_core::types::LocalChatInputMessage;
     use mcp_runtime::route::select_local_route;
     use serde_json::json;
     use serde_json::Value;

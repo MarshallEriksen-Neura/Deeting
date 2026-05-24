@@ -8,18 +8,27 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane) struct Executi
     pub(in crate::modules::desktop_runtime::runtime::execution_plane) phase_step_type: String,
     pub(in crate::modules::desktop_runtime::runtime::execution_plane) trace_id: Option<String>,
     pub(in crate::modules::desktop_runtime::runtime::execution_plane) request_id: Option<String>,
-    pub(in crate::modules::desktop_runtime::runtime::execution_plane) root_execution_id: Option<String>,
+    pub(in crate::modules::desktop_runtime::runtime::execution_plane) root_execution_id:
+        Option<String>,
 }
 
-pub(in crate::modules::desktop_runtime::runtime::execution_plane) struct ExecutionGraphProjection<'a> {
-    pub(in crate::modules::desktop_runtime::runtime::execution_plane) context: &'a ExecutionGraphContext,
-    pub(in crate::modules::desktop_runtime::runtime::execution_plane) response_content: Option<Value>,
+pub(in crate::modules::desktop_runtime::runtime::execution_plane) struct ExecutionGraphProjection<
+    'a,
+> {
+    pub(in crate::modules::desktop_runtime::runtime::execution_plane) context:
+        &'a ExecutionGraphContext,
+    pub(in crate::modules::desktop_runtime::runtime::execution_plane) response_content:
+        Option<Value>,
     pub(in crate::modules::desktop_runtime::runtime::execution_plane) tool_trace_blocks: Vec<Value>,
-    pub(in crate::modules::desktop_runtime::runtime::execution_plane) delegated_execution_tree: Option<Value>,
-    pub(in crate::modules::desktop_runtime::runtime::execution_plane) root_execution_id: Option<String>,
+    pub(in crate::modules::desktop_runtime::runtime::execution_plane) delegated_execution_tree:
+        Option<Value>,
+    pub(in crate::modules::desktop_runtime::runtime::execution_plane) root_execution_id:
+        Option<String>,
 }
 
-pub(in crate::modules::desktop_runtime::runtime::execution_plane) fn project_local_execution_graph(input: ExecutionGraphProjection<'_>) -> Value {
+pub(in crate::modules::desktop_runtime::runtime::execution_plane) fn project_local_execution_graph(
+    input: ExecutionGraphProjection<'_>,
+) -> Value {
     let context = input.context;
     project_execution_graph_snapshot(GraphProjectionInput {
         session_id: context.session_id.clone(),

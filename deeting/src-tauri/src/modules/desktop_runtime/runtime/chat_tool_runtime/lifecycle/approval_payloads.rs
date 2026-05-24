@@ -1,4 +1,6 @@
-use super::approval_graph::{next_pending_approval_tokens_from_graph, pending_approval_gate_ids_from_graph};
+use super::approval_graph::{
+    next_pending_approval_tokens_from_graph, pending_approval_gate_ids_from_graph,
+};
 use super::build_local_chat_resume_continuation_blocks;
 
 pub(super) fn build_local_chat_waiting_approval_payload(

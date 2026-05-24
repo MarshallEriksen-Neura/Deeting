@@ -11,8 +11,8 @@ pub(super) fn build_workflow_delegated_execution_session_for_resume(
     detail: crate::modules::workflow::types::WorkflowRunDetail,
 ) -> DelegatedExecutionSession {
     let content = crate::modules::workflow::service::extract_primary_content(&detail);
-    let succeeded = detail.run.status
-        == crate::modules::workflow::types::WorkflowRunStatus::Completed;
+    let succeeded =
+        detail.run.status == crate::modules::workflow::types::WorkflowRunStatus::Completed;
 
     build_workflow_delegated_execution_session(
         execution_graph_execution_id,

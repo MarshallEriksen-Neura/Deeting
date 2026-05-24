@@ -1,6 +1,7 @@
 use crate::modules::desktop_runtime::runtime::append_streamable_local_tool_result_blocks;
 
-pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) struct LocalRealtimeToolTraceEmitter {
+pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) struct LocalRealtimeToolTraceEmitter
+{
     tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
     trace_id: Option<String>,
     request_id: Option<String>,

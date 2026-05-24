@@ -203,8 +203,6 @@ impl RequiredArtifact {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum HookEnforcementMode {
-    Shadow,
-    Advisory,
     Enforced,
 }
 

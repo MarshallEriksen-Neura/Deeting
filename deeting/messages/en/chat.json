@@ -844,6 +844,7 @@
       },
       "timeline": {
         "title": "Execution timeline",
+        "transitionTitle": "Runtime transition timeline",
         "tool": "Step {index}: {toolName}",
         "duration": "{duration}ms",
         "outcome": {
@@ -852,6 +853,46 @@
           "waiting_approval": "Next approval required",
           "rejected": "Approval rejected",
           "tool_failed": "Tool failed"
+        },
+        "state": {
+          "user_input": "User input",
+          "model_proposal": "Model proposal",
+          "tool_execution_pending": "Tool execution pending",
+          "capability_discovered": "Capability discovered",
+          "capability_exposed": "Capability exposed",
+          "capability_executable": "Capability executable",
+          "execution_observed": "Execution observed",
+          "plan_drafted": "Plan drafted",
+          "plan_revision_needed": "Plan revision needed",
+          "final_answer_proposed": "Final answer proposed",
+          "finalized": "Finalized",
+          "unknown": "Unknown state"
+        },
+        "action": {
+          "direct_answer": "Direct answer",
+          "draft_plan": "Draft plan",
+          "execute_tool": "Execute tool",
+          "expose_capability": "Expose capability",
+          "admit_executable_capability": "Admit capability",
+          "revise_plan": "Revise plan",
+          "verify_final_answer": "Verify answer",
+          "record_monitor_checkpoint": "Record monitor checkpoint",
+          "noop": "No-op"
+        },
+        "artifact": {
+          "diting_think_preflight": "diting_think preflight",
+          "plan_draft": "Plan draft",
+          "plan_revision": "Plan revision",
+          "verification_plan": "Verification plan",
+          "capability_lease": "Capability lease",
+          "monitor_checkpoint": "Monitor checkpoint",
+          "world_model_frame_refresh": "World model refresh",
+          "world_model_frame_revision": "World model revision"
+        },
+        "correlation": {
+          "matched": "Matched",
+          "contradicted": "Contradicted",
+          "unverified": "Unverified"
         }
       }
     },

@@ -252,14 +252,38 @@ where
                 })?;
             if !observation.frame_still_valid {
                 frame.mark_contradicted();
+                self.evaluate_hook_event_and_record(
+                    HookEvent::PhaseCompleted {
+                        phase_id: phase.phase_id.clone(),
+                        candidate_memory_facts: Vec::new(),
+                    },
+                    &frame,
+                    Some(&plan),
+                )?;
                 continue;
             }
             if observation.goal_satisfied {
                 frame.mark_verified_enough();
                 plan.complete();
+                self.evaluate_hook_event_and_record(
+                    HookEvent::PhaseCompleted {
+                        phase_id: phase.phase_id.clone(),
+                        candidate_memory_facts: Vec::new(),
+                    },
+                    &frame,
+                    Some(&plan),
+                )?;
                 final_answer = Some(observation.summary);
                 break;
             }
+            self.evaluate_hook_event_and_record(
+                HookEvent::PhaseCompleted {
+                    phase_id: phase.phase_id.clone(),
+                    candidate_memory_facts: Vec::new(),
+                },
+                &frame,
+                Some(&plan),
+            )?;
         }
 
         if final_answer.is_none() && plan.plan_status != crate::plan::PlanStatus::Completed {
@@ -313,6 +337,34 @@ where
             .event_store
             .append_event(RuntimeEvent::HookDecisionRecorded {
                 boundary: format!("{:?}", boundary),
+                decision: format!("{:?}", decision),
+            })?;
+        Ok(decision)
+    }
+
+    fn evaluate_hook_event_and_record(
+        &mut self,
+        event: HookEvent,
+        current_frame: &WorldModelFrame,
+        current_plan: Option<&PlanArtifact>,
+    ) -> RuntimeCoreResult<HookDecision> {
+        self.components
+            .event_store
+            .append_event(RuntimeEvent::HookEventObserved {
+                event: event.clone(),
+            })?;
+        let decision = self.components.hook_registry.evaluate(
+            &event,
+            &RuntimeStateView {
+                current_frame: current_frame.clone(),
+                current_plan: current_plan.cloned(),
+                metadata: serde_json::Value::Null,
+            },
+        );
+        self.components
+            .event_store
+            .append_event(RuntimeEvent::HookDecisionRecorded {
+                boundary: format!("{:?}", event),
                 decision: format!("{:?}", decision),
             })?;
         Ok(decision)

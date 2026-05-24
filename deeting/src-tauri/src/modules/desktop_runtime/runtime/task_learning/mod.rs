@@ -16,4 +16,5 @@ pub(crate) use revision::{
 };
 pub(crate) use types::{
     EvaluatedOutcome, TaskFingerprint, TaskLearningDelegatedExecution, TaskPolicyHint,
+    ACTION_VERIFICATION_STRONGER_CHECKS,
 };

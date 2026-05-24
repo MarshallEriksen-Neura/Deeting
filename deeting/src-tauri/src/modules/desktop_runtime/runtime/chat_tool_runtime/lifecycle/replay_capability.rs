@@ -1,5 +1,5 @@
-use crate::modules::desktop_runtime::runtime::LocalCapabilityActivationState;
 use super::super::tool_execution::LocalCapabilityTransition;
+use crate::modules::desktop_runtime::runtime::LocalCapabilityActivationState;
 use crate::modules::mcp::commands::support::LocalChatInputMessage;
 
 pub(super) fn apply_capability_update(

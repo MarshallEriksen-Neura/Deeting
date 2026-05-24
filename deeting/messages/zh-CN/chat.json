@@ -404,6 +404,7 @@
       },
       "timeline": {
         "title": "执行时间线",
+        "transitionTitle": "运行时迁移时间线",
         "tool": "步骤 {index}：{toolName}",
         "duration": "{duration}ms",
         "outcome": {
@@ -412,6 +413,46 @@
           "waiting_approval": "需要下一次审批",
           "rejected": "审批已拒绝",
           "tool_failed": "工具失败"
+        },
+        "state": {
+          "user_input": "用户输入",
+          "model_proposal": "模型提议",
+          "tool_execution_pending": "等待执行",
+          "capability_discovered": "发现能力",
+          "capability_exposed": "暴露能力",
+          "capability_executable": "能力可执行",
+          "execution_observed": "执行已观察",
+          "plan_drafted": "已起草计划",
+          "plan_revision_needed": "需要修订计划",
+          "final_answer_proposed": "提议终局答案",
+          "finalized": "已定稿",
+          "unknown": "未知状态"
+        },
+        "action": {
+          "direct_answer": "直接回答",
+          "draft_plan": "起草计划",
+          "execute_tool": "执行工具",
+          "expose_capability": "暴露能力",
+          "admit_executable_capability": "准入能力",
+          "revise_plan": "修订计划",
+          "verify_final_answer": "校验答案",
+          "record_monitor_checkpoint": "记录监控检查点",
+          "noop": "无动作"
+        },
+        "artifact": {
+          "diting_think_preflight": "diting_think 预检",
+          "plan_draft": "计划草稿",
+          "plan_revision": "计划修订",
+          "verification_plan": "校验计划",
+          "capability_lease": "能力租约",
+          "monitor_checkpoint": "监控检查点",
+          "world_model_frame_refresh": "世界模型刷新",
+          "world_model_frame_revision": "世界模型修订"
+        },
+        "correlation": {
+          "matched": "已对齐",
+          "contradicted": "存在反证",
+          "unverified": "未对账"
         }
       }
     },

@@ -1,10 +1,8 @@
-use super::recovery_prompt::append_recovery_assistant_message_if_missing;
 use super::delegated_workflow_missing_run::mark_delegated_workflow_runtime_interrupted_without_run;
 use super::delegated_workflow_notice::workflow_recovery_notice_text;
-use super::{
-    clear_execution_graph_runtime_context, now_unix_ms_i64, InFlightExecutionStage,
-};
+use super::recovery_prompt::append_recovery_assistant_message_if_missing;
 use super::resume_delegated_runtime_after_workflow_event;
+use super::{clear_execution_graph_runtime_context, now_unix_ms_i64, InFlightExecutionStage};
 use crate::modules::desktop_runtime::runtime::persist_execution_graph_runtime_context;
 use crate::state::AppState;
 use tauri::AppHandle;
@@ -32,11 +30,9 @@ pub(super) async fn recover_delegated_workflow_runtime_context(
             .await?;
         return Ok(());
     };
-    let detail = crate::modules::workflow::service::get_workflow_run_status(
-        app_state,
-        workflow_run_id,
-    )
-    .await?;
+    let detail =
+        crate::modules::workflow::service::get_workflow_run_status(app_state, workflow_run_id)
+            .await?;
     if detail.run.status == crate::modules::workflow::types::WorkflowRunStatus::Completed {
         if let Ok(Some(_)) = resume_delegated_runtime_after_workflow_event(
             app,

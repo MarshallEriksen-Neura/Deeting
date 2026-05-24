@@ -58,6 +58,7 @@ import {
   runInlineApproval,
   runInlineRejection,
 } from "@/components/chat/messages/ai-response-bubble/inline-approval";
+import { TransitionTimeline } from "@/components/chat/messages/ai-response-bubble/transition-timeline";
 
 const ViewBlock = dynamic(() => import("@/components/views/view-block"), {
   ssr: false,
@@ -1359,94 +1360,6 @@ function ToolOutcomeStatusCard({
   );
 }
 
-function RuntimeToolTimeline({
-  trace,
-  outcome,
-}: {
-  trace: RuntimeToolTraceItem[];
-  outcome: ToolOutcomeInsight | null;
-}) {
-  const t = useI18n("chat");
-  if (trace.length === 0 && !outcome) return null;
-
-  const timelineItems = [
-    ...trace.map((item) => ({ type: "tool" as const, item })),
-    ...(outcome ? [{ type: "outcome" as const, outcome }] : []),
-  ];
-
-  return (
-    <div className="mb-3 rounded-lg border border-slate-200/80 bg-slate-50/80 px-3 py-2 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-950/20 dark:text-slate-200">
-      <div className="mb-2 flex items-center gap-2 font-bold uppercase tracking-wider">
-        <Zap size={13} />
-        <span>{t("toolResult.timeline.title")}</span>
-      </div>
-      <ol className="space-y-1.5">
-        {timelineItems.map((entry, index) => {
-          if (entry.type === "outcome") {
-            return (
-              <li key={`outcome-${entry.outcome.kind}`} className="flex gap-2">
-                <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-current opacity-55" />
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium">
-                    {t(`toolResult.timeline.outcome.${entry.outcome.kind}`)}
-                  </div>
-                  <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] opacity-70">
-                    {entry.outcome.continuationCount != null ? (
-                      <span>{t("toolResult.outcome.continuations", { count: entry.outcome.continuationCount })}</span>
-                    ) : null}
-                    {entry.outcome.pendingApprovalCount != null ? (
-                      <span>{t("toolResult.outcome.pendingApprovals", { count: entry.outcome.pendingApprovalCount })}</span>
-                    ) : null}
-                  </div>
-                </div>
-              </li>
-            );
-          }
-
-          const item = entry.item;
-          const isFailure = item.status === "failed" || item.status === "error";
-          const isSuccess = item.status === "success";
-          return (
-            <li key={`${item.index}-${item.toolName}-${index}`} className="flex gap-2">
-              <span
-                className={cn(
-                  "mt-1 h-2 w-2 shrink-0 rounded-full",
-                  isFailure
-                    ? "bg-red-500"
-                    : isSuccess
-                      ? "bg-emerald-500"
-                      : "bg-amber-500",
-                )}
-              />
-              <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 items-center justify-between gap-2">
-                  <span className="truncate font-medium">
-                    {t("toolResult.timeline.tool", {
-                      index: item.index + 1,
-                      toolName: sharedHumanizeToolName(item.toolName) ?? item.toolName,
-                    })}
-                  </span>
-                  <span className="shrink-0 rounded-full border border-current/15 px-1.5 py-0.5 text-[10px] opacity-75">
-                    {item.durationMs !== null
-                      ? t("toolResult.timeline.duration", { duration: item.durationMs })
-                      : item.status}
-                  </span>
-                </div>
-                {item.error ? (
-                  <div className="mt-0.5 font-mono text-[10px] text-red-700 dark:text-red-300">
-                    {item.errorCode ? `[${item.errorCode}] ` : ""}
-                    {item.error}
-                  </div>
-                ) : null}
-              </div>
-            </li>
-          );
-        })}
-      </ol>
-    </div>
-  );
-}
-
 function ContextEvidenceCard({ insight }: { insight: ContextEvidenceInsight }) {
   const nextActionLabel = humanizeContextAction(insight.recommendedNextAction);
   const header = [
@@ -1744,10 +1657,6 @@ export const ToolCallBlock = memo<{
     () => extractToolOutcomeInsight(resultBlock),
     [resultBlock],
   );
-  const runtimeTrace = useMemo(
-    () => extractRuntimeToolTrace(resultBlock?.debug),
-    [resultBlock?.debug],
-  );
   const uiRenderItems = useMemo(() => buildUiRenderItems(uiBlocks), [uiBlocks]);
 
   useEffect(
@@ -2028,7 +1937,7 @@ export const ToolCallBlock = memo<{
               )}
             >
               <ToolOutcomeStatusCard insight={toolOutcomeInsight} />
-              <RuntimeToolTimeline trace={runtimeTrace} outcome={toolOutcomeInsight} />
+              <TransitionTimeline debug={resultBlock?.debug} outcome={toolOutcomeInsight} />
               {taskLiveId ? (
                 <TaskLiveBlock taskId={taskLiveId} />
               ) : skillInstallInsight ? (

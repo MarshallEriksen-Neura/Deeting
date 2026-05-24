@@ -44,12 +44,8 @@ pub(crate) async fn recover_inflight_local_execution_state(
                 .await?;
             }
             InFlightExecutionStage::ResumeFailed => {
-                recover_resume_failed_runtime_context(
-                    store,
-                    execution_id.as_str(),
-                    &mut persisted,
-                )
-                .await?;
+                recover_resume_failed_runtime_context(store, execution_id.as_str(), &mut persisted)
+                    .await?;
             }
             InFlightExecutionStage::ToolRunning => {
                 recover_tool_running_runtime_context(store, execution_id.as_str(), &mut persisted)

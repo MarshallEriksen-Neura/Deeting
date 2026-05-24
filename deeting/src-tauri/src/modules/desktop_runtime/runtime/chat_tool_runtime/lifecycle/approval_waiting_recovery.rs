@@ -2,8 +2,7 @@ use super::approval_payloads::build_local_chat_waiting_approval_payload;
 use super::approval_waiting_payload_guard::build_failed_payload_if_waiting_invariant_breaks;
 use super::{
     build_local_chat_resume_continuation_blocks, derive_pending_approvals_from_graph,
-    persist_suspended_execution_graph_runtime, InFlightExecutionStage,
-    SuspendedChatToolExecution,
+    persist_suspended_execution_graph_runtime, InFlightExecutionStage, SuspendedChatToolExecution,
 };
 use crate::state::AppState;
 

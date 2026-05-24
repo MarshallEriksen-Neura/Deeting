@@ -17,8 +17,6 @@ use crate::modules::desktop_runtime::runtime::prompt_plan::{
     render_local_router_base_prompt, render_local_runtime_system_prompt,
     router_prompt_default_local_context, router_prompt_response_language_for_locale_pref,
 };
-#[cfg(test)]
-use mcp_runtime::route::{select_local_route, LocalRouteKind};
 use crate::modules::desktop_runtime::runtime::sovereign::{
     PosteriorSignalIngress, UserActionIngress,
 };
@@ -39,6 +37,8 @@ use crate::modules::providers::model_guard::ensure_required_local_models_configu
 use crate::modules::render_runtime::resolve_response_rendering;
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
+#[cfg(test)]
+use mcp_runtime::route::{select_local_route, LocalRouteKind};
 use mcp_session::conversation::{
     CreateConversationMessageRequest, LocalConversationHistoryMessage,
 };

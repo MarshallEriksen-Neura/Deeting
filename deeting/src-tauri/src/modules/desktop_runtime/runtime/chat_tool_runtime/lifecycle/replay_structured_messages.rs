@@ -1,6 +1,4 @@
-use super::super::tool_meta::{
-    build_effective_tool_call_meta, tool_call_meta_matches_call_id,
-};
+use super::super::tool_meta::{build_effective_tool_call_meta, tool_call_meta_matches_call_id};
 use super::replay_content::serialize_tool_replay_content_with_options;
 use crate::modules::desktop_runtime::runtime::extract_chat_tool_calls;
 use crate::modules::mcp::commands::support::LocalChatInputMessage;

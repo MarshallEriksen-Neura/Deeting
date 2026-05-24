@@ -1,5 +1,6 @@
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) struct RuntimeMetricsAccumulator {
+pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) struct RuntimeMetricsAccumulator
+{
     upstream_latency_ms: i64,
     upstream_calls: i64,
     ttft_ms: Option<i64>,

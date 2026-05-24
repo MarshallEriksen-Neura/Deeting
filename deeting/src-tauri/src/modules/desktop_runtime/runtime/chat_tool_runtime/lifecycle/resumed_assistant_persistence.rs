@@ -82,15 +82,16 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) async fn per
     }
 
     if let Some(execution_graph) = resumed_response.get("execution_graph") {
-        if let Err(err) = crate::modules::desktop_runtime::runtime::persist_execution_graph_snapshot(
-            app_state.mcp.store.as_ref(),
-            execution_graph,
-            session_id,
-            "desktop_local_chat_resume",
-            None,
-            Some("completed"),
-        )
-        .await
+        if let Err(err) =
+            crate::modules::desktop_runtime::runtime::persist_execution_graph_snapshot(
+                app_state.mcp.store.as_ref(),
+                execution_graph,
+                session_id,
+                "desktop_local_chat_resume",
+                None,
+                Some("completed"),
+            )
+            .await
         {
             log::warn!(
                 "persist_execution_graph_snapshot failed session={} err={}",

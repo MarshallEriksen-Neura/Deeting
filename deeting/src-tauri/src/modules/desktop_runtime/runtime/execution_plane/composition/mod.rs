@@ -1,4 +1,5 @@
 mod components;
+mod hooks;
 pub(super) mod phase_step;
 
 use self::components::phase_executor_impl::{shared_phase_outcome, DeetingRealPhaseExecutor};
@@ -57,7 +58,7 @@ where
         ),
         interruptions: DeetingInterruptionChannel::default(),
         event_store: DeetingRuntimeEventStore::default(),
-        hook_registry: build_deeting_policy_hook_registry(),
+        hook_registry: build_deeting_policy_hook_registry(hook_store),
     };
     let mut runtime = RuntimeComposition::new(components);
     let result = runtime.tick(input).map_err(|err| err.to_string())?;

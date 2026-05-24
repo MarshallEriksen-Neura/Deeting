@@ -19,7 +19,8 @@ fn log_pending_approvals_drift(
     source_kind: &str,
     stage: &InFlightExecutionStage,
 ) {
-    let graph_tokens = super::collect_waiting_approval_tokens_from_graph(suspended.execution_graph());
+    let graph_tokens =
+        super::collect_waiting_approval_tokens_from_graph(suspended.execution_graph());
     let persisted_tokens: std::collections::HashSet<String> = pending_approvals
         .iter()
         .map(|pending| pending.approval_token.trim().to_string())

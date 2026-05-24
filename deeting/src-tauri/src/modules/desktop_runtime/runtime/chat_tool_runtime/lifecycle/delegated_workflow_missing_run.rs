@@ -1,6 +1,4 @@
-use super::{
-    now_unix_ms_i64, InFlightExecutionStage, PersistedInFlightExecutionContext,
-};
+use super::{now_unix_ms_i64, InFlightExecutionStage, PersistedInFlightExecutionContext};
 use crate::modules::desktop_runtime::runtime::persist_execution_graph_runtime_context;
 
 pub(super) async fn mark_delegated_workflow_runtime_interrupted_without_run(

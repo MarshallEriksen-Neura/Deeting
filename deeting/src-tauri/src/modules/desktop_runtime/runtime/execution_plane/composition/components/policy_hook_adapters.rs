@@ -1,12 +1,16 @@
+use super::super::hooks::SelfEvolutionHook;
+use crate::modules::mcp::store::McpStore;
 use desktop_runtime_core::{
     FrameFreshnessHook, Hook, HookDecision, HookEnforcementMode, HookEvent, HookEventInterest,
     HookRegistry, MemoryWriteRequest, PlanDraftHook, RequiredArtifact, RuntimeStateView,
 };
+use std::sync::Arc;
 
-pub(crate) fn build_deeting_policy_hook_registry() -> HookRegistry {
+pub(crate) fn build_deeting_policy_hook_registry(store: Arc<McpStore>) -> HookRegistry {
     let mut registry = HookRegistry::new();
     registry.register(PlanDraftHook);
     registry.register(FrameFreshnessHook);
+    registry.register(SelfEvolutionHook::new(store));
     registry.register(ApprovalPolicyHook);
     registry.register(CompressionPolicyHook);
     registry.register(MemoryPolicyHook);

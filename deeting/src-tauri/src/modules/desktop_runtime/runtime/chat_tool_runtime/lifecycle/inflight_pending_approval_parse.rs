@@ -59,15 +59,9 @@ pub(super) fn pending_approval_record_from_tool_call_meta(
             .unwrap_or_else(|| "unknown-fingerprint".to_string()),
         policy_rule_key: as_trimmed_string(result.get("policy_rule_key")),
         approval_grant_key: as_trimmed_string(result.get("approval_grant_key")),
-        execution_graph_execution_id: as_trimmed_string(
-            result.get("execution_graph_execution_id"),
-        ),
-        execution_graph_gate_node_id: as_trimmed_string(
-            result.get("execution_graph_gate_node_id"),
-        ),
-        execution_graph_tool_node_id: as_trimmed_string(
-            result.get("execution_graph_tool_node_id"),
-        ),
+        execution_graph_execution_id: as_trimmed_string(result.get("execution_graph_execution_id")),
+        execution_graph_gate_node_id: as_trimmed_string(result.get("execution_graph_gate_node_id")),
+        execution_graph_tool_node_id: as_trimmed_string(result.get("execution_graph_tool_node_id")),
         approval_status: as_trimmed_string(result.get("approval_status"))
             .or_else(|| Some("waiting_approval".to_string())),
         created_at_unix_ms: result

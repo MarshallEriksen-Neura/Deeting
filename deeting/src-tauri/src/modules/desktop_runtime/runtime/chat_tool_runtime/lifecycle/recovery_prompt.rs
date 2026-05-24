@@ -1,7 +1,5 @@
 use super::now_unix_ms_i64;
-use super::recovery_prompt_lookup::{
-    find_recovery_message_turn_and_meta, recovery_message_exists,
-};
+use super::recovery_prompt_lookup::{find_recovery_message_turn_and_meta, recovery_message_exists};
 use super::recovery_prompt_meta::recovery_assistant_meta;
 use mcp_session::conversation::CreateConversationMessageRequest;
 

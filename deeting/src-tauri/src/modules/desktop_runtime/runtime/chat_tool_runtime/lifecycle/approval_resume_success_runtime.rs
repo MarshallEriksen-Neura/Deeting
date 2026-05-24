@@ -1,9 +1,7 @@
 use super::super::tool_meta::build_effective_tool_call_meta;
 use super::approval_payloads::build_local_chat_resumed_payload;
 use super::approval_resume_waiting_recovery::build_waiting_payload_after_resume;
-use super::{
-    clear_execution_graph_runtime_context, persist_resumed_local_chat_assistant_message,
-};
+use super::{clear_execution_graph_runtime_context, persist_resumed_local_chat_assistant_message};
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
 use crate::state::AppState;
 

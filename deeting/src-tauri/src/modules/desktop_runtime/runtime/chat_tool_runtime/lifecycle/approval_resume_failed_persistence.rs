@@ -1,4 +1,6 @@
-use super::{serialize_inflight_runtime_context, InFlightExecutionStage, PersistedChatToolRuntimeContext};
+use super::{
+    serialize_inflight_runtime_context, InFlightExecutionStage, PersistedChatToolRuntimeContext,
+};
 use crate::modules::desktop_runtime::runtime::persist_execution_graph_runtime_context;
 use crate::state::AppState;
 

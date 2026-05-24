@@ -1,7 +1,5 @@
 use super::PersistedInFlightExecutionContext;
-use crate::modules::desktop_runtime::runtime::{
-    delete_execution_graph_runtime_context,
-};
+use crate::modules::desktop_runtime::runtime::delete_execution_graph_runtime_context;
 
 pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn now_unix_ms_i64() -> i64 {
     (time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000) as i64
@@ -28,5 +26,3 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) async fn cle
         );
     }
 }
-
-

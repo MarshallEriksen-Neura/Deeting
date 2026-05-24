@@ -1,7 +1,7 @@
+use super::lifecycle::SuspendedChatToolExecution;
 use super::runtime_metrics::RuntimeMetricsAccumulator;
 use super::runtime_state::LocalChatToolRuntimeState;
 use super::streaming::LocalRealtimeToolTraceEmitter;
-use super::lifecycle::SuspendedChatToolExecution;
 use crate::modules::desktop_runtime::runtime::{
     append_streamable_local_tool_result_blocks, build_local_tool_trace_blocks,
     project_execution_graph_blocks_from_value, project_execution_graph_snapshot,

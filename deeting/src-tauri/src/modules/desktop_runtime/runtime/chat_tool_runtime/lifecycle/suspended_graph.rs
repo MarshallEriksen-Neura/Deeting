@@ -36,8 +36,7 @@ impl SuspendedChatToolExecution {
             .and_then(serde_json::Value::as_array)
             .and_then(|nodes| {
                 nodes.iter().find(|node| {
-                    node.get("node_type").and_then(serde_json::Value::as_str)
-                        == Some(node_type)
+                    node.get("node_type").and_then(serde_json::Value::as_str) == Some(node_type)
                         && node
                             .get("metadata")
                             .and_then(|value| value.get("call_id"))

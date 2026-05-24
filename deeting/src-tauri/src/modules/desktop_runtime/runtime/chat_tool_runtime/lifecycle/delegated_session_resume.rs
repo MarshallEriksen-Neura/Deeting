@@ -1,9 +1,9 @@
+use super::super::continue_local_chat_complete_with_tools;
 use super::{
     attach_execution_graph_to_response, clear_execution_graph_runtime_context,
     mark_delegated_wait_event_consumed, persist_resumed_local_chat_assistant_message,
     persistable_inflight_context_from_value, runtime_state_from_persisted_context,
 };
-use super::super::continue_local_chat_complete_with_tools;
 use crate::modules::desktop_runtime::runtime::execution_plane::DelegatedExecutionSession;
 use crate::modules::desktop_runtime::runtime::{
     load_execution_graph_runtime_context, persist_execution_graph_runtime_context,

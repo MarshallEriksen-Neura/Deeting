@@ -1,3 +1,4 @@
+use super::super::tool_meta::build_tool_call_meta_from_execution_graph;
 use super::approval_graph::pending_approval_call_ids_from_graph;
 use super::approval_state_fallback_payload::{
     build_resume_failed_fallback_payload, build_stale_waiting_graph_fallback_payload,
@@ -7,7 +8,6 @@ use super::{
     build_local_chat_resume_continuation_blocks, persistable_inflight_context_from_value,
     InFlightExecutionStage,
 };
-use super::super::tool_meta::build_tool_call_meta_from_execution_graph;
 use crate::modules::desktop_runtime::runtime::{
     load_execution_graph_runtime_context, load_execution_graph_snapshot,
 };

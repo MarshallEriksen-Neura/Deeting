@@ -1,7 +1,5 @@
-use super::{
-    list_canonical_waiting_approval_contexts, SuspendedChatToolExecution,
-};
 use super::suspended_persisted_execution::suspended_from_persisted_execution;
+use super::{list_canonical_waiting_approval_contexts, SuspendedChatToolExecution};
 use crate::state::AppState;
 
 pub(crate) async fn load_suspended_chat_tool_execution_for_resume(

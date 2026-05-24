@@ -1,6 +1,5 @@
 use super::approval_runtime_lookup::{
-    list_canonical_waiting_approval_contexts,
-    CanonicalPendingLocalApprovalMatch,
+    list_canonical_waiting_approval_contexts, CanonicalPendingLocalApprovalMatch,
 };
 
 fn pending_approval_snapshot_from_canonical_match(
