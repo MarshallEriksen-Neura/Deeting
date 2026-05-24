@@ -2,6 +2,7 @@ use super::super::super::user_input::latest_user_message;
 use super::super::super::LocalExecutionRequest;
 use super::super::phase_step::phase_step_type_name;
 use super::frame_bootstrap;
+use crate::modules::mcp::store::McpStore;
 use desktop_runtime_core::{
     EventStore, FrameArtifactGenerator, FrameBootstrapOutput, FrameRefreshRequest, FrameValidation,
     InterruptionChannel, PhaseProposal, PhaseProposalGenerator, PhaseStepType, PlanArtifact,
@@ -9,6 +10,7 @@ use desktop_runtime_core::{
     WorldModelFrame,
 };
 use serde_json::json;
+use std::sync::Arc;
 
 pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) fn task_id_from_request(
     request: &LocalExecutionRequest,
@@ -39,6 +41,7 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) s
     request: LocalExecutionRequest,
     step_type: PhaseStepType,
     task_id: String,
+    store: Arc<McpStore>,
 }
 
 impl DeetingBootstrapPrompt {
@@ -46,23 +49,31 @@ impl DeetingBootstrapPrompt {
         request: LocalExecutionRequest,
         step_type: PhaseStepType,
         task_id: String,
+        store: Arc<McpStore>,
     ) -> Self {
         Self {
             request,
             step_type,
             task_id,
+            store,
         }
     }
 }
 
 impl desktop_runtime_core::BootstrapPrompt for DeetingBootstrapPrompt {
     fn bootstrap_frame(&mut self, _input: &UserInput) -> RuntimeCoreResult<FrameBootstrapOutput> {
+        let frame = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(
+                frame_bootstrap::build_bootstrap_frame_with_priors(
+                    &self.request,
+                    self.step_type,
+                    self.task_id.as_str(),
+                    self.store.as_ref(),
+                ),
+            )
+        });
         Ok(FrameBootstrapOutput {
-            frame: frame_bootstrap::build_bootstrap_frame(
-                &self.request,
-                self.step_type,
-                self.task_id.as_str(),
-            ),
+            frame,
             immediate_action: None,
         })
     }

@@ -35,8 +35,14 @@ where
     let task_id = task_id_from_request(&request);
     let input = user_input_from_request(&request, task_id.clone());
     let phase_outcome = shared_phase_outcome();
+    let hook_store = request.app_state.mcp.store.clone();
     let components = RuntimeComponents {
-        bootstrap: DeetingBootstrapPrompt::new(request.clone(), step_type, task_id),
+        bootstrap: DeetingBootstrapPrompt::new(
+            request.clone(),
+            step_type,
+            task_id,
+            hook_store.clone(),
+        ),
         validator: DeetingTier2Validator::default(),
         frame_generator: DeetingFrameArtifactGenerator::default(),
         phase_proposal_generator: DeetingPhaseProposalGenerator::new(step_type),
