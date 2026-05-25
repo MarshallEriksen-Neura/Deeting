@@ -426,7 +426,15 @@ async fn execute_single_phase(
                     artifact_kind: WorkflowArtifactKind::JsonStructured,
                     artifact_ref: Some(format!("{}/result.json", phase.phase_id)),
                     content: None,
-                    metadata: Some(serde_json::json!({ "worker_ref": phase.worker_ref })),
+                    metadata: Some({
+                        let mut metadata = serde_json::json!({ "worker_ref": phase.worker_ref });
+                        if let (Some(object), Some(result_metadata)) =
+                            (metadata.as_object_mut(), execution_result.metadata.as_ref())
+                        {
+                            object.insert("execution".to_string(), result_metadata.clone());
+                        }
+                        metadata
+                    }),
                 },
             )
             .await
@@ -830,6 +838,7 @@ mod tests {
             goal: "Find stuff".into(),
             expected_output: None,
             worker_task_packet: None,
+            task_input_source: None,
         }
     }
 
@@ -854,6 +863,7 @@ mod tests {
                     recommended_next_action: "continue".into(),
                     invalidates_future_phases: vec![],
                 },
+                metadata: None,
             },
         }
     }
@@ -891,6 +901,7 @@ mod tests {
             goal: "Review results".to_string(),
             expected_output: None,
             worker_task_packet: None,
+            task_input_source: None,
         };
         assert!(is_approval_gate(&phase));
     }
@@ -970,6 +981,7 @@ mod tests {
             goal: "Approve security scope".to_string(),
             expected_output: None,
             worker_task_packet: None,
+            task_input_source: None,
         };
 
         let payload = build_approval_payload(&phase, "step-123").expect("build payload");

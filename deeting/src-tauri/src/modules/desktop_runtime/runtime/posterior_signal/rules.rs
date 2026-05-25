@@ -68,7 +68,7 @@ pub(crate) fn infer_from_feedback_score(
     None
 }
 
-fn infer_negative_text_signal(user_text: &str) -> Option<PosteriorSignalDecision> {
+pub(crate) fn infer_negative_text_signal(user_text: &str) -> Option<PosteriorSignalDecision> {
     let normalized = user_text.trim().to_ascii_lowercase();
     if normalized.is_empty() {
         return None;
@@ -125,9 +125,42 @@ fn infer_negative_text_signal(user_text: &str) -> Option<PosteriorSignalDecision
     None
 }
 
-pub(crate) fn infer_from_user_text(
-    input: &PosteriorSignalInput,
-) -> Option<PosteriorSignalDecision> {
-    let user_text = input.user_text.as_deref()?;
-    infer_negative_text_signal(user_text)
+pub(crate) fn infer_positive_text_signal(user_text: &str) -> Option<PosteriorSignalDecision> {
+    let normalized = user_text.trim().to_ascii_lowercase();
+    if normalized.is_empty() {
+        return None;
+    }
+    let accepted_markers = [
+        "looks good",
+        "that works",
+        "works now",
+        "this works",
+        "good answer",
+        "correct",
+        "that's right",
+        "that is right",
+        "resolved",
+        "fixed",
+        "accepted",
+        "可以",
+        "对了",
+        "正确",
+        "没问题",
+        "解决了",
+        "已解决",
+        "很好",
+        "可以了",
+    ];
+    if accepted_markers
+        .iter()
+        .any(|marker| normalized.contains(marker))
+    {
+        return Some(build_decision(
+            PosteriorSignalKind::Accepted,
+            0.76,
+            PosteriorSignalSource::HeuristicRules,
+            Some("matched acceptance markers".to_string()),
+        ));
+    }
+    None
 }

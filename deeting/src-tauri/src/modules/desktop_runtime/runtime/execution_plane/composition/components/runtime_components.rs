@@ -2,16 +2,16 @@ use super::super::super::user_input::latest_user_message;
 use super::super::super::LocalExecutionRequest;
 use super::super::phase_step::phase_step_type_name;
 use super::frame_bootstrap;
-use crate::modules::mcp::store::McpStore;
 use crate::modules::desktop_runtime::runtime::task_learning::ACTION_VERIFICATION_STRONGER_CHECKS;
+use crate::modules::mcp::store::McpStore;
 use desktop_runtime_core::{
     ConfidenceLevel, EventStore, FrameArtifactGenerator, FrameBootstrapOutput, FrameRefreshRequest,
     FrameValidation, InterruptionChannel, PhaseProposal, PhaseProposalGenerator, PhaseStepType,
-    PlanArtifact, RuntimeCoreResult, RuntimeEvent, TaskInputSource, Tier2Validator, UserInput,
-    UserInterruption, WorldModelFrame,
+    PlanArtifact, RuntimeCoreResult, RuntimeEvent, Tier2Validator, UserInput, UserInterruption,
+    WorldModelFrame,
 };
 use serde_json::json;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) fn task_id_from_request(
     request: &LocalExecutionRequest,
@@ -33,7 +33,7 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) f
         session_id: request.session_id.clone(),
         task_id,
         content: latest_user_message(&request.messages).unwrap_or_default(),
-        source: TaskInputSource::UserChat,
+        source: request.task_input_source.clone(),
     }
 }
 
@@ -101,8 +101,7 @@ impl Tier2Validator for DeetingTier2Validator {
         if has_stronger_checks_prior && !plan_has_verification {
             return Ok(FrameValidation {
                 is_valid: false,
-                reason: "stronger_checks prior cached but no VerifyFinal phase planned"
-                    .to_string(),
+                reason: "stronger_checks prior cached but no VerifyFinal phase planned".to_string(),
             });
         }
 
@@ -173,15 +172,28 @@ impl InterruptionChannel for DeetingInterruptionChannel {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) struct DeetingRuntimeEventStore
 {
-    events: Vec<RuntimeEvent>,
+    events: Arc<Mutex<Vec<RuntimeEvent>>>,
+}
+
+impl DeetingRuntimeEventStore {
+    pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) fn events(
+        &self,
+    ) -> Vec<RuntimeEvent> {
+        self.events
+            .lock()
+            .map(|events| events.clone())
+            .unwrap_or_default()
+    }
 }
 
 impl EventStore for DeetingRuntimeEventStore {
     fn append_event(&mut self, event: RuntimeEvent) -> RuntimeCoreResult<()> {
-        self.events.push(event);
+        if let Ok(mut events) = self.events.lock() {
+            events.push(event);
+        }
         Ok(())
     }
 }
@@ -191,6 +203,24 @@ mod tests {
     use super::*;
     use desktop_runtime_core::{ExecutionStrategy, FrameProvenance, Prior};
 
+    #[test]
+    fn runtime_event_store_clones_share_buffer() {
+        let mut writer = DeetingRuntimeEventStore::default();
+        let reader = writer.clone();
+
+        writer
+            .append_event(RuntimeEvent::FrameBootstrapped {
+                frame_version_id: "frame-1".to_string(),
+            })
+            .expect("append runtime event");
+
+        assert_eq!(
+            reader.events(),
+            vec![RuntimeEvent::FrameBootstrapped {
+                frame_version_id: "frame-1".to_string(),
+            }]
+        );
+    }
     #[test]
     fn stronger_checks_prior_requires_verify_final_phase() {
         let mut frame = WorldModelFrame::new(

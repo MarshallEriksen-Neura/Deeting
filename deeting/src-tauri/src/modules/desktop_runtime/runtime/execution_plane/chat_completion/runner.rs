@@ -13,6 +13,7 @@ use super::{
 };
 use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::state::AppState;
+use desktop_runtime_core::TaskInputSource;
 use mcp_core::types::LocalChatInputMessage;
 use mcp_session::context::LocalConversationChatContext;
 use serde_json::Value;
@@ -31,6 +32,8 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane) struct PolicyS
     pub(in crate::modules::desktop_runtime::runtime::execution_plane) capability_id: Option<String>,
     pub(in crate::modules::desktop_runtime::runtime::execution_plane) explicit_task_agent_id:
         Option<String>,
+    pub(in crate::modules::desktop_runtime::runtime::execution_plane) task_input_source:
+        TaskInputSource,
     pub(in crate::modules::desktop_runtime::runtime::execution_plane) messages:
         Vec<LocalChatInputMessage>,
     pub(in crate::modules::desktop_runtime::runtime::execution_plane) execution_policy:
@@ -86,6 +89,16 @@ where
                 execution.clone(),
             ));
         }
+        if should_return_cron_delegated_result_directly(
+            &input.task_input_source,
+            input.explicit_task_agent_id.as_deref(),
+            execution,
+        ) {
+            return Ok(build_direct_delegated_execution_outcome(
+                &input.graph_context,
+                execution.clone(),
+            ));
+        }
     }
 
     if let Some(execution) = delegated_execution.as_ref() {
@@ -131,6 +144,24 @@ where
         response_json,
         delegated_execution,
     ))
+}
+
+fn should_return_cron_delegated_result_directly(
+    task_input_source: &TaskInputSource,
+    explicit_task_agent_id: Option<&str>,
+    execution: &DelegatedExecutionSession,
+) -> bool {
+    if !matches!(task_input_source, TaskInputSource::CronMonitor { .. }) {
+        return false;
+    }
+    let Some(explicit_task_agent_id) = explicit_task_agent_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return false;
+    };
+    explicit_task_agent_id == execution.record.target.id.as_str()
+        && execution.record.status != DelegatedExecutionStatus::Running
 }
 
 struct DeetingChatCompletionProviderClient {

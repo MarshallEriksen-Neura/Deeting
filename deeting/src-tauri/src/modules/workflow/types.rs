@@ -401,6 +401,8 @@ pub struct CompiledPhase {
     pub expected_output: Option<ExpectedOutput>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) worker_task_packet: Option<WorkerTaskPacket>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) task_input_source: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -478,6 +480,8 @@ pub struct ContextPacket {
     pub context_json: ContextJson,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) worker_task_packet: Option<WorkerTaskPacket>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) task_input_source: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -494,6 +498,8 @@ pub struct ContextJson {
     pub expected_output: Option<ExpectedOutput>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) worker_task_packet: Option<WorkerTaskPacket>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) task_input_source: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -532,6 +538,8 @@ pub struct WorkerExecutionResult {
     pub tool_trace: Vec<Value>,
     #[serde(default)]
     pub images: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Value>,
     pub error: Option<String>,
 }
 
@@ -541,7 +549,7 @@ pub enum ResolvedWorker {
     DirectLlm { profile_slug: String },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ResultPacket {
     pub run_id: String,
     pub phase_id: String,
@@ -551,7 +559,7 @@ pub struct ResultPacket {
     pub result_json: ResultJson,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ResultJson {
     pub run_id: String,
     pub phase_id: String,
@@ -560,6 +568,8 @@ pub struct ResultJson {
     pub summary: String,
     pub outputs: ResultOutputs,
     pub followup_hints: FollowupHints,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -823,6 +833,8 @@ pub struct QuickWorkflowRequest {
     pub execution_provider_model_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) worker_task_packet: Option<WorkerTaskPacket>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) task_input_source: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

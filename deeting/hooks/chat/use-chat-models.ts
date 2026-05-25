@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef } from "react"
+import { useShallow } from "zustand/react/shallow"
 import { useChatStore } from "@/store/chat-store"
 import {
   matchesChatModelSelectionValue,
@@ -14,7 +15,13 @@ interface UseChatModelsProps {
 }
 
 export function useChatModels({ models, isLoadingModels }: UseChatModelsProps) {
-  const { config, setModels, setConfig } = useChatStore()
+  const { config, setModels, setConfig } = useChatStore(
+    useShallow((state) => ({
+      config: state.config,
+      setModels: state.setModels,
+      setConfig: state.setConfig,
+    }))
+  )
   const hasInitializedRef = useRef(false)
 
   // 同步模型列表到 store

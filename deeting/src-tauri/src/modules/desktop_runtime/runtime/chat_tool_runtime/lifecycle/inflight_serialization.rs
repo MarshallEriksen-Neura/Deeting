@@ -19,6 +19,7 @@ pub(crate) fn serialize_inflight_runtime_context(
         current_node,
         current_call_id,
         None,
+        None,
         recoverable,
         pending_approvals,
         chat_runtime,

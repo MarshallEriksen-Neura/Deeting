@@ -1,6 +1,7 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef } from "react"
+import { useShallow } from "zustand/react/shallow"
 import {
   cancelDesktopLocalChatCompletion,
   finalizeDesktopLocalCompare,
@@ -307,10 +308,6 @@ async function resolveExplicitTaskAgentIdForInput(input: string) {
     localAgents.map((agent) => ({ id: agent.id, name: agent.name })),
   )
   return resolvedMention?.agent?.id?.trim() || undefined
-}
-
-function resolveRequestedMaxTokens(value: number | null | undefined) {
-  return typeof value === "number" && value > 0 ? value : undefined
 }
 
 function isValidBlock(block: unknown): block is MessageBlock {
@@ -671,7 +668,29 @@ export function useChatMessagingService() {
     resetSession: resetRuntimeSession,
     loadHistory: loadRuntimeHistory,
     setHistoryState,
-  } = useChatRuntimeStore()
+  } = useChatRuntimeStore(
+    useShallow((state) => ({
+      sessionId: state.sessionId,
+      isLoading: state.isLoading,
+      statusCode: state.statusCode,
+      pendingTakeover: state.pendingTakeover,
+      pendingTakeoverRequestedAction: state.pendingTakeoverRequestedAction,
+      setSessionId: state.setSessionId,
+      setIsLoading: state.setIsLoading,
+      setErrorMessage: state.setErrorMessage,
+      setStatus: state.setStatus,
+      clearStatus: state.clearStatus,
+      setPendingTakeover: state.setPendingTakeover,
+      setPendingTakeoverRequestedAction: state.setPendingTakeoverRequestedAction,
+      clearPendingTakeover: state.clearPendingTakeover,
+      interruptedMessageId: state.interruptedMessageId,
+      setInterruptedMessageId: state.setInterruptedMessageId,
+      setActiveMessageId: state.setActiveMessageId,
+      resetSession: state.resetSession,
+      loadHistory: state.loadHistory,
+      setHistoryState: state.setHistoryState,
+    }))
+  )
   const {
     input,
     attachments,
@@ -695,7 +714,32 @@ export function useChatMessagingService() {
     setCompareFinalizing,
     clearCompareState,
     clearAllCompareStates,
-  } = useChatStore()
+  } = useChatStore(
+    useShallow((state) => ({
+      input: state.input,
+      attachments: state.attachments,
+      selectedKnowledgeFileIds: state.selectedKnowledgeFileIds,
+      pageContext: state.pageContext,
+      messages: state.messages,
+      config: state.config,
+      models: state.models,
+      streamEnabled: state.streamEnabled,
+      setInput: state.setInput,
+      setSelectedKnowledgeFileIds: state.setSelectedKnowledgeFileIds,
+      clearAttachments: state.clearAttachments,
+      clearPageContext: state.clearPageContext,
+      setMessages: state.setMessages,
+      mergeMessageMeta: state.mergeMessageMeta,
+      appendMessageBlocks: state.appendMessageBlocks,
+      ensureCompareState: state.ensureCompareState,
+      upsertCompareCandidate: state.upsertCompareCandidate,
+      appendCompareCandidateBlocks: state.appendCompareCandidateBlocks,
+      setCompareActiveCandidate: state.setCompareActiveCandidate,
+      setCompareFinalizing: state.setCompareFinalizing,
+      clearCompareState: state.clearCompareState,
+      clearAllCompareStates: state.clearAllCompareStates,
+    }))
+  )
   const openWorkspaceView = useWorkspaceStore((state) => state.openView)
 
   const isTauriRuntime = useMemo(
@@ -772,7 +816,6 @@ export function useChatMessagingService() {
 
   const cancelActiveRequest = useCallback(async () => {
     const requestId = requestIdRef.current
-    const route = activeRequestRouteRef.current
     const activeAssistantMessageId = activeAssistantMessageIdRef.current
     if (activeAssistantMessageId) {
       interruptedMessageIdsRef.current.add(activeAssistantMessageId)
@@ -977,7 +1020,7 @@ export function useChatMessagingService() {
     ) {
       onBlocks([{ type: "text", content: streamedText } as MessageBlock])
     }
-  }, [streamEnabled, t])
+  }, [locale, streamEnabled, t])
 
   const replaceAssistantMessage = useCallback((targetMessageId: string, replacement: Message) => {
     const currentMessages = useChatStore.getState().messages
@@ -1285,6 +1328,9 @@ export function useChatMessagingService() {
     setStatus,
     clearStatus,
     clearAllCompareStates,
+    cancelActiveRequest,
+    setActiveMessageId,
+    setInterruptedMessageId,
     resolveCurrentSessionId,
     runStreamedRequest,
     composerMatchesDraft,
@@ -1580,6 +1626,8 @@ export function useChatMessagingService() {
     setErrorMessage,
     setStatus,
     clearStatus,
+    setActiveMessageId,
+    setInterruptedMessageId,
     isTauriRuntime,
     clearAllCompareStates,
     resolveCurrentSessionId,

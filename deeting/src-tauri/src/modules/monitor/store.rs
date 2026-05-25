@@ -6,11 +6,11 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use crate::modules::monitor::types::{
-    normalize_monitor_notify_config, LocalExecutionResult, LocalMonitorDeliveryStateListResponse,
-    LocalMonitorDeliveryStateRecord, LocalMonitorExecutionLog,
-    LocalMonitorExecutionLogListResponse, LocalMonitorStatsResponse, LocalMonitorTask,
-    LocalMonitorTaskCreateRequest, LocalMonitorTaskListResponse, LocalMonitorTaskUpdateRequest,
-    LocalNotificationChannel, LocalNotificationChannelCreateRequest,
+    monitor_task_input_source_for_run, normalize_monitor_notify_config, LocalExecutionResult,
+    LocalMonitorDeliveryStateListResponse, LocalMonitorDeliveryStateRecord,
+    LocalMonitorExecutionLog, LocalMonitorExecutionLogListResponse, LocalMonitorStatsResponse,
+    LocalMonitorTask, LocalMonitorTaskCreateRequest, LocalMonitorTaskListResponse,
+    LocalMonitorTaskUpdateRequest, LocalNotificationChannel, LocalNotificationChannelCreateRequest,
     LocalNotificationChannelListResponse, LocalNotificationChannelUpdateRequest,
 };
 
@@ -1201,6 +1201,7 @@ impl MonitorStore {
             "assistant_id": task.assistant_id,
             "analysis_mode": task.analysis_mode,
             "strategy": result.strategy_tag.clone().unwrap_or_else(|| task.analysis_mode.clone()),
+            "task_input_source": monitor_task_input_source_for_run(task, Some(result.execution_id.as_str())),
         });
 
         sqlx::query(
@@ -1274,8 +1275,19 @@ impl MonitorStore {
             None
         };
         let error_text = truncate(error_message, 1900);
+        let execution_events = events.unwrap_or_default();
+        let execution_id = execution_events
+            .first()
+            .and_then(|event| event.get("execution_id"))
+            .and_then(Value::as_str);
         let output_data = json!({
-            "events": events.unwrap_or_default(),
+            "events": execution_events,
+        });
+        let input_data = json!({
+            "source": "desktop_local_worker",
+            "assistant_id": task.assistant_id,
+            "analysis_mode": task.analysis_mode,
+            "task_input_source": monitor_task_input_source_for_run(task, execution_id),
         });
 
         sqlx::query(
@@ -1289,7 +1301,7 @@ impl MonitorStore {
         .bind(Uuid::new_v4().to_string())
         .bind(task.id.as_str())
         .bind(now_iso.as_str())
-        .bind(json_to_string(&json!({"source": "desktop_local_worker"})))
+        .bind(json_to_string(&input_data))
         .bind(json_to_string(&output_data))
         .bind(error_text)
         .bind(now_iso.as_str())
@@ -1940,6 +1952,159 @@ mod tests {
         assert_eq!(created.assistant_id.as_deref(), Some("agent-1"));
         assert_eq!(created.analysis_mode, "alert_first");
         assert_eq!(created.policy_state, json!({}));
+    }
+
+    #[tokio::test]
+    async fn record_execution_success_persists_cron_task_input_source() {
+        let store = build_store().await;
+        let task = store
+            .create_task(LocalMonitorTaskCreateRequest {
+                title: "Iran watch".to_string(),
+                objective: "Monitor developments".to_string(),
+                assistant_id: "agent-1".to_string(),
+                cron_expr: Some("0 */6 * * *".to_string()),
+                analysis_mode: Some("alert_first".to_string()),
+                notify_config: None,
+                allowed_tools: Some(vec!["search_sdk".to_string()]),
+                execution_target: Some("desktop".to_string()),
+            })
+            .await
+            .expect("task should be created");
+
+        store
+            .record_execution_success(
+                &task,
+                &LocalExecutionResult {
+                    execution_id: "exec-success-1".to_string(),
+                    is_significant_change: true,
+                    change_summary: "changed".to_string(),
+                    new_snapshot: json!({"state": "new"}),
+                    strategy_tag: Some("alert_first".to_string()),
+                    observations: Some(json!({"confidence": 0.9})),
+                    tokens_used: 42,
+                    model_id: "gpt-4.1".to_string(),
+                    events: Vec::new(),
+                },
+            )
+            .await
+            .expect("success log should persist");
+
+        let logs = store
+            .list_logs(task.id.as_str(), 0, 10)
+            .await
+            .expect("logs should list");
+        let input_data = logs.items[0]
+            .input_data
+            .as_ref()
+            .expect("input data should exist");
+
+        assert_eq!(
+            input_data
+                .pointer("/task_input_source/cron_monitor/task_id")
+                .and_then(Value::as_str),
+            Some(task.id.as_str())
+        );
+        assert_eq!(
+            input_data
+                .pointer("/task_input_source/cron_monitor/capability_lease/allowed_tools/0")
+                .and_then(Value::as_str),
+            Some("search_sdk")
+        );
+        assert_eq!(
+            input_data
+                .pointer("/task_input_source/cron_monitor/next_run_at")
+                .and_then(Value::as_str),
+            task.next_run_at.as_deref()
+        );
+        assert_eq!(
+            input_data.pointer("/task_input_source/cron_monitor/capability_lease/expires_at"),
+            Some(&Value::Null)
+        );
+        assert_eq!(
+            input_data
+                .pointer("/task_input_source/cron_monitor/execution_id")
+                .and_then(Value::as_str),
+            Some("exec-success-1")
+        );
+        assert_eq!(
+            input_data
+                .pointer("/task_input_source/cron_monitor/execution_frame_id")
+                .and_then(Value::as_str),
+            Some(format!("monitor:{}:execution:exec-success-1", task.id).as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn record_execution_failure_persists_cron_task_input_source() {
+        let store = build_store().await;
+        let task = store
+            .create_task(LocalMonitorTaskCreateRequest {
+                title: "Iran watch".to_string(),
+                objective: "Monitor developments".to_string(),
+                assistant_id: "agent-1".to_string(),
+                cron_expr: Some("0 */6 * * *".to_string()),
+                analysis_mode: None,
+                notify_config: None,
+                allowed_tools: Some(vec!["search_sdk".to_string()]),
+                execution_target: Some("desktop".to_string()),
+            })
+            .await
+            .expect("task should be created");
+
+        store
+            .record_execution_failure(
+                &task,
+                "provider failed",
+                Some(vec![
+                    json!({"stage": "run", "execution_id": "exec-failure-1"}),
+                ]),
+            )
+            .await
+            .expect("failure log should persist");
+
+        let logs = store
+            .list_logs(task.id.as_str(), 0, 10)
+            .await
+            .expect("logs should list");
+        let input_data = logs.items[0]
+            .input_data
+            .as_ref()
+            .expect("input data should exist");
+
+        assert_eq!(
+            input_data
+                .pointer("/task_input_source/cron_monitor/task_id")
+                .and_then(Value::as_str),
+            Some(task.id.as_str())
+        );
+        assert_eq!(
+            input_data
+                .pointer("/task_input_source/cron_monitor/checkpoint_policy")
+                .and_then(Value::as_str),
+            Some("on_change_only")
+        );
+        assert_eq!(
+            input_data
+                .pointer("/task_input_source/cron_monitor/next_run_at")
+                .and_then(Value::as_str),
+            task.next_run_at.as_deref()
+        );
+        assert_eq!(
+            input_data.pointer("/task_input_source/cron_monitor/capability_lease/expires_at"),
+            Some(&Value::Null)
+        );
+        assert_eq!(
+            input_data
+                .pointer("/task_input_source/cron_monitor/execution_id")
+                .and_then(Value::as_str),
+            Some("exec-failure-1")
+        );
+        assert_eq!(
+            input_data
+                .pointer("/task_input_source/cron_monitor/execution_frame_id")
+                .and_then(Value::as_str),
+            Some(format!("monitor:{}:execution:exec-failure-1", task.id).as_str())
+        );
     }
 
     #[tokio::test]

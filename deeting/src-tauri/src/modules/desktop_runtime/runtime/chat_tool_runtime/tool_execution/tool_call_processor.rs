@@ -60,7 +60,8 @@ pub(crate) async fn process_chat_tool_calls(
     let mut capability_update = None;
     let mut skill_context_update = None;
     let mut approval_tokens = Vec::new();
-    let mut captured_frame_extract: Option<DitingThinkExtract> = state.captured_frame_extract.clone();
+    let mut captured_frame_extract: Option<DitingThinkExtract> =
+        state.captured_frame_extract.clone();
     let mut runtime_transition_blocks = Vec::new();
 
     for (call_index, call) in tool_calls.into_iter().enumerate() {

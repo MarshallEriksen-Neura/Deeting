@@ -478,20 +478,82 @@ pub(crate) fn extract_primary_content(detail: &WorkflowRunDetail) -> Option<Stri
         .map(str::to_string)
 }
 
-fn attach_worker_task_packet_to_snapshot(
+fn attach_quick_workflow_context_to_snapshot(
     snapshot: &mut ExecutionSnapshot,
     worker_task_packet: Option<
         crate::modules::desktop_runtime::runtime::worker_dispatch::WorkerTaskPacket,
     >,
+    task_input_source: Option<serde_json::Value>,
 ) -> Result<(), String> {
-    let Some(worker_task_packet) = worker_task_packet else {
+    if worker_task_packet.is_none() && task_input_source.is_none() {
         return Ok(());
-    };
+    }
+    let run_id = snapshot.run_id.clone();
     let phase = snapshot.phases.first_mut().ok_or_else(|| {
-        "Quick workflow snapshot has no phase to receive worker task packet".to_string()
+        "Quick workflow snapshot has no phase to receive runtime context".to_string()
     })?;
-    phase.worker_task_packet = Some(worker_task_packet);
+    let phase_id = phase.phase_id.clone();
+    if let Some(worker_task_packet) = worker_task_packet {
+        phase.worker_task_packet = Some(worker_task_packet);
+    }
+    if let Some(task_input_source) = task_input_source {
+        phase.task_input_source = Some(attach_workflow_child_frame_identity_to_task_input_source(
+            task_input_source,
+            &run_id,
+            &phase_id,
+        ));
+    }
     Ok(())
+}
+
+fn attach_workflow_child_frame_identity_to_task_input_source(
+    mut source: serde_json::Value,
+    run_id: &str,
+    phase_id: &str,
+) -> serde_json::Value {
+    let Some(delegated_agent) = source
+        .get_mut("delegated_agent")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return source;
+    };
+
+    let fallback_child_run_id = format!("workflow:{run_id}:phase:{phase_id}");
+    let child_run_id = delegated_agent
+        .get("child_run_id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or(fallback_child_run_id);
+    let parent_frame_id = delegated_agent
+        .get("parent_frame_id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let child_frame_id = match parent_frame_id {
+        Some(parent_frame_id) => format!("{parent_frame_id}:delegation:{child_run_id}"),
+        None => format!("delegation:{child_run_id}"),
+    };
+
+    insert_missing_non_empty_string(delegated_agent, "child_run_id", child_run_id);
+    insert_missing_non_empty_string(delegated_agent, "child_frame_id", child_frame_id);
+    source
+}
+
+fn insert_missing_non_empty_string(
+    object: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    value: String,
+) {
+    let has_non_empty_value = object
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .is_some_and(|value| !value.is_empty());
+    if !has_non_empty_value {
+        object.insert(key.to_string(), serde_json::Value::String(value));
+    }
 }
 
 pub(crate) async fn prepare_quick_workflow_run(
@@ -523,7 +585,7 @@ pub(crate) async fn prepare_quick_workflow_run(
         req.user_notes.as_deref(),
     );
     let app_data_dir = app_handle.path().app_data_dir().ok();
-    let run = persist_generated_proposal(
+    let mut run = persist_generated_proposal(
         app_state.mcp.store.as_ref(),
         app_data_dir.clone(),
         title,
@@ -545,7 +607,11 @@ pub(crate) async fn prepare_quick_workflow_run(
     let Some(mut snapshot) = compile_result.snapshot else {
         return Err("Quick workflow compile produced no executable snapshot".to_string());
     };
-    attach_worker_task_packet_to_snapshot(&mut snapshot, req.worker_task_packet)?;
+    attach_quick_workflow_context_to_snapshot(
+        &mut snapshot,
+        req.worker_task_packet,
+        req.task_input_source,
+    )?;
     if let Some(run_dir) = run.run_dir.as_deref() {
         run_dir::write_snapshot_file(&PathBuf::from(run_dir), &snapshot)?;
     }
@@ -559,6 +625,8 @@ pub(crate) async fn prepare_quick_workflow_run(
     )
     .await
     .map_err(|err| err.to_string())?;
+    run.snapshot_json = Some(snapshot_value);
+    run.snapshot_version = snapshot.snapshot_version;
 
     Ok(run)
 }
@@ -1901,7 +1969,7 @@ Goal: Produce a useful output
 "#;
 
     #[test]
-    fn attach_worker_task_packet_to_snapshot_updates_first_phase() {
+    fn attach_quick_workflow_context_to_snapshot_updates_first_phase() {
         let mut snapshot = ExecutionSnapshot {
             run_id: "run-1".to_string(),
             proposal_version: 1,
@@ -1916,6 +1984,7 @@ Goal: Produce a useful output
                 goal: "Analyze the worker route".to_string(),
                 expected_output: None,
                 worker_task_packet: None,
+                task_input_source: None,
             }],
             policy: Default::default(),
         };
@@ -1942,8 +2011,20 @@ Goal: Produce a useful output
         }))
         .expect("worker task packet");
 
-        attach_worker_task_packet_to_snapshot(&mut snapshot, Some(packet))
-            .expect("attach worker task packet");
+        let task_input_source = serde_json::json!({
+            "delegated_agent": {
+                "parent_frame_id": "frame-parent-1",
+                "agent_id": "research.worker",
+                "return_channel": "workflow_event"
+            }
+        });
+
+        attach_quick_workflow_context_to_snapshot(
+            &mut snapshot,
+            Some(packet),
+            Some(task_input_source),
+        )
+        .expect("attach quick workflow context");
 
         assert_eq!(
             snapshot.phases[0]
@@ -1951,6 +2032,130 @@ Goal: Produce a useful output
                 .as_ref()
                 .map(|value| value.packet_hash.as_str()),
             Some("packet-123")
+        );
+        assert_eq!(
+            snapshot.phases[0]
+                .task_input_source
+                .as_ref()
+                .and_then(|value| value.pointer("/delegated_agent/parent_frame_id"))
+                .and_then(serde_json::Value::as_str),
+            Some("frame-parent-1")
+        );
+        assert_eq!(
+            snapshot.phases[0]
+                .task_input_source
+                .as_ref()
+                .and_then(|value| value.pointer("/delegated_agent/child_run_id"))
+                .and_then(serde_json::Value::as_str),
+            Some("workflow:run-1:phase:phase-1")
+        );
+        assert_eq!(
+            snapshot.phases[0]
+                .task_input_source
+                .as_ref()
+                .and_then(|value| value.pointer("/delegated_agent/child_frame_id"))
+                .and_then(serde_json::Value::as_str),
+            Some("frame-parent-1:delegation:workflow:run-1:phase:phase-1")
+        );
+    }
+
+    #[test]
+    fn attach_workflow_child_frame_identity_preserves_existing_source_identity() {
+        let task_input_source = serde_json::json!({
+            "delegated_agent": {
+                "parent_frame_id": "frame-parent-1",
+                "child_run_id": "prepared-child-run-1",
+                "child_frame_id": "frame-parent-1:delegation:prepared-child-run-1",
+                "agent_id": "research.worker",
+                "return_channel": "workflow_event"
+            }
+        });
+
+        let source = attach_workflow_child_frame_identity_to_task_input_source(
+            task_input_source,
+            "fallback-run",
+            "fallback-phase",
+        );
+
+        assert_eq!(
+            source
+                .pointer("/delegated_agent/child_run_id")
+                .and_then(serde_json::Value::as_str),
+            Some("prepared-child-run-1")
+        );
+        assert_eq!(
+            source
+                .pointer("/delegated_agent/child_frame_id")
+                .and_then(serde_json::Value::as_str),
+            Some("frame-parent-1:delegation:prepared-child-run-1")
+        );
+    }
+
+    #[test]
+    fn attach_quick_workflow_context_preserves_existing_task_source_on_packet_only_update() {
+        let existing_task_input_source = serde_json::json!({
+            "delegated_agent": {
+                "parent_frame_id": "frame-parent-1",
+                "child_run_id": "prepared-child-run-1",
+                "child_frame_id": "frame-parent-1:delegation:prepared-child-run-1",
+                "agent_id": "research.worker",
+                "return_channel": "workflow_event"
+            }
+        });
+        let mut snapshot = ExecutionSnapshot {
+            run_id: "run-1".to_string(),
+            proposal_version: 1,
+            snapshot_version: 1,
+            compiled_at: "2026-04-15T00:00:00Z".to_string(),
+            goal: "Analyze the worker route".to_string(),
+            phases: vec![crate::modules::workflow::types::CompiledPhase {
+                phase_id: "phase-1".to_string(),
+                title: "Execute".to_string(),
+                worker_ref: "user_worker_profile:research".to_string(),
+                depends_on: Vec::new(),
+                goal: "Analyze the worker route".to_string(),
+                expected_output: None,
+                worker_task_packet: None,
+                task_input_source: Some(existing_task_input_source.clone()),
+            }],
+            policy: Default::default(),
+        };
+        let packet = serde_json::from_value(serde_json::json!({
+            "schema_version": 1,
+            "task_id": "exec-1",
+            "route": "worker",
+            "goal": "Analyze the worker route",
+            "user_query": "Analyze the worker route",
+            "task_kind": "analysis",
+            "deliverable_kind": "structured_findings",
+            "context_summary": "runtime-selected worker",
+            "relevant_inputs": {},
+            "required_capabilities": ["tool.search"],
+            "candidate_capabilities": ["search_sdk"],
+            "constraints": ["Stay scoped"],
+            "non_goals": ["Do not reroute"],
+            "allowed_actions": ["Analyze"],
+            "forbidden_actions": ["Reroute"],
+            "output_contract": {"kind":"structured_findings"},
+            "completion_standard": "Return findings",
+            "escalation_policy": "Block explicitly",
+            "packet_hash": "packet-123"
+        }))
+        .expect("worker task packet");
+
+        attach_quick_workflow_context_to_snapshot(&mut snapshot, Some(packet), None)
+            .expect("attach packet without clearing task source");
+
+        assert_eq!(
+            snapshot.phases[0]
+                .worker_task_packet
+                .as_ref()
+                .map(|value| value.packet_hash.as_str()),
+            Some("packet-123")
+        );
+        assert_eq!(
+            snapshot.phases[0].task_input_source.as_ref(),
+            Some(&existing_task_input_source)
         );
     }
 

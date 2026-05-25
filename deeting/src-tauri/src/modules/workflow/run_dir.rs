@@ -212,6 +212,7 @@ mod tests {
                     result_schema_hint: Some("notes".to_string()),
                 }),
                 worker_task_packet: None,
+                task_input_source: None,
             }],
             policy: SnapshotPolicy::default(),
         };
@@ -256,6 +257,7 @@ mod tests {
                 recommended_next_action: "continue".to_string(),
                 invalidates_future_phases: vec![],
             },
+            metadata: None,
         };
         write_result_json(&phase_dir, &json).expect("write result json");
         let round_trip = read_result_json(&phase_dir)

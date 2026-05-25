@@ -48,6 +48,9 @@ pub(crate) fn project_execution_graph_snapshot(
     });
 
     if let Some(tree) = input.delegated_execution_tree.clone() {
+        if let Some(frame_event) = world_model_frame_started_event(&tree, &llm_round_node_id) {
+            events.push(frame_event);
+        }
         events.push(LocalExecutionGraphEvent {
             event_id: "event:delegated_execution".to_string(),
             node_id: Some(llm_round_node_id.clone()),
@@ -379,6 +382,82 @@ fn graph_tool_result_payload(node: &LocalExecutionGraphNode, fallback: Value) ->
         .unwrap_or(fallback)
 }
 
+fn world_model_frame_started_event(
+    tree: &Value,
+    llm_round_node_id: &str,
+) -> Option<LocalExecutionGraphEvent> {
+    let (task_input_source, task_input_source_ref) =
+        if let Some(source) = tree.get("task_input_source") {
+            (source, "delegated_execution_tree.task_input_source")
+        } else if let Some(source) = tree.pointer("/primary_output/task_input_source") {
+            (
+                source,
+                "delegated_execution_tree.primary_output.task_input_source",
+            )
+        } else {
+            return None;
+        };
+
+    if let Some(source) = task_input_source.get("delegated_agent") {
+        let frame_id = trimmed_json_str(source, "child_frame_id")?;
+        return Some(LocalExecutionGraphEvent {
+            event_id: format!("event:world_model_frame:{frame_id}"),
+            node_id: Some(llm_round_node_id.to_string()),
+            event_type: "world_model_frame.started".to_string(),
+            payload: json!({
+                "event_type": "world_model_frame.started",
+                "frame_id": frame_id,
+                "parent_frame_id": optional_trimmed_json_str(source, "parent_frame_id"),
+                "source_kind": "delegated_agent",
+                "run_id": optional_trimmed_json_str(source, "child_run_id"),
+                "agent_id": optional_trimmed_json_str(source, "agent_id"),
+                "invocation_kind": optional_trimmed_json_str(source, "invocation_kind"),
+                "return_channel": optional_trimmed_json_str(source, "return_channel"),
+                "task_input_source_ref": task_input_source_ref,
+            }),
+        });
+    }
+
+    if let Some(source) = task_input_source.get("cron_monitor") {
+        let execution_frame_id = optional_trimmed_json_str(source, "execution_frame_id");
+        let monitor_frame_id = optional_trimmed_json_str(source, "monitor_frame_id");
+        let frame_id = execution_frame_id
+            .clone()
+            .or_else(|| monitor_frame_id.clone())?;
+        let parent_frame_id = execution_frame_id.and(monitor_frame_id.clone());
+        return Some(LocalExecutionGraphEvent {
+            event_id: format!("event:world_model_frame:{frame_id}"),
+            node_id: Some(llm_round_node_id.to_string()),
+            event_type: "world_model_frame.started".to_string(),
+            payload: json!({
+                "event_type": "world_model_frame.started",
+                "frame_id": frame_id,
+                "parent_frame_id": parent_frame_id,
+                "source_kind": "cron_monitor",
+                "run_id": optional_trimmed_json_str(source, "execution_id"),
+                "task_id": optional_trimmed_json_str(source, "task_id"),
+                "schedule_id": optional_trimmed_json_str(source, "schedule_id"),
+                "checkpoint_policy": optional_trimmed_json_str(source, "checkpoint_policy"),
+                "task_input_source_ref": task_input_source_ref,
+            }),
+        });
+    }
+
+    None
+}
+
+fn trimmed_json_str(value: &Value, field: &str) -> Option<String> {
+    optional_trimmed_json_str(value, field).filter(|value| !value.is_empty())
+}
+
+fn optional_trimmed_json_str(value: &Value, field: &str) -> Option<String> {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
 fn resolve_execution_id(input: &GraphProjectionInput) -> String {
     input
         .root_execution_id
@@ -627,6 +706,118 @@ mod tests {
             json!("runtime-transition:monitor-checkpoint:monitor-exec-1")
         );
         assert_eq!(event.payload["outcome"], json!("unverified"));
+    }
+
+    #[test]
+    fn project_execution_graph_snapshot_records_delegated_world_model_frame_event() {
+        let task_input_source = json!({
+            "delegated_agent": {
+                "parent_task_id": "parent-task-1",
+                "parent_frame_id": "frame-parent-1",
+                "child_run_id": "child-run-1",
+                "child_frame_id": "frame-parent-1:delegation:child-run-1",
+                "agent_id": "agent.research",
+                "invocation_kind": "chat",
+                "return_channel": "parent_frame_observation"
+            }
+        });
+        let snapshot = project_execution_graph_snapshot(GraphProjectionInput {
+            session_id: "session-1".to_string(),
+            route: "direct".to_string(),
+            phase_step_type: "direct_chat".to_string(),
+            trace_id: Some("trace-frame".to_string()),
+            request_id: Some("request-frame".to_string()),
+            root_execution_id: Some("root-frame".to_string()),
+            response_content: None,
+            tool_trace_blocks: Vec::new(),
+            delegated_execution_tree: Some(json!({
+                "execution_id": "delegated-exec-1",
+                "execution_kind": "custom_task_agent",
+                "execution_status": "integrated",
+                "task_input_source": task_input_source.clone()
+            })),
+        });
+
+        let event = snapshot
+            .events
+            .iter()
+            .find(|event| event.event_type == "world_model_frame.started")
+            .expect("world model frame event");
+
+        assert_eq!(event.node_id.as_deref(), Some("llm_round:1"));
+        assert_eq!(
+            event.event_id,
+            "event:world_model_frame:frame-parent-1:delegation:child-run-1"
+        );
+        assert_eq!(
+            event.payload["frame_id"],
+            json!("frame-parent-1:delegation:child-run-1")
+        );
+        assert_eq!(event.payload["parent_frame_id"], json!("frame-parent-1"));
+        assert_eq!(event.payload["source_kind"], json!("delegated_agent"));
+        assert_eq!(event.payload["run_id"], json!("child-run-1"));
+        assert_eq!(
+            event.payload["task_input_source_ref"],
+            json!("delegated_execution_tree.task_input_source")
+        );
+        assert!(event.payload.get("task_input_source").is_none());
+    }
+
+    #[test]
+    fn project_execution_graph_snapshot_records_cron_world_model_frame_event() {
+        let task_input_source = json!({
+            "cron_monitor": {
+                "task_id": "monitor-task-1",
+                "schedule_id": "schedule-1",
+                "cron_expr": "0 */6 * * *",
+                "objective": "watch pricing changes",
+                "monitor_frame_id": "monitor:monitor-task-1",
+                "execution_id": "monitor-exec-1",
+                "execution_frame_id": "monitor:monitor-task-1:execution:monitor-exec-1",
+                "checkpoint_policy": "on_change_only"
+            }
+        });
+        let snapshot = project_execution_graph_snapshot(GraphProjectionInput {
+            session_id: "session-1".to_string(),
+            route: "direct".to_string(),
+            phase_step_type: "cron_monitor".to_string(),
+            trace_id: Some("trace-cron-frame".to_string()),
+            request_id: Some("request-cron-frame".to_string()),
+            root_execution_id: Some("root-cron-frame".to_string()),
+            response_content: None,
+            tool_trace_blocks: Vec::new(),
+            delegated_execution_tree: Some(json!({
+                "execution_id": "monitor-exec-1",
+                "execution_kind": "workflow",
+                "execution_status": "running",
+                "primary_output": {
+                    "task_input_source": task_input_source.clone()
+                }
+            })),
+        });
+
+        let event = snapshot
+            .events
+            .iter()
+            .find(|event| event.event_type == "world_model_frame.started")
+            .expect("world model frame event");
+
+        assert_eq!(
+            event.payload["frame_id"],
+            json!("monitor:monitor-task-1:execution:monitor-exec-1")
+        );
+        assert_eq!(
+            event.payload["parent_frame_id"],
+            json!("monitor:monitor-task-1")
+        );
+        assert_eq!(event.payload["source_kind"], json!("cron_monitor"));
+        assert_eq!(event.payload["run_id"], json!("monitor-exec-1"));
+        assert_eq!(event.payload["checkpoint_policy"], json!("on_change_only"));
+        assert_eq!(
+            event.payload["task_input_source_ref"],
+            json!("delegated_execution_tree.primary_output.task_input_source")
+        );
+        assert!(event.payload.get("task_input_source").is_none());
     }
 
     #[test]

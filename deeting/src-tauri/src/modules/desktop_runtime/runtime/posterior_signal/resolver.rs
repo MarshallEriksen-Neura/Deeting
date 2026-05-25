@@ -1,4 +1,7 @@
-use super::rules::{infer_from_explicit_outcome, infer_from_feedback_score, infer_from_user_text};
+use super::rules::{
+    infer_from_explicit_outcome, infer_from_feedback_score, infer_negative_text_signal,
+    infer_positive_text_signal,
+};
 use super::types::{PosteriorSignalDecision, PosteriorSignalInput, PosteriorSignalSource};
 use crate::modules::desktop_runtime::runtime::sovereign::PosteriorSignalIngress;
 
@@ -9,8 +12,13 @@ pub(crate) fn resolve_posterior_signal(input: &PosteriorSignalInput) -> Posterio
     if let Some(decision) = infer_from_feedback_score(input) {
         return decision;
     }
-    if let Some(decision) = infer_from_user_text(input) {
-        return decision;
+    if let Some(user_text) = input.user_text.as_deref() {
+        if let Some(decision) = infer_negative_text_signal(user_text) {
+            return decision;
+        }
+        if let Some(decision) = infer_positive_text_signal(user_text) {
+            return decision;
+        }
     }
     PosteriorSignalDecision::unknown()
 }
@@ -61,6 +69,18 @@ mod tests {
 
         assert_eq!(decision.signal, PosteriorSignalKind::Corrected);
         assert_eq!(decision.source, PosteriorSignalSource::TraceFeedback);
+    }
+
+    #[test]
+    fn resolve_posterior_signal_maps_positive_user_text_to_accepted() {
+        let decision = resolve_posterior_signal(&PosteriorSignalInput {
+            user_text: Some("Looks good, this works now".to_string()),
+            ..Default::default()
+        });
+
+        assert_eq!(decision.signal, PosteriorSignalKind::Accepted);
+        assert_eq!(decision.source, PosteriorSignalSource::HeuristicRules);
+        assert!(should_apply_posterior_signal(&decision));
     }
 
     #[test]

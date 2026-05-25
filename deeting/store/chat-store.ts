@@ -2,6 +2,7 @@
 
 import { create } from "zustand"
 import { persist, createJSONStorage } from "zustand/middleware"
+import { useShallow } from "zustand/react/shallow"
 import type { ChatImageAttachment } from "@/lib/chat/message-content"
 import type { Message, MessageRole } from "@/lib/chat/message-types"
 import type { ChatFeedbackReasonPayload } from "@/lib/chat/feedback-payload"
@@ -721,7 +722,8 @@ export const useChatStore = create<ChatStore>()(
 
       setStreamEnabled: (enabled) => set({ streamEnabled: enabled }),
 
-      setModels: (models) => set({ models }),
+      setModels: (models) =>
+        set((state) => (areStoreValuesEqual(state.models, models) ? state : { models })),
 
       setIsLoading: (isLoading) => set({ isLoading }),
 
@@ -925,27 +927,31 @@ export const useChatLoading = () => useChatStore((state) => state.isLoading)
 
 /** 获取状态信息 */
 export const useChatStatus = () =>
-  useChatStore((state) => ({
-    statusStage: state.statusStage,
-    statusCode: state.statusCode,
-    statusMeta: state.statusMeta,
-  }))
+  useChatStore(
+    useShallow((state) => ({
+      statusStage: state.statusStage,
+      statusCode: state.statusCode,
+      statusMeta: state.statusMeta,
+    }))
+  )
 
 /** 获取输入相关状态 */
 export const useChatInput = () =>
-  useChatStore((state) => ({
-    input: state.input,
-    attachments: state.attachments,
-    selectedKnowledgeFileIds: state.selectedKnowledgeFileIds,
-    pageContext: state.pageContext,
-    setInput: state.setInput,
-    setAttachments: state.setAttachments,
-    addAttachments: state.addAttachments,
-    removeAttachment: state.removeAttachment,
-    clearAttachments: state.clearAttachments,
-    setSelectedKnowledgeFileIds: state.setSelectedKnowledgeFileIds,
-    toggleSelectedKnowledgeFileId: state.toggleSelectedKnowledgeFileId,
-    clearSelectedKnowledgeFileIds: state.clearSelectedKnowledgeFileIds,
-    setPageContext: state.setPageContext,
-    clearPageContext: state.clearPageContext,
-  }))
+  useChatStore(
+    useShallow((state) => ({
+      input: state.input,
+      attachments: state.attachments,
+      selectedKnowledgeFileIds: state.selectedKnowledgeFileIds,
+      pageContext: state.pageContext,
+      setInput: state.setInput,
+      setAttachments: state.setAttachments,
+      addAttachments: state.addAttachments,
+      removeAttachment: state.removeAttachment,
+      clearAttachments: state.clearAttachments,
+      setSelectedKnowledgeFileIds: state.setSelectedKnowledgeFileIds,
+      toggleSelectedKnowledgeFileId: state.toggleSelectedKnowledgeFileId,
+      clearSelectedKnowledgeFileIds: state.clearSelectedKnowledgeFileIds,
+      setPageContext: state.setPageContext,
+      clearPageContext: state.clearPageContext,
+    }))
+  )

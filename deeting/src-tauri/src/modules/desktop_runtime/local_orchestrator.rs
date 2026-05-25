@@ -21,11 +21,12 @@ use crate::modules::desktop_runtime::runtime::sovereign::{
     PosteriorSignalIngress, UserActionIngress,
 };
 use crate::modules::desktop_runtime::runtime::{
-    apply_policy_delta, build_default_local_execution_policy, evaluate_task_learning_with_runtime,
-    mark_local_assistant_postprocess_completed, persist_local_assistant_turn,
-    project_execution_graph_blocks_from_value, resolve_local_model_pool_connection,
-    resolve_posterior_signal_ingress, resolve_provider_model_connection,
-    run_local_runtime_composition_entrypoint, LocalExecutionRequest,
+    apply_policy_delta, apply_task_learning_revision, build_default_local_execution_policy,
+    evaluate_task_learning_with_runtime, mark_local_assistant_postprocess_completed,
+    persist_local_assistant_turn, project_execution_graph_blocks_from_value,
+    resolve_local_model_pool_connection, resolve_posterior_signal_ingress,
+    resolve_provider_model_connection, run_local_runtime_composition_entrypoint,
+    should_apply_posterior_signal, LocalExecutionRequest,
 };
 #[cfg(test)]
 use crate::modules::desktop_runtime::runtime::{
@@ -142,141 +143,180 @@ pub async fn execute_local_orchestrated_chat(
     ensure_required_local_models_configured(app_state).await?;
 
     let store = &app_state.mcp.store;
-    let (capability_id, summary_text, messages, conversation_model_binding) =
-        if let Some(messages) = input.provided_messages.clone() {
-            if messages.is_empty() {
-                return Err("provided messages are required for external engine access".to_string());
-            }
-            (input.capability_id.clone(), None, messages, None)
-        } else if input.compare_only {
-            let runtime_window = store
-                .load_local_conversation_runtime_window(&session_id)
-                .await
-                .map_err(|e| e.to_string())?;
-            let capability_id = input
-                .capability_id
-                .clone()
-                .or(runtime_window.assistant_id.clone());
-            let summary_text = extract_summary_text(runtime_window.summary.as_ref());
-            let messages = build_compare_only_messages(runtime_window.messages)?;
-            (capability_id, summary_text, messages, None)
-        } else if input.regenerate {
-            let regenerate_ctx = store
-                .prepare_local_conversation_regenerate(&session_id)
-                .await
-                .map_err(|e| e.to_string())?;
-            let runtime_window = store
-                .load_local_conversation_runtime_window(&session_id)
-                .await
-                .map_err(|e| e.to_string())?;
-            let capability_id = input
-                .capability_id
-                .clone()
-                .or(regenerate_ctx.assistant_id)
-                .or(runtime_window.assistant_id.clone());
-            let summary_text = extract_summary_text(runtime_window.summary.as_ref());
-            let conversation_model_binding =
-                extract_local_conversation_model_binding(runtime_window.meta.as_ref());
-            let messages = runtime_window
-                .messages
-                .into_iter()
-                .map(convert_history_message_to_chat_input)
-                .collect();
-            (
-                capability_id,
-                summary_text,
-                messages,
-                conversation_model_binding,
-            )
-        } else {
-            let user_content = input
-                .user_content
-                .clone()
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
-                .ok_or_else(|| "missing user message content".to_string())?;
+    let (capability_id, summary_text, messages, conversation_model_binding) = if let Some(
+        messages,
+    ) =
+        input.provided_messages.clone()
+    {
+        if messages.is_empty() {
+            return Err("provided messages are required for external engine access".to_string());
+        }
+        (input.capability_id.clone(), None, messages, None)
+    } else if input.compare_only {
+        let runtime_window = store
+            .load_local_conversation_runtime_window(&session_id)
+            .await
+            .map_err(|e| e.to_string())?;
+        let capability_id = input
+            .capability_id
+            .clone()
+            .or(runtime_window.assistant_id.clone());
+        let summary_text = extract_summary_text(runtime_window.summary.as_ref());
+        let messages = build_compare_only_messages(runtime_window.messages)?;
+        (capability_id, summary_text, messages, None)
+    } else if input.regenerate {
+        let regenerate_ctx = store
+            .prepare_local_conversation_regenerate(&session_id)
+            .await
+            .map_err(|e| e.to_string())?;
+        let runtime_window = store
+            .load_local_conversation_runtime_window(&session_id)
+            .await
+            .map_err(|e| e.to_string())?;
+        let capability_id = input
+            .capability_id
+            .clone()
+            .or(regenerate_ctx.assistant_id)
+            .or(runtime_window.assistant_id.clone());
+        let summary_text = extract_summary_text(runtime_window.summary.as_ref());
+        let conversation_model_binding =
+            extract_local_conversation_model_binding(runtime_window.meta.as_ref());
+        let messages = runtime_window
+            .messages
+            .into_iter()
+            .map(convert_history_message_to_chat_input)
+            .collect();
+        (
+            capability_id,
+            summary_text,
+            messages,
+            conversation_model_binding,
+        )
+    } else {
+        let user_content = input
+            .user_content
+            .clone()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| "missing user message content".to_string())?;
 
-            store
-                .ensure_local_conversation_for_session_id(&session_id)
-                .await
-                .map_err(|e| {
-                    format!(
-                        "chat step=ensure_conversation session={} err={}",
-                        session_id, e
-                    )
-                })?;
-
-            store
-                .append_local_conversation_message(CreateConversationMessageRequest {
-                    session_id: session_id.clone(),
-                    role: "user".to_string(),
-                    content: user_content.clone(),
-                    name: None,
-                    meta_info: None,
-                    is_truncated: Some(false),
-                    parent_message_id: None,
-                })
-                .await
-                .map_err(|e| {
-                    format!(
-                        "chat step=append_user_message session={} err={}",
-                        session_id, e
-                    )
-                })?;
-
-            let runtime_window = store
-                .load_local_conversation_runtime_window(&session_id)
-                .await
-                .map_err(|e| e.to_string())?;
-            let previous_trace_id = extract_latest_assistant_trace_id(&runtime_window.messages);
-            let user_action_ingress = UserActionIngress::new(
-                Some(session_id.clone()),
-                previous_trace_id.clone(),
-                user_content.clone(),
-            );
-            let posterior_signal_ingress =
-                PosteriorSignalIngress::new(user_action_ingress.posterior_signal_input());
-            let posterior_signal = resolve_posterior_signal_ingress(&posterior_signal_ingress);
-            let posterior_signal_input_json =
-                serde_json::to_string(posterior_signal_ingress.input()).ok();
-            if let Err(err) = store
-                .record_posterior_signal_event(
-                    None,
-                    Some(session_id.as_str()),
-                    previous_trace_id.as_deref(),
-                    posterior_signal.source.as_str(),
-                    posterior_signal.signal.as_str(),
-                    posterior_signal.confidence,
-                    posterior_signal_input_json.as_deref(),
-                    Some("followup_user_message"),
+        store
+            .ensure_local_conversation_for_session_id(&session_id)
+            .await
+            .map_err(|e| {
+                format!(
+                    "chat step=ensure_conversation session={} err={}",
+                    session_id, e
                 )
-                .await
-            {
-                log::warn!(
-                    "posterior signal event persist failed session={} err={}",
-                    session_id,
-                    err
-                );
-            }
-            let capability_id = input
-                .capability_id
-                .clone()
-                .or(runtime_window.assistant_id.clone());
-            let summary_text = extract_summary_text(runtime_window.summary.as_ref());
-            let conversation_model_binding =
-                extract_local_conversation_model_binding(runtime_window.meta.as_ref());
-            let messages = runtime_window
-                .messages
-                .into_iter()
-                .map(convert_history_message_to_chat_input)
-                .collect();
-            (
-                capability_id,
-                summary_text,
-                messages,
-                conversation_model_binding,
+            })?;
+
+        store
+            .append_local_conversation_message(CreateConversationMessageRequest {
+                session_id: session_id.clone(),
+                role: "user".to_string(),
+                content: user_content.clone(),
+                name: None,
+                meta_info: None,
+                is_truncated: Some(false),
+                parent_message_id: None,
+            })
+            .await
+            .map_err(|e| {
+                format!(
+                    "chat step=append_user_message session={} err={}",
+                    session_id, e
+                )
+            })?;
+
+        let runtime_window = store
+            .load_local_conversation_runtime_window(&session_id)
+            .await
+            .map_err(|e| e.to_string())?;
+        let previous_trace_id = extract_latest_assistant_trace_id(&runtime_window.messages);
+        let user_action_ingress = UserActionIngress::new(
+            Some(session_id.clone()),
+            previous_trace_id.clone(),
+            user_content.clone(),
+        );
+        let posterior_signal_ingress =
+            PosteriorSignalIngress::new(user_action_ingress.posterior_signal_input());
+        let posterior_signal = resolve_posterior_signal_ingress(&posterior_signal_ingress);
+        let posterior_signal_input_json =
+            serde_json::to_string(posterior_signal_ingress.input()).ok();
+        if let Err(err) = store
+            .record_posterior_signal_event(
+                None,
+                Some(session_id.as_str()),
+                previous_trace_id.as_deref(),
+                posterior_signal.source.as_str(),
+                posterior_signal.signal.as_str(),
+                posterior_signal.confidence,
+                posterior_signal_input_json.as_deref(),
+                Some("followup_user_message"),
             )
-        };
+            .await
+        {
+            log::warn!(
+                "posterior signal event persist failed session={} err={}",
+                session_id,
+                err
+            );
+        }
+        if should_apply_posterior_signal(&posterior_signal) {
+            if let Some(trace_id) = previous_trace_id.as_deref() {
+                match store
+                    .get_latest_task_learning_run_by_trace_id(trace_id)
+                    .await
+                {
+                    Ok(Some(run)) => {
+                        if let Err(err) = apply_task_learning_revision(
+                            store.as_ref(),
+                            run.run_id.as_str(),
+                            posterior_signal.signal.as_str(),
+                            "followup_user_message",
+                            Some(user_content.as_str()),
+                        )
+                        .await
+                        {
+                            log::warn!(
+                                    "followup task learning revision failed session={} trace_id={} err={}",
+                                    session_id,
+                                    trace_id,
+                                    err
+                                );
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(err) => {
+                        log::warn!(
+                                "followup task learning run lookup failed session={} trace_id={} err={}",
+                                session_id,
+                                trace_id,
+                                err
+                            );
+                    }
+                }
+            }
+        }
+        let capability_id = input
+            .capability_id
+            .clone()
+            .or(runtime_window.assistant_id.clone());
+        let summary_text = extract_summary_text(runtime_window.summary.as_ref());
+        let conversation_model_binding =
+            extract_local_conversation_model_binding(runtime_window.meta.as_ref());
+        let messages = runtime_window
+            .messages
+            .into_iter()
+            .map(convert_history_message_to_chat_input)
+            .collect();
+        (
+            capability_id,
+            summary_text,
+            messages,
+            conversation_model_binding,
+        )
+    };
 
     let mut ctx = LocalWorkflowContext::new(
         app_state.clone(),
@@ -454,7 +494,9 @@ pub async fn execute_local_orchestrated_chat(
             session_id: session_id.clone(),
             capability_id: capability_id.clone(),
             explicit_task_agent_id: input.explicit_task_agent_id.clone(),
+            explicit_task_agent_profile_override: None,
             root_execution_id: input.root_execution_id.clone(),
+            task_input_source: desktop_runtime_core::TaskInputSource::UserChat,
             messages: ctx.messages.clone(),
             execution_policy: execution_policy.clone(),
             temperature: input.temperature,

@@ -1,6 +1,7 @@
 ﻿"use client"
 
 import { useCallback } from "react"
+import { useShallow } from "zustand/react/shallow"
 import { useChatStore } from "@/store/chat-store"
 import { useChatRuntimeStore } from "@/store/chat-runtime-store"
 import { useChatMessagingService } from "./use-chat-messaging-service"
@@ -18,14 +19,28 @@ export function useChatMessaging({ isTauriRuntime }: UseChatMessagingProps) {
     input,
     attachments,
     config,
-  } = useChatStore()
+  } = useChatStore(
+    useShallow((state) => ({
+      input: state.input,
+      attachments: state.attachments,
+      config: state.config,
+    }))
+  )
   const {
     isLoading,
     errorMessage,
     setErrorMessage,
     sessionId,
     setSessionId,
-  } = useChatRuntimeStore()
+  } = useChatRuntimeStore(
+    useShallow((state) => ({
+      isLoading: state.isLoading,
+      errorMessage: state.errorMessage,
+      setErrorMessage: state.setErrorMessage,
+      sessionId: state.sessionId,
+      setSessionId: state.setSessionId,
+    }))
+  )
   const {
     sendMessage: serviceSendMessage,
     pendingTakeover,

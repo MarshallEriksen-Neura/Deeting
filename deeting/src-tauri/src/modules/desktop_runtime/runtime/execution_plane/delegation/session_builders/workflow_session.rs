@@ -12,13 +12,14 @@ use crate::modules::desktop_runtime::runtime::build_local_tool_trace_blocks;
 use crate::modules::desktop_runtime::runtime::worker_dispatch::WorkerTargetSelection;
 use crate::modules::workflow::types::QuickWorkflowResult;
 use crate::modules::workflow::types::WorkflowRunStatus;
-use serde_json::json;
+use serde_json::{json, Value};
 
 pub(crate) fn build_workflow_delegated_execution_session(
     execution_id: String,
     profile: CustomTaskAgentProfile,
     selection: DelegatedExecutionSelection,
     packet_receipt: Option<DelegatedExecutionPacketReceipt>,
+    task_input_source: Option<Value>,
     worker_ref: String,
     result: Result<QuickWorkflowResult, String>,
 ) -> DelegatedExecutionSession {
@@ -63,7 +64,7 @@ pub(crate) fn build_workflow_delegated_execution_session(
             } else {
                 "failed"
             };
-            let payload = json!({
+            let mut payload = json!({
                 "status": status,
                 "agent_id": profile.id,
                 "agent_name": profile.name,
@@ -72,6 +73,7 @@ pub(crate) fn build_workflow_delegated_execution_session(
                 "content": primary_content,
                 "steps": step_statuses,
             });
+            attach_task_input_source(&mut payload, task_input_source.as_ref());
             let tool_trace_blocks = build_local_tool_trace_blocks(&[json!({
                 "id": format!("delegated-workflow-{}", workflow_run_id),
                 "name": format!("workflow/{}", profile.name),
@@ -121,13 +123,14 @@ pub(crate) fn build_workflow_delegated_execution_session(
             }
         }
         Err(error) => {
-            let payload = json!({
+            let mut payload = json!({
                 "status": "failed",
                 "agent_id": profile.id,
                 "agent_name": profile.name,
                 "execution_path": "workflow_runtime",
                 "error": error,
             });
+            attach_task_input_source(&mut payload, task_input_source.as_ref());
             let tool_trace_blocks = build_local_tool_trace_blocks(&[json!({
                 "id": format!("delegated-workflow-error-{}", execution_id),
                 "name": format!("workflow/{}", profile.name),
@@ -194,11 +197,12 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane::delegation) fn
     selection: &WorkerTargetSelection,
     execution_selection: &DelegatedExecutionSelection,
     packet_receipt: Option<DelegatedExecutionPacketReceipt>,
+    task_input_source: Option<Value>,
     worker_ref: String,
     workflow_run_id: String,
 ) -> DelegatedExecutionSession {
     let summary = format!("workflow {} running", workflow_run_id);
-    let waiting_payload = json!({
+    let mut waiting_payload = json!({
         "status": "running",
         "agent_id": selection.profile.id.clone(),
         "agent_name": selection.profile.name.clone(),
@@ -207,6 +211,7 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane::delegation) fn
         "content": serde_json::Value::Null,
         "steps": []
     });
+    attach_task_input_source(&mut waiting_payload, task_input_source.as_ref());
     let waiting_trace_blocks = build_local_tool_trace_blocks(&[json!({
         "id": format!("delegated-workflow-{}", workflow_run_id),
         "name": format!("workflow/{}", selection.profile.name),
@@ -241,5 +246,98 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane::delegation) fn
         feedback_messages: build_delegated_result_feedback_messages(&waiting_record),
         trace_blocks: waiting_trace_blocks,
         record: waiting_record,
+    }
+}
+
+fn attach_task_input_source(payload: &mut Value, task_input_source: Option<&Value>) {
+    if let (Value::Object(payload), Some(task_input_source)) = (payload, task_input_source) {
+        payload.insert("task_input_source".to_string(), task_input_source.clone());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn running_workflow_primary_output_carries_task_input_source() {
+        let task_input_source = json!({
+            "delegated_agent": {
+                "parent_task_id": "parent-task-1",
+                "parent_frame_id": "frame-parent-1",
+                "agent_id": "workflow.agent",
+                "return_channel": "workflow_event"
+            }
+        });
+
+        let session = build_running_workflow_session(
+            "exec-1",
+            &WorkerTargetSelection {
+                profile: test_profile("workflow.agent"),
+                score: 100,
+                reason: "explicit".to_string(),
+                reason_codes: vec!["explicit".to_string()],
+                candidate_count: 1,
+                selected_from_top_k: 1,
+                callable_coverage_score: 1.0,
+                modality_fit_score: 1.0,
+                profile_prior_score: 1.0,
+            },
+            &test_selection(),
+            None,
+            Some(task_input_source.clone()),
+            "user_worker_profile:workflow.agent".to_string(),
+            "workflow-run-1".to_string(),
+        );
+
+        assert_eq!(
+            session
+                .record
+                .primary_output
+                .as_ref()
+                .and_then(|value| value.get("task_input_source")),
+            Some(&task_input_source)
+        );
+    }
+
+    fn test_selection() -> DelegatedExecutionSelection {
+        DelegatedExecutionSelection {
+            explicit: true,
+            score: Some(100),
+            reason_codes: vec!["explicit".to_string()],
+            reason_text: Some("explicit selection".to_string()),
+            candidate_count: 1,
+            selected_from_top_k: 1,
+            callable_coverage_score: Some(1.0),
+            modality_fit_score: Some(1.0),
+            profile_prior_score: Some(1.0),
+        }
+    }
+
+    fn test_profile(id: &str) -> CustomTaskAgentProfile {
+        CustomTaskAgentProfile {
+            id: id.to_string(),
+            name: "Workflow Agent".to_string(),
+            description: None,
+            task_prompt: "Run workflow".to_string(),
+            invocation_kind: CustomTaskAgentInvocationKind::Chat,
+            preferred_for_image_generation: false,
+            model_config: None,
+            callable_mcp_tool_ids: Vec::new(),
+            guidance_skill_ids: Vec::new(),
+            callable_skill_action_refs: Vec::new(),
+            bound_asset_id: None,
+            tags: Vec::new(),
+            discoverable: true,
+            is_enabled: true,
+            is_deleted: false,
+            source_kind: None,
+            source_path: None,
+            source_repo: None,
+            source_ref: None,
+            source_hash: None,
+            created_at: "1970-01-01T00:00:00Z".to_string(),
+            updated_at: "1970-01-01T00:00:00Z".to_string(),
+        }
     }
 }

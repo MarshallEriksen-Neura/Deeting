@@ -50,7 +50,9 @@ pub(crate) use lifecycle::{
     list_canonical_pending_local_approval_snapshots, load_suspended_chat_tool_execution_for_resume,
     materialize_pending_local_approval_from_runtime_context,
     persist_suspended_execution_graph_runtime, serialize_delegated_runtime_context,
+    serialize_delegated_runtime_context_with_task_input_source,
     serialize_delegated_workflow_runtime_context,
+    serialize_delegated_workflow_runtime_context_with_task_input_source,
 };
 #[cfg(test)]
 use lifecycle::{build_structured_tool_replay_messages, serialize_tool_replay_content};
@@ -200,7 +202,10 @@ pub(crate) async fn run_local_chat_complete_with_tools(
         .await
         .map(|mut output| {
             backfill_captured_reasoning(&mut output.response, output.captured_reasoning.as_deref());
-            attach_diting_think_frame_extract(output.response, output.captured_frame_extract.as_ref())
+            attach_diting_think_frame_extract(
+                output.response,
+                output.captured_frame_extract.as_ref(),
+            )
         })
 }
 

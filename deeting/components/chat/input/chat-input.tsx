@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useShallow } from "zustand/react/shallow"
 import { Paperclip, Send, Square } from "lucide-react"
 import { GlassButton } from "@/ui/common/glass-button"
 import { Input } from "@/ui/shadcn/input"
@@ -94,11 +95,13 @@ export const ChatInput = React.memo<ChatInputProps>(
     const [attachmentError, setAttachmentError] = React.useState<string | null>(null)
     
     // 使用 attachments hook 来处理文件上传
-    const { addAttachments, models, config } = useChatStore((state) => ({
-      addAttachments: state.addAttachments,
-      models: state.models,
-      config: state.config,
-    }))
+    const { addAttachments, models, config } = useChatStore(
+      useShallow((state) => ({
+        addAttachments: state.addAttachments,
+        models: state.models,
+        config: state.config,
+      }))
+    )
     
     // 计算是否有内容
     const hasContent = Boolean(inputValue.trim() || attachments.length)

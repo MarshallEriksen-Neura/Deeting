@@ -43,6 +43,7 @@ pub(super) async fn recover_delegated_workflow_runtime_context(
                 "workflow:{}:completed:{}",
                 workflow_run_id, detail.run.updated_at
             ),
+            persisted.task_input_source.clone(),
         )
         .await
         {

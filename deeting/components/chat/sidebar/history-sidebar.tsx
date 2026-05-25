@@ -38,7 +38,6 @@ import { useChatRuntimeStore } from '@/store/chat-runtime-store';
 import { useChatMessagingService } from '@/hooks/chat/use-chat-messaging-service';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
-import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
 import type { ConversationSessionItem } from '@/lib/api/conversations';
 
 interface HistorySidebarProps {
@@ -50,7 +49,6 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
   const t = useI18n('chat');
   const router = useRouter();
   const searchParams = useSearchParams();
-  const isTauriRuntime = detectTauriRuntime();
   const [search, setSearch] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [actionSessionId, setActionSessionId] = useState<string | null>(null);
@@ -77,6 +75,7 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
       setGlobalLoading: state.setGlobalLoading,
     }))
   );
+  const isGenerating = useChatRuntimeStore((state) => state.isLoading || state.activeMessageId !== null);
 
   const { loadHistoryBySession } = useChatMessagingService();
 
@@ -304,14 +303,15 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
   useEffect(() => {
     if (!isOpen || !isDocumentVisible) return;
     void mutate();
+    const refreshIntervalMs = isGenerating ? 3000 : 12000;
     const timer = window.setInterval(() => {
       if (document.visibilityState !== 'visible') return;
       void mutate();
-    }, 3000);
+    }, refreshIntervalMs);
     return () => {
       window.clearInterval(timer);
     };
-  }, [isDocumentVisible, isOpen, mutate]);
+  }, [isDocumentVisible, isGenerating, isOpen, mutate]);
 
   const handleToggleArchived = useCallback(() => {
     setShowArchived((prev) => !prev);

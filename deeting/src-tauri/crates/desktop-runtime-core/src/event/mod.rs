@@ -1,4 +1,4 @@
-use crate::hook::HookEvent;
+use crate::hook::{HookDecision, HookEvent};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -15,7 +15,7 @@ pub enum RuntimeEvent {
     },
     HookDecisionRecorded {
         boundary: String,
-        decision: String,
+        decision: HookDecision,
     },
     PlanCreated {
         plan_id: String,

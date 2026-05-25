@@ -337,7 +337,7 @@ where
             .event_store
             .append_event(RuntimeEvent::HookDecisionRecorded {
                 boundary: format!("{:?}", boundary),
-                decision: format!("{:?}", decision),
+                decision: decision.clone(),
             })?;
         Ok(decision)
     }
@@ -365,7 +365,7 @@ where
             .event_store
             .append_event(RuntimeEvent::HookDecisionRecorded {
                 boundary: format!("{:?}", event),
-                decision: format!("{:?}", decision),
+                decision: decision.clone(),
             })?;
         Ok(decision)
     }

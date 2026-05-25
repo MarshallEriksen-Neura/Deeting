@@ -2,9 +2,11 @@ use super::super::LocalExecutionPolicy;
 use super::chat_completion::PolicyScopedChatCompletionInput;
 use super::execution_graph_projection::ExecutionGraphContext;
 use super::DelegatedExecutionSession;
-use crate::modules::desktop_runtime::runtime::chat_tool_runtime::DitingThinkExtract;
 use crate::modules::ai_upstream::types::LocalModelConnection;
+use crate::modules::custom_task_agents::types::CustomTaskAgentProfile;
+use crate::modules::desktop_runtime::runtime::chat_tool_runtime::DitingThinkExtract;
 use crate::state::AppState;
+use desktop_runtime_core::TaskInputSource;
 use mcp_core::types::LocalChatInputMessage;
 use serde_json::Value;
 use tauri::AppHandle;
@@ -18,7 +20,9 @@ pub(crate) struct LocalExecutionRequest {
     pub(crate) session_id: String,
     pub(crate) capability_id: Option<String>,
     pub(crate) explicit_task_agent_id: Option<String>,
+    pub(crate) explicit_task_agent_profile_override: Option<CustomTaskAgentProfile>,
     pub(crate) root_execution_id: Option<String>,
+    pub(crate) task_input_source: TaskInputSource,
     pub(crate) messages: Vec<LocalChatInputMessage>,
     pub(crate) execution_policy: LocalExecutionPolicy,
     pub(crate) temperature: Option<f32>,
@@ -67,6 +71,7 @@ impl From<LocalExecutionRequest> for PolicyScopedChatCompletionInput {
             session_id: request.session_id,
             capability_id: request.capability_id,
             explicit_task_agent_id: request.explicit_task_agent_id,
+            task_input_source: request.task_input_source,
             messages: request.messages,
             execution_policy: request.execution_policy,
             temperature: request.temperature,

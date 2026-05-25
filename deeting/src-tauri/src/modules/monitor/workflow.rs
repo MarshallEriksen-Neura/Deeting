@@ -164,6 +164,7 @@ impl MonitorState {
         ));
 
         Ok(LocalExecutionResult {
+            execution_id: ctx.execution_id,
             is_significant_change: ctx.is_significant_change,
             change_summary: ctx.change_summary,
             new_snapshot: ctx.new_snapshot,
@@ -297,22 +298,28 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorInvokeTaskAgentStep {
                 })),
             );
 
-            let response =
-                execute_monitor_task_agent(&app_handle, &app_state, &profile, &ctx.task, &prompt)
-                    .await
-                    .map_err(|err| {
-                        let error_message = err.clone();
-                        ctx.emit_status(
-                            "evolve",
-                            "monitor_execute_task_agent",
-                            "failed",
-                            "monitor.agent.error",
-                            Some(json!({
-                                "message": error_message,
-                            })),
-                        );
-                        err.to_string()
-                    })?;
+            let response = execute_monitor_task_agent(
+                &app_handle,
+                &app_state,
+                &profile,
+                &ctx.task,
+                ctx.execution_id.as_str(),
+                &prompt,
+            )
+            .await
+            .map_err(|err| {
+                let error_message = err.clone();
+                ctx.emit_status(
+                    "evolve",
+                    "monitor_execute_task_agent",
+                    "failed",
+                    "monitor.agent.error",
+                    Some(json!({
+                        "message": error_message,
+                    })),
+                );
+                err.to_string()
+            })?;
 
             let content = response.content;
             if content.trim().is_empty() {

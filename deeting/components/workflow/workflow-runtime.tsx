@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useShallow } from "zustand/react/shallow"
 import { toast } from "sonner"
 import { useWorkflowStore } from "@/store/workflow-store"
 import { useChatStore } from "@/store/chat-store"
@@ -33,7 +34,6 @@ export function WorkflowRuntime({
   initialPhaseId,
   initialContextPhaseId,
 }: WorkflowRuntimeProps) {
-  const store = useWorkflowStore()
   const {
     activePhaseId,
     closeContextViewer,
@@ -55,7 +55,30 @@ export function WorkflowRuntime({
     steps,
     togglePhaseExpanded,
     view,
-  } = store
+  } = useWorkflowStore(
+    useShallow((state) => ({
+      activePhaseId: state.activePhaseId,
+      closeContextViewer: state.closeContextViewer,
+      compileErrors: state.compileErrors,
+      contextViewerPhaseId: state.contextViewerPhaseId,
+      editedProposal: state.editedProposal,
+      events: state.events,
+      expandedPhaseIds: state.expandedPhaseIds,
+      failureFocusPhaseId: state.failureFocusPhaseId,
+      openContextViewer: state.openContextViewer,
+      resultFocusPhaseId: state.resultFocusPhaseId,
+      run: state.run,
+      runId: state.runId,
+      setActivePhaseId: state.setActivePhaseId,
+      setError: state.setError,
+      setLoading: state.setLoading,
+      setRun: state.setRun,
+      setRunDetail: state.setRunDetail,
+      steps: state.steps,
+      togglePhaseExpanded: state.togglePhaseExpanded,
+      view: state.view,
+    }))
+  )
   const chatModelSelection = useChatStore((state) => state.config.model)
   const chatModels = useChatStore((state) => state.models)
   const [phaseResult, setPhaseResult] = useState<{

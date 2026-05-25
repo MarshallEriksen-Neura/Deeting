@@ -12,6 +12,7 @@ pub(crate) async fn resume_delegated_runtime_after_workflow_event(
     execution_graph_execution_id: &str,
     workflow_run_id: &str,
     event_id: &str,
+    task_input_source: Option<serde_json::Value>,
 ) -> Result<Option<serde_json::Value>, String> {
     let detail =
         crate::modules::workflow::service::get_workflow_run_status(app_state, workflow_run_id)
@@ -19,6 +20,7 @@ pub(crate) async fn resume_delegated_runtime_after_workflow_event(
     let delegated_execution = build_workflow_delegated_execution_session_for_resume(
         execution_graph_execution_id.trim().to_string(),
         detail,
+        task_input_source,
     );
 
     resume_delegated_runtime_with_session(
@@ -62,6 +64,7 @@ pub(crate) async fn wake_delegated_runtime_for_workflow_run(
             row.execution_id.as_str(),
             normalized_workflow_run_id,
             event_id,
+            context.task_input_source.clone(),
         )
         .await?
         .is_some());

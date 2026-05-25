@@ -1214,6 +1214,7 @@ mod tests {
         let default_policy = monitor_delivery_policy_from_notify_config(&json!({}));
 
         let changed = LocalExecutionResult {
+            execution_id: "exec-changed".to_string(),
             is_significant_change: true,
             change_summary: "changed".to_string(),
             new_snapshot: json!({}),
@@ -1224,6 +1225,7 @@ mod tests {
             events: vec![],
         };
         let unchanged = LocalExecutionResult {
+            execution_id: "exec-unchanged".to_string(),
             is_significant_change: false,
             change_summary: "same".to_string(),
             new_snapshot: json!({}),

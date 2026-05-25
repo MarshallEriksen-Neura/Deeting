@@ -85,7 +85,10 @@ pub(super) use inflight::{
 };
 pub(super) use inflight_chat_runtime_context::PersistedChatToolRuntimeContext;
 pub(crate) use inflight_delegated_serialization::{
-    serialize_delegated_runtime_context, serialize_delegated_workflow_runtime_context,
+    serialize_delegated_runtime_context,
+    serialize_delegated_runtime_context_with_task_input_source,
+    serialize_delegated_workflow_runtime_context,
+    serialize_delegated_workflow_runtime_context_with_task_input_source,
 };
 pub(super) use inflight_delegation_wait::PersistedDelegationWait;
 pub(super) use inflight_execution_context::PersistedInFlightExecutionContext;

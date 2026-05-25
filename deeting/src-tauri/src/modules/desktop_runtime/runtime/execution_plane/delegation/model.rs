@@ -163,6 +163,13 @@ impl DelegatedExecutionRecord {
     }
 
     pub(crate) fn status_meta_with_status(&self, status: DelegatedExecutionStatus) -> Value {
+        let task_input_source = self
+            .primary_output
+            .as_ref()
+            .and_then(|value| value.get("task_input_source"))
+            .cloned()
+            .unwrap_or(Value::Null);
+
         json!({
             "schema_version": EXECUTION_TREE_SCHEMA_VERSION,
             "root_execution_id": self.execution_id.clone(),
@@ -178,6 +185,7 @@ impl DelegatedExecutionRecord {
             "selection": serialize_execution_selection(&self.selection),
             "packet_receipt": serialize_packet_receipt(&self.packet_receipt),
             "available_actions": serialize_execution_actions(&self.available_actions),
+            "task_input_source": task_input_source,
             "children": serialize_execution_children(&self.children),
             "summary": self.summary.clone(),
             "error": self.error.clone(),
@@ -225,5 +233,62 @@ impl DelegatedExecutionSession {
                 "worker_ref": self.record.target.worker_ref.clone(),
             }
         })
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn status_meta_with_status_lifts_task_input_source_from_primary_output() {
+        let task_input_source = json!({
+            "delegated_agent": {
+                "parent_task_id": "parent-task-1",
+                "parent_frame_id": "frame-parent-1",
+                "child_run_id": "child-run-1",
+                "child_frame_id": "frame-parent-1:delegation:child-run-1",
+                "agent_id": "agent.research",
+                "return_channel": "parent_frame_observation"
+            }
+        });
+        let record = DelegatedExecutionRecord {
+            execution_id: "exec-1".to_string(),
+            kind: DelegatedExecutionKind::CustomTaskAgent,
+            status: DelegatedExecutionStatus::Succeeded,
+            target: DelegatedExecutionTarget {
+                id: "agent.research".to_string(),
+                name: "Research Agent".to_string(),
+                invocation_kind: Some("chat".to_string()),
+                worker_ref: None,
+                workflow_run_id: None,
+            },
+            selection: DelegatedExecutionSelection {
+                explicit: true,
+                score: Some(100),
+                reason_codes: vec!["explicit".to_string()],
+                reason_text: Some("explicit selection".to_string()),
+                candidate_count: 1,
+                selected_from_top_k: 1,
+                callable_coverage_score: Some(1.0),
+                modality_fit_score: Some(1.0),
+                profile_prior_score: Some(1.0),
+            },
+            packet_receipt: None,
+            available_actions: Vec::new(),
+            children: Vec::new(),
+            summary: Some("done".to_string()),
+            primary_output: Some(json!({
+                "status": "completed",
+                "task_input_source": task_input_source.clone()
+            })),
+            error: None,
+            started_at_ms: 1,
+            completed_at_ms: Some(2),
+        };
+
+        let tree = record.status_meta_with_status(DelegatedExecutionStatus::Integrated);
+
+        assert_eq!(tree.get("task_input_source"), Some(&task_input_source));
     }
 }

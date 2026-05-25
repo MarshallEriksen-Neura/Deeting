@@ -16,15 +16,18 @@ use crate::modules::custom_task_agents::types::{CustomTaskAgentProfile, CustomTa
 use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUNDS_CONFIG_KEY};
 use crate::modules::desktop_runtime::runtime::chat_tool_runtime::{
     build_persisted_chat_runtime_context_from_execution_request,
-    resume_delegated_runtime_after_custom_task_agent_run, serialize_delegated_runtime_context,
+    resume_delegated_runtime_after_custom_task_agent_run,
+    serialize_delegated_runtime_context_with_task_input_source,
 };
 use crate::modules::desktop_runtime::runtime::worker_dispatch::{
-    WorkerTargetSelection, WorkerTaskPacket,
+    custom_task_agent_return_channel, delegated_agent_task_input_source, WorkerTargetSelection,
+    WorkerTaskPacket,
 };
 use crate::modules::desktop_runtime::runtime::{
     build_local_tool_trace_blocks, persist_execution_graph_runtime_context,
 };
 use crate::modules::mcp::store::McpStore;
+use desktop_runtime_core::ApprovalInheritance;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -40,6 +43,7 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane) async fn deleg
     execution_selection: DelegatedExecutionSelection,
     packet_receipt: Option<DelegatedExecutionPacketReceipt>,
     task_packet: WorkerTaskPacket,
+    parent_frame_id: Option<String>,
 ) -> Result<Option<DelegatedExecutionSession>, String>
 where
     F: FnMut(&str, Option<&str>, &str, &str, Option<Value>),
@@ -78,6 +82,15 @@ where
     let max_rounds =
         resolve_worker_task_agent_max_rounds(request.app_state.mcp.store.as_ref()).await;
     let child_run_id = Uuid::new_v4().to_string();
+    let task_input_source = delegated_agent_task_input_source(
+        &selection,
+        &task_packet,
+        parent_frame_id.clone(),
+        Some(child_run_id.clone()),
+        custom_task_agent_return_channel(&selection.profile.invocation_kind),
+        ApprovalInheritance::ParentDecides,
+    );
+    let task_input_source_payload = serde_json::to_value(&task_input_source).unwrap_or(Value::Null);
     create_custom_task_agent_run(
         request.app_state.mcp.store.as_ref(),
         child_run_id.as_str(),
@@ -90,6 +103,7 @@ where
             "max_tokens": request.max_tokens,
             "max_rounds": max_rounds,
             "worker_task_packet": task_packet.as_value(),
+            "task_input_source": task_input_source_payload.clone(),
         }),
     )
     .await
@@ -127,6 +141,7 @@ where
                     selection.profile.clone(),
                     execution_selection,
                     packet_receipt,
+                    Some(task_input_source_payload.clone()),
                     Ok(result),
                     render_blocks,
                 );
@@ -151,6 +166,7 @@ where
                     selection.profile.clone(),
                     execution_selection,
                     packet_receipt,
+                    Some(task_input_source_payload.clone()),
                     Err(err.clone()),
                     Vec::new(),
                 );
@@ -179,6 +195,7 @@ where
         execution_id.as_str(),
         child_run_id.as_str(),
         &selection.profile,
+        &task_input_source_payload,
         query.as_str(),
         max_rounds,
     )
@@ -193,6 +210,7 @@ where
         execution_selection.clone(),
         packet_receipt.clone(),
         task_packet,
+        task_input_source_payload.clone(),
         child_run_id.clone(),
         max_rounds,
     );
@@ -202,6 +220,7 @@ where
         selection,
         execution_selection,
         packet_receipt,
+        Some(task_input_source_payload),
         child_run_id,
     )))
 }
@@ -220,6 +239,7 @@ async fn persist_custom_task_agent_delegated_runtime_context(
     execution_id: &str,
     child_run_id: &str,
     profile: &CustomTaskAgentProfile,
+    task_input_source_payload: &Value,
     query: &str,
     max_rounds: u32,
 ) {
@@ -233,7 +253,7 @@ async fn persist_custom_task_agent_delegated_runtime_context(
         trace_id.clone(),
         max_rounds as usize,
     );
-    let context = serialize_delegated_runtime_context(
+    let context = serialize_delegated_runtime_context_with_task_input_source(
         Some(format!("custom_task_agent_run:{child_run_id}")),
         None,
         DelegatedExecutionKind::CustomTaskAgent.as_str(),
@@ -248,6 +268,7 @@ async fn persist_custom_task_agent_delegated_runtime_context(
         request.request_id.as_deref(),
         Some(execution_id),
         None,
+        Some(task_input_source_payload.clone()),
     );
 
     if let Err(err) = persist_execution_graph_runtime_context(
@@ -275,6 +296,7 @@ fn spawn_custom_task_agent_preview(
     execution_selection: DelegatedExecutionSelection,
     packet_receipt: Option<DelegatedExecutionPacketReceipt>,
     task_packet: WorkerTaskPacket,
+    task_input_source_payload: Value,
     child_run_id: String,
     max_rounds: u32,
 ) {
@@ -317,6 +339,7 @@ fn spawn_custom_task_agent_preview(
                     profile.clone(),
                     selection_payload.clone(),
                     packet_receipt_payload.clone(),
+                    Some(task_input_source_payload.clone()),
                     Ok(result),
                     render_blocks,
                 );
@@ -350,6 +373,7 @@ fn spawn_custom_task_agent_preview(
                     profile.clone(),
                     selection_payload.clone(),
                     packet_receipt_payload.clone(),
+                    Some(task_input_source_payload.clone()),
                     Err(err.clone()),
                     Vec::new(),
                 );
@@ -385,6 +409,7 @@ fn build_running_custom_task_agent_session(
     selection: WorkerTargetSelection,
     execution_selection: DelegatedExecutionSelection,
     packet_receipt: Option<DelegatedExecutionPacketReceipt>,
+    task_input_source_payload: Option<Value>,
     child_run_id: String,
 ) -> DelegatedExecutionSession {
     let agent_id = selection.profile.id.clone();
@@ -407,12 +432,23 @@ fn build_running_custom_task_agent_session(
         }],
         children: Vec::new(),
         summary: Some(format!("custom task agent {} running", agent_name)),
-        primary_output: Some(json!({
-            "status": CustomTaskAgentRunStatus::Running.as_str(),
-            "agent_id": agent_id,
-            "agent_name": agent_name,
-            "run_id": child_run_id.clone(),
-        })),
+        primary_output: Some({
+            let mut payload = json!({
+                "status": CustomTaskAgentRunStatus::Running.as_str(),
+                "agent_id": agent_id,
+                "agent_name": agent_name,
+                "run_id": child_run_id.clone(),
+            });
+            if let (Value::Object(payload), Some(task_input_source_payload)) =
+                (&mut payload, task_input_source_payload.as_ref())
+            {
+                payload.insert(
+                    "task_input_source".to_string(),
+                    task_input_source_payload.clone(),
+                );
+            }
+            payload
+        }),
         error: None,
         started_at_ms: chrono::Utc::now().timestamp_millis(),
         completed_at_ms: None,
@@ -420,17 +456,28 @@ fn build_running_custom_task_agent_session(
 
     DelegatedExecutionSession {
         feedback_messages: build_delegated_result_feedback_messages(&record),
-        trace_blocks: build_local_tool_trace_blocks(&[json!({
-            "id": format!("delegated-agent-run-{}", child_run_id),
-            "name": format!("custom_task_agent/{}", selection.profile.name),
-            "status": "running",
-            "result": {
+        trace_blocks: build_local_tool_trace_blocks(&[{
+            let mut trace_result = json!({
                 "status": CustomTaskAgentRunStatus::Running.as_str(),
                 "run_id": child_run_id.clone(),
                 "agent_id": selection.profile.id.clone(),
                 "agent_name": selection.profile.name.clone(),
+            });
+            if let (Value::Object(trace_result), Some(task_input_source_payload)) =
+                (&mut trace_result, task_input_source_payload.as_ref())
+            {
+                trace_result.insert(
+                    "task_input_source".to_string(),
+                    task_input_source_payload.clone(),
+                );
             }
-        })]),
+            json!({
+                "id": format!("delegated-agent-run-{}", child_run_id),
+                "name": format!("custom_task_agent/{}", selection.profile.name),
+                "status": "running",
+                "result": trace_result,
+            })
+        }]),
         record,
     }
 }

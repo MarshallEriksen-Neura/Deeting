@@ -59,6 +59,22 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
   return tauriInvoke<T>(cmd, args)
 }
 
+const inflightWorkflowDetailRequests = new Map<string, Promise<WorkflowRunDetail>>()
+
+function coalesceWorkflowDetailRequest(
+  key: string,
+  load: () => Promise<WorkflowRunDetail>,
+): Promise<WorkflowRunDetail> {
+  const pending = inflightWorkflowDetailRequests.get(key)
+  if (pending) return pending
+
+  const request = load().finally(() => {
+    inflightWorkflowDetailRequests.delete(key)
+  })
+  inflightWorkflowDetailRequests.set(key, request)
+  return request
+}
+
 export async function listWorkflowRuns(): Promise<WorkflowRun[]> {
   return invoke<WorkflowRun[]>("list_workflow_runs")
 }
@@ -68,11 +84,15 @@ export async function getWorkflowRun(runId: string): Promise<WorkflowRun> {
 }
 
 export async function getWorkflowRunDetail(runId: string): Promise<WorkflowRunDetail> {
-  return invoke<WorkflowRunDetail>("get_workflow_run_detail", { runId })
+  return coalesceWorkflowDetailRequest(`detail:${runId}`, () =>
+    invoke<WorkflowRunDetail>("get_workflow_run_detail", { runId })
+  )
 }
 
 export async function getWorkflowRunStatus(runId: string): Promise<WorkflowRunDetail> {
-  return invoke<WorkflowRunDetail>("get_workflow_run_status", { runId })
+  return coalesceWorkflowDetailRequest(`status:${runId}`, () =>
+    invoke<WorkflowRunDetail>("get_workflow_run_status", { runId })
+  )
 }
 
 export async function getWorkflowPhaseContext(

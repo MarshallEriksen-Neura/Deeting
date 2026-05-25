@@ -253,6 +253,7 @@ pub fn compile_proposal(
                 result_schema_hint: Some(value.clone()),
             }),
             worker_task_packet: None,
+            task_input_source: None,
         });
     }
 

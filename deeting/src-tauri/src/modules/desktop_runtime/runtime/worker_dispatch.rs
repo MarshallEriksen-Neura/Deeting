@@ -2,9 +2,16 @@ use super::{
     should_run_semantic_recall,
     sovereign::{DecisionLocus, Self_},
 };
+use crate::modules::custom_task_agents::skill_actions::callable_skill_action_name;
 use crate::modules::custom_task_agents::store::{get_custom_task_agent, list_custom_task_agents};
-use crate::modules::custom_task_agents::types::CustomTaskAgentProfile;
+use crate::modules::custom_task_agents::types::{
+    CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
+};
 use crate::state::AppState;
+use desktop_runtime_core::{
+    ApprovalInheritance, CapabilityLease, DelegatedInvocationKind, DelegationReturnChannel,
+    TaskInputSource,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -421,6 +428,78 @@ pub(crate) fn build_worker_task_packet(
     packet
 }
 
+pub(crate) fn delegated_agent_task_input_source(
+    selection: &WorkerTargetSelection,
+    packet: &WorkerTaskPacket,
+    parent_frame_id: Option<String>,
+    child_run_id: Option<String>,
+    return_channel: DelegationReturnChannel,
+    approval_inheritance: ApprovalInheritance,
+) -> TaskInputSource {
+    let child_frame_id = child_run_id
+        .as_ref()
+        .map(|run_id| match parent_frame_id.as_deref() {
+            Some(parent_frame_id) if !parent_frame_id.is_empty() => {
+                format!("{parent_frame_id}:delegation:{run_id}")
+            }
+            _ => format!("delegation:{run_id}"),
+        });
+
+    TaskInputSource::DelegatedAgent {
+        parent_task_id: packet.task_id.clone(),
+        parent_frame_id,
+        child_run_id,
+        child_frame_id,
+        agent_id: selection.profile.id.clone(),
+        invocation_kind: delegated_invocation_kind(&selection.profile.invocation_kind),
+        delegated_goal: packet.goal.clone(),
+        capability_lease: CapabilityLease {
+            allowed_tools: callable_tool_names_for_lease(&selection.profile),
+            allowed_actions: packet.allowed_actions.clone(),
+            model_id: selection
+                .profile
+                .model_config
+                .as_ref()
+                .and_then(|value| value.get("model"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
+            expires_at: None,
+        },
+        return_channel,
+        approval_inheritance,
+    }
+}
+
+pub(crate) fn custom_task_agent_return_channel(
+    invocation_kind: &CustomTaskAgentInvocationKind,
+) -> DelegationReturnChannel {
+    match invocation_kind {
+        CustomTaskAgentInvocationKind::Chat => DelegationReturnChannel::ParentFrameObservation,
+        CustomTaskAgentInvocationKind::ImageGeneration
+        | CustomTaskAgentInvocationKind::TextToSpeech => DelegationReturnChannel::DirectArtifact,
+    }
+}
+
+fn callable_tool_names_for_lease(profile: &CustomTaskAgentProfile) -> Vec<String> {
+    let mut names = profile.callable_mcp_tool_ids.clone();
+    names.extend(profile.callable_skill_action_refs.iter().map(|reference| {
+        callable_skill_action_name(reference.skill_id.as_str(), reference.action_id.as_str())
+    }));
+    names.sort();
+    names.dedup();
+    names
+}
+
+fn delegated_invocation_kind(kind: &CustomTaskAgentInvocationKind) -> DelegatedInvocationKind {
+    match kind {
+        CustomTaskAgentInvocationKind::Chat => DelegatedInvocationKind::Chat,
+        CustomTaskAgentInvocationKind::ImageGeneration => DelegatedInvocationKind::ImageGeneration,
+        CustomTaskAgentInvocationKind::TextToSpeech => DelegatedInvocationKind::TextToSpeech,
+    }
+}
+
 pub(crate) fn render_worker_task_packet_notes(packet: &WorkerTaskPacket) -> String {
     let packet_json = serde_json::to_string_pretty(packet).unwrap_or_else(|_| "{}".to_string());
     format!(
@@ -819,11 +898,15 @@ impl StringExt for String {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_worker_task_packet, select_custom_task_agent_candidate,
+        build_worker_task_packet, custom_task_agent_return_channel,
+        delegated_agent_task_input_source, select_custom_task_agent_candidate,
         select_custom_task_agent_candidate_with_priors, WorkerTaskPacketInput,
     };
     use crate::modules::custom_task_agents::types::{
-        CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
+        CustomTaskAgentInvocationKind, CustomTaskAgentProfile, CustomTaskAgentSkillActionRef,
+    };
+    use desktop_runtime_core::{
+        ApprovalInheritance, DelegatedInvocationKind, DelegationReturnChannel, TaskInputSource,
     };
     use serde_json::json;
     use std::collections::HashMap;
@@ -1083,5 +1166,115 @@ mod tests {
             .allowed_actions
             .iter()
             .any(|item| item.contains("bound_asset_reference")));
+    }
+
+    #[test]
+    fn delegated_agent_task_input_source_carries_child_frame_contract() {
+        let mut selection = select_custom_task_agent_candidate(
+            "analyze the worker route",
+            &[build_profile(
+                "research.worker",
+                "Research Worker",
+                "Investigates runtime architecture",
+                CustomTaskAgentInvocationKind::Chat,
+                &["research", "analysis"],
+                false,
+                &["tool.search", "tool.shell"],
+            )],
+            &HashMap::new(),
+        )
+        .expect("selection");
+        selection.profile.callable_skill_action_refs = vec![CustomTaskAgentSkillActionRef {
+            skill_id: "system/monitor".to_string(),
+            action_id: "sys_create_monitor".to_string(),
+        }];
+        let packet = build_worker_task_packet(
+            &selection,
+            WorkerTaskPacketInput {
+                task_id: "parent-exec-1".to_string(),
+                route: "worker".to_string(),
+                goal: "Analyze the current worker route".to_string(),
+                user_query: "Analyze the current worker route".to_string(),
+                raw_user_text: Some("Analyze the current worker route".to_string()),
+                image_urls: Vec::new(),
+                parent_allowed_tool_names: vec!["search_sdk".to_string()],
+                prefer_workflow_runtime: true,
+                explicit_task_agent_id: Some("research.worker".to_string()),
+                bound_asset_reference: None,
+            },
+        );
+
+        let source = delegated_agent_task_input_source(
+            &selection,
+            &packet,
+            Some("frame-parent-1".to_string()),
+            Some("child-run-1".to_string()),
+            custom_task_agent_return_channel(&selection.profile.invocation_kind),
+            ApprovalInheritance::ParentDecides,
+        );
+
+        match source {
+            TaskInputSource::DelegatedAgent {
+                parent_task_id,
+                parent_frame_id,
+                child_run_id,
+                child_frame_id,
+                agent_id,
+                invocation_kind,
+                delegated_goal,
+                capability_lease,
+                return_channel,
+                approval_inheritance,
+            } => {
+                assert_eq!(parent_task_id, "parent-exec-1");
+                assert_eq!(parent_frame_id.as_deref(), Some("frame-parent-1"));
+                assert_eq!(child_run_id.as_deref(), Some("child-run-1"));
+                assert_eq!(
+                    child_frame_id.as_deref(),
+                    Some("frame-parent-1:delegation:child-run-1")
+                );
+                assert_eq!(agent_id, "research.worker");
+                assert_eq!(invocation_kind, DelegatedInvocationKind::Chat);
+                assert_eq!(delegated_goal, "Analyze the current worker route");
+                assert_eq!(
+                    return_channel,
+                    DelegationReturnChannel::ParentFrameObservation
+                );
+                assert_eq!(approval_inheritance, ApprovalInheritance::ParentDecides);
+                assert!(capability_lease
+                    .allowed_tools
+                    .iter()
+                    .any(|tool| tool == "tool.search"));
+                assert!(capability_lease
+                    .allowed_tools
+                    .iter()
+                    .any(|tool| tool == "skill_action__system_monitor__sys_create_monitor"));
+                assert!(!capability_lease
+                    .allowed_tools
+                    .iter()
+                    .any(|tool| tool == "system/monitor.sys_create_monitor"));
+                assert!(capability_lease
+                    .allowed_actions
+                    .iter()
+                    .any(|action| action.contains("bounded delegated result")));
+            }
+            other => panic!("expected delegated agent source, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn custom_task_agent_return_channel_marks_media_as_direct_artifact() {
+        assert_eq!(
+            custom_task_agent_return_channel(&CustomTaskAgentInvocationKind::Chat),
+            DelegationReturnChannel::ParentFrameObservation
+        );
+        assert_eq!(
+            custom_task_agent_return_channel(&CustomTaskAgentInvocationKind::ImageGeneration),
+            DelegationReturnChannel::DirectArtifact
+        );
+        assert_eq!(
+            custom_task_agent_return_channel(&CustomTaskAgentInvocationKind::TextToSpeech),
+            DelegationReturnChannel::DirectArtifact
+        );
     }
 }

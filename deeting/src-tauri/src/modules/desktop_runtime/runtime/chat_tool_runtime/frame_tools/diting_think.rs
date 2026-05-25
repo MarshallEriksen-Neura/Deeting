@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub(crate) const DITING_THINK_TOOL_NAME:
-    &str = "diting_think";
+pub(crate) const DITING_THINK_TOOL_NAME: &str = "diting_think";
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct DitingThinkExtract {
@@ -122,9 +121,7 @@ pub(crate) fn inject_diting_think_tool(
     }
 }
 
-pub(crate) fn format_diting_think_reasoning(
-    arguments: &serde_json::Value,
-) -> String {
+pub(crate) fn format_diting_think_reasoning(arguments: &serde_json::Value) -> String {
     let mut parts = Vec::new();
     if let Some(intent) = arguments
         .get("intent")

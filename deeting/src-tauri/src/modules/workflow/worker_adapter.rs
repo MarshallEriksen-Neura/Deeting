@@ -5,9 +5,13 @@ use crate::modules::custom_task_agents::runtime::preview_custom_task_agent;
 use crate::modules::custom_task_agents::types::{
     CustomTaskAgentPreviewRequest, CustomTaskAgentProfile,
 };
+use crate::modules::desktop_runtime::runtime::worker_dispatch::{
+    delegated_agent_task_input_source, WorkerTargetSelection, WorkerTaskPacket,
+};
 use crate::modules::mcp::store::McpStore;
 use crate::modules::providers::model_guard::resolve_local_secretary_model_connection;
 use crate::state::AppState;
+use desktop_runtime_core::{ApprovalInheritance, DelegationReturnChannel};
 use mcp_core::types::LocalChatInputMessage;
 use serde_json::Value;
 use tauri::AppHandle;
@@ -85,6 +89,7 @@ async fn execute_via_worker_profile(
         provider_model_id: response.provider_model_id,
         tool_trace: response.tool_trace,
         images: response.images,
+        metadata: build_worker_profile_result_metadata(input, profile),
         error: if status == "failed" {
             Some("Worker execution reported error status".to_string())
         } else {
@@ -188,6 +193,7 @@ async fn execute_via_direct_llm(
         provider_model_id: model_connection.provider_model_id,
         tool_trace: Vec::new(),
         images: Vec::new(),
+        metadata: None,
         error: if status == "failed" {
             Some("LLM returned empty response".to_string())
         } else {
@@ -260,6 +266,60 @@ fn extract_text_value(value: Option<&Value>) -> String {
     }
 }
 
+fn build_worker_profile_result_metadata(
+    input: &WorkerExecutionInput,
+    profile: &CustomTaskAgentProfile,
+) -> Option<Value> {
+    let packet = workflow_worker_task_packet(input)?;
+    let selection = WorkerTargetSelection {
+        profile: profile.clone(),
+        score: 0,
+        reason: "workflow_worker_ref".to_string(),
+        reason_codes: vec!["workflow_worker_ref".to_string()],
+        candidate_count: 1,
+        selected_from_top_k: 1,
+        callable_coverage_score: 1.0,
+        modality_fit_score: 1.0,
+        profile_prior_score: 0.0,
+    };
+    let fallback_child_run_id = format!("workflow:{}:phase:{}", input.run_id, input.phase_id);
+    let task_input_source = workflow_task_input_source(input)
+        .cloned()
+        .unwrap_or_else(|| {
+            serde_json::to_value(delegated_agent_task_input_source(
+                &selection,
+                packet,
+                None,
+                Some(fallback_child_run_id.clone()),
+                DelegationReturnChannel::WorkflowEvent,
+                ApprovalInheritance::ParentDecides,
+            ))
+            .unwrap_or(Value::Null)
+        });
+
+    Some(serde_json::json!({
+        "execution_path": "workflow_worker_profile",
+        "worker_task_packet": packet,
+        "task_input_source": task_input_source,
+    }))
+}
+
+fn workflow_worker_task_packet(input: &WorkerExecutionInput) -> Option<&WorkerTaskPacket> {
+    input.context_packet.worker_task_packet.as_ref().or(input
+        .context_packet
+        .context_json
+        .worker_task_packet
+        .as_ref())
+}
+
+fn workflow_task_input_source(input: &WorkerExecutionInput) -> Option<&Value> {
+    input.context_packet.task_input_source.as_ref().or(input
+        .context_packet
+        .context_json
+        .task_input_source
+        .as_ref())
+}
+
 fn direct_llm_model_resolution_request(profile_slug: &str) -> (String, Option<String>) {
     let trimmed = profile_slug.trim();
     if trimmed.is_empty() || trimmed == "default" {
@@ -284,13 +344,106 @@ fn normalize_execution_status(status: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_worker_profile_preview_request, direct_llm_model_resolution_request,
-        extract_chat_response_content, normalize_execution_status,
+        build_worker_profile_preview_request, build_worker_profile_result_metadata,
+        direct_llm_model_resolution_request, extract_chat_response_content,
+        normalize_execution_status,
     };
+    use crate::modules::custom_task_agents::types::{
+        CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
+    };
+    use crate::modules::desktop_runtime::runtime::worker_dispatch::WorkerTaskPacket;
     use crate::modules::workflow::types::{
         ContextConstraints, ContextInputs, ContextJson, ContextPacket, WorkerExecutionInput,
     };
     use serde_json::json;
+
+    fn worker_task_packet() -> WorkerTaskPacket {
+        serde_json::from_value(json!({
+            "schema_version": 1,
+            "task_id": "exec-1",
+            "route": "worker",
+            "goal": "Analyze findings",
+            "user_query": "Analyze findings",
+            "task_kind": "analysis",
+            "deliverable_kind": "structured_findings",
+            "context_summary": "runtime-selected worker",
+            "relevant_inputs": {},
+            "required_capabilities": ["tool.search"],
+            "candidate_capabilities": ["search_sdk"],
+            "constraints": ["Stay scoped"],
+            "non_goals": ["Do not reroute"],
+            "allowed_actions": ["Analyze"],
+            "forbidden_actions": ["Reroute"],
+            "output_contract": {"kind":"structured_findings"},
+            "completion_standard": "Return findings",
+            "escalation_policy": "Block explicitly",
+            "packet_hash": "packet-123"
+        }))
+        .expect("worker task packet")
+    }
+
+    fn worker_execution_input(packet: WorkerTaskPacket) -> WorkerExecutionInput {
+        WorkerExecutionInput {
+            run_id: "run-1".to_string(),
+            phase_id: "phase-1".to_string(),
+            worker_ref: "user_worker_profile:research.worker".to_string(),
+            context_packet: ContextPacket {
+                run_id: "run-1".to_string(),
+                phase_id: "phase-1".to_string(),
+                phase_title: "Research".to_string(),
+                context_md: "## Task".to_string(),
+                context_json: ContextJson {
+                    run_id: "run-1".to_string(),
+                    phase_id: "phase-1".to_string(),
+                    phase_title: "Research".to_string(),
+                    proposal_version: 1,
+                    snapshot_version: 1,
+                    worker_ref: "user_worker_profile:research.worker".to_string(),
+                    goal: "Analyze findings".to_string(),
+                    constraints: ContextConstraints {
+                        timeout_ms: 1000,
+                        allowed_tools: Vec::new(),
+                    },
+                    inputs: ContextInputs::default(),
+                    expected_output: None,
+                    worker_task_packet: Some(packet.clone()),
+                    task_input_source: None,
+                },
+                worker_task_packet: Some(packet),
+                task_input_source: None,
+            },
+            temperature: Some(0.2),
+            max_tokens: Some(2048),
+            max_rounds: Some(3),
+        }
+    }
+
+    fn worker_profile() -> CustomTaskAgentProfile {
+        CustomTaskAgentProfile {
+            id: "research.worker".to_string(),
+            name: "Research Worker".to_string(),
+            description: Some("Researches delegated workflow phases".to_string()),
+            task_prompt: "Complete the delegated task.".to_string(),
+            invocation_kind: CustomTaskAgentInvocationKind::Chat,
+            preferred_for_image_generation: false,
+            model_config: None,
+            callable_mcp_tool_ids: vec!["tool.search".to_string()],
+            guidance_skill_ids: Vec::new(),
+            callable_skill_action_refs: Vec::new(),
+            bound_asset_id: None,
+            tags: vec!["research".to_string()],
+            discoverable: true,
+            is_enabled: true,
+            is_deleted: false,
+            source_kind: None,
+            source_path: None,
+            source_repo: None,
+            source_ref: None,
+            source_hash: None,
+            created_at: "2026-05-25T00:00:00Z".to_string(),
+            updated_at: "2026-05-25T00:00:00Z".to_string(),
+        }
+    }
 
     #[test]
     fn resolve_direct_llm_default_prefix() {
@@ -403,60 +556,7 @@ mod tests {
 
     #[test]
     fn build_worker_profile_preview_request_forwards_worker_task_packet() {
-        let packet: crate::modules::desktop_runtime::runtime::worker_dispatch::WorkerTaskPacket =
-            serde_json::from_value(json!({
-            "schema_version": 1,
-            "task_id": "exec-1",
-            "route": "worker",
-            "goal": "Analyze findings",
-            "user_query": "Analyze findings",
-            "task_kind": "analysis",
-            "deliverable_kind": "structured_findings",
-            "context_summary": "runtime-selected worker",
-            "relevant_inputs": {},
-            "required_capabilities": ["tool.search"],
-            "candidate_capabilities": ["search_sdk"],
-            "constraints": ["Stay scoped"],
-            "non_goals": ["Do not reroute"],
-            "allowed_actions": ["Analyze"],
-            "forbidden_actions": ["Reroute"],
-            "output_contract": {"kind":"structured_findings"},
-            "completion_standard": "Return findings",
-            "escalation_policy": "Block explicitly",
-            "packet_hash": "packet-123"
-            }))
-            .expect("worker task packet");
-        let input = WorkerExecutionInput {
-            run_id: "run-1".to_string(),
-            phase_id: "phase-1".to_string(),
-            worker_ref: "user_worker_profile:research".to_string(),
-            context_packet: ContextPacket {
-                run_id: "run-1".to_string(),
-                phase_id: "phase-1".to_string(),
-                phase_title: "Research".to_string(),
-                context_md: "## Task".to_string(),
-                context_json: ContextJson {
-                    run_id: "run-1".to_string(),
-                    phase_id: "phase-1".to_string(),
-                    phase_title: "Research".to_string(),
-                    proposal_version: 1,
-                    snapshot_version: 1,
-                    worker_ref: "user_worker_profile:research".to_string(),
-                    goal: "Analyze findings".to_string(),
-                    constraints: ContextConstraints {
-                        timeout_ms: 1000,
-                        allowed_tools: Vec::new(),
-                    },
-                    inputs: ContextInputs::default(),
-                    expected_output: None,
-                    worker_task_packet: Some(packet.clone()),
-                },
-                worker_task_packet: Some(packet),
-            },
-            temperature: Some(0.2),
-            max_tokens: Some(2048),
-            max_rounds: Some(3),
-        };
+        let input = worker_execution_input(worker_task_packet());
 
         let request = build_worker_profile_preview_request(&input);
         assert_eq!(
@@ -467,5 +567,78 @@ mod tests {
                 .and_then(|value| value.as_str()),
             Some("packet-123")
         );
+    }
+
+    #[test]
+    fn worker_profile_result_metadata_carries_workflow_delegation_source() {
+        let input = worker_execution_input(worker_task_packet());
+        let metadata = build_worker_profile_result_metadata(&input, &worker_profile())
+            .expect("workflow worker metadata");
+
+        assert_eq!(
+            metadata
+                .pointer("/worker_task_packet/packet_hash")
+                .and_then(serde_json::Value::as_str),
+            Some("packet-123")
+        );
+        assert_eq!(
+            metadata
+                .pointer("/task_input_source/delegated_agent/agent_id")
+                .and_then(serde_json::Value::as_str),
+            Some("research.worker")
+        );
+        assert_eq!(
+            metadata
+                .pointer("/task_input_source/delegated_agent/child_run_id")
+                .and_then(serde_json::Value::as_str),
+            Some("workflow:run-1:phase:phase-1")
+        );
+        assert_eq!(
+            metadata
+                .pointer("/task_input_source/delegated_agent/child_frame_id")
+                .and_then(serde_json::Value::as_str),
+            Some("delegation:workflow:run-1:phase:phase-1")
+        );
+        assert_eq!(
+            metadata
+                .pointer("/task_input_source/delegated_agent/return_channel")
+                .and_then(serde_json::Value::as_str),
+            Some("workflow_event")
+        );
+        assert_eq!(
+            metadata
+                .pointer("/task_input_source/delegated_agent/approval_inheritance")
+                .and_then(serde_json::Value::as_str),
+            Some("parent_decides")
+        );
+    }
+
+    #[test]
+    fn worker_profile_result_metadata_prefers_carried_workflow_task_input_source() {
+        let mut input = worker_execution_input(worker_task_packet());
+        let carried_source = json!({
+            "delegated_agent": {
+                "parent_frame_id": "frame-parent-1",
+                "agent_id": "research.worker",
+                "return_channel": "workflow_event"
+            }
+        });
+        input.context_packet.task_input_source = Some(carried_source.clone());
+        input.context_packet.context_json.task_input_source = Some(json!({
+            "delegated_agent": {
+                "parent_frame_id": "stale-context-json-frame"
+            }
+        }));
+
+        let metadata = build_worker_profile_result_metadata(&input, &worker_profile())
+            .expect("workflow worker metadata");
+
+        assert_eq!(
+            metadata
+                .pointer("/task_input_source/delegated_agent/parent_frame_id")
+                .and_then(serde_json::Value::as_str),
+            Some("frame-parent-1")
+        );
+        assert_eq!(metadata.get("task_input_source"), Some(&carried_source));
     }
 }

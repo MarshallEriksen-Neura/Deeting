@@ -380,6 +380,7 @@ mod tests {
             goal: "Find facts".to_string(),
             expected_output: None,
             worker_task_packet: None,
+            task_input_source: None,
         }
     }
 
@@ -416,6 +417,7 @@ mod tests {
                     recommended_next_action: "continue".to_string(),
                     invalidates_future_phases: Vec::new(),
                 },
+                metadata: None,
             },
         }
     }

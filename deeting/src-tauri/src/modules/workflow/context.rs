@@ -116,6 +116,7 @@ pub fn build_context_packet(
         },
         expected_output: phase.expected_output.clone(),
         worker_task_packet: phase.worker_task_packet.clone(),
+        task_input_source: phase.task_input_source.clone(),
     };
 
     Ok(ContextPacket {
@@ -125,6 +126,7 @@ pub fn build_context_packet(
         context_md,
         context_json,
         worker_task_packet: phase.worker_task_packet.clone(),
+        task_input_source: phase.task_input_source.clone(),
     })
 }
 
@@ -151,6 +153,7 @@ mod tests {
                     goal: "Find stuff".to_string(),
                     expected_output: None,
                     worker_task_packet: None,
+                    task_input_source: None,
                 },
                 CompiledPhase {
                     phase_id: "phase-2".to_string(),
@@ -163,6 +166,7 @@ mod tests {
                         result_schema_hint: Some("analysis.v1".to_string()),
                     }),
                     worker_task_packet: None,
+                    task_input_source: None,
                 },
             ],
             policy: SnapshotPolicy::default(),

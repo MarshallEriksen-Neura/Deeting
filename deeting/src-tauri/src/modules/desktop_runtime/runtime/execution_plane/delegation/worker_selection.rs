@@ -21,6 +21,7 @@ struct WorkerDelegationInput<'a> {
     route: &'a str,
     allowed_tool_names: &'a [String],
     prefer_workflow_runtime: bool,
+    explicit_selection_override: Option<WorkerTargetSelection>,
 }
 
 pub(in crate::modules::desktop_runtime::runtime::execution_plane) struct WorkerDelegationSelection {
@@ -44,6 +45,19 @@ impl<'a> From<&'a LocalExecutionRequest> for WorkerDelegationInput<'a> {
             route: request.execution_policy.route.as_str(),
             allowed_tool_names: &request.execution_policy.allowed_tool_names,
             prefer_workflow_runtime: request.execution_policy.prefer_workflow_runtime,
+            explicit_selection_override: request.explicit_task_agent_profile_override.as_ref().map(
+                |profile| WorkerTargetSelection {
+                    profile: profile.clone(),
+                    score: 10_000,
+                    reason: "explicit_task_agent_override".to_string(),
+                    reason_codes: vec!["explicit_task_agent_override".to_string()],
+                    candidate_count: 1,
+                    selected_from_top_k: 1,
+                    callable_coverage_score: 1.0,
+                    modality_fit_score: 1.0,
+                    profile_prior_score: 0.0,
+                },
+            ),
         }
     }
 }
@@ -74,14 +88,20 @@ where
     if query.trim().is_empty() {
         return Ok(None);
     }
-    let Some(selection) = select_worker_custom_task_agent(
-        input.app_state,
-        input.explicit_task_agent_id,
-        query.as_str(),
-    )
-    .await?
-    else {
-        return Ok(None);
+    let selection = match input.explicit_selection_override.clone() {
+        Some(selection) => selection,
+        None => {
+            let Some(selection) = select_worker_custom_task_agent(
+                input.app_state,
+                input.explicit_task_agent_id,
+                query.as_str(),
+            )
+            .await?
+            else {
+                return Ok(None);
+            };
+            selection
+        }
     };
     let execution_id = input
         .root_execution_id

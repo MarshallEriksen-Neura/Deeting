@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useShallow } from "zustand/react/shallow"
 import { useChatStore } from "@/store/chat-store"
 import type { ChatImageAttachment } from "@/lib/chat/message-content"
 
@@ -83,7 +84,16 @@ export function ChatUIStateProvider({ children }: ChatUIStateProviderProps) {
     addAttachments,
     removeAttachment,
     clearAttachments,
-  } = useChatStore()
+  } = useChatStore(
+    useShallow((state) => ({
+      input: state.input,
+      setInput: state.setInput,
+      attachments: state.attachments,
+      addAttachments: state.addAttachments,
+      removeAttachment: state.removeAttachment,
+      clearAttachments: state.clearAttachments,
+    }))
+  )
 
   const contextValue = React.useMemo<ChatUIStateContextValue>(
     () => ({

@@ -245,6 +245,7 @@ pub(crate) async fn execute_suggestion(
                     execution_model_id: None,
                     execution_provider_model_id: None,
                     worker_task_packet: None,
+                    task_input_source: None,
                 },
             )
             .await?;
@@ -867,6 +868,7 @@ pub(crate) async fn run_schedule_tick(
                     execution_model_id: None,
                     execution_provider_model_id: None,
                     worker_task_packet: None,
+                    task_input_source: None,
                 },
             )
             .await
@@ -1168,6 +1170,7 @@ async fn handle_corpus_sync_followups(
                     execution_model_id: None,
                     execution_provider_model_id: None,
                     worker_task_packet: None,
+                    task_input_source: None,
                 },
             )
             .await

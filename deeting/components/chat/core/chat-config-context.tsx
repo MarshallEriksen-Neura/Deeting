@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useShallow } from "zustand/react/shallow"
 import { useChatStore } from "@/store/chat-store"
 
 /**
@@ -109,7 +110,18 @@ export function ChatConfigProvider({ children }: ChatConfigProviderProps) {
     statusMeta,
     setErrorMessage,
     resetSession,
-  } = useChatStore()
+  } = useChatStore(
+    useShallow((state) => ({
+      streamEnabled: state.streamEnabled,
+      setStreamEnabled: state.setStreamEnabled,
+      errorMessage: state.errorMessage,
+      statusStage: state.statusStage,
+      statusCode: state.statusCode,
+      statusMeta: state.statusMeta,
+      setErrorMessage: state.setErrorMessage,
+      resetSession: state.resetSession,
+    }))
+  )
 
   const contextValue = React.useMemo<ChatConfigContextValue>(
     () => ({

@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useMemo, useState } from "react"
+import { useShallow } from "zustand/react/shallow"
 import { matchesChatModelSelectionValue } from "@/lib/api/models"
 import { useChatStore } from "@/store/chat-store"
 import {
@@ -21,7 +22,16 @@ export function useChatAttachments() {
     clearAttachments,
     models,
     config,
-  } = useChatStore()
+  } = useChatStore(
+    useShallow((state) => ({
+      attachments: state.attachments,
+      addAttachments: state.addAttachments,
+      removeAttachment: state.removeAttachment,
+      clearAttachments: state.clearAttachments,
+      models: state.models,
+      config: state.config,
+    }))
+  )
 
   const selectedModel = useMemo(
     () =>

@@ -1,16 +1,23 @@
 use std::collections::BTreeSet;
 
-use serde_json::Value;
+use mcp_core::types::LocalChatInputMessage;
+use mcp_runtime::route::LocalRouteKind;
+use serde_json::{json, Value};
 use tauri::AppHandle;
 
-use crate::modules::custom_task_agents::runtime::preview_custom_task_agent;
+use crate::modules::ai_upstream::resolve_local_model_connection;
+use crate::modules::custom_task_agents::runtime::resolve_custom_task_agent_model_selection;
 use crate::modules::custom_task_agents::skill_actions::callable_skill_action_name;
 use crate::modules::custom_task_agents::types::{
-    CustomTaskAgentInvocationKind, CustomTaskAgentPreviewRequest, CustomTaskAgentProfile,
+    CustomTaskAgentInvocationKind, CustomTaskAgentProfile,
 };
 use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUNDS_CONFIG_KEY};
-use crate::modules::monitor::types::LocalMonitorTask;
+use crate::modules::desktop_runtime::runtime::{
+    run_local_runtime_composition_entrypoint, LocalExecutionPolicy, LocalExecutionRequest,
+};
+use crate::modules::monitor::types::{monitor_task_input_source_for_run, LocalMonitorTask};
 use crate::state::AppState;
+use desktop_runtime_core::PhaseStepType;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct MonitorTaskAgentExecution {
@@ -274,39 +281,137 @@ pub(crate) async fn execute_monitor_task_agent(
     app_state: &AppState,
     profile: &CustomTaskAgentProfile,
     task: &LocalMonitorTask,
+    execution_id: &str,
     message: &str,
 ) -> Result<MonitorTaskAgentExecution, String> {
     validate_monitor_task_agent_profile(profile)?;
     let max_rounds = resolve_monitor_task_agent_max_rounds(app_state).await;
     let effective_profile = filter_monitor_callable_profile(profile, &task.allowed_tools);
-
-    let response = preview_custom_task_agent(
-        app_handle,
-        app_state,
-        &effective_profile,
-        CustomTaskAgentPreviewRequest {
-            message: message.to_string(),
-            image_urls: Vec::new(),
+    let (model, provider_model_id) =
+        resolve_custom_task_agent_model_selection(effective_profile.model_config.as_ref(), None);
+    let model_connection =
+        resolve_local_model_connection(app_state, model.as_str(), provider_model_id.as_deref())
+            .await?;
+    let outcome = run_local_runtime_composition_entrypoint(
+        LocalExecutionRequest {
+            app_handle: app_handle.clone(),
+            app_state: app_state.clone(),
+            model_connection,
+            session_id: format!("monitor:{}", task.id),
+            capability_id: task.assistant_id.clone(),
+            explicit_task_agent_id: Some(effective_profile.id.clone()),
+            explicit_task_agent_profile_override: Some(effective_profile),
+            root_execution_id: Some(execution_id.to_string()),
+            task_input_source: monitor_task_input_source_for_run(task, Some(execution_id)),
+            messages: vec![LocalChatInputMessage {
+                role: "user".to_string(),
+                content: message.to_string(),
+                reasoning_content: None,
+                tool_calls: Vec::new(),
+                tool_call_id: None,
+                name: None,
+            }],
+            execution_policy: build_monitor_runtime_execution_policy(effective_monitor_tool_names(
+                profile,
+                &task.allowed_tools,
+            )),
             temperature: None,
             max_tokens: None,
-            max_rounds: Some(max_rounds),
-            worker_task_packet: None,
+            reasoning_enabled: None,
+            reasoning_effort: None,
+            terminal_context: None,
+            workflow_context: Some(json!({
+                "source": "cron_monitor",
+                "monitor_task_id": task.id,
+                "monitor_execution_id": execution_id,
+                "max_rounds": max_rounds,
+            })),
+            event_tx: None,
+            trace_id: Some(format!("monitor:{}", execution_id)),
+            request_id: Some(format!("monitor:{}", execution_id)),
+            selected_knowledge_file_ids: Vec::new(),
         },
+        |_, _, _, _, _| {},
     )
-    .await
-    .map_err(|err| err.to_string())?;
+    .await?;
 
-    let content = response.content.trim().to_string();
+    let output = extract_monitor_delegated_primary_output(&outcome.response_json)
+        .or_else(|| {
+            outcome
+                .delegated_execution
+                .as_ref()
+                .and_then(|execution| execution.record.primary_output.as_ref())
+        })
+        .ok_or_else(|| "monitor runtime delegated result missing primary_output".to_string())?;
+    if let Some(error) = failed_monitor_delegated_primary_output_error(output) {
+        return Err(error);
+    }
+    let content = output
+        .get("content")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_string();
     if content.is_empty() {
         return Err("模型返回内容为空".to_string());
     }
 
     Ok(MonitorTaskAgentExecution {
         content,
-        model_id: response.model_id,
-        tokens_used: response.raw.as_ref().map(extract_total_tokens).unwrap_or(0),
-        tool_trace: response.tool_trace,
+        model_id: output
+            .get("model_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        tokens_used: output.get("raw").map(extract_total_tokens).unwrap_or(0),
+        tool_trace: output
+            .get("tool_trace")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default(),
     })
+}
+
+fn build_monitor_runtime_execution_policy(allowed_tool_names: Vec<String>) -> LocalExecutionPolicy {
+    LocalExecutionPolicy {
+        route: LocalRouteKind::Worker,
+        initial_phase_step: PhaseStepType::DelegatedWorker,
+        allowed_tool_names,
+        inject_execution_protocol: true,
+        allow_worker_delegation: true,
+        prefer_workflow_runtime: false,
+        capability_snapshot: None,
+    }
+}
+
+fn extract_monitor_delegated_primary_output(response_json: &Value) -> Option<&Value> {
+    response_json
+        .get("execution_graph")
+        .and_then(|value| value.get("delegated_execution_tree"))
+        .and_then(|value| value.get("primary_output"))
+        .or_else(|| {
+            response_json
+                .get("execution_graph")
+                .and_then(|value| value.get("metadata"))
+                .and_then(|value| value.get("delegated_execution_tree"))
+                .and_then(|value| value.get("primary_output"))
+        })
+}
+
+fn failed_monitor_delegated_primary_output_error(output: &Value) -> Option<String> {
+    output
+        .get("status")
+        .and_then(Value::as_str)
+        .is_some_and(|status| status.eq_ignore_ascii_case("failed"))
+        .then(|| {
+            output
+                .get("error")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("monitor runtime delegated task agent failed")
+                .to_string()
+        })
 }
 
 fn extract_total_tokens(value: &Value) -> i64 {
@@ -344,6 +449,8 @@ fn extract_total_tokens(value: &Value) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::modules::monitor::types::monitor_task_input_source;
+    use desktop_runtime_core::{MonitorCheckpointPolicy, TaskInputSource};
     use serde_json::json;
 
     fn build_task_agent_profile(
@@ -452,5 +559,135 @@ mod tests {
         assert!(message.contains("研判模式: alert_first"));
         assert!(message.contains("历史快照: {\"foo\":\"bar\"}"));
         assert!(message.contains("策略状态: {\"score\":0.9}"));
+    }
+
+    #[test]
+    fn monitor_task_input_source_carries_cron_frame_contract() {
+        let mut task = build_monitor_task();
+        task.next_run_at = Some("2026-05-25T12:00:00Z".to_string());
+        task.model_id = Some("gpt-4.1".to_string());
+        task.execution_target = "local".to_string();
+
+        let source = monitor_task_input_source(&task);
+
+        match source {
+            TaskInputSource::CronMonitor {
+                task_id,
+                schedule_id,
+                cron_expr,
+                objective,
+                next_run_at,
+                monitor_frame_id,
+                execution_id,
+                execution_frame_id,
+                checkpoint_policy,
+                capability_lease,
+            } => {
+                assert_eq!(task_id, "task-1");
+                assert_eq!(schedule_id, "task-1");
+                assert_eq!(cron_expr, "0 */6 * * *");
+                assert_eq!(objective, "Monitor developments");
+                assert_eq!(next_run_at.as_deref(), Some("2026-05-25T12:00:00Z"));
+                assert_eq!(monitor_frame_id, None);
+                assert_eq!(execution_id, None);
+                assert_eq!(execution_frame_id, None);
+                assert_eq!(checkpoint_policy, MonitorCheckpointPolicy::OnChangeOnly);
+                assert_eq!(capability_lease.allowed_tools, vec!["search_sdk"]);
+                assert_eq!(capability_lease.model_id.as_deref(), Some("gpt-4.1"));
+                assert_eq!(capability_lease.expires_at, None);
+                assert!(capability_lease
+                    .allowed_actions
+                    .iter()
+                    .any(|action| action == "execute_local"));
+                assert!(capability_lease
+                    .allowed_actions
+                    .iter()
+                    .any(|action| action == "notify_on_change"));
+            }
+            other => panic!("expected cron monitor source, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn monitor_task_input_source_uses_explicit_frame_checkpoint_policy() {
+        let mut task = build_monitor_task();
+        task.notify_config = json!({
+            "delivery_policy": {
+                "notify_on_change": false,
+                "notify_on_failure": false,
+                "heartbeat_enabled": false
+            },
+            "frame_checkpoint_policy": "before_every_run"
+        });
+
+        let source = monitor_task_input_source(&task);
+
+        match source {
+            TaskInputSource::CronMonitor {
+                checkpoint_policy,
+                capability_lease,
+                ..
+            } => {
+                assert_eq!(checkpoint_policy, MonitorCheckpointPolicy::BeforeEveryRun);
+                assert!(!capability_lease
+                    .allowed_actions
+                    .iter()
+                    .any(|action| action == "notify_on_change"));
+                assert!(!capability_lease
+                    .allowed_actions
+                    .iter()
+                    .any(|action| action == "notify_on_failure"));
+            }
+            other => panic!("expected cron monitor source, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn monitor_runtime_policy_uses_delegated_worker_without_workflow_runtime() {
+        let policy = build_monitor_runtime_execution_policy(vec!["search_sdk".to_string()]);
+
+        assert_eq!(policy.route, LocalRouteKind::Worker);
+        assert_eq!(policy.initial_phase_step, PhaseStepType::DelegatedWorker);
+        assert!(policy.allow_worker_delegation);
+        assert!(policy.inject_execution_protocol);
+        assert!(!policy.prefer_workflow_runtime);
+        assert_eq!(policy.allowed_tool_names, vec!["search_sdk"]);
+    }
+
+    #[test]
+    fn monitor_delegated_primary_output_is_read_from_execution_graph() {
+        let response = json!({
+            "execution_graph": {
+                "delegated_execution_tree": {
+                    "primary_output": {
+                        "content": "{\"is_significant_change\":false}",
+                        "model_id": "gpt-5.4",
+                        "raw": { "usage": { "total_tokens": 42 } }
+                    }
+                }
+            }
+        });
+
+        let output = extract_monitor_delegated_primary_output(&response)
+            .expect("primary output should be available");
+
+        assert_eq!(
+            output.get("content").and_then(Value::as_str),
+            Some("{\"is_significant_change\":false}")
+        );
+        assert_eq!(extract_total_tokens(output.get("raw").unwrap()), 42);
+    }
+
+    #[test]
+    fn failed_monitor_delegated_primary_output_preserves_error_text() {
+        let output = json!({
+            "status": "failed",
+            "error": "upstream unavailable"
+        });
+
+        let error = failed_monitor_delegated_primary_output_error(&output)
+            .expect("failed output should preserve error text");
+
+        assert_eq!(error, "upstream unavailable");
     }
 }

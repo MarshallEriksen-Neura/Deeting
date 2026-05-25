@@ -50,6 +50,7 @@ pub fn build_result_packet(
             },
             invalidates_future_phases: Vec::new(),
         },
+        metadata: execution_result.metadata.clone(),
     };
 
     ResultPacket {
@@ -86,6 +87,7 @@ mod tests {
             provider_model_id: "uuid-123".to_string(),
             tool_trace: vec![],
             images: vec![],
+            metadata: None,
             error: None,
         };
 
@@ -108,6 +110,7 @@ mod tests {
             provider_model_id: "uuid-123".to_string(),
             tool_trace: vec![],
             images: vec![],
+            metadata: None,
             error: Some("timeout".to_string()),
         };
 
@@ -117,6 +120,45 @@ mod tests {
         assert_eq!(
             packet.result_json.followup_hints.recommended_next_action,
             "pause_for_edit"
+        );
+    }
+
+    #[test]
+    fn build_result_packet_copies_execution_metadata() {
+        let execution_result = WorkerExecutionResult {
+            status: "succeeded".to_string(),
+            content: "Workflow worker result".to_string(),
+            model_id: "gpt-4o".to_string(),
+            provider_model_id: "uuid-123".to_string(),
+            tool_trace: vec![],
+            images: vec![],
+            metadata: Some(serde_json::json!({
+                "execution_path": "workflow_worker_profile",
+                "task_input_source": {
+                    "delegated_agent": {
+                        "agent_id": "research.worker",
+                        "return_channel": "workflow_event"
+                    }
+                }
+            })),
+            error: None,
+        };
+
+        let packet = build_result_packet(
+            "run-1",
+            "phase-1",
+            "user_worker_profile:research.worker",
+            &execution_result,
+        );
+
+        assert_eq!(
+            packet
+                .result_json
+                .metadata
+                .as_ref()
+                .and_then(|value| value.pointer("/task_input_source/delegated_agent/return_channel"))
+                .and_then(serde_json::Value::as_str),
+            Some("workflow_event")
         );
     }
 
@@ -140,6 +182,7 @@ mod tests {
             provider_model_id: "uuid".to_string(),
             tool_trace: vec![],
             images: vec![],
+            metadata: None,
             error: None,
         };
         let packet =

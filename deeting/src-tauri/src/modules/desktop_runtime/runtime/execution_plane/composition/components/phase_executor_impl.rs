@@ -63,20 +63,27 @@ where
 {
     fn execute_phase(
         &mut self,
-        _frame: &WorldModelFrame,
+        frame: &WorldModelFrame,
         phase: &Phase,
     ) -> RuntimeCoreResult<PhaseObservation> {
         let request = self.request.take().ok_or_else(|| {
             RuntimeCoreError::InvalidState("deeting phase executor request already consumed".into())
         })?;
         let step_type = phase.step_type;
+        let parent_frame_id = Some(frame.frame_version_id.clone());
         let outcome = tauri::async_runtime::block_on(async {
             match step_type {
                 PhaseStepType::DirectChat => {
                     execute_direct_chat_phase(request, self.emit_status).await
                 }
                 PhaseStepType::DelegatedWorker | PhaseStepType::DelegatedWorkflow => {
-                    execute_delegated_worker_phase(request, step_type, self.emit_status).await
+                    execute_delegated_worker_phase(
+                        request,
+                        step_type,
+                        parent_frame_id,
+                        self.emit_status,
+                    )
+                    .await
                 }
                 PhaseStepType::ToolCall
                 | PhaseStepType::CapabilityAdmit
@@ -128,18 +135,21 @@ where
 async fn execute_delegated_worker_phase<F>(
     request: LocalExecutionRequest,
     step_type: PhaseStepType,
+    parent_frame_id: Option<String>,
     emit_status: &mut F,
 ) -> Result<LocalExecutionOutcome, String>
 where
     F: FnMut(&str, Option<&str>, &str, &str, Option<Value>),
 {
-    let delegated_execution = maybe_delegate_worker_phase(&request, step_type, emit_status).await?;
+    let delegated_execution =
+        maybe_delegate_worker_phase(&request, step_type, parent_frame_id, emit_status).await?;
     run_policy_scoped_chat_completion(request.into(), delegated_execution, emit_status).await
 }
 
 async fn maybe_delegate_worker_phase<F>(
     request: &LocalExecutionRequest,
     step_type: PhaseStepType,
+    parent_frame_id: Option<String>,
     emit_status: &mut F,
 ) -> Result<Option<DelegatedExecutionSession>, String>
 where
@@ -159,6 +169,7 @@ where
     execute_selected_worker_delegation(
         request,
         step_type,
+        parent_frame_id,
         emit_status,
         latest_input,
         delegation.execution_id,
@@ -174,6 +185,7 @@ where
 async fn execute_selected_worker_delegation<F>(
     request: &LocalExecutionRequest,
     step_type: PhaseStepType,
+    parent_frame_id: Option<String>,
     emit_status: &mut F,
     latest_input: LatestUserImageInput,
     execution_id: String,
@@ -197,6 +209,7 @@ where
                 &execution_selection,
                 packet_receipt.clone(),
                 &task_packet,
+                parent_frame_id.clone(),
             )
             .await;
             return Ok(Some(execution));
@@ -228,6 +241,7 @@ where
         execution_selection,
         packet_receipt,
         task_packet,
+        parent_frame_id,
     )
     .await
 }

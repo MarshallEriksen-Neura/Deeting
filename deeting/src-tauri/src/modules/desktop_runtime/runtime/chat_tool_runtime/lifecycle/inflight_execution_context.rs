@@ -20,6 +20,9 @@ pub(crate) struct PersistedInFlightExecutionContext {
     #[serde(default)]
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) delegation:
         Option<PersistedDelegationWait>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) task_input_source:
+        Option<serde_json::Value>,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) started_at_unix_ms: i64,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) last_heartbeat_at_unix_ms:
         i64,

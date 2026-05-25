@@ -1,3 +1,4 @@
+use desktop_runtime_core::{CapabilityLease, MonitorCheckpointPolicy, TaskInputSource};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -142,12 +143,50 @@ pub fn monitor_delivery_policy_from_notify_config(notify_config: &Value) -> Moni
     }
 }
 
+pub fn monitor_checkpoint_policy_from_notify_config(
+    notify_config: &Value,
+) -> MonitorCheckpointPolicy {
+    match notify_config
+        .get("frame_checkpoint_policy")
+        .and_then(Value::as_str)
+    {
+        Some("before_every_run") => MonitorCheckpointPolicy::BeforeEveryRun,
+        Some("on_change_only") => MonitorCheckpointPolicy::OnChangeOnly,
+        Some("on_failure_only") => MonitorCheckpointPolicy::OnFailureOnly,
+        Some("disabled") => MonitorCheckpointPolicy::Disabled,
+        _ => legacy_checkpoint_policy_from_delivery_policy(
+            &monitor_delivery_policy_from_notify_config(notify_config),
+        ),
+    }
+}
+
+fn legacy_checkpoint_policy_from_delivery_policy(
+    delivery_policy: &MonitorDeliveryPolicy,
+) -> MonitorCheckpointPolicy {
+    if !delivery_policy.heartbeat_enabled {
+        MonitorCheckpointPolicy::Disabled
+    } else if delivery_policy.notify_on_change {
+        MonitorCheckpointPolicy::OnChangeOnly
+    } else if delivery_policy.notify_on_failure {
+        MonitorCheckpointPolicy::OnFailureOnly
+    } else {
+        MonitorCheckpointPolicy::BeforeEveryRun
+    }
+}
+
 pub fn normalize_monitor_notify_config(notify_config: &Value) -> Value {
     let mut normalized = notify_config.as_object().cloned().unwrap_or_default();
     let policy_value =
         serde_json::to_value(monitor_delivery_policy_from_notify_config(notify_config))
             .unwrap_or_else(|_| serde_json::json!({}));
     normalized.insert("delivery_policy".to_string(), policy_value);
+    let checkpoint_policy_value =
+        serde_json::to_value(monitor_checkpoint_policy_from_notify_config(notify_config))
+            .unwrap_or_else(|_| serde_json::json!("on_change_only"));
+    normalized.insert(
+        "frame_checkpoint_policy".to_string(),
+        checkpoint_policy_value,
+    );
     Value::Object(normalized)
 }
 
@@ -199,6 +238,61 @@ pub struct LocalMonitorTask {
     pub is_active: bool,
     pub created_at: String,
     pub updated_at: String,
+}
+
+pub fn monitor_task_input_source(task: &LocalMonitorTask) -> TaskInputSource {
+    monitor_task_input_source_for_run(task, None)
+}
+
+pub fn monitor_task_input_source_for_run(
+    task: &LocalMonitorTask,
+    execution_id: Option<&str>,
+) -> TaskInputSource {
+    let checkpoint_policy = monitor_checkpoint_policy_from_notify_config(&task.notify_config);
+
+    let normalized_execution_id = execution_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let monitor_frame_id = normalized_execution_id
+        .as_ref()
+        .map(|_| format!("monitor:{}", task.id));
+    let execution_frame_id = normalized_execution_id
+        .as_ref()
+        .map(|execution_id| format!("monitor:{}:execution:{}", task.id, execution_id));
+
+    TaskInputSource::CronMonitor {
+        task_id: task.id.clone(),
+        schedule_id: task.id.clone(),
+        cron_expr: task.cron_expr.clone(),
+        objective: task.objective.clone(),
+        next_run_at: task.next_run_at.clone(),
+        monitor_frame_id,
+        execution_id: normalized_execution_id,
+        execution_frame_id,
+        checkpoint_policy,
+        capability_lease: CapabilityLease {
+            allowed_tools: task.allowed_tools.clone(),
+            allowed_actions: monitor_allowed_actions(task),
+            model_id: task.model_id.clone(),
+            expires_at: None,
+        },
+    }
+}
+
+fn monitor_allowed_actions(task: &LocalMonitorTask) -> Vec<String> {
+    let delivery_policy = monitor_delivery_policy_from_notify_config(&task.notify_config);
+    let mut actions = vec!["observe".to_string(), "update_snapshot".to_string()];
+    if delivery_policy.notify_on_change {
+        actions.push("notify_on_change".to_string());
+    }
+    if delivery_policy.notify_on_failure {
+        actions.push("notify_on_failure".to_string());
+    }
+    if task.execution_target.trim().eq_ignore_ascii_case("local") {
+        actions.push("execute_local".to_string());
+    }
+    actions
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -336,6 +430,7 @@ pub struct LocalMonitorFeedbackRequest {
 
 #[derive(Debug, Clone)]
 pub struct LocalExecutionResult {
+    pub execution_id: String,
     pub is_significant_change: bool,
     pub change_summary: String,
     pub new_snapshot: Value,
@@ -349,10 +444,11 @@ pub struct LocalExecutionResult {
 #[cfg(test)]
 mod tests {
     use super::{
-        monitor_delivery_policy_from_notify_config, normalize_monitor_notify_config,
-        LocalMonitorTaskCreateRequest, MonitorDeliveryDetailLevel, MonitorRunEvent,
-        MonitorRunEventKind,
+        monitor_checkpoint_policy_from_notify_config, monitor_delivery_policy_from_notify_config,
+        normalize_monitor_notify_config, LocalMonitorTaskCreateRequest, MonitorDeliveryDetailLevel,
+        MonitorRunEvent, MonitorRunEventKind,
     };
+    use desktop_runtime_core::MonitorCheckpointPolicy;
 
     #[test]
     fn create_request_requires_assistant_id_when_deserializing() {
@@ -387,6 +483,43 @@ mod tests {
         assert!(policy.heartbeat_enabled);
         assert!(!policy.notify_on_start);
         assert_eq!(policy.detail_level, MonitorDeliveryDetailLevel::Stage);
+        assert_eq!(
+            normalized
+                .get("frame_checkpoint_policy")
+                .and_then(serde_json::Value::as_str),
+            Some("on_change_only")
+        );
+        assert_eq!(
+            monitor_checkpoint_policy_from_notify_config(&normalized),
+            MonitorCheckpointPolicy::OnChangeOnly
+        );
+    }
+
+    #[test]
+    fn frame_checkpoint_policy_is_independent_from_delivery_policy() {
+        let normalized = normalize_monitor_notify_config(&serde_json::json!({
+            "delivery_policy": {
+                "notify_on_change": false,
+                "notify_on_failure": false,
+                "heartbeat_enabled": false
+            },
+            "frame_checkpoint_policy": "before_every_run"
+        }));
+
+        let delivery_policy = monitor_delivery_policy_from_notify_config(&normalized);
+        assert!(!delivery_policy.notify_on_change);
+        assert!(!delivery_policy.notify_on_failure);
+        assert!(!delivery_policy.heartbeat_enabled);
+        assert_eq!(
+            normalized
+                .get("frame_checkpoint_policy")
+                .and_then(serde_json::Value::as_str),
+            Some("before_every_run")
+        );
+        assert_eq!(
+            monitor_checkpoint_policy_from_notify_config(&normalized),
+            MonitorCheckpointPolicy::BeforeEveryRun
+        );
     }
 
     #[test]

@@ -33,6 +33,7 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane) fn build_deleg
     execution_model_id: String,
     execution_provider_model_id: String,
     task_packet: WorkerTaskPacket,
+    task_input_source: serde_json::Value,
 ) -> QuickWorkflowRequest {
     QuickWorkflowRequest {
         goal,
@@ -42,6 +43,7 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane) fn build_deleg
         execution_model_id: Some(execution_model_id),
         execution_provider_model_id: Some(execution_provider_model_id),
         worker_task_packet: Some(task_packet),
+        task_input_source: Some(task_input_source),
     }
 }
 
@@ -135,6 +137,7 @@ mod tests {
             "model-1".to_string(),
             "provider-model-1".to_string(),
             packet,
+            json!({"delegated_agent":{"parent_frame_id":"frame-parent-1"}}),
         );
 
         assert_eq!(
@@ -148,5 +151,13 @@ mod tests {
         );
         assert!(request.inject_into_chat);
         assert!(request.worker_task_packet.is_some());
+        assert_eq!(
+            request
+                .task_input_source
+                .as_ref()
+                .and_then(|value| value.pointer("/delegated_agent/parent_frame_id"))
+                .and_then(serde_json::Value::as_str),
+            Some("frame-parent-1")
+        );
     }
 }
