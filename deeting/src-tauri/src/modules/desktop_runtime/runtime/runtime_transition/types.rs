@@ -109,6 +109,8 @@ pub(crate) enum RequiredArtifact {
     VerificationPlan,
     CapabilityLease,
     MonitorCheckpoint,
+    WorldModelFrameRefresh,
+    WorldModelFrameRevision,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

@@ -66,31 +66,36 @@ where
         frame: &WorldModelFrame,
         phase: &Phase,
     ) -> RuntimeCoreResult<PhaseObservation> {
-        let request = self.request.take().ok_or_else(|| {
+        let mut request = self.request.take().ok_or_else(|| {
             RuntimeCoreError::InvalidState("deeting phase executor request already consumed".into())
         })?;
+        if phase_requires_diting_think_preflight(phase) {
+            request.execution_policy.require_diting_think_preflight = true;
+        }
         let step_type = phase.step_type;
         let parent_frame_id = Some(frame.frame_version_id.clone());
-        let outcome = tauri::async_runtime::block_on(async {
-            match step_type {
-                PhaseStepType::DirectChat => {
-                    execute_direct_chat_phase(request, self.emit_status).await
+        let outcome = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                match step_type {
+                    PhaseStepType::DirectChat => {
+                        execute_direct_chat_phase(request, self.emit_status).await
+                    }
+                    PhaseStepType::DelegatedWorker | PhaseStepType::DelegatedWorkflow => {
+                        execute_delegated_worker_phase(
+                            request,
+                            step_type,
+                            parent_frame_id,
+                            self.emit_status,
+                        )
+                        .await
+                    }
+                    PhaseStepType::ToolCall
+                    | PhaseStepType::CapabilityAdmit
+                    | PhaseStepType::VerifyFinal => {
+                        execute_fallback_chat_phase(request, step_type, self.emit_status).await
+                    }
                 }
-                PhaseStepType::DelegatedWorker | PhaseStepType::DelegatedWorkflow => {
-                    execute_delegated_worker_phase(
-                        request,
-                        step_type,
-                        parent_frame_id,
-                        self.emit_status,
-                    )
-                    .await
-                }
-                PhaseStepType::ToolCall
-                | PhaseStepType::CapabilityAdmit
-                | PhaseStepType::VerifyFinal => {
-                    execute_fallback_chat_phase(request, step_type, self.emit_status).await
-                }
-            }
+            })
         })
         .map_err(RuntimeCoreError::PhaseExecutionFailed)?;
 
@@ -98,6 +103,18 @@ where
         *self.outcome.borrow_mut() = Some(outcome);
         Ok(observation)
     }
+}
+
+fn phase_requires_diting_think_preflight(phase: &Phase) -> bool {
+    phase
+        .payload
+        .get("runtime_required_artifacts")
+        .and_then(Value::as_array)
+        .is_some_and(|items| {
+            items
+                .iter()
+                .any(|item| item.as_str() == Some("diting_think_preflight"))
+        })
 }
 
 async fn execute_direct_chat_phase<F>(

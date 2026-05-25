@@ -10,6 +10,7 @@ export type BlockType =
   | 'file_preview'
   | 'error'
   | 'ui'
+  | 'diting_think_frame'
 
 export type BlockStreamState = 'streaming' | 'completed'
 
@@ -98,6 +99,15 @@ export interface UIBlock extends BaseBlock {
   metadata?: Record<string, unknown>
 }
 
+export interface DitingThinkFrameBlock extends BaseBlock {
+  type: 'diting_think_frame'
+  intent: string | null
+  facts: string[]
+  assumptions: string[]
+  verificationTargets: string[]
+  rules: string[]
+}
+
 export interface HtmlRuntimePayload {
   asset_id?: string
   snapshot_html?: string
@@ -148,6 +158,7 @@ export type MessageBlock =
   | FilePreviewBlock
   | ErrorBlock
   | UIBlock
+  | DitingThinkFrameBlock
 
 export interface PersistedMessage {
   id: string

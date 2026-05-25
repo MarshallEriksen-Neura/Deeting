@@ -896,6 +896,29 @@
         }
       }
     },
+    "frame": {
+      "title": "Diting Reasoning",
+      "summaryReady": "Ready · {count} sections",
+      "summaryEmpty": "Preflight passed",
+      "summaryContradicted": "Contradicted · needs review",
+      "expand": "Expand",
+      "collapse": "Collapse",
+      "sections": {
+        "intent": "Intent",
+        "context": "Context",
+        "plan": "Plan",
+        "constraints": "Constraints",
+        "assumptions": "Assumptions"
+      },
+      "empty": {
+        "intent": "No explicit intent declared",
+        "context": "No additional context",
+        "plan": "No explicit plan",
+        "constraints": "No explicit constraints",
+        "assumptions": "No explicit assumptions"
+      },
+      "hint": "Structured reasoning snapshot produced by the round-1 diting_think tool"
+    },
     "voice": {
       "listening": "Listening...",
       "processing": "Processing...",

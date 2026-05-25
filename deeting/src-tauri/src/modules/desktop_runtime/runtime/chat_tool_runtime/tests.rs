@@ -77,6 +77,18 @@ fn classify_local_tool_execution_error_code_detects_mcp_timeout() {
 }
 
 #[test]
+fn diting_think_injection_requires_world_model_preflight_policy() {
+    let mut policy = build_default_local_execution_policy();
+
+    assert!(!should_inject_diting_think_tool(1, false, &policy));
+
+    policy.require_diting_think_preflight = true;
+    assert!(should_inject_diting_think_tool(1, false, &policy));
+    assert!(!should_inject_diting_think_tool(2, false, &policy));
+    assert!(!should_inject_diting_think_tool(1, true, &policy));
+}
+
+#[test]
 fn delegate_task_preflight_blocks_when_selected_agent_has_no_executable_surface() {
     let record = DelegatedExecutionRecord {
         execution_id: "exec-1".to_string(),

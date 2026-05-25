@@ -456,6 +456,29 @@
         }
       }
     },
+    "frame": {
+      "title": "Diting 思考",
+      "summaryReady": "已就绪 · {count} 段",
+      "summaryEmpty": "已通过预检",
+      "summaryContradicted": "存在反证 · 需复核",
+      "expand": "展开",
+      "collapse": "收起",
+      "sections": {
+        "intent": "意图",
+        "context": "上下文",
+        "plan": "执行计划",
+        "constraints": "约束",
+        "assumptions": "假设"
+      },
+      "empty": {
+        "intent": "未声明显式意图",
+        "context": "无新增上下文信息",
+        "plan": "无显式执行计划",
+        "constraints": "无显式约束",
+        "assumptions": "无明确假设"
+      },
+      "hint": "在第 1 轮通过 diting_think 工具产生的结构化推理快照"
+    },
     "routing": {
       "auto": "自动路由",
       "autoDesc": "系统智能选择助手",

@@ -767,6 +767,7 @@ mod tests {
             inject_execution_protocol: false,
             allow_worker_delegation: false,
             prefer_workflow_runtime: false,
+            require_diting_think_preflight: false,
             capability_snapshot: None,
         }
     }

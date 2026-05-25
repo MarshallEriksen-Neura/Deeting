@@ -377,10 +377,58 @@ impl Hook for FrameFreshnessHook {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DitingThinkPreflightHook;
+
+const DITING_THINK_PREFLIGHT_INTERESTS: [HookEventInterest; 1] =
+    [HookEventInterest::ProposePhaseExecution];
+
+impl Hook for DitingThinkPreflightHook {
+    fn name(&self) -> &'static str {
+        "diting_think_preflight"
+    }
+
+    fn interests(&self) -> &[HookEventInterest] {
+        &DITING_THINK_PREFLIGHT_INTERESTS
+    }
+
+    fn evaluate(&self, event: &HookEvent, state: &RuntimeStateView) -> HookDecision {
+        if !matches!(
+            event,
+            HookEvent::CommitBoundary(CommitBoundary::ProposePhaseExecution { .. })
+        ) {
+            return HookDecision::Allow {
+                reason: "diting think hook ignored unrelated event".to_string(),
+            };
+        }
+        if !state.current_frame.execution_strategy.needs_explicit_plan() {
+            return HookDecision::Allow {
+                reason: "direct iteration does not need diting think preflight".to_string(),
+            };
+        }
+        if state
+            .current_frame
+            .known_facts
+            .iter()
+            .any(|fact| fact.source == "diting_think")
+        {
+            return HookDecision::Allow {
+                reason: "diting think frame facts already captured".to_string(),
+            };
+        }
+
+        HookDecision::RequireArtifact {
+            artifact: RequiredArtifact::DitingThinkPreflight,
+            reason: "non-direct world model phase needs a task-local preflight frame".to_string(),
+            enforcement: HookEnforcementMode::Enforced,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frame::{ExecutionStrategy, FrameProvenance, WorldModelFrame};
+    use crate::frame::{ExecutionStrategy, Fact, FrameProvenance, WorldModelFrame};
 
     fn frame(strategy: ExecutionStrategy) -> WorldModelFrame {
         WorldModelFrame::new(
@@ -496,6 +544,64 @@ mod tests {
         assert!(matches!(
             registry.evaluate(&event, &state),
             HookDecision::Composite { decisions } if decisions.len() == 2
+        ));
+    }
+
+    #[test]
+    fn diting_think_preflight_hook_requires_frame_artifact_for_non_direct_phase() {
+        let mut registry = HookRegistry::new();
+        registry.register(DitingThinkPreflightHook);
+
+        let event = HookEvent::CommitBoundary(CommitBoundary::ProposePhaseExecution {
+            phase_id: "phase-1".to_string(),
+        });
+        let state = RuntimeStateView {
+            current_frame: frame(ExecutionStrategy::Hybrid),
+            current_plan: None,
+            metadata: Value::Null,
+        };
+
+        assert!(matches!(
+            registry.evaluate(&event, &state),
+            HookDecision::RequireArtifact {
+                artifact: RequiredArtifact::DitingThinkPreflight,
+                enforcement: HookEnforcementMode::Enforced,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn diting_think_preflight_hook_skips_direct_or_already_captured_frames() {
+        let mut registry = HookRegistry::new();
+        registry.register(DitingThinkPreflightHook);
+        let event = HookEvent::CommitBoundary(CommitBoundary::ProposePhaseExecution {
+            phase_id: "phase-1".to_string(),
+        });
+        let direct_state = RuntimeStateView {
+            current_frame: frame(ExecutionStrategy::DirectIteration),
+            current_plan: None,
+            metadata: Value::Null,
+        };
+        assert!(matches!(
+            registry.evaluate(&event, &direct_state),
+            HookDecision::Allow { .. }
+        ));
+
+        let mut captured_frame = frame(ExecutionStrategy::Hybrid);
+        captured_frame.known_facts.push(Fact {
+            id: "fact-1".to_string(),
+            statement: "captured".to_string(),
+            source: "diting_think".to_string(),
+        });
+        let captured_state = RuntimeStateView {
+            current_frame: captured_frame,
+            current_plan: None,
+            metadata: Value::Null,
+        };
+        assert!(matches!(
+            registry.evaluate(&event, &captured_state),
+            HookDecision::Allow { .. }
         ));
     }
 }

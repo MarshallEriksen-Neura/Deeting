@@ -27,6 +27,7 @@ import {
   ToolCallGroup,
   ToolResultBlock,
 } from "@/components/chat/messages/ai-response-bubble/tool-blocks";
+import { DitingThinkPanel } from "@/components/chat/messages/ai-response-bubble/diting-think-panel";
 
 const ViewBlock = dynamic(() => import("@/components/views/view-block"), {
   ssr: false,
@@ -93,6 +94,15 @@ function serializeComparableBlock(block: MessageBlock) {
       return { type: block.type, data: block.data };
     case "error":
       return { type: block.type, message: block.message };
+    case "diting_think_frame":
+      return {
+        type: block.type,
+        intent: block.intent,
+        facts: block.facts,
+        assumptions: block.assumptions,
+        verificationTargets: block.verificationTargets,
+        rules: block.rules,
+      };
     case "ui":
       return {
         type: block.type,
@@ -164,6 +174,39 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       });
       return { resultMap: map, pairedResultIndices: paired };
     }, [parts]);
+
+    const dittingFrameBlock = useMemo(() => {
+      for (const part of parts) {
+        if (part.type === "diting_think_frame") {
+          return part;
+        }
+      }
+      return null;
+    }, [parts]);
+
+    const hasContradictedFrame = useMemo(() => {
+      if (!dittingFrameBlock) return false;
+      for (const part of parts) {
+        if (part.type !== "tool_result") continue;
+        const debug =
+          part.debug && typeof part.debug === "object"
+            ? (part.debug as Record<string, unknown>)
+            : null;
+        if (!debug) continue;
+        const traceBlocks = debug.tool_trace_blocks;
+        if (!Array.isArray(traceBlocks)) continue;
+        for (const block of traceBlocks) {
+          if (!block || typeof block !== "object") continue;
+          const blockRecord = block as Record<string, unknown>;
+          if (blockRecord.type !== "runtime_transition_correlation") continue;
+          const payload = blockRecord.payload;
+          if (!payload || typeof payload !== "object") continue;
+          const outcome = (payload as Record<string, unknown>).outcome;
+          if (outcome === "contradicted") return true;
+        }
+      }
+      return false;
+    }, [dittingFrameBlock, parts]);
 
     const { uiBlocksByCallId, pairedUiIndices, hasCallLinkedUi } = useMemo(() => {
       const toolCallIds = new Set<string>();
@@ -282,6 +325,13 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
             shouldRevealCallChain={shouldRevealCallChain}
           />
 
+          {dittingFrameBlock ? (
+            <DitingThinkPanel
+              block={dittingFrameBlock}
+              contradicted={hasContradictedFrame}
+            />
+          ) : null}
+
           {(hasContent || hasToolActivity) && (
             <motion.div
               initial={{ opacity: 0, y: 4 }}
@@ -290,6 +340,9 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
               className="space-y-3"
             >
               {parts.map((part, index) => {
+                if (part.type === "diting_think_frame") {
+                  return null;
+                }
                 if (part.type === "thought") {
                   return (
                     <AnimatedBlock key={`thought-${index}`}>

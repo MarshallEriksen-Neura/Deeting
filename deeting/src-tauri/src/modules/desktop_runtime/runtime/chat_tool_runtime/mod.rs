@@ -7,8 +7,9 @@ use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUND
 use crate::modules::desktop_runtime::runtime::runtime_transition::projection::{
     attach_runtime_transition_blocks_to_response, project_execution_observation_decision_blocks,
     project_final_answer_decision_blocks, project_tool_call_proposal_decision_blocks,
-    project_tool_execution_correlation_blocks, ExecutionObservationProjectionInput,
-    FinalAnswerProjectionInput, ToolCallProposalProjectionInput,
+    project_tool_execution_correlation_blocks, project_world_model_frame_decision_block,
+    ExecutionObservationProjectionInput, FinalAnswerProjectionInput,
+    ToolCallProposalProjectionInput, WorldModelFrameKind, WorldModelFrameProjectionInput,
 };
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
@@ -109,6 +110,14 @@ fn attach_diting_think_frame_extract(
         );
     }
     response
+}
+
+fn should_inject_diting_think_tool(
+    round: usize,
+    diting_think_consumed: bool,
+    execution_policy: &LocalExecutionPolicy,
+) -> bool {
+    round == 1 && !diting_think_consumed && execution_policy.require_diting_think_preflight
 }
 
 pub(crate) async fn run_local_chat_complete_with_tools(
@@ -246,7 +255,11 @@ async fn continue_local_chat_complete_with_tools(
             &effective_allowed_tool_names,
             state.last_capability_snapshot.as_ref(),
         );
-        let tools = if state.round == 1 && !state.diting_think_consumed {
+        let tools = if should_inject_diting_think_tool(
+            state.round,
+            state.diting_think_consumed,
+            &state.execution_policy,
+        ) {
             inject_diting_think_tool(tools)
         } else {
             tools
@@ -355,6 +368,23 @@ async fn continue_local_chat_complete_with_tools(
                 }) {
                     state.diting_think_consumed = true;
                     state.captured_reasoning = Some(reasoning);
+                    if let Some(extract) = state.captured_frame_extract.as_ref() {
+                        state.runtime_transition_blocks.push(
+                            project_world_model_frame_decision_block(
+                                WorldModelFrameProjectionInput {
+                                    trace_id: state.trace_id.as_str(),
+                                    request_id: state.request_id.as_deref(),
+                                    session_id: state.session_id.as_str(),
+                                    frame_kind: WorldModelFrameKind::Refresh,
+                                    intent: extract.intent.as_deref(),
+                                    fact_count: extract.facts.len(),
+                                    assumption_count: extract.assumptions.len(),
+                                    verification_target_count: extract.verification_targets.len(),
+                                    rule_count: extract.rules.len(),
+                                },
+                            ),
+                        );
+                    }
                 }
                 let canonical_tool_call_meta = canonicalize_tool_call_meta_via_graph(
                     &session_id,

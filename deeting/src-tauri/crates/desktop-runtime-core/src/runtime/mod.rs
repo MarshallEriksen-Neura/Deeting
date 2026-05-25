@@ -11,7 +11,7 @@ use crate::traits::{
     BootstrapPrompt, EventStore, FrameArtifactGenerator, InterruptionChannel, PhaseExecutor,
     PhaseProposalGenerator, Tier2Validator,
 };
-use serde_json::json;
+use serde_json::{json, Value};
 
 const MAX_PHASE_ITERATIONS: usize = 8;
 
@@ -203,6 +203,14 @@ where
                     execution_decision
                 )));
             }
+            if execution_decision.contains_required_artifact(RequiredArtifact::DitingThinkPreflight)
+            {
+                annotate_phase_proposal_required_artifact(
+                    &mut plan,
+                    &proposal_id,
+                    RequiredArtifact::DitingThinkPreflight,
+                );
+            }
 
             let phase = plan.commit_proposal(&proposal_id, phase_id)?;
             self.components
@@ -387,6 +395,37 @@ where
     }
 }
 
+fn annotate_phase_proposal_required_artifact(
+    plan: &mut PlanArtifact,
+    proposal_id: &str,
+    artifact: RequiredArtifact,
+) {
+    let Some(proposal) = plan
+        .proposed_phases
+        .iter_mut()
+        .find(|proposal| proposal.proposal_id == proposal_id)
+    else {
+        return;
+    };
+    if !proposal.payload.is_object() {
+        let original = std::mem::replace(&mut proposal.payload, json!({}));
+        proposal.payload["payload"] = original;
+    }
+    let Some(object) = proposal.payload.as_object_mut() else {
+        return;
+    };
+    let artifact_value = serde_json::to_value(artifact).unwrap_or(Value::Null);
+    let artifacts = object
+        .entry("runtime_required_artifacts".to_string())
+        .or_insert_with(|| json!([]));
+    let Some(artifacts) = artifacts.as_array_mut() else {
+        return;
+    };
+    if !artifacts.iter().any(|item| item == &artifact_value) {
+        artifacts.push(artifact_value);
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RuntimeTickResult {
     pub frame: WorldModelFrame,
@@ -400,6 +439,7 @@ pub fn build_default_hook_registry() -> HookRegistry {
     let mut registry = HookRegistry::new();
     registry.register(PlanDraftHook);
     registry.register(FrameFreshnessHook);
+    registry.register(crate::hook::DitingThinkPreflightHook);
     registry
 }
 
@@ -565,6 +605,12 @@ mod tests {
         assert_eq!(result.plan.plan_status, PlanStatus::Completed);
         assert_eq!(result.plan.committed_phases.len(), 1);
         assert_eq!(result.plan.committed_phases[0].status, PhaseStatus::Done);
+        assert_eq!(
+            result.plan.committed_phases[0]
+                .payload
+                .pointer("/runtime_required_artifacts/0"),
+            Some(&json!("diting_think_preflight"))
+        );
         assert!(matches!(
             result.decision,
             HookDecision::RequireArtifact {

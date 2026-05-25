@@ -54,6 +54,16 @@ const hasRenderableBlocks = (blocks: MessageBlock[]) =>
     if (block.type === "flight_offer" || block.type === "file_preview") {
       return true
     }
+    if (block.type === "diting_think_frame") {
+      if (typeof block.intent === "string" && block.intent.trim().length > 0) return true
+      const hasItems = (value: unknown) => Array.isArray(value) && value.some((entry) => typeof entry === "string" && entry.trim().length > 0)
+      return (
+        hasItems(block.facts) ||
+        hasItems(block.assumptions) ||
+        hasItems(block.verificationTargets) ||
+        hasItems(block.rules)
+      )
+    }
     return false
   })
 
@@ -231,6 +241,37 @@ const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBloc
         message: normalizeTextValue(
           typeof block.message === "string" ? block.message : String(block.message ?? "")
         ),
+      }
+    }
+
+    if (block.type === "diting_think_frame") {
+      const candidate = block as unknown as Record<string, unknown>
+      const intentValue =
+        typeof candidate.intent === "string" && candidate.intent.trim().length > 0
+          ? normalizeTextValue(candidate.intent.trim())
+          : null
+      const toStringArray = (value: unknown): string[] => {
+        if (!Array.isArray(value)) return []
+        const out: string[] = []
+        for (const entry of value) {
+          if (typeof entry !== "string") continue
+          const trimmed = entry.trim()
+          if (!trimmed) continue
+          out.push(normalizeTextValue(trimmed))
+        }
+        return out
+      }
+      const verificationTargets = toStringArray(
+        candidate.verificationTargets ?? candidate.verification_targets,
+      )
+      return {
+        type: "diting_think_frame" as const,
+        ...normalizedBase,
+        intent: intentValue,
+        facts: toStringArray(candidate.facts),
+        assumptions: toStringArray(candidate.assumptions),
+        verificationTargets,
+        rules: toStringArray(candidate.rules),
       }
     }
 

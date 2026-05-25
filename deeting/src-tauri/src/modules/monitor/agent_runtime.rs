@@ -380,6 +380,7 @@ fn build_monitor_runtime_execution_policy(allowed_tool_names: Vec<String>) -> Lo
         inject_execution_protocol: true,
         allow_worker_delegation: true,
         prefer_workflow_runtime: false,
+        require_diting_think_preflight: false,
         capability_snapshot: None,
     }
 }

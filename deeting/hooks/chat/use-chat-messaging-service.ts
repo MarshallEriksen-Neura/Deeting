@@ -441,7 +441,76 @@ function extractAssistantResponseBlocks(responseBody: Record<string, unknown>): 
     }
   }
 
+  const ditingFrame = extractDitingThinkFrameBlockFromResponse(responseBody, messageObject)
+  if (ditingFrame && !nextBlocks.some((block) => block.type === "diting_think_frame")) {
+    nextBlocks.unshift(ditingFrame)
+  }
+
   return nextBlocks
+}
+
+function readDitingThinkExtract(
+  source: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  if (!source) return null
+  const value = source.diting_think_frame_extract
+  if (!value || typeof value !== "object") return null
+  return value as Record<string, unknown>
+}
+
+function stringListFromUnknown(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const out: string[] = []
+  for (const entry of value) {
+    if (typeof entry !== "string") continue
+    const trimmed = entry.trim()
+    if (!trimmed) continue
+    out.push(trimmed)
+  }
+  return out
+}
+
+function extractDitingThinkFrameBlockFromResponse(
+  responseBody: Record<string, unknown>,
+  messageObject: Record<string, unknown>,
+): MessageBlock | null {
+  const metaInfoCandidate =
+    messageObject.meta_info && typeof messageObject.meta_info === "object"
+      ? (messageObject.meta_info as Record<string, unknown>)
+      : null
+
+  const extract =
+    readDitingThinkExtract(responseBody) ??
+    readDitingThinkExtract(messageObject) ??
+    readDitingThinkExtract(metaInfoCandidate)
+  if (!extract) return null
+
+  const intent = typeof extract.intent === "string" && extract.intent.trim().length > 0
+    ? extract.intent.trim()
+    : null
+  const facts = stringListFromUnknown(extract.facts)
+  const assumptions = stringListFromUnknown(extract.assumptions)
+  const verificationTargets = stringListFromUnknown(extract.verification_targets)
+  const rules = stringListFromUnknown(extract.rules)
+
+  if (
+    !intent &&
+    facts.length === 0 &&
+    assumptions.length === 0 &&
+    verificationTargets.length === 0 &&
+    rules.length === 0
+  ) {
+    return null
+  }
+
+  return {
+    type: "diting_think_frame",
+    intent,
+    facts,
+    assumptions,
+    verificationTargets,
+    rules,
+  } as MessageBlock
 }
 
 export function shouldAppendFinalResponseBlocks({

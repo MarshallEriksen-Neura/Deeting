@@ -66,6 +66,52 @@ pub(crate) struct MonitorCheckpointProjectionInput<'a> {
     pub(crate) observations: &'a [String],
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WorldModelFrameKind {
+    Refresh,
+    Revision,
+}
+
+impl WorldModelFrameKind {
+    fn slug(self) -> &'static str {
+        match self {
+            WorldModelFrameKind::Refresh => "refresh",
+            WorldModelFrameKind::Revision => "revision",
+        }
+    }
+
+    fn required_artifact(self) -> RequiredArtifact {
+        match self {
+            WorldModelFrameKind::Refresh => RequiredArtifact::WorldModelFrameRefresh,
+            WorldModelFrameKind::Revision => RequiredArtifact::WorldModelFrameRevision,
+        }
+    }
+
+    fn reason(self) -> &'static str {
+        match self {
+            WorldModelFrameKind::Refresh => {
+                "diting_think structured reasoning refreshed the world model frame"
+            }
+            WorldModelFrameKind::Revision => {
+                "diting_think structured reasoning revised the world model frame after contradiction"
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct WorldModelFrameProjectionInput<'a> {
+    pub(crate) trace_id: &'a str,
+    pub(crate) request_id: Option<&'a str>,
+    pub(crate) session_id: &'a str,
+    pub(crate) frame_kind: WorldModelFrameKind,
+    pub(crate) intent: Option<&'a str>,
+    pub(crate) fact_count: usize,
+    pub(crate) assumption_count: usize,
+    pub(crate) verification_target_count: usize,
+    pub(crate) rule_count: usize,
+}
+
 pub(crate) fn attach_runtime_transition_blocks_to_response(
     mut response: Value,
     runtime_transition_blocks: &[Value],
@@ -558,6 +604,65 @@ pub(crate) fn project_monitor_checkpoint_decision_block(
     };
 
     project_transition_audit_block(&transition)
+}
+
+pub(crate) fn project_world_model_frame_decision_block(
+    input: WorldModelFrameProjectionInput<'_>,
+) -> Value {
+    let slug = input.frame_kind.slug();
+    let trace_handle = input
+        .request_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(input.trace_id);
+    let intent_value = input
+        .intent
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
+    let transition = RuntimeTransition {
+        transition_id: format!("runtime-transition:world-model-frame:{slug}:{trace_handle}"),
+        trace_id: input.trace_id.to_string(),
+        request_id: input.request_id.map(str::to_string),
+        session_id: input.session_id.to_string(),
+        source: TransitionSource::RuntimePolicy,
+        from_state: RuntimeStateKind::ModelProposal,
+        to_state: RuntimeStateKind::PlanDrafted,
+        proposed_action: ProposedAction::DraftPlan,
+        capability_id: None,
+        tool_name: Some("diting_think".to_string()),
+        effect_scope: EffectScope::Session,
+        observed_evidence: vec![EvidenceRef {
+            kind: "diting_think_extract".to_string(),
+            source: "chat_tool_runtime".to_string(),
+            id: input.request_id.map(str::to_string),
+            metadata_json: json!({
+                "frame_kind": slug,
+                "intent": intent_value,
+                "fact_count": input.fact_count,
+                "assumption_count": input.assumption_count,
+                "verification_target_count": input.verification_target_count,
+                "rule_count": input.rule_count,
+            }),
+        }],
+        uncertainty_flags: Vec::new(),
+        metadata_json: json!({
+            "frame_kind": slug,
+            "intent": intent_value,
+            "fact_count": input.fact_count,
+            "assumption_count": input.assumption_count,
+            "verification_target_count": input.verification_target_count,
+            "rule_count": input.rule_count,
+        }),
+    };
+
+    let decision = HookDecision::RequireArtifact {
+        artifact: input.frame_kind.required_artifact(),
+        reason: input.frame_kind.reason().to_string(),
+        enforcement: HookEnforcementMode::Enforced,
+    };
+
+    runtime_transition_decision_block(&transition, &decision)
 }
 
 pub(crate) fn monitor_checkpoint_correlation_signal_payload(

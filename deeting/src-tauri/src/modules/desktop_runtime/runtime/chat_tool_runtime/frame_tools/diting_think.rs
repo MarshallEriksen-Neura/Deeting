@@ -5,6 +5,8 @@ pub(crate) const DITING_THINK_TOOL_NAME: &str = "diting_think";
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct DitingThinkExtract {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intent: Option<String>,
     pub facts: Vec<String>,
     pub assumptions: Vec<String>,
     pub verification_targets: Vec<String>,
@@ -12,6 +14,12 @@ pub(crate) struct DitingThinkExtract {
 }
 
 pub(crate) fn parse_diting_think_arguments(args: &Value) -> DitingThinkExtract {
+    let intent = args
+        .get("intent")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
     let facts = args
         .get("context_assessment")
         .and_then(Value::as_str)
@@ -34,6 +42,7 @@ pub(crate) fn parse_diting_think_arguments(args: &Value) -> DitingThinkExtract {
         .unwrap_or_default();
 
     DitingThinkExtract {
+        intent,
         facts,
         assumptions,
         verification_targets,

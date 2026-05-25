@@ -232,6 +232,25 @@ function upsertUiBlock(next: InternalMessageBlock[], block: InternalMessageBlock
   return true
 }
 
+function upsertDitingThinkFrameBlock(
+  next: InternalMessageBlock[],
+  block: InternalMessageBlock,
+): boolean {
+  if (block.type !== "diting_think_frame") return false
+  const existingIndex = next.findIndex(
+    (candidate) => candidate.type === "diting_think_frame",
+  )
+  if (existingIndex < 0) return false
+  const existing = next[existingIndex]
+  if (!existing || existing.type !== "diting_think_frame") return false
+  next[existingIndex] = {
+    ...existing,
+    ...block,
+    id: existing.id || block.id,
+  }
+  return true
+}
+
 function applyToolResultStatuses(blocks: InternalMessageBlock[]): InternalMessageBlock[] {
   const normalized = [...blocks]
   for (const block of normalized) {
@@ -444,6 +463,10 @@ export function appendMessageBlocks(
     }
 
     if (upsertUiBlock(next, block)) {
+      continue
+    }
+
+    if (upsertDitingThinkFrameBlock(next, block)) {
       continue
     }
 
