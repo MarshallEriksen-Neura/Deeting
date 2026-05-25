@@ -3723,7 +3723,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn prepare_provider_request_adds_sanitized_model_request_headers() {
         let preset = mock_preset();
         let instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));

@@ -34,6 +34,14 @@ const LOCAL_PERIODIC_TASK_MAX_ERROR_CHARS: usize = 2000;
 const SQLITE_BUSY_RETRY_DELAYS_MS: [u64; 3] = [150, 400, 900];
 pub(crate) const CHAT_HISTORY_RETENTION_CONFIG_KEY: &str = "chat.history_retention_days";
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LocalConversationModelContext {
+    pub(crate) last_model_id: Option<String>,
+    pub(crate) last_provider_model_id: Option<String>,
+    pub(crate) pinned_model_key: Option<String>,
+    pub(crate) pinned_provider_model_id: Option<String>,
+}
+
 fn is_sqlite_busy_error(err: &McpError) -> bool {
     let text = err.to_string().to_ascii_lowercase();
     text.contains("database is locked")
@@ -2265,6 +2273,41 @@ impl McpStore {
         Ok(())
     }
 
+    pub(crate) async fn get_local_conversation_model_context(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<LocalConversationModelContext>, McpError> {
+        let normalized_session_id = session_id.trim().to_string();
+        if normalized_session_id.is_empty() {
+            return Err(McpError::validation("session_id is required"));
+        }
+
+        let session_row = sqlx::query(
+            r#"
+            SELECT
+              last_model_id, last_provider_model_id,
+              pinned_model_key, pinned_provider_model_id
+            FROM conversation_session
+            WHERE id = ?
+            LIMIT 1;
+            "#,
+        )
+        .bind(&normalized_session_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        let Some(session_row) = session_row else {
+            return Ok(None);
+        };
+
+        Ok(Some(LocalConversationModelContext {
+            last_model_id: session_row.try_get("last_model_id")?,
+            last_provider_model_id: session_row.try_get("last_provider_model_id")?,
+            pinned_model_key: session_row.try_get("pinned_model_key")?,
+            pinned_provider_model_id: session_row.try_get("pinned_provider_model_id")?,
+        }))
+    }
     pub async fn get_local_conversation_title_context(
         &self,
         session_id: &str,

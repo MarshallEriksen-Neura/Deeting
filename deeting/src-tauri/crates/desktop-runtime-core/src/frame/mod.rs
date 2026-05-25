@@ -163,12 +163,15 @@ impl WorldModelFrame {
         self.status = WorldModelFrameStatus::VerifiedEnough;
     }
 
+    pub const fn needs_revision(&self) -> bool {
+        matches!(self.status, WorldModelFrameStatus::Contradicted)
+    }
+
     pub const fn needs_refresh(&self) -> bool {
         matches!(
             self.status,
             WorldModelFrameStatus::Missing
                 | WorldModelFrameStatus::Stale
-                | WorldModelFrameStatus::Contradicted
                 | WorldModelFrameStatus::InsufficientForCommit
         )
     }
@@ -201,5 +204,20 @@ mod tests {
         assert!(frame.needs_refresh());
         frame.mark_insufficient_for_commit();
         assert!(frame.needs_refresh());
+    }
+
+    #[test]
+    fn contradicted_frame_requires_revision_not_refresh() {
+        let mut frame = WorldModelFrame::new(
+            "frame-1",
+            "session-1",
+            "task-1",
+            "answer directly",
+            ExecutionStrategy::DirectIteration,
+            FrameProvenance::bootstrap("test"),
+        );
+        frame.mark_contradicted();
+        assert!(frame.needs_revision());
+        assert!(!frame.needs_refresh());
     }
 }

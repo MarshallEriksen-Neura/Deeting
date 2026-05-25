@@ -9,6 +9,7 @@ use self::components::runtime_components::{
     DeetingFrameArtifactGenerator, DeetingInterruptionChannel, DeetingPhaseProposalGenerator,
     DeetingRuntimeEventStore, DeetingTier2Validator,
 };
+use self::phase_step::phase_step_type_name;
 use super::{LocalExecutionOutcome, LocalExecutionRequest};
 use crate::modules::desktop_runtime::runtime::chat_tool_runtime::DitingThinkExtract;
 use desktop_runtime_core::{
@@ -24,14 +25,13 @@ pub(crate) async fn run_local_runtime_composition<F>(
 where
     F: FnMut(&str, Option<&str>, &str, &str, Option<Value>),
 {
-    let step_type = phase_step::initial_phase_step_for_policy(&request.execution_policy);
     emit_status(
         "evolve",
         Some("phase_executor"),
         "success",
         "runtime.phase_executor.selected",
         Some(json!({
-            "phase_step_type": phase_step::phase_step_type_name(step_type),
+            "phase_step_source": "world_model_frame",
             "route": request.execution_policy.route.as_str(),
             "composition": "deeting_runtime_phase_composition",
         })),
@@ -43,28 +43,45 @@ where
     let phase_outcome = shared_phase_outcome();
     let hook_store = request.app_state.mcp.store.clone();
     let runtime_event_store = DeetingRuntimeEventStore::default();
-    let components = RuntimeComponents {
-        bootstrap: DeetingBootstrapPrompt::new(
-            request.clone(),
-            step_type,
-            task_id,
-            hook_store.clone(),
-        ),
-        validator: DeetingTier2Validator::default(),
-        frame_generator: DeetingFrameArtifactGenerator::default(),
-        phase_proposal_generator: DeetingPhaseProposalGenerator::new(step_type),
-        phase_executor: DeetingRealPhaseExecutor::new(
-            request,
-            &mut emit_status,
-            phase_outcome.clone(),
-        ),
-        interruptions: DeetingInterruptionChannel::default(),
-        event_store: runtime_event_store.clone(),
-        hook_registry: build_deeting_policy_hook_registry(hook_store),
+    let app_state = request.app_state.clone();
+    let result = {
+        let components = RuntimeComponents {
+            bootstrap: DeetingBootstrapPrompt::new(request.clone(), task_id, hook_store.clone()),
+            validator: DeetingTier2Validator::new(app_state),
+            frame_generator: DeetingFrameArtifactGenerator::default(),
+            phase_proposal_generator: DeetingPhaseProposalGenerator::new(),
+            phase_executor: DeetingRealPhaseExecutor::new(
+                request,
+                &mut emit_status,
+                phase_outcome.clone(),
+            ),
+            interruptions: DeetingInterruptionChannel::default(),
+            event_store: runtime_event_store.clone(),
+            hook_registry: build_deeting_policy_hook_registry(hook_store),
+        };
+        let mut runtime = RuntimeComposition::new(components);
+        runtime.tick(input).map_err(|err| err.to_string())?
     };
-    let mut runtime = RuntimeComposition::new(components);
-    let result = runtime.tick(input).map_err(|err| err.to_string())?;
     let runtime_events = runtime_event_store.events();
+
+    let derived_step = result
+        .plan
+        .committed_phases
+        .first()
+        .map(|phase| phase.step_type);
+    emit_status(
+        "evolve",
+        Some("phase_executor"),
+        "success",
+        "runtime.phase_executor.frame_resolved",
+        Some(json!({
+            "frame_strategy": result.frame.execution_strategy,
+            "derived_phase_step_type": derived_step.map(phase_step_type_name),
+            "phase_committed_count": result.plan.committed_phases.len(),
+            "final_answer_present": result.final_answer.is_some(),
+        })),
+    );
+
     let mut outcome = phase_outcome.borrow_mut().take().ok_or_else(|| {
         "runtime composition completed without local execution outcome".to_string()
     })?;

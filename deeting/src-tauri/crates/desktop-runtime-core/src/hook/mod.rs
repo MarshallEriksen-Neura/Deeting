@@ -346,11 +346,12 @@ impl Hook for PlanDraftHook {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FrameFreshnessHook;
 
-const FRAME_FRESHNESS_INTERESTS: [HookEventInterest; 4] = [
+const FRAME_FRESHNESS_INTERESTS: [HookEventInterest; 5] = [
     HookEventInterest::ProposeNextPhase,
     HookEventInterest::ProposePhaseExecution,
     HookEventInterest::ProposeFinalAnswer,
     HookEventInterest::ProposeCapabilityAdmit,
+    HookEventInterest::PhaseCompleted,
 ];
 
 impl Hook for FrameFreshnessHook {
@@ -363,6 +364,14 @@ impl Hook for FrameFreshnessHook {
     }
 
     fn evaluate(&self, _event: &HookEvent, state: &RuntimeStateView) -> HookDecision {
+        if state.current_frame.needs_revision() {
+            return HookDecision::RequireArtifact {
+                artifact: RequiredArtifact::WorldModelFrameRevision,
+                reason: "current frame was contradicted and needs revision before the next commit boundary".to_string(),
+                enforcement: HookEnforcementMode::Enforced,
+            };
+        }
+
         if state.current_frame.needs_refresh() {
             return HookDecision::RequireArtifact {
                 artifact: RequiredArtifact::WorldModelFrameRefresh,
@@ -483,6 +492,58 @@ mod tests {
             registry.evaluate(&event, &state),
             HookDecision::RequireArtifact {
                 artifact: RequiredArtifact::WorldModelFrameRefresh,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn contradicted_frame_requests_revision_before_plan_draft_precedence() {
+        let mut registry = HookRegistry::new();
+        registry.register(PlanDraftHook);
+        registry.register(FrameFreshnessHook);
+        let mut current_frame = frame(ExecutionStrategy::DelegatedWorkflow);
+        current_frame.mark_contradicted();
+
+        let event = HookEvent::CommitBoundary(CommitBoundary::ProposeNextPhase);
+        let state = RuntimeStateView {
+            current_frame,
+            current_plan: None,
+            metadata: Value::Null,
+        };
+
+        assert!(matches!(
+            registry.evaluate(&event, &state),
+            HookDecision::RequireArtifact {
+                artifact: RequiredArtifact::WorldModelFrameRevision,
+                enforcement: HookEnforcementMode::Enforced,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn contradicted_frame_requests_revision_on_phase_completed() {
+        let mut registry = HookRegistry::new();
+        registry.register(FrameFreshnessHook);
+        let mut current_frame = frame(ExecutionStrategy::DelegatedWorkflow);
+        current_frame.mark_contradicted();
+
+        let event = HookEvent::PhaseCompleted {
+            phase_id: "phase-1".to_string(),
+            candidate_memory_facts: Vec::new(),
+        };
+        let state = RuntimeStateView {
+            current_frame,
+            current_plan: None,
+            metadata: Value::Null,
+        };
+
+        assert!(matches!(
+            registry.evaluate(&event, &state),
+            HookDecision::RequireArtifact {
+                artifact: RequiredArtifact::WorldModelFrameRevision,
+                enforcement: HookEnforcementMode::Enforced,
                 ..
             }
         ));

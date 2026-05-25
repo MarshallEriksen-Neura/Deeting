@@ -5,6 +5,13 @@ use crate::state::AppState;
 
 use super::types::{ApprovalActionResult, TextChatReply, ToolApprovalPayload};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SessionModelSelection {
+    model: String,
+    provider_model_id: Option<String>,
+    model_selection_mode: String,
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 pub fn action_string(value: &Value, key: &str) -> Option<String> {
@@ -53,6 +60,42 @@ fn clone_fields(source: &Value, keys: &[&str]) -> Value {
         }
     }
     Value::Object(output)
+}
+
+fn trimmed_optional(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn session_model_selection_from_context(
+    context: Option<&crate::modules::conversations::store::LocalConversationModelContext>,
+) -> Option<SessionModelSelection> {
+    let context = context?;
+    let pinned_provider_model_id = trimmed_optional(context.pinned_provider_model_id.as_deref());
+    let last_provider_model_id = trimmed_optional(context.last_provider_model_id.as_deref());
+    let pinned_model_key = trimmed_optional(context.pinned_model_key.as_deref());
+    let last_model_id = trimmed_optional(context.last_model_id.as_deref());
+
+    if let Some(provider_model_id) = pinned_provider_model_id.or(last_provider_model_id) {
+        let model = pinned_model_key
+            .or(last_model_id)
+            .unwrap_or_else(|| provider_model_id.clone());
+        return Some(SessionModelSelection {
+            model,
+            provider_model_id: Some(provider_model_id),
+            model_selection_mode: "exact_provider".to_string(),
+        });
+    }
+
+    pinned_model_key
+        .or(last_model_id)
+        .map(|model| SessionModelSelection {
+            model,
+            provider_model_id: None,
+            model_selection_mode: "pool".to_string(),
+        })
 }
 
 fn compact_im_block(block: &Value) -> Option<Value> {
@@ -275,6 +318,72 @@ pub async fn execute_text_chat_raw(
         return Ok(None);
     }
 
+    let session_model_selection = match app_state
+        .mcp
+        .store
+        .get_local_conversation_model_context(session_id)
+        .await
+    {
+        Ok(Some(context)) => session_model_selection_from_context(Some(&context)),
+        Ok(None) => None,
+        Err(err) => {
+            log::warn!(
+                "conversation session model lookup failed session={} err={}",
+                session_id.trim(),
+                err
+            );
+            None
+        }
+    };
+
+    if let Some(session_model_selection) = session_model_selection {
+        let input = LocalOrchestratorInput {
+            model: session_model_selection.model,
+            model_selection_mode: Some(session_model_selection.model_selection_mode),
+            provider_model_id: session_model_selection.provider_model_id,
+            explicit_task_agent_id: None,
+            root_execution_id: None,
+            generated_artifact_context: None,
+            session_id: session_id.trim().to_string(),
+            capability_id: None,
+            regenerate: false,
+            compare_only: false,
+            user_content: Some(trimmed.to_string()),
+            provided_messages: None,
+            persist_runtime_artifacts: true,
+            temperature: Some(0.2),
+            max_tokens: None,
+            reasoning_enabled: None,
+            reasoning_effort: None,
+            terminal_context: None,
+            workflow_context: None,
+            request_id: None,
+            stream: false,
+            status_stream: false,
+            selected_knowledge_file_ids: Vec::new(),
+            locale: None,
+        };
+
+        match Box::pin(execute_local_orchestrated_chat(
+            app_handle,
+            app_state,
+            input,
+            uuid::Uuid::new_v4().to_string(),
+            None,
+        ))
+        .await
+        {
+            Ok(response) => return Ok(Some(response)),
+            Err(err) => {
+                log::warn!(
+                    "conversation session model execution failed session={} err={}, falling back to secretary",
+                    session_id.trim(),
+                    err
+                );
+            }
+        }
+    }
+
     let secretary = app_state
         .providers
         .store
@@ -418,6 +527,17 @@ pub fn extract_follow_up_texts(result: &Value) -> Vec<String> {
         .unwrap_or_default();
 
     if texts.is_empty() {
+        if let Some(text) = result
+            .get("recovery_text")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            texts.push(text.to_string());
+        }
+    }
+
+    if texts.is_empty() {
         if let Some(error) = result
             .get("error")
             .and_then(Value::as_str)
@@ -486,6 +606,57 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn session_model_selection_prefers_pinned_provider_model() {
+        let selection = session_model_selection_from_context(Some(
+            &crate::modules::conversations::store::LocalConversationModelContext {
+                last_model_id: Some("gpt-4o-mini".to_string()),
+                last_provider_model_id: Some("provider-model-b".to_string()),
+                pinned_model_key: Some("qwen-max".to_string()),
+                pinned_provider_model_id: Some("provider-model-a".to_string()),
+            },
+        ))
+        .expect("session model selection");
+
+        assert_eq!(selection.model, "qwen-max");
+        assert_eq!(
+            selection.provider_model_id.as_deref(),
+            Some("provider-model-a")
+        );
+        assert_eq!(selection.model_selection_mode, "exact_provider");
+    }
+
+    #[test]
+    fn session_model_selection_falls_back_to_last_model_when_no_pinned_binding_exists() {
+        let selection = session_model_selection_from_context(Some(
+            &crate::modules::conversations::store::LocalConversationModelContext {
+                last_model_id: Some("gpt-4o-mini".to_string()),
+                last_provider_model_id: None,
+                pinned_model_key: None,
+                pinned_provider_model_id: None,
+            },
+        ))
+        .expect("session model selection");
+
+        assert_eq!(selection.model, "gpt-4o-mini");
+        assert_eq!(selection.provider_model_id, None);
+        assert_eq!(selection.model_selection_mode, "pool");
+    }
+
+    #[test]
+    fn session_model_selection_ignores_blank_values() {
+        let selection = session_model_selection_from_context(Some(
+            &crate::modules::conversations::store::LocalConversationModelContext {
+                last_model_id: Some(" ".to_string()),
+                last_provider_model_id: Some(" ".to_string()),
+                pinned_model_key: Some(" ".to_string()),
+                pinned_provider_model_id: Some(" ".to_string()),
+            },
+        ));
+
+        assert!(selection.is_none());
+    }
 
     #[test]
     fn compact_im_reply_response_keeps_only_im_reply_fields() {
