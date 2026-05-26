@@ -2,11 +2,12 @@
 
 import { memo, useMemo, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Brain, ChevronDown, AlertTriangle } from "lucide-react"
+import { ChevronDown, AlertTriangle } from "lucide-react"
 
 import type { DitingThinkFrameBlock } from "@/lib/chat/message-protocol"
 import { useI18n } from "@/hooks/use-i18n"
 import { cn } from "@/lib/utils"
+import { MathCurveLoader } from "@/components/chat/visuals/math-curve-loader"
 
 interface DitingThinkPanelProps {
   block: DitingThinkFrameBlock
@@ -143,7 +144,20 @@ export const DitingThinkPanel = memo<DitingThinkPanelProps>(
             {contradicted ? (
               <AlertTriangle size={13} className="text-amber-600 dark:text-amber-400" />
             ) : (
-              <Brain size={13} className="text-sky-600 dark:text-sky-400" />
+              <motion.span
+                className="inline-flex shrink-0 text-sky-600 dark:text-sky-400"
+                animate={{ opacity: [0.6, 1, 0.6] }}
+                transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut" }}
+                aria-hidden
+              >
+                <MathCurveLoader
+                  curve="rose3"
+                  size={14}
+                  particles={0}
+                  showTrace
+                  label=""
+                />
+              </motion.span>
             )}
             <span className="truncate">{t("frame.title")}</span>
             <span

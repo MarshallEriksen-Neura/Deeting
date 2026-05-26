@@ -205,6 +205,33 @@ async fn record_feedback_simple_persists_bandit_state_with_shared_memory_pool() 
 }
 
 #[tokio::test]
+async fn record_feedback_simple_updates_bandit_prior_and_cooldown() {
+    let store = init_store().await;
+
+    let failed = store
+        .record_feedback_simple("router:llm", "variant-b", false, Some(250.0))
+        .await
+        .expect("record failed feedback");
+
+    assert_eq!(failed.total_trials, 1);
+    assert_eq!(failed.successes, 0);
+    assert_eq!(failed.failures, 1);
+    assert!(failed.beta > 1.0);
+    assert!(failed.cooldown_until.is_some());
+
+    let recovered = store
+        .record_feedback_simple("router:llm", "variant-b", true, None)
+        .await
+        .expect("record recovered feedback");
+
+    assert_eq!(recovered.total_trials, 2);
+    assert_eq!(recovered.successes, 1);
+    assert_eq!(recovered.failures, 1);
+    assert!(recovered.alpha > 1.0);
+    assert!(recovered.cooldown_until.is_none());
+}
+
+#[tokio::test]
 async fn get_instance_connection_falls_back_to_preset_provider_protocol() {
     let store = init_store().await;
     let now = now_rfc3339().expect("time");

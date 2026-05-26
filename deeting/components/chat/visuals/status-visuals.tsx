@@ -5,6 +5,7 @@ import { Check, Sparkles } from "lucide-react";
 import { StatusPill } from "@/ui/common/status-pill";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
+import { MathCurveLoader } from "@/components/chat/visuals/math-curve-loader";
 
 export type TerminalStreamHistoryItem = {
   key: string;
@@ -213,24 +214,15 @@ function SwissGridLoader({ completed }: { completed: boolean }) {
   return (
     <div className="relative flex h-6 w-6 items-center justify-center shrink-0">
       {!completed ? (
-        <div className="relative z-10 grid grid-cols-2 gap-1 w-3.5 h-3.5">
-          {[0, 1, 2, 3].map((i) => (
-            <motion.div
-              key={i}
-              className="h-1.5 w-1.5 rounded-[1px] bg-[#6d5cff] dark:bg-[var(--accent)] shadow-[0_0_3px_rgba(109,92,255,0.4)]"
-              animate={{
-                opacity: [0.3, 1, 0.3],
-                scale: [0.8, 1.2, 0.8],
-              }}
-              transition={{
-                duration: 1,
-                repeat: Infinity,
-                delay: i * 0.15,
-                ease: "easeInOut",
-              }}
-            />
-          ))}
-        </div>
+        <MathCurveLoader
+          curve="rose3"
+          size={20}
+          particles={18}
+          trail={0.3}
+          loopMs={2400}
+          pulseMs={3200}
+          className="relative z-10"
+        />
       ) : (
         <motion.div
           initial={{ scale: 0, opacity: 0 }}

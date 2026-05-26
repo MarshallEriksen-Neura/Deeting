@@ -18,7 +18,7 @@ const SLOW_HINT_SOFT_S = 6;
 const SLOW_HINT_MEDIUM_S = 15;
 const SLOW_HINT_STRONG_S = 30;
 
-function useElapsedSeconds(active: boolean): number {
+function useElapsedSeconds(active: boolean, resetKey?: string | number | null): number {
   const [seconds, setSeconds] = useState(0);
   useEffect(() => {
     if (!active) {
@@ -26,14 +26,30 @@ function useElapsedSeconds(active: boolean): number {
       return;
     }
     const startedAt = Date.now();
+    setSeconds(0);
     const tick = () => {
       setSeconds(Math.floor((Date.now() - startedAt) / 1000));
     };
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [active]);
+  }, [active, resetKey]);
   return seconds;
+}
+
+const UPSTREAM_REQUEST_CODES = new Set([
+  "upstream.request.stream",
+  "upstream.request.batch",
+]);
+
+function useUpstreamRoundCounter(statusCode: string | null): number {
+  const [round, setRound] = useState(0);
+  useEffect(() => {
+    if (statusCode && UPSTREAM_REQUEST_CODES.has(statusCode)) {
+      setRound((prev) => prev + 1);
+    }
+  }, [statusCode]);
+  return round;
 }
 
 function resolveSlowUpstreamHint(elapsedSeconds: number): string | null {
@@ -162,7 +178,8 @@ export function AIResponseStatusRail({
   }, [isActive, statusDetail]);
 
   const currentStepLabel = steps[stableActiveStep]?.label ?? t("status.header.processing");
-  const elapsedSeconds = useElapsedSeconds(isActive && !hasContent);
+  const upstreamRound = useUpstreamRoundCounter(statusCode);
+  const elapsedSeconds = useElapsedSeconds(isActive && !hasContent, upstreamRound);
   const slowUpstreamHint = resolveSlowUpstreamHint(elapsedSeconds);
   const terminalDetail = isActive
     ? (slowUpstreamHint ?? stableDetail ?? statusDetail)
@@ -204,10 +221,12 @@ export function AIResponseStreamingTail({
   isActive,
   hasContent,
   statusStage,
+  statusCode,
 }: {
   isActive: boolean;
   hasContent: boolean;
   statusStage: string | null;
+  statusCode: string | null;
 }) {
   const t = useI18n("chat");
   const steps = useMemo(
@@ -225,7 +244,8 @@ export function AIResponseStreamingTail({
     : timerStep;
   const currentLabel =
     steps[activeStep]?.label ?? t("status.header.processing");
-  const elapsedSeconds = useElapsedSeconds(isActive);
+  const upstreamRound = useUpstreamRoundCounter(statusCode);
+  const elapsedSeconds = useElapsedSeconds(isActive, upstreamRound);
 
   const visible = isActive && hasContent;
 

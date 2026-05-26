@@ -2,8 +2,10 @@ use crate::modules::providers::error::ProviderError;
 use crate::modules::providers::store::utils::{now_rfc3339, row_to_bandit_arm_state};
 use crate::modules::providers::store::{ProviderStore, BANDIT_DEFAULT_SCENE};
 use crate::modules::providers::types::{BanditArmState, BanditFeedbackRequest};
+use time::Duration;
 
 const SQLITE_BUSY_RETRY_DELAYS_MS: [u64; 4] = [100, 250, 500, 1000];
+const BANDIT_FAILURE_COOLDOWN_SECONDS: i64 = 120;
 
 fn is_sqlite_busy_error(err: &ProviderError) -> bool {
     let text = err.to_string().to_ascii_lowercase();
@@ -131,10 +133,20 @@ impl ProviderStore {
         };
 
         state.total_trials += 1;
-        if payload.reward.unwrap_or(0.0) > 0.5 {
+        let is_success = payload.reward.unwrap_or(0.0) > 0.5;
+        if is_success {
             state.successes += 1;
+            state.alpha += 1.0;
+            state.cooldown_until = None;
         } else {
             state.failures += 1;
+            state.beta += 1.0;
+            state.cooldown_until = Some(
+                (time::OffsetDateTime::now_utc()
+                    + Duration::seconds(BANDIT_FAILURE_COOLDOWN_SECONDS))
+                .format(&time::format_description::well_known::Rfc3339)
+                .map_err(|e| ProviderError::Database(e.to_string()))?,
+            );
         }
         state.total_latency_ms += payload.latency_ms.unwrap_or(0.0) as i64;
         state.total_cost += payload.cost.unwrap_or(0.0);
@@ -149,12 +161,15 @@ impl ProviderStore {
                 cooldown_until, version, created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(scene, arm_id) DO UPDATE SET
+                alpha = excluded.alpha,
+                beta = excluded.beta,
                 successes = excluded.successes,
                 failures = excluded.failures,
                 total_trials = excluded.total_trials,
                 total_latency_ms = excluded.total_latency_ms,
                 total_cost = excluded.total_cost,
                 last_reward = excluded.last_reward,
+                cooldown_until = excluded.cooldown_until,
                 updated_at = excluded.updated_at",
         )
         .bind(&state.id)

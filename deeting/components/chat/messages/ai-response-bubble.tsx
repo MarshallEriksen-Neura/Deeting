@@ -515,6 +515,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                 isActive={isActive}
                 hasContent={hasAnswerContent}
                 statusStage={statusStage}
+                statusCode={statusCode}
               />
             </motion.div>
           )}
