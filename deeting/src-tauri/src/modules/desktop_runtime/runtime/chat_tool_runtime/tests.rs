@@ -89,6 +89,144 @@ fn diting_think_injection_requires_world_model_preflight_policy() {
 }
 
 #[test]
+fn world_model_snapshot_renders_four_sections_and_new_directive() {
+    let mut frame = desktop_runtime_core::WorldModelFrame::new(
+        "frame-1",
+        "session-1",
+        "task-1",
+        "do the thing",
+        desktop_runtime_core::ExecutionStrategy::DirectIteration,
+        desktop_runtime_core::FrameProvenance::bootstrap("test"),
+    );
+    frame.append_user_directive("do the thing", None).unwrap();
+
+    let snapshot = render_world_model_snapshot(&frame);
+
+    assert!(snapshot.contains("[USER DIRECTIVES]"));
+    assert!(snapshot.contains("[WORLD OBSERVATIONS]"));
+    assert!(snapshot.contains("[AGENT COMMITTED ACTIONS]"));
+    assert!(snapshot.contains("[MODEL DECLARED]"));
+    assert!(snapshot.contains("- [NEW] do the thing"));
+    assert!(snapshot.contains("- (no observations yet)"));
+    assert!(snapshot.contains("- (no committed actions yet)"));
+}
+
+#[test]
+fn world_model_snapshot_drops_new_marker_after_model_seen() {
+    let mut frame = desktop_runtime_core::WorldModelFrame::new(
+        "frame-1",
+        "session-1",
+        "task-1",
+        "do the thing",
+        desktop_runtime_core::ExecutionStrategy::DirectIteration,
+        desktop_runtime_core::FrameProvenance::bootstrap("test"),
+    );
+    frame.append_user_directive("do the thing", None).unwrap();
+    assert!(render_world_model_snapshot(&frame).contains("[NEW] do the thing"));
+
+    frame.mark_seen();
+    let snapshot = render_world_model_snapshot(&frame);
+
+    assert!(snapshot.contains("- do the thing"));
+    assert!(!snapshot.contains("[NEW] do the thing"));
+}
+
+#[test]
+fn observation_patch_appends_world_observed_records() {
+    let mut frame = desktop_runtime_core::WorldModelFrame::new(
+        "frame-1",
+        "session-1",
+        "task-1",
+        "do the thing",
+        desktop_runtime_core::ExecutionStrategy::DirectIteration,
+        desktop_runtime_core::FrameProvenance::bootstrap("test"),
+    );
+    let tool_meta = vec![serde_json::json!({
+        "id": "call-1",
+        "name": "read_skill_resource",
+        "status": "success",
+        "observation_patch": [{
+            "text": "read skill resource SKILL.md",
+            "structured": {"path": "SKILL.md"},
+        }],
+    })];
+
+    append_world_observations_from_tool_meta(Some(&mut frame), &tool_meta);
+
+    assert_eq!(frame.world_observed.len(), 1);
+    assert_eq!(frame.world_observed[0].text, "read skill resource SKILL.md");
+    assert_eq!(frame.world_observed[0].source.tool_call_id, "call-1");
+    assert_eq!(
+        frame.world_observed[0].source.tool_name,
+        "read_skill_resource"
+    );
+    assert_eq!(frame.world_observed[0].appended_at, 1);
+}
+
+#[test]
+fn irreversible_success_tool_meta_appends_committed_action() {
+    let mut frame = desktop_runtime_core::WorldModelFrame::new(
+        "frame-1",
+        "session-1",
+        "task-1",
+        "do the thing",
+        desktop_runtime_core::ExecutionStrategy::DirectIteration,
+        desktop_runtime_core::FrameProvenance::bootstrap("test"),
+    );
+    let tool_meta = vec![serde_json::json!({
+        "id": "call-1",
+        "name": "fs.write",
+        "status": "success",
+        "is_irreversible": true,
+        "result": {"path": "config.toml"},
+    })];
+
+    append_committed_actions_from_tool_meta(Some(&mut frame), &tool_meta);
+
+    assert_eq!(frame.agent_committed.len(), 1);
+    assert_eq!(frame.agent_committed[0].tool_call_id, "call-1");
+    assert_eq!(frame.agent_committed[0].tool_name, "fs.write");
+    assert!(frame.agent_committed[0].action_text.contains("fs.write"));
+    assert_eq!(frame.agent_committed[0].committed_at, 1);
+}
+
+#[test]
+fn reversible_or_failed_tool_meta_does_not_append_committed_action() {
+    let mut frame = desktop_runtime_core::WorldModelFrame::new(
+        "frame-1",
+        "session-1",
+        "task-1",
+        "do the thing",
+        desktop_runtime_core::ExecutionStrategy::DirectIteration,
+        desktop_runtime_core::FrameProvenance::bootstrap("test"),
+    );
+    let tool_meta = vec![
+        serde_json::json!({
+            "id": "call-read",
+            "name": "read_skill_resource",
+            "status": "success",
+            "result": {"path": "SKILL.md"},
+        }),
+        serde_json::json!({
+            "id": "call-failed",
+            "name": "fs.write",
+            "status": "error",
+            "result": {"path": "config.toml"},
+        }),
+        serde_json::json!({
+            "id": "call-unknown",
+            "name": "random_xyz",
+            "status": "success",
+            "result": "ok",
+        }),
+    ];
+
+    append_committed_actions_from_tool_meta(Some(&mut frame), &tool_meta);
+
+    assert!(frame.agent_committed.is_empty());
+}
+
+#[test]
 fn delegate_task_preflight_blocks_when_selected_agent_has_no_executable_surface() {
     let record = DelegatedExecutionRecord {
         execution_id: "exec-1".to_string(),
@@ -997,6 +1135,7 @@ fn build_max_rounds_exceeded_response_appends_visible_notice() {
             protocol_family: "openai_chat".to_string(),
         },
         orchestrated_messages: Vec::new(),
+        world_model_frame: None,
         task_query: None,
         session_id: "session-max-rounds-1".to_string(),
         temperature: None,
@@ -1088,6 +1227,7 @@ fn rewind_round_for_post_approval_continuation_does_not_consume_user_round_budge
             protocol_family: "openai_chat".to_string(),
         },
         orchestrated_messages: Vec::new(),
+        world_model_frame: None,
         task_query: None,
         session_id: "session-approval-round-1".to_string(),
         temperature: None,
@@ -1221,6 +1361,7 @@ fn suspended_execution_keeps_remaining_pending_approvals_after_one_is_approved()
             protocol_family: "openai_chat".to_string(),
         },
         orchestrated_messages: Vec::new(),
+        world_model_frame: None,
         task_query: None,
         session_id: "session-pending-approval-sync-1".to_string(),
         temperature: None,
@@ -1357,6 +1498,7 @@ fn sync_remaining_pending_approvals_prefers_token_bound_graph_identity() {
             protocol_family: "openai_chat".to_string(),
         },
         orchestrated_messages: Vec::new(),
+        world_model_frame: None,
         task_query: None,
         session_id: "session-token-bound-1".to_string(),
         temperature: None,

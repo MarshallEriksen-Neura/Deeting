@@ -6,7 +6,7 @@ use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::modules::custom_task_agents::types::CustomTaskAgentProfile;
 use crate::modules::desktop_runtime::runtime::chat_tool_runtime::DitingThinkExtract;
 use crate::state::AppState;
-use desktop_runtime_core::{TaskInputSource, UserInterruption};
+use desktop_runtime_core::{TaskInputSource, UserInterruption, WorldModelFrame};
 use mcp_core::types::LocalChatInputMessage;
 use serde_json::Value;
 use tauri::AppHandle;
@@ -25,6 +25,7 @@ pub(crate) struct LocalExecutionRequest {
     pub(crate) task_input_source: TaskInputSource,
     pub(crate) user_interruption: Option<UserInterruption>,
     pub(crate) messages: Vec<LocalChatInputMessage>,
+    pub(crate) world_model_frame: Option<WorldModelFrame>,
     pub(crate) execution_policy: LocalExecutionPolicy,
     pub(crate) temperature: Option<f32>,
     pub(crate) max_tokens: Option<u32>,
@@ -47,6 +48,7 @@ pub(crate) struct LocalExecutionOutcome {
     pub(crate) execution_graph: Value,
     pub(crate) response_json: Value,
     pub(crate) captured_frame_extract: Option<DitingThinkExtract>,
+    pub(crate) world_model_frame: Option<WorldModelFrame>,
 }
 
 impl LocalExecutionRequest {
@@ -74,6 +76,7 @@ impl From<LocalExecutionRequest> for PolicyScopedChatCompletionInput {
             explicit_task_agent_id: request.explicit_task_agent_id,
             task_input_source: request.task_input_source,
             messages: request.messages,
+            world_model_frame: request.world_model_frame,
             execution_policy: request.execution_policy,
             temperature: request.temperature,
             max_tokens: request.max_tokens,

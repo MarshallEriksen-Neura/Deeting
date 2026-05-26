@@ -63,6 +63,13 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) async fn exe
             "name": tool_name,
             "status": "success",
             "result": search_res,
+            "observation_patch": [{
+                "text": format!("searched SDK index for '{query}' (limit {limit})"),
+                "structured": {
+                    "query": query,
+                    "limit": limit,
+                },
+            }],
         }),
         result_message,
         capability_transition_blocks,

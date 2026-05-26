@@ -67,6 +67,11 @@ where
             })?;
 
         let mut frame = bootstrap.frame;
+        if frame.user_directed.is_empty() {
+            frame
+                .append_user_directive(input.content.clone(), None)
+                .map_err(RuntimeCoreError::InvalidState)?;
+        }
         let mut plan = PlanArtifact::from_frame(format!("plan:{}", frame.frame_version_id), &frame);
         let mut validation = self
             .components
@@ -152,6 +157,7 @@ where
                         artifact: Some(artifact),
                     },
                 )?;
+                mark_frame_artifact_seen_by_model(&mut frame, artifact);
                 self.components
                     .event_store
                     .append_event(RuntimeEvent::FrameRefreshed {
@@ -219,6 +225,10 @@ where
                         artifact: Some(FrameRefreshArtifact::DitingThinkPreflight),
                     },
                 )?;
+                mark_frame_artifact_seen_by_model(
+                    &mut frame,
+                    FrameRefreshArtifact::DitingThinkPreflight,
+                );
                 self.components
                     .event_store
                     .append_event(RuntimeEvent::FrameRefreshed {
@@ -245,6 +255,10 @@ where
                 .components
                 .phase_executor
                 .execute_phase(&frame, &phase)?;
+            if let Some(updated_frame) = observation.updated_frame.clone() {
+                frame = updated_frame;
+                plan.frame_version_id = frame.frame_version_id.clone();
+            }
             let candidate_memory_facts =
                 candidate_memory_facts_from_observation(&phase.phase_id, &observation);
             plan.mark_phase_observed(
@@ -423,6 +437,13 @@ where
     }
 }
 
+fn mark_frame_artifact_seen_by_model(frame: &mut WorldModelFrame, artifact: FrameRefreshArtifact) {
+    if matches!(artifact, FrameRefreshArtifact::DitingThinkPreflight) {
+        frame.mark_seen();
+        frame.mark_diting_think_seen();
+    }
+}
+
 fn frame_refresh_artifact_for_decision(decision: &HookDecision) -> Option<FrameRefreshArtifact> {
     if decision.contains_required_artifact(RequiredArtifact::WorldModelFrameRevision) {
         return Some(FrameRefreshArtifact::WorldModelFrameRevision);
@@ -591,6 +612,7 @@ mod tests {
                 goal_satisfied: true,
                 frame_still_valid: true,
                 hook_events: Vec::new(),
+                updated_frame: None,
             })
         }
     }
@@ -687,6 +709,7 @@ mod tests {
                 goal_satisfied: true,
                 frame_still_valid: true,
                 hook_events: Vec::new(),
+                updated_frame: None,
             },
         );
 

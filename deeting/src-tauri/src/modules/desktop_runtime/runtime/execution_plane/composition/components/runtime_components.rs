@@ -744,7 +744,9 @@ fn build_diting_think_frame_refresh_prompt(
     format!(
         concat!(
             "Call the `diting_think` tool exactly once to refresh the world-model frame metadata.\n",
-            "Do not answer in normal text. Use the tool call arguments to summarize intent, facts, assumptions, verification targets, and constraints.\n\n",
+            "Do not answer in normal text. Use the tool call arguments to summarize intent, choose execution_strategy, facts, assumptions, verification targets, and constraints.\n\n",
+            "Choose execution_strategy from direct_iteration, delegated_workflow, delegated_agent, or hybrid.\n",
+            "Use delegated_workflow for non-trivial multi-step work that should not stay on DirectIteration.\n\n",
             "Refresh reason:\n{reason}\n\n",
             "User interruption, if any:\n{interruption}\n\n",
             "Current frame JSON:\n{frame_json}\n"
@@ -762,6 +764,10 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) f
     let Some(extract) = extract else {
         return frame;
     };
+
+    if let Some(strategy) = extract.execution_strategy {
+        frame.execution_strategy = strategy;
+    }
 
     for statement in &extract.facts {
         if frame
@@ -1168,6 +1174,46 @@ mod tests {
     }
 
     #[test]
+    fn diting_strategy_refresh_drives_next_phase_proposal() {
+        let frame = apply_diting_think_extract_to_frame(
+            WorldModelFrame::new(
+                "frame-strategy-refresh",
+                "session-1",
+                "task-1",
+                "update config after inspecting files",
+                ExecutionStrategy::DirectIteration,
+                FrameProvenance::bootstrap("test"),
+            ),
+            Some(&DitingThinkExtract {
+                intent: Some("update config after inspecting files".to_string()),
+                execution_strategy: Some(ExecutionStrategy::DelegatedWorkflow),
+                facts: Vec::new(),
+                assumptions: Vec::new(),
+                verification_targets: Vec::new(),
+                rules: Vec::new(),
+            }),
+        );
+        let plan = PlanArtifact::from_frame("plan-strategy-refresh", &frame);
+        let input = UserInput {
+            session_id: "session-1".to_string(),
+            task_id: "task-1".to_string(),
+            content: "update config after inspecting files".to_string(),
+            source: Default::default(),
+        };
+
+        let proposal = DeetingPhaseProposalGenerator::new()
+            .propose_next_phase(&frame, &plan, &input)
+            .expect("proposal")
+            .expect("some proposal");
+
+        assert_eq!(
+            frame.execution_strategy,
+            ExecutionStrategy::DelegatedWorkflow
+        );
+        assert_eq!(proposal.step_type, PhaseStepType::DelegatedWorkflow);
+    }
+
+    #[test]
     fn diting_preflight_refresh_attaches_frame_metadata() {
         let _guard = test_diting_refresh_state_lock()
             .lock()
@@ -1176,6 +1222,7 @@ mod tests {
         set_test_diting_frame_refresh_hook(Some(Arc::new(|_, _| {
             Ok(DitingThinkExtract {
                 intent: Some("refresh frame".to_string()),
+                execution_strategy: Some(ExecutionStrategy::DelegatedWorkflow),
                 facts: vec!["The implementation needs a live owner patch".to_string()],
                 assumptions: vec!["Assume existing runtime contracts stay stable".to_string()],
                 verification_targets: vec!["Focused cargo tests pass".to_string()],
@@ -1203,6 +1250,10 @@ mod tests {
             Some("frame-diting-refresh")
         );
         assert_eq!(refreshed.status, WorldModelFrameStatus::Fresh);
+        assert_eq!(
+            refreshed.execution_strategy,
+            ExecutionStrategy::DelegatedWorkflow
+        );
         assert_eq!(
             refreshed
                 .known_facts

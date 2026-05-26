@@ -11,6 +11,7 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn persisted
         execution_policy: suspended.execution_policy.clone(),
         model_connection: suspended.model_connection.clone(),
         orchestrated_messages: suspended.orchestrated_messages.clone(),
+        world_model_frame: suspended.world_model_frame.clone(),
         task_query: suspended.task_query.clone(),
         session_id: suspended.session_id.clone(),
         temperature: suspended.temperature,

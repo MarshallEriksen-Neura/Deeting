@@ -51,6 +51,11 @@ pub(crate) struct FrameRouteOverlapReadiness {
     pub(crate) matched_sample_count: usize,
     pub(crate) mismatched_sample_count: usize,
     pub(crate) excluded_sample_count: usize,
+    pub(crate) direct_iteration_sample_count: usize,
+    pub(crate) non_direct_strategy_sample_count: usize,
+    pub(crate) non_direct_strategy_ratio: Option<f64>,
+    pub(crate) minimum_non_direct_strategy_ratio: f64,
+    pub(crate) strategy_distribution_met: bool,
     pub(crate) overlap_ratio: Option<f64>,
     pub(crate) minimum_overlap_ratio: f64,
     pub(crate) overlap_threshold_met: bool,
@@ -547,6 +552,8 @@ pub(crate) async fn summarize_frame_route_overlap_readiness(
     let mut eligible_sample_count = 0usize;
     let mut matched_sample_count = 0usize;
     let mut excluded_sample_count = 0usize;
+    let mut direct_iteration_sample_count = 0usize;
+    let mut non_direct_strategy_sample_count = 0usize;
     let mut first_observed_payload_unix_ms: Option<i64> = None;
     let mut last_observed_payload_unix_ms: Option<i64> = None;
     let mut first_eligible_sample_unix_ms: Option<i64> = None;
@@ -614,6 +621,13 @@ pub(crate) async fn summarize_frame_route_overlap_readiness(
                 continue;
             }
         };
+        let Some(frame_strategy) = resolution
+            .get("frame_strategy")
+            .and_then(serde_json::Value::as_str)
+        else {
+            malformed_e3_payload_count += 1;
+            continue;
+        };
 
         extend_unix_ms_range(
             &mut first_eligible_sample_unix_ms,
@@ -621,6 +635,11 @@ pub(crate) async fn summarize_frame_route_overlap_readiness(
             updated_at_unix_ms,
         );
         eligible_sample_count += 1;
+        if frame_strategy == "direct_iteration" {
+            direct_iteration_sample_count += 1;
+        } else {
+            non_direct_strategy_sample_count += 1;
+        }
         if matched {
             matched_sample_count += 1;
         }
@@ -643,11 +662,20 @@ pub(crate) async fn summarize_frame_route_overlap_readiness(
     let overlap_threshold_met = overlap_ratio
         .map(|ratio| ratio >= e3_readiness::MINIMUM_OVERLAP_RATIO)
         .unwrap_or(false);
+    let non_direct_strategy_ratio = if eligible_sample_count == 0 {
+        None
+    } else {
+        Some(non_direct_strategy_sample_count as f64 / eligible_sample_count as f64)
+    };
+    let strategy_distribution_met = non_direct_strategy_ratio
+        .map(|ratio| ratio >= e3_readiness::MINIMUM_NON_DIRECT_STRATEGY_RATIO)
+        .unwrap_or(false);
     let malformed_payload_count = malformed_graph_payload_count + malformed_e3_payload_count;
     let e3_payload_coverage_met = missing_e3_payload_count == 0;
     let e3_payload_health_met = malformed_e3_payload_count == 0;
     let threshold_met = observation_window_met
         && overlap_threshold_met
+        && strategy_distribution_met
         && e3_payload_coverage_met
         && e3_payload_health_met;
 
@@ -674,6 +702,11 @@ pub(crate) async fn summarize_frame_route_overlap_readiness(
         matched_sample_count,
         mismatched_sample_count,
         excluded_sample_count,
+        direct_iteration_sample_count,
+        non_direct_strategy_sample_count,
+        non_direct_strategy_ratio,
+        minimum_non_direct_strategy_ratio: e3_readiness::MINIMUM_NON_DIRECT_STRATEGY_RATIO,
+        strategy_distribution_met,
         overlap_ratio,
         minimum_overlap_ratio: e3_readiness::MINIMUM_OVERLAP_RATIO,
         overlap_threshold_met,
@@ -708,6 +741,12 @@ fn e3_readiness_contract_matches(resolution: &serde_json::Value) -> bool {
     let requires_observation_window = resolution
         .pointer("/e3_readiness/requires_observation_window")
         .and_then(serde_json::Value::as_bool);
+    let requires_strategy_distribution = resolution
+        .pointer("/e3_readiness/requires_strategy_distribution")
+        .and_then(serde_json::Value::as_bool);
+    let minimum_non_direct_strategy_ratio = resolution
+        .pointer("/e3_readiness/minimum_non_direct_strategy_ratio")
+        .and_then(serde_json::Value::as_f64);
     let comparison_basis = resolution
         .pointer("/route_policy_alignment/comparison_basis")
         .and_then(serde_json::Value::as_str);
@@ -717,12 +756,20 @@ fn e3_readiness_contract_matches(resolution: &serde_json::Value) -> bool {
             (ratio - e3_readiness::MINIMUM_OVERLAP_RATIO).abs() <= E3_READINESS_RATIO_TOLERANCE
         })
         .unwrap_or(false);
+    let strategy_ratio_matches = minimum_non_direct_strategy_ratio
+        .map(|ratio| {
+            (ratio - e3_readiness::MINIMUM_NON_DIRECT_STRATEGY_RATIO).abs()
+                <= E3_READINESS_RATIO_TOLERANCE
+        })
+        .unwrap_or(false);
 
     contract_schema_version == Some(e3_readiness::CONTRACT_SCHEMA_VERSION)
         && overlap_ratio_matches
+        && strategy_ratio_matches
         && minimum_observation_window_ms == Some(e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS)
         && observation_window == Some(e3_readiness::OBSERVATION_WINDOW_LABEL)
         && requires_observation_window == Some(true)
+        && requires_strategy_distribution == Some(true)
         && comparison_basis == Some(e3_readiness::LEGACY_EFFECTIVE_PHASE_STEP_BASIS)
 }
 
@@ -1009,6 +1056,14 @@ mod tests {
     }
 
     fn e3_resolution(status: &str, sample_eligible: bool) -> serde_json::Value {
+        e3_resolution_with_strategy(status, sample_eligible, "direct_iteration")
+    }
+
+    fn e3_resolution_with_strategy(
+        status: &str,
+        sample_eligible: bool,
+        frame_strategy: &str,
+    ) -> serde_json::Value {
         let sample_exclusion_reason = if sample_eligible {
             Value::Null
         } else {
@@ -1016,6 +1071,7 @@ mod tests {
         };
 
         e3_resolution_from_parts(json!({
+            "frame_strategy": frame_strategy,
             "route_policy_alignment": {
                 "status": status,
                 "sample_eligible": sample_eligible,
@@ -1136,14 +1192,16 @@ mod tests {
             .get_mut("e3_readiness")
             .and_then(serde_json::Value::as_object_mut)
         {
-            readiness.insert("contract_schema_version".to_string(), json!(1));
+            readiness.insert("contract_schema_version".to_string(), json!(2));
             readiness.insert("minimum_overlap_ratio".to_string(), json!(0.95));
+            readiness.insert("minimum_non_direct_strategy_ratio".to_string(), json!(0.01));
             readiness.insert(
                 "minimum_observation_window_ms".to_string(),
                 json!(604800000),
             );
             readiness.insert("observation_window".to_string(), json!("1-2w"));
             readiness.insert("requires_observation_window".to_string(), json!(true));
+            readiness.insert("requires_strategy_distribution".to_string(), json!(true));
         }
         resolution
     }
@@ -1396,6 +1454,11 @@ mod tests {
         assert_eq!(readiness.matched_sample_count, 1);
         assert_eq!(readiness.mismatched_sample_count, 1);
         assert_eq!(readiness.excluded_sample_count, 1);
+        assert_eq!(readiness.direct_iteration_sample_count, 2);
+        assert_eq!(readiness.non_direct_strategy_sample_count, 0);
+        assert_eq!(readiness.non_direct_strategy_ratio, Some(0.0));
+        assert_eq!(readiness.minimum_non_direct_strategy_ratio, 0.01);
+        assert!(!readiness.strategy_distribution_met);
         assert_eq!(readiness.overlap_ratio, Some(0.5));
         assert_eq!(readiness.minimum_overlap_ratio, 0.95);
         assert!(!readiness.overlap_threshold_met);
@@ -1516,9 +1579,42 @@ mod tests {
         assert_eq!(readiness.excluded_sample_count, 1);
         assert_eq!(readiness.overlap_ratio, Some(1.0));
         assert!(readiness.overlap_threshold_met);
+        assert_eq!(readiness.direct_iteration_sample_count, 2);
+        assert_eq!(readiness.non_direct_strategy_sample_count, 0);
+        assert_eq!(readiness.non_direct_strategy_ratio, Some(0.0));
+        assert!(!readiness.strategy_distribution_met);
         assert!(readiness.e3_payload_coverage_met);
         assert!(readiness.e3_payload_health_met);
-        assert!(readiness.threshold_met);
+        assert!(!readiness.threshold_met);
+
+        insert_e3_readiness_graph(
+            &store,
+            "graph-e3-non-direct-strategy",
+            e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS,
+            Some(e3_resolution_with_strategy(
+                "matched",
+                true,
+                "delegated_workflow",
+            )),
+        )
+        .await;
+
+        let multi_strategy_ready = summarize_frame_route_overlap_readiness(
+            &store,
+            Some(0),
+            Some(e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS + 1),
+        )
+        .await
+        .expect("summarize e3 readiness with non-direct strategy sample");
+
+        assert_eq!(multi_strategy_ready.direct_iteration_sample_count, 2);
+        assert_eq!(multi_strategy_ready.non_direct_strategy_sample_count, 1);
+        assert_eq!(
+            multi_strategy_ready.non_direct_strategy_ratio,
+            Some(1.0 / 3.0)
+        );
+        assert!(multi_strategy_ready.strategy_distribution_met);
+        assert!(multi_strategy_ready.threshold_met);
 
         insert_e3_readiness_graph(
             &store,
@@ -1564,8 +1660,8 @@ mod tests {
         assert_eq!(unhealthy.overlap_ratio, Some(1.0));
         assert!(unhealthy.observation_window_met);
         assert!(unhealthy.overlap_threshold_met);
-        assert_eq!(unhealthy.observed_payload_count, 4);
-        assert_eq!(unhealthy.eligible_sample_count, 2);
+        assert_eq!(unhealthy.observed_payload_count, 5);
+        assert_eq!(unhealthy.eligible_sample_count, 3);
         assert_eq!(unhealthy.observed_payload_start_unix_ms, Some(0));
         assert_eq!(
             unhealthy.observed_payload_end_unix_ms,
@@ -1579,6 +1675,9 @@ mod tests {
         assert_eq!(unhealthy.malformed_graph_payload_count, 0);
         assert_eq!(unhealthy.malformed_e3_payload_count, 1);
         assert_eq!(unhealthy.missing_e3_payload_count, 1);
+        assert_eq!(unhealthy.direct_iteration_sample_count, 2);
+        assert_eq!(unhealthy.non_direct_strategy_sample_count, 1);
+        assert!(unhealthy.strategy_distribution_met);
         assert!(!unhealthy.e3_payload_coverage_met);
         assert!(!unhealthy.e3_payload_health_met);
         assert!(!unhealthy.threshold_met);

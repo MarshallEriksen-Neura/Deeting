@@ -6,10 +6,11 @@ import { isTauriCommandRuntime } from "@/lib/runtime/tauri"
 const ADMIN_BASE = "/api/v1/admin"
 const isTauriRuntime = isTauriCommandRuntime
 const FRAME_ROUTE_OVERLAP_METRIC = "frame_route_phase_step_overlap"
-const FRAME_ROUTE_OVERLAP_CONTRACT_SCHEMA_VERSION = 1
+const FRAME_ROUTE_OVERLAP_CONTRACT_SCHEMA_VERSION = 2
 const FRAME_ROUTE_OVERLAP_OBSERVATION_WINDOW = "1-2w"
 const FRAME_ROUTE_OVERLAP_RATIO_TOLERANCE = 0.000_000_001
 const FRAME_ROUTE_OVERLAP_MINIMUM_RATIO = 0.95
+const FRAME_ROUTE_OVERLAP_MINIMUM_NON_DIRECT_STRATEGY_RATIO = 0.01
 const FRAME_ROUTE_OVERLAP_MINIMUM_OBSERVATION_WINDOW_MS = 604800000
 const NonNegativeSafeIntegerSchema = z
   .number()
@@ -990,6 +991,11 @@ export const LocalFrameRouteOverlapReadinessSchema = z.object({
   matched_sample_count: NonNegativeSafeIntegerSchema,
   mismatched_sample_count: NonNegativeSafeIntegerSchema,
   excluded_sample_count: NonNegativeSafeIntegerSchema,
+  direct_iteration_sample_count: NonNegativeSafeIntegerSchema,
+  non_direct_strategy_sample_count: NonNegativeSafeIntegerSchema,
+  non_direct_strategy_ratio: z.number().min(0).max(1).nullable(),
+  minimum_non_direct_strategy_ratio: z.number().min(0).max(1),
+  strategy_distribution_met: z.boolean(),
   overlap_ratio: z.number().min(0).max(1).nullable(),
   minimum_overlap_ratio: z.number().min(0).max(1),
   overlap_threshold_met: z.boolean(),
@@ -1157,6 +1163,18 @@ export const LocalFrameRouteOverlapReadinessSchema = z.object({
   }
 
   if (
+    Math.abs(
+      readiness.minimum_non_direct_strategy_ratio -
+        FRAME_ROUTE_OVERLAP_MINIMUM_NON_DIRECT_STRATEGY_RATIO
+    ) > FRAME_ROUTE_OVERLAP_RATIO_TOLERANCE
+  ) {
+    addIssue(
+      "minimum_non_direct_strategy_ratio",
+      "minimum_non_direct_strategy_ratio must match the E3 readiness contract"
+    )
+  }
+
+  if (
     readiness.minimum_observation_window_ms !==
     FRAME_ROUTE_OVERLAP_MINIMUM_OBSERVATION_WINDOW_MS
   ) {
@@ -1183,6 +1201,16 @@ export const LocalFrameRouteOverlapReadinessSchema = z.object({
     addIssue(
       "eligible_sample_count",
       "eligible_sample_count must equal matched_sample_count plus mismatched_sample_count"
+    )
+  }
+
+  if (
+    readiness.eligible_sample_count !==
+    readiness.direct_iteration_sample_count + readiness.non_direct_strategy_sample_count
+  ) {
+    addIssue(
+      "eligible_sample_count",
+      "eligible_sample_count must equal direct and non-direct strategy sample counts"
     )
   }
 
@@ -1230,6 +1258,38 @@ export const LocalFrameRouteOverlapReadinessSchema = z.object({
     )
   }
 
+  const expectedNonDirectStrategyRatio =
+    readiness.eligible_sample_count === 0
+      ? null
+      : readiness.non_direct_strategy_sample_count / readiness.eligible_sample_count
+  if (expectedNonDirectStrategyRatio === null) {
+    if (readiness.non_direct_strategy_ratio !== null) {
+      addIssue(
+        "non_direct_strategy_ratio",
+        "non_direct_strategy_ratio must be null when there are no eligible samples"
+      )
+    }
+  } else if (
+    readiness.non_direct_strategy_ratio === null ||
+    Math.abs(readiness.non_direct_strategy_ratio - expectedNonDirectStrategyRatio) >
+      FRAME_ROUTE_OVERLAP_RATIO_TOLERANCE
+  ) {
+    addIssue(
+      "non_direct_strategy_ratio",
+      "non_direct_strategy_ratio must equal non_direct_strategy_sample_count divided by eligible_sample_count"
+    )
+  }
+
+  const expectedStrategyDistributionMet =
+    readiness.non_direct_strategy_ratio !== null &&
+    readiness.non_direct_strategy_ratio >= readiness.minimum_non_direct_strategy_ratio
+  if (readiness.strategy_distribution_met !== expectedStrategyDistributionMet) {
+    addIssue(
+      "strategy_distribution_met",
+      "strategy_distribution_met must reflect non_direct_strategy_ratio and minimum_non_direct_strategy_ratio"
+    )
+  }
+
   const expectedObservationWindowMs =
     readiness.eligible_sample_start_unix_ms === null ||
     readiness.eligible_sample_end_unix_ms === null
@@ -1273,12 +1333,13 @@ export const LocalFrameRouteOverlapReadinessSchema = z.object({
     readiness.threshold_met !==
     (readiness.observation_window_met &&
       readiness.overlap_threshold_met &&
+      readiness.strategy_distribution_met &&
       readiness.e3_payload_coverage_met &&
       readiness.e3_payload_health_met)
   ) {
     addIssue(
       "threshold_met",
-      "threshold_met must require observation window, overlap threshold, E3 payload coverage, and E3 payload health"
+      "threshold_met must require observation window, overlap threshold, strategy distribution, E3 payload coverage, and E3 payload health"
     )
   }
 })

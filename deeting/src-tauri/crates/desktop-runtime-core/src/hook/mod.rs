@@ -391,6 +391,7 @@ pub struct DitingThinkPreflightHook;
 
 const DITING_THINK_PREFLIGHT_INTERESTS: [HookEventInterest; 1] =
     [HookEventInterest::ProposePhaseExecution];
+const DITING_THINK_SAFETY_NET_N: usize = 10;
 
 impl Hook for DitingThinkPreflightHook {
     fn name(&self) -> &'static str {
@@ -410,27 +411,55 @@ impl Hook for DitingThinkPreflightHook {
                 reason: "diting think hook ignored unrelated event".to_string(),
             };
         }
-        if !state.current_frame.execution_strategy.needs_explicit_plan() {
-            return HookDecision::Allow {
-                reason: "direct iteration does not need diting think preflight".to_string(),
-            };
-        }
-        if state
-            .current_frame
-            .known_facts
+
+        let frame = &state.current_frame;
+        let highwater = frame.last_seen_by_model;
+        let new_directives = frame
+            .user_directed
             .iter()
-            .any(|fact| fact.source == "diting_think")
-        {
-            return HookDecision::Allow {
-                reason: "diting think frame facts already captured".to_string(),
-            };
+            .filter(|directive| directive.appended_at > highwater)
+            .count();
+        if new_directives > 0 {
+            return require_diting_think_preflight(format!(
+                "R1: new user directive(s) since last model turn ({new_directives})"
+            ));
         }
 
-        HookDecision::RequireArtifact {
-            artifact: RequiredArtifact::DitingThinkPreflight,
-            reason: "non-direct world model phase needs a task-local preflight frame".to_string(),
-            enforcement: HookEnforcementMode::Enforced,
+        let new_observations = frame
+            .world_observed
+            .iter()
+            .filter(|observation| observation.appended_at > highwater)
+            .count();
+        let new_commits = frame
+            .agent_committed
+            .iter()
+            .filter(|commit| commit.committed_at > highwater)
+            .count();
+        if new_observations >= 3 || new_commits >= 1 {
+            return require_diting_think_preflight(format!(
+                "R2: world changes accumulated (obs={new_observations}, commits={new_commits})"
+            ));
         }
+
+        if frame.turns_since_last_diting_think() >= DITING_THINK_SAFETY_NET_N as u64 {
+            return require_diting_think_preflight(format!(
+                "R3: safety net {}-turn refresh",
+                DITING_THINK_SAFETY_NET_N
+            ));
+        }
+
+        HookDecision::Allow {
+            reason: "no diting think trigger condition met; model may call diting_think on its own"
+                .to_string(),
+        }
+    }
+}
+
+fn require_diting_think_preflight(reason: String) -> HookDecision {
+    HookDecision::RequireArtifact {
+        artifact: RequiredArtifact::DitingThinkPreflight,
+        reason,
+        enforcement: HookEnforcementMode::Enforced,
     }
 }
 
@@ -599,7 +628,7 @@ impl Hook for RuntimeCapabilityChangeHook {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frame::{ExecutionStrategy, Fact, FrameProvenance, WorldModelFrame};
+    use crate::frame::{ExecutionStrategy, FrameProvenance, ObservationSource, WorldModelFrame};
 
     fn frame(strategy: ExecutionStrategy) -> WorldModelFrame {
         WorldModelFrame::new(
@@ -771,15 +800,19 @@ mod tests {
     }
 
     #[test]
-    fn diting_think_preflight_hook_requires_frame_artifact_for_non_direct_phase() {
+    fn diting_think_preflight_hook_triggers_for_new_user_directive() {
         let mut registry = HookRegistry::new();
         registry.register(DitingThinkPreflightHook);
+        let mut current_frame = frame(ExecutionStrategy::DirectIteration);
+        current_frame
+            .append_user_directive("change the task", None)
+            .unwrap();
 
         let event = HookEvent::CommitBoundary(CommitBoundary::ProposePhaseExecution {
             phase_id: "phase-1".to_string(),
         });
         let state = RuntimeStateView {
-            current_frame: frame(ExecutionStrategy::Hybrid),
+            current_frame,
             current_plan: None,
             metadata: Value::Null,
         };
@@ -795,36 +828,100 @@ mod tests {
     }
 
     #[test]
-    fn diting_think_preflight_hook_skips_direct_or_already_captured_frames() {
+    fn diting_think_preflight_hook_triggers_for_world_observations_and_commits() {
         let mut registry = HookRegistry::new();
         registry.register(DitingThinkPreflightHook);
         let event = HookEvent::CommitBoundary(CommitBoundary::ProposePhaseExecution {
             phase_id: "phase-1".to_string(),
         });
-        let direct_state = RuntimeStateView {
-            current_frame: frame(ExecutionStrategy::DirectIteration),
+        let mut observed_frame = frame(ExecutionStrategy::DirectIteration);
+        for index in 0..3 {
+            observed_frame
+                .append_observation(
+                    format!("observation {index}"),
+                    None,
+                    ObservationSource {
+                        tool_call_id: format!("call-{index}"),
+                        tool_name: "read_file".to_string(),
+                    },
+                    None,
+                )
+                .unwrap();
+        }
+        let observed_state = RuntimeStateView {
+            current_frame: observed_frame,
             current_plan: None,
             metadata: Value::Null,
         };
         assert!(matches!(
-            registry.evaluate(&event, &direct_state),
-            HookDecision::Allow { .. }
+            registry.evaluate(&event, &observed_state),
+            HookDecision::RequireArtifact {
+                artifact: RequiredArtifact::DitingThinkPreflight,
+                ..
+            }
         ));
 
-        let mut captured_frame = frame(ExecutionStrategy::Hybrid);
-        captured_frame.known_facts.push(Fact {
-            id: "fact-1".to_string(),
-            statement: "captured".to_string(),
-            source: "diting_think".to_string(),
-        });
-        let captured_state = RuntimeStateView {
-            current_frame: captured_frame,
+        let mut committed_frame = frame(ExecutionStrategy::Hybrid);
+        committed_frame.append_committed_action("fs.write(a) -> success", "call-1", "fs.write");
+        let committed_state = RuntimeStateView {
+            current_frame: committed_frame,
             current_plan: None,
             metadata: Value::Null,
         };
         assert!(matches!(
-            registry.evaluate(&event, &captured_state),
+            registry.evaluate(&event, &committed_state),
+            HookDecision::RequireArtifact {
+                artifact: RequiredArtifact::DitingThinkPreflight,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn diting_think_preflight_hook_allows_when_highwater_caught_up() {
+        let mut registry = HookRegistry::new();
+        registry.register(DitingThinkPreflightHook);
+        let mut current_frame = frame(ExecutionStrategy::Hybrid);
+        current_frame
+            .append_user_directive("already shown", None)
+            .unwrap();
+        current_frame.mark_seen();
+        let event = HookEvent::CommitBoundary(CommitBoundary::ProposePhaseExecution {
+            phase_id: "phase-1".to_string(),
+        });
+        let state = RuntimeStateView {
+            current_frame,
+            current_plan: None,
+            metadata: Value::Null,
+        };
+
+        assert!(matches!(
+            registry.evaluate(&event, &state),
             HookDecision::Allow { .. }
+        ));
+    }
+
+    #[test]
+    fn diting_think_preflight_hook_triggers_safety_net() {
+        let mut registry = HookRegistry::new();
+        registry.register(DitingThinkPreflightHook);
+        let mut current_frame = frame(ExecutionStrategy::DirectIteration);
+        current_frame.model_turn_count = 10;
+        let event = HookEvent::CommitBoundary(CommitBoundary::ProposePhaseExecution {
+            phase_id: "phase-1".to_string(),
+        });
+        let state = RuntimeStateView {
+            current_frame,
+            current_plan: None,
+            metadata: Value::Null,
+        };
+
+        assert!(matches!(
+            registry.evaluate(&event, &state),
+            HookDecision::RequireArtifact {
+                artifact: RequiredArtifact::DitingThinkPreflight,
+                ..
+            }
         ));
     }
 

@@ -1,3 +1,4 @@
+use crate::frame::WorldModelFrame;
 use crate::hook::HookEvent;
 use serde::{Deserialize, Serialize};
 
@@ -139,6 +140,8 @@ pub struct PhaseObservation {
     pub frame_still_valid: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hook_events: Vec<HookEvent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_frame: Option<WorldModelFrame>,
 }
 
 #[cfg(test)]

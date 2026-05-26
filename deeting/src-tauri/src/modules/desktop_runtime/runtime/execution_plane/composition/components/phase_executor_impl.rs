@@ -74,6 +74,7 @@ where
         }
         let step_type = phase.step_type;
         let parent_frame_id = Some(frame.frame_version_id.clone());
+        request.world_model_frame = Some(frame.clone());
         let outcome = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
                 match step_type {
@@ -285,6 +286,7 @@ fn phase_observation_from_outcome(
         goal_satisfied,
         frame_still_valid,
         hook_events: runtime_hook_events_from_outcome(outcome),
+        updated_frame: outcome.world_model_frame.clone(),
     }
 }
 
@@ -700,6 +702,7 @@ mod tests {
             execution_graph: json!({}),
             response_json,
             captured_frame_extract: None,
+            world_model_frame: None,
         }
     }
 

@@ -5,6 +5,7 @@ use crate::modules::desktop_runtime::runtime::{
 };
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
 use crate::modules::mcp::commands::support::LocalChatInputMessage;
+use desktop_runtime_core::WorldModelFrame;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PersistedChatToolRuntimeContext {
@@ -18,6 +19,9 @@ pub(crate) struct PersistedChatToolRuntimeContext {
         LocalModelConnection,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) orchestrated_messages:
         Vec<LocalChatInputMessage>,
+    #[serde(default)]
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) world_model_frame:
+        Option<WorldModelFrame>,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) task_query: Option<String>,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) session_id: String,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) temperature: Option<f32>,

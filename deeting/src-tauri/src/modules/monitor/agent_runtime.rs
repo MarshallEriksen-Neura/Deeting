@@ -312,6 +312,7 @@ pub(crate) async fn execute_monitor_task_agent(
                 tool_call_id: None,
                 name: None,
             }],
+            world_model_frame: None,
             execution_policy: build_monitor_runtime_execution_policy(effective_monitor_tool_names(
                 profile,
                 &task.allowed_tools,

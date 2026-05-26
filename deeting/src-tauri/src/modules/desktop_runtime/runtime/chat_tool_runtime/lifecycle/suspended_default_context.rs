@@ -20,6 +20,7 @@ pub(super) fn fallback_chat_runtime_context_for_execution_graph(
             protocol_family: "openai_chat".to_string(),
         },
         orchestrated_messages: Vec::new(),
+        world_model_frame: None,
         task_query: None,
         session_id: execution_graph
             .get("session_id")

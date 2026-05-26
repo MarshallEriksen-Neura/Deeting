@@ -15,6 +15,7 @@ pub(crate) fn build_persisted_chat_runtime_context_from_execution_request(
         execution_policy: request.execution_policy.clone(),
         model_connection: request.model_connection.clone(),
         orchestrated_messages: request.messages.clone(),
+        world_model_frame: request.world_model_frame.clone(),
         task_query,
         session_id: request.session_id.clone(),
         temperature: request.temperature,

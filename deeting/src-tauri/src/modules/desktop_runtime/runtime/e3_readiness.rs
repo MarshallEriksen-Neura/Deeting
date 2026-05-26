@@ -1,8 +1,9 @@
 //! Observation-only contract for the E3 old-route cleanup gate.
 
 pub(crate) const FRAME_ROUTE_OVERLAP_METRIC: &str = "frame_route_phase_step_overlap";
-pub(crate) const CONTRACT_SCHEMA_VERSION: i64 = 1;
+pub(crate) const CONTRACT_SCHEMA_VERSION: i64 = 2;
 pub(crate) const MINIMUM_OVERLAP_RATIO: f64 = 0.95;
+pub(crate) const MINIMUM_NON_DIRECT_STRATEGY_RATIO: f64 = 0.01;
 pub(crate) const MINIMUM_OBSERVATION_WINDOW_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 pub(crate) const OBSERVATION_WINDOW_LABEL: &str = "1-2w";
 

@@ -56,6 +56,10 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) async fn exe
             .and_then(serde_json::Value::as_str)
             .unwrap_or("<unknown>")
     );
+    let resource_path = result
+        .get("path")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("<unknown>");
     Ok(SkillToolExecutionResult {
         active_skill,
         meta: serde_json::json!({
@@ -63,6 +67,12 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) async fn exe
             "name": tool_name,
             "status": "success",
             "result": result,
+            "observation_patch": [{
+                "text": format!("read skill resource {resource_path}"),
+                "structured": {
+                    "path": resource_path,
+                },
+            }],
         }),
         result_message,
     })

@@ -14,6 +14,7 @@ use super::{
 use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::state::AppState;
 use desktop_runtime_core::TaskInputSource;
+use desktop_runtime_core::WorldModelFrame;
 use mcp_core::types::LocalChatInputMessage;
 use mcp_session::context::LocalConversationChatContext;
 use serde_json::Value;
@@ -36,6 +37,8 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane) struct PolicyS
         TaskInputSource,
     pub(in crate::modules::desktop_runtime::runtime::execution_plane) messages:
         Vec<LocalChatInputMessage>,
+    pub(in crate::modules::desktop_runtime::runtime::execution_plane) world_model_frame:
+        Option<WorldModelFrame>,
     pub(in crate::modules::desktop_runtime::runtime::execution_plane) execution_policy:
         LocalExecutionPolicy,
     pub(in crate::modules::desktop_runtime::runtime::execution_plane) temperature: Option<f32>,
@@ -117,12 +120,13 @@ where
         app_handle: input.app_handle,
         app_state: input.app_state,
     };
-    let response_json = execute_chat_completion_pure(
+    let completion = execute_chat_completion_pure(
         ChatCompletionPureInput {
             model_connection: input.model_connection,
             session_id: input.session_id,
             capability_id: input.capability_id,
             messages: input.messages,
+            world_model_frame: input.world_model_frame,
             execution_policy: input.execution_policy,
             temperature: input.temperature,
             max_tokens: input.max_tokens,
@@ -137,13 +141,14 @@ where
         },
         &provider_client,
     )
-    .await?
-    .response_json;
-    Ok(completed_chat_execution_outcome(
+    .await?;
+    let mut outcome = completed_chat_execution_outcome(
         &graph_context,
-        response_json,
+        completion.response_json,
         delegated_execution,
-    ))
+    );
+    outcome.world_model_frame = completion.world_model_frame;
+    Ok(outcome)
 }
 
 fn should_return_cron_delegated_result_directly(
@@ -180,11 +185,12 @@ impl ChatCompletionProviderClient for DeetingChatCompletionProviderClient {
                 assistant_id: input.capability_id.clone(),
                 messages: input.messages.clone(),
             };
-            let response_json = run_local_chat_complete_with_tools(
+            let output = run_local_chat_complete_with_tools(
                 &self.app_handle,
                 &self.app_state,
                 &input.model_connection,
                 input.messages,
+                input.world_model_frame,
                 &chat_context,
                 &input.execution_policy,
                 input.temperature,
@@ -199,7 +205,10 @@ impl ChatCompletionProviderClient for DeetingChatCompletionProviderClient {
                 input.selected_knowledge_file_ids.clone(),
             )
             .await?;
-            Ok(ChatCompletionPureResult { response_json })
+            Ok(ChatCompletionPureResult {
+                response_json: output.response_json,
+                world_model_frame: output.world_model_frame,
+            })
         })
     }
 }

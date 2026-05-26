@@ -33,6 +33,7 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane) fn running_del
         execution_graph,
         response_json,
         captured_frame_extract: None,
+        world_model_frame: None,
     }
 }
 
@@ -74,5 +75,6 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane) fn completed_c
         execution_graph,
         response_json,
         captured_frame_extract,
+        world_model_frame: None,
     }
 }

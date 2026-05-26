@@ -505,6 +505,7 @@ pub async fn execute_local_orchestrated_chat(
             task_input_source,
             user_interruption: input.user_interruption.clone(),
             messages: ctx.messages.clone(),
+            world_model_frame: None,
             execution_policy: execution_policy.clone(),
             temperature: input.temperature,
             max_tokens: input.max_tokens,

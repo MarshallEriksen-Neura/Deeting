@@ -14,6 +14,7 @@ impl SuspendedChatToolExecution {
             execution_policy: self.execution_policy,
             model_connection: self.model_connection,
             orchestrated_messages: self.orchestrated_messages,
+            world_model_frame: self.world_model_frame,
             task_query: self.task_query,
             session_id: self.session_id,
             temperature: self.temperature,

@@ -109,6 +109,7 @@ impl PhaseExecutor for DemoPhaseExecutor {
             goal_satisfied: true,
             frame_still_valid: true,
             hook_events: Vec::new(),
+            updated_frame: None,
         })
     }
 }

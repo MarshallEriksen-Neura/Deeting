@@ -57,5 +57,6 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane) fn build_direc
         execution_graph,
         response_json,
         captured_frame_extract: None,
+        world_model_frame: None,
     }
 }

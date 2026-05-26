@@ -13,6 +13,7 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn runtime_s
         execution_policy: context.execution_policy,
         model_connection: context.model_connection,
         orchestrated_messages: context.orchestrated_messages,
+        world_model_frame: context.world_model_frame,
         task_query: context.task_query,
         session_id: context.session_id,
         temperature: context.temperature,

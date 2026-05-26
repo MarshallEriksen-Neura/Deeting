@@ -41,6 +41,9 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) f
         },
     );
     frame.fingerprint_key = Some(fingerprint.key());
+    if let Err(err) = frame.append_user_directive(frame.goal.clone(), None) {
+        log::warn!("failed to append bootstrap user directive to world model frame: {err}");
+    }
     frame
 }
 

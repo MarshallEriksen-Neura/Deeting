@@ -72,7 +72,8 @@ use runtime_state::{
     backfill_captured_reasoning, build_max_rounds_exceeded_response,
     clone_runtime_state_for_tool_execution, extract_initial_task_query,
     resolve_child_agent_max_rounds, rewind_round_for_post_approval_continuation,
-    LocalChatToolRuntimeOutput, LocalChatToolRuntimeState, LocalToolCallProcessingOutcome,
+    LocalChatCompleteWithToolsOutput, LocalChatToolRuntimeOutput, LocalChatToolRuntimeState,
+    LocalToolCallProcessingOutcome,
 };
 use streaming::LocalRealtimeToolTraceEmitter;
 use tool_execution::process_chat_tool_calls;
@@ -90,6 +91,206 @@ use tool_meta::{
     last_response_content_or_empty, record_query_affinity_from_tool_meta,
     tool_call_meta_with_resolved_ids,
 };
+
+fn append_world_observations_from_tool_meta(
+    frame: Option<&mut desktop_runtime_core::WorldModelFrame>,
+    tool_call_meta: &[serde_json::Value],
+) {
+    let Some(frame) = frame else {
+        return;
+    };
+    for item in tool_call_meta {
+        if item
+            .get("status")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|status| !status.eq_ignore_ascii_case("success"))
+        {
+            continue;
+        }
+        let tool_call_id = item
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("unknown-call")
+            .to_string();
+        let tool_name = item
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("unknown_tool")
+            .to_string();
+        let Some(entries) = item
+            .get("observation_patch")
+            .and_then(serde_json::Value::as_array)
+        else {
+            continue;
+        };
+        for entry in entries {
+            let Some(text) = entry
+                .get("text")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            else {
+                continue;
+            };
+            let structured = entry
+                .get("structured")
+                .cloned()
+                .filter(|value| !value.is_null());
+            let supersedes = entry
+                .get("supersedes")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+            if let Err(err) = frame.append_observation(
+                text.to_string(),
+                structured,
+                desktop_runtime_core::ObservationSource {
+                    tool_call_id: tool_call_id.clone(),
+                    tool_name: tool_name.clone(),
+                },
+                supersedes,
+            ) {
+                log::warn!(
+                    "failed to append world observation from tool patch: tool_name={} call_id={} error={}",
+                    tool_name,
+                    tool_call_id,
+                    err
+                );
+            }
+        }
+    }
+}
+
+fn append_committed_actions_from_tool_meta(
+    frame: Option<&mut desktop_runtime_core::WorldModelFrame>,
+    tool_call_meta: &[serde_json::Value],
+) {
+    let Some(frame) = frame else {
+        return;
+    };
+    for item in tool_call_meta {
+        if !tool_meta_succeeded(item) {
+            continue;
+        }
+        let tool_name = tool_meta_name(item);
+        if !resolve_is_irreversible(item, &tool_name) {
+            continue;
+        }
+        let tool_call_id = tool_meta_call_id(item);
+        frame.append_committed_action(
+            build_committed_action_text(item, &tool_name),
+            tool_call_id,
+            tool_name,
+        );
+    }
+}
+
+fn tool_meta_succeeded(item: &serde_json::Value) -> bool {
+    item.get("status")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|status| status.eq_ignore_ascii_case("success"))
+}
+
+fn tool_meta_call_id(item: &serde_json::Value) -> String {
+    item.get("id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("unknown-call")
+        .to_string()
+}
+
+fn tool_meta_name(item: &serde_json::Value) -> String {
+    item.get("name")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("unknown_tool")
+        .to_string()
+}
+
+fn resolve_is_irreversible(item: &serde_json::Value, tool_name: &str) -> bool {
+    item.get("is_irreversible")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or_else(|| irreversible_tool_name_default(tool_name))
+}
+
+fn irreversible_tool_name_default(tool_name: &str) -> bool {
+    const IRREVERSIBLE_PATTERNS: &[&str] = &[
+        "write_",
+        "create_",
+        "update_",
+        "delete_",
+        "remove_",
+        "send_",
+        "exec_",
+        "run_",
+        "commit_",
+        "push_",
+        "publish_",
+        "shell.",
+        "fs.write",
+        "fs.create",
+        "fs.delete",
+    ];
+    let lower = tool_name.trim().to_ascii_lowercase();
+    if lower.is_empty() {
+        return false;
+    }
+    IRREVERSIBLE_PATTERNS
+        .iter()
+        .any(|pattern| lower.starts_with(pattern) || lower.contains(pattern))
+}
+
+fn build_committed_action_text(item: &serde_json::Value, tool_name: &str) -> String {
+    let summary = item
+        .get("result")
+        .and_then(short_result_summary)
+        .unwrap_or_else(|| "success".to_string());
+    format!("{tool_name} -> {summary}")
+}
+
+fn short_result_summary(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(text) => Some(truncate_action_summary(text.trim())),
+        serde_json::Value::Object(object) => {
+            for key in ["message", "summary", "status", "id", "path"] {
+                if let Some(text) = object
+                    .get(key)
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                {
+                    return Some(truncate_action_summary(text));
+                }
+            }
+            Some("success".to_string())
+        }
+        _ => None,
+    }
+}
+
+fn truncate_action_summary(value: &str) -> String {
+    const MAX_LEN: usize = 160;
+    let mut output = String::new();
+    for ch in value.chars() {
+        if output.len() + ch.len_utf8() > MAX_LEN {
+            output.push_str("...");
+            return output;
+        }
+        output.push(ch);
+    }
+    if output.is_empty() {
+        "success".to_string()
+    } else {
+        output
+    }
+}
 
 fn attach_runtime_transition_events(
     response: serde_json::Value,
@@ -122,11 +323,165 @@ fn should_inject_diting_think_tool(
     round == 1 && !diting_think_consumed && execution_policy.require_diting_think_preflight
 }
 
+fn messages_with_world_model_snapshot(
+    messages: &[LocalChatInputMessage],
+    frame: Option<&desktop_runtime_core::WorldModelFrame>,
+) -> Vec<LocalChatInputMessage> {
+    let Some(frame) = frame else {
+        return messages.to_vec();
+    };
+    let snapshot = render_world_model_snapshot(frame);
+    let mut output = messages.to_vec();
+    if let Some(message) = output
+        .iter_mut()
+        .find(|message| message.role.eq_ignore_ascii_case("user"))
+    {
+        message.content = format!("{snapshot}\n\n{}", message.content);
+    } else {
+        output.insert(
+            0,
+            LocalChatInputMessage {
+                role: "user".to_string(),
+                content: snapshot,
+                reasoning_content: None,
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
+            },
+        );
+    }
+    output
+}
+
+fn render_world_model_snapshot(frame: &desktop_runtime_core::WorldModelFrame) -> String {
+    format!(
+        concat!(
+            "=== World Model Snapshot (turn {turn}) ===\n\n",
+            "[USER DIRECTIVES]\n{directives}\n\n",
+            "[WORLD OBSERVATIONS]\n{observations}\n\n",
+            "[AGENT COMMITTED ACTIONS]\n{committed}\n\n",
+            "[MODEL DECLARED]\n{declared}\n\n",
+            "=== End World Model Snapshot ==="
+        ),
+        turn = frame.model_turn_count.saturating_add(1),
+        directives = render_user_directives(frame),
+        observations = render_observations(frame),
+        committed = render_committed_actions(frame),
+        declared = render_model_declared(frame),
+    )
+}
+
+fn new_marker(sequence: u64, highwater: u64) -> &'static str {
+    if sequence > highwater {
+        "[NEW] "
+    } else {
+        ""
+    }
+}
+
+fn superseded_marker(supersedes: Option<&String>) -> &'static str {
+    if supersedes.is_some() {
+        "[~] "
+    } else {
+        ""
+    }
+}
+
+fn render_user_directives(frame: &desktop_runtime_core::WorldModelFrame) -> String {
+    if frame.user_directed.is_empty() {
+        return "- (no directives yet)".to_string();
+    }
+    frame
+        .user_directed
+        .iter()
+        .map(|directive| {
+            format!(
+                "- {}{}{}",
+                new_marker(directive.appended_at, frame.last_seen_by_model),
+                superseded_marker(directive.supersedes.as_ref()),
+                directive.text.trim()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn render_observations(frame: &desktop_runtime_core::WorldModelFrame) -> String {
+    if frame.world_observed.is_empty() {
+        return "- (no observations yet)".to_string();
+    }
+    frame
+        .world_observed
+        .iter()
+        .map(|observation| {
+            format!(
+                "- {}{}{}",
+                new_marker(observation.appended_at, frame.last_seen_by_model),
+                superseded_marker(observation.supersedes.as_ref()),
+                observation.text.trim()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn render_committed_actions(frame: &desktop_runtime_core::WorldModelFrame) -> String {
+    if frame.agent_committed.is_empty() {
+        return "- (no committed actions yet)".to_string();
+    }
+    frame
+        .agent_committed
+        .iter()
+        .map(|action| {
+            format!(
+                "- {}{}",
+                new_marker(action.committed_at, frame.last_seen_by_model),
+                action.action_text.trim()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn render_model_declared(frame: &desktop_runtime_core::WorldModelFrame) -> String {
+    let mut lines = Vec::new();
+    lines.extend(
+        frame
+            .known_facts
+            .iter()
+            .map(|fact| format!("- fact: {}", fact.statement.trim())),
+    );
+    lines.extend(
+        frame
+            .assumptions
+            .iter()
+            .map(|assumption| format!("- assumption: {}", assumption.statement.trim())),
+    );
+    lines.extend(
+        frame
+            .verification_targets
+            .iter()
+            .map(|target| format!("- verification_target: {}", target.description.trim())),
+    );
+    lines.extend(
+        frame
+            .adaptation_rules
+            .iter()
+            .map(|rule| format!("- rule: {}", rule.instruction.trim())),
+    );
+    if lines.is_empty() {
+        "- (no model declarations yet)".to_string()
+    } else {
+        lines.join("\n")
+    }
+}
+
 pub(crate) async fn run_local_chat_complete_with_tools(
     app: &AppHandle,
     app_state: &AppState,
     model_connection: &LocalModelConnection,
     messages: Vec<LocalChatInputMessage>,
+    world_model_frame: Option<desktop_runtime_core::WorldModelFrame>,
     chat_ctx: &LocalConversationChatContext,
     execution_policy: &LocalExecutionPolicy,
     temperature: Option<f32>,
@@ -139,7 +494,7 @@ pub(crate) async fn run_local_chat_complete_with_tools(
     trace_id: Option<&str>,
     request_id: Option<&str>,
     selected_knowledge_file_ids: Vec<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<LocalChatCompleteWithToolsOutput, String> {
     let configured_max_rounds = app_state
         .mcp
         .store
@@ -185,6 +540,7 @@ pub(crate) async fn run_local_chat_complete_with_tools(
         execution_policy: execution_policy.clone(),
         model_connection: model_connection.clone(),
         orchestrated_messages,
+        world_model_frame,
         task_query,
         session_id: chat_ctx.session_id.clone(),
         temperature,
@@ -213,10 +569,14 @@ pub(crate) async fn run_local_chat_complete_with_tools(
         .await
         .map(|mut output| {
             backfill_captured_reasoning(&mut output.response, output.captured_reasoning.as_deref());
-            attach_diting_think_frame_extract(
+            let response_json = attach_diting_think_frame_extract(
                 output.response,
                 output.captured_frame_extract.as_ref(),
-            )
+            );
+            LocalChatCompleteWithToolsOutput {
+                response_json,
+                world_model_frame: output.world_model_frame,
+            }
         })
 }
 
@@ -241,6 +601,7 @@ async fn continue_local_chat_complete_with_tools(
             return Ok(LocalChatToolRuntimeOutput {
                 captured_reasoning: state.captured_reasoning.clone(),
                 captured_frame_extract: state.captured_frame_extract.clone(),
+                world_model_frame: state.world_model_frame.clone(),
                 response: enrich_response_with_tool_trace(
                     fallback,
                     &effective_tool_call_meta,
@@ -270,7 +631,10 @@ async fn continue_local_chat_complete_with_tools(
             app_state,
             &provider_model_id,
             &model_id,
-            state.orchestrated_messages.clone(),
+            messages_with_world_model_snapshot(
+                &state.orchestrated_messages,
+                state.world_model_frame.as_ref(),
+            ),
             tools,
             state.temperature,
             state.max_tokens,
@@ -283,6 +647,9 @@ async fn continue_local_chat_complete_with_tools(
         )
         .await
         .map_err(to_string)?;
+        if let Some(frame) = state.world_model_frame.as_mut() {
+            frame.mark_seen();
+        }
         state.runtime_metrics.observe_response(&response);
 
         let tool_calls = extract_chat_tool_calls(&response);
@@ -307,6 +674,7 @@ async fn continue_local_chat_complete_with_tools(
             return Ok(LocalChatToolRuntimeOutput {
                 captured_reasoning: state.captured_reasoning.clone(),
                 captured_frame_extract: state.captured_frame_extract.clone(),
+                world_model_frame: state.world_model_frame.clone(),
                 response: attach_runtime_transition_events(
                     response,
                     &state.runtime_transition_blocks,
@@ -370,6 +738,9 @@ async fn continue_local_chat_complete_with_tools(
                 }) {
                     state.diting_think_consumed = true;
                     state.captured_reasoning = Some(reasoning);
+                    if let Some(frame) = state.world_model_frame.as_mut() {
+                        frame.mark_diting_think_seen();
+                    }
                     if let Some(extract) = state.captured_frame_extract.as_ref() {
                         state.runtime_transition_blocks.push(
                             project_world_model_frame_decision_block(
@@ -393,6 +764,14 @@ async fn continue_local_chat_complete_with_tools(
                     &state.execution_policy,
                     &response,
                     &tool_call_meta,
+                );
+                append_world_observations_from_tool_meta(
+                    state.world_model_frame.as_mut(),
+                    &canonical_tool_call_meta,
+                );
+                append_committed_actions_from_tool_meta(
+                    state.world_model_frame.as_mut(),
+                    &canonical_tool_call_meta,
                 );
                 state
                     .runtime_transition_blocks
@@ -423,6 +802,7 @@ async fn continue_local_chat_complete_with_tools(
                     return Ok(LocalChatToolRuntimeOutput {
                         captured_reasoning: state.captured_reasoning.clone(),
                         captured_frame_extract: state.captured_frame_extract.clone(),
+                        world_model_frame: state.world_model_frame.clone(),
                         response: attach_runtime_transition_events(
                             enrich_response_with_tool_trace(
                                 response,
@@ -477,6 +857,14 @@ async fn continue_local_chat_complete_with_tools(
                     &response,
                     &tool_call_meta,
                 );
+                append_world_observations_from_tool_meta(
+                    state.world_model_frame.as_mut(),
+                    &canonical_tool_call_meta,
+                );
+                append_committed_actions_from_tool_meta(
+                    state.world_model_frame.as_mut(),
+                    &canonical_tool_call_meta,
+                );
                 state
                     .runtime_transition_blocks
                     .extend(project_tool_execution_correlation_blocks(
@@ -528,6 +916,7 @@ async fn continue_local_chat_complete_with_tools(
                 return Ok(LocalChatToolRuntimeOutput {
                     captured_reasoning: state.captured_reasoning.clone(),
                     captured_frame_extract: state.captured_frame_extract.clone(),
+                    world_model_frame: state.world_model_frame.clone(),
                     response: attach_runtime_transition_events(
                         enrich_response_with_tool_trace(
                             interrupted,

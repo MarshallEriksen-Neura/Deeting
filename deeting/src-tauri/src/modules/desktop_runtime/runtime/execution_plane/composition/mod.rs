@@ -139,9 +139,11 @@ fn frame_resolved_status_payload(
             "sample_eligible": sample_eligible,
             "sample_exclusion_reason": sample_exclusion_reason,
             "minimum_overlap_ratio": e3_readiness::MINIMUM_OVERLAP_RATIO,
+            "minimum_non_direct_strategy_ratio": e3_readiness::MINIMUM_NON_DIRECT_STRATEGY_RATIO,
             "minimum_observation_window_ms": e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS,
             "observation_window": e3_readiness::OBSERVATION_WINDOW_LABEL,
             "requires_observation_window": true,
+            "requires_strategy_distribution": true,
         },
     })
 }
@@ -860,6 +862,7 @@ mod tests {
             }),
             response_json: json!({"content":"done"}),
             captured_frame_extract: None,
+            world_model_frame: None,
         };
 
         let runtime_events = vec![

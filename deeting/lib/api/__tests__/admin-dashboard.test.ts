@@ -43,7 +43,7 @@ function frameRouteOverlapReadinessPayload(
 ): Record<string, unknown> {
   return {
     metric: "frame_route_phase_step_overlap",
-    contract_schema_version: 1,
+    contract_schema_version: 2,
     observation_window: "1-2w",
     window_start_unix_ms: 1000,
     window_end_unix_ms: 604801000,
@@ -64,6 +64,11 @@ function frameRouteOverlapReadinessPayload(
     matched_sample_count: 8,
     mismatched_sample_count: 0,
     excluded_sample_count: 2,
+    direct_iteration_sample_count: 7,
+    non_direct_strategy_sample_count: 1,
+    non_direct_strategy_ratio: 0.125,
+    minimum_non_direct_strategy_ratio: 0.01,
+    strategy_distribution_met: true,
     overlap_ratio: 1,
     minimum_overlap_ratio: 0.95,
     overlap_threshold_met: true,
@@ -759,7 +764,7 @@ describe("admin dashboard api", () => {
 
     expect(result.threshold_met).toBe(true)
     expect(result.metric).toBe("frame_route_phase_step_overlap")
-    expect(result.contract_schema_version).toBe(1)
+    expect(result.contract_schema_version).toBe(2)
     expect(result.observation_window).toBe("1-2w")
     expect(result.observation_window_met).toBe(true)
     expect(result.overlap_threshold_met).toBe(true)
@@ -861,6 +866,11 @@ describe("admin dashboard api", () => {
         matched_sample_count: 0,
         mismatched_sample_count: 0,
         excluded_sample_count: 0,
+        direct_iteration_sample_count: 0,
+        non_direct_strategy_sample_count: 0,
+        non_direct_strategy_ratio: null,
+        minimum_non_direct_strategy_ratio: 0.01,
+        strategy_distribution_met: false,
         overlap_ratio: null,
         minimum_overlap_ratio: 0.95,
         overlap_threshold_met: false,
@@ -1295,7 +1305,7 @@ describe("admin dashboard api", () => {
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue(
       frameRouteOverlapReadinessPayload({
-        contract_schema_version: 2,
+        contract_schema_version: 1,
       })
     )
 

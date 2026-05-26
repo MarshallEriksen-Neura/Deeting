@@ -8,6 +8,7 @@ use crate::modules::desktop_runtime::runtime::{
 };
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
 use crate::modules::mcp::commands::support::LocalChatInputMessage;
+use desktop_runtime_core::WorldModelFrame;
 
 pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) enum LocalToolCallProcessingOutcome
 {
@@ -42,6 +43,8 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) struct Local
         LocalModelConnection,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) orchestrated_messages:
         Vec<LocalChatInputMessage>,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) world_model_frame:
+        Option<WorldModelFrame>,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) task_query: Option<String>,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) session_id: String,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) temperature: Option<f32>,
@@ -80,6 +83,11 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) struct Local
         Vec<String>,
 }
 
+pub(crate) struct LocalChatCompleteWithToolsOutput {
+    pub(crate) response_json: serde_json::Value,
+    pub(crate) world_model_frame: Option<WorldModelFrame>,
+}
+
 pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) struct LocalChatToolRuntimeOutput
 {
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) response: serde_json::Value,
@@ -87,6 +95,8 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) struct Local
         Option<String>,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) captured_frame_extract:
         Option<DitingThinkExtract>,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) world_model_frame:
+        Option<WorldModelFrame>,
 }
 
 pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn clone_runtime_state_for_tool_execution(
@@ -101,6 +111,7 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn clone_run
         execution_policy: state.execution_policy.clone(),
         model_connection: state.model_connection.clone(),
         orchestrated_messages: state.orchestrated_messages.clone(),
+        world_model_frame: state.world_model_frame.clone(),
         task_query: state.task_query.clone(),
         session_id: state.session_id.clone(),
         temperature: state.temperature,

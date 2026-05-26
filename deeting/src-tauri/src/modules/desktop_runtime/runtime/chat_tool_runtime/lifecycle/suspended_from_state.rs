@@ -39,6 +39,7 @@ impl SuspendedChatToolExecution {
             execution_policy: state.execution_policy.clone(),
             model_connection: state.model_connection.clone(),
             orchestrated_messages: state.orchestrated_messages.clone(),
+            world_model_frame: state.world_model_frame.clone(),
             task_query: state.task_query.clone(),
             session_id: state.session_id.clone(),
             temperature: state.temperature,
