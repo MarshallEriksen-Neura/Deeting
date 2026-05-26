@@ -422,7 +422,7 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorParseResultStep {
                     submit_evolution_signal, EvolutionSignalClassification, EvolutionSignalDraft,
                     EvolutionSignalSource,
                 };
-                use crate::modules::desktop_runtime::runtime::runtime_transition::projection::{
+                use crate::modules::desktop_runtime::runtime::runtime_event_projection::projection::{
                     monitor_checkpoint_correlation_signal_payload, MonitorCheckpointProjectionInput,
                 };
                 let draft = EvolutionSignalDraft {

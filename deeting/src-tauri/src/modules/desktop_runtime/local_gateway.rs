@@ -825,6 +825,7 @@ fn map_request_to_orchestrator_input(
         extract_selected_knowledge_file_ids(payload.metadata.as_ref());
     let root_execution_id = extract_root_execution_id(payload.metadata.as_ref());
     let generated_artifact_context = extract_generated_artifact_context(payload.metadata.as_ref());
+    let user_interruption = extract_user_interruption(payload.metadata.as_ref());
     let terminal_context = payload
         .metadata
         .as_ref()
@@ -855,6 +856,8 @@ fn map_request_to_orchestrator_input(
             payload.explicit_task_agent_id.as_deref(),
         ),
         root_execution_id,
+        task_input_source: None,
+        user_interruption,
         generated_artifact_context,
         session_id,
         capability_id: normalize_optional_string(payload.assistant_id.as_deref()),
@@ -874,6 +877,35 @@ fn map_request_to_orchestrator_input(
         status_stream,
         selected_knowledge_file_ids,
         locale: normalize_optional_string(payload.locale.as_deref()),
+    })
+}
+
+fn extract_user_interruption(
+    metadata: Option<&serde_json::Value>,
+) -> Option<desktop_runtime_core::UserInterruption> {
+    let value = metadata.and_then(|metadata| {
+        metadata
+            .get("user_interruption")
+            .or_else(|| metadata.get("interruption"))
+    })?;
+    let content = value
+        .get("content")
+        .or_else(|| value.get("message"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?
+        .to_string();
+    let interruption_id = value
+        .get("interruption_id")
+        .or_else(|| value.get("id"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("chat-interruption:{}", uuid::Uuid::new_v4()));
+    Some(desktop_runtime_core::UserInterruption {
+        interruption_id,
+        content,
     })
 }
 

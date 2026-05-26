@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use super::runtime_transition::projection::{
+use super::runtime_event_projection::projection::{
     project_capability_contract_decision_block, CapabilityContractProjectionInput,
 };
 

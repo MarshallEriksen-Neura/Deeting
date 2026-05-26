@@ -2,7 +2,10 @@ use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::McpStore;
 use sqlx::Row;
 
+use super::e3_readiness;
+
 const SQLITE_BUSY_RETRY_DELAYS_MS: [u64; 3] = [150, 400, 900];
+const E3_READINESS_RATIO_TOLERANCE: f64 = 0.000_000_001;
 
 fn is_sqlite_busy_error(err: &McpError) -> bool {
     let text = err.to_string().to_ascii_lowercase();
@@ -22,6 +25,38 @@ const DESKTOP_EXECUTION_GRAPH_BOOTSTRAP_DONE: &str = "done:v2";
 pub(crate) struct ExecutionGraphRuntimeContextRow {
     pub(crate) execution_id: String,
     pub(crate) context: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct FrameRouteOverlapReadiness {
+    pub(crate) metric: &'static str,
+    pub(crate) contract_schema_version: i64,
+    pub(crate) observation_window: &'static str,
+    pub(crate) window_start_unix_ms: Option<i64>,
+    pub(crate) window_end_unix_ms: Option<i64>,
+    pub(crate) observed_payload_start_unix_ms: Option<i64>,
+    pub(crate) observed_payload_end_unix_ms: Option<i64>,
+    pub(crate) eligible_sample_start_unix_ms: Option<i64>,
+    pub(crate) eligible_sample_end_unix_ms: Option<i64>,
+    pub(crate) observation_window_ms: Option<i64>,
+    pub(crate) minimum_observation_window_ms: i64,
+    pub(crate) observation_window_met: bool,
+    pub(crate) graph_count: usize,
+    pub(crate) malformed_payload_count: usize,
+    pub(crate) malformed_graph_payload_count: usize,
+    pub(crate) malformed_e3_payload_count: usize,
+    pub(crate) missing_e3_payload_count: usize,
+    pub(crate) observed_payload_count: usize,
+    pub(crate) eligible_sample_count: usize,
+    pub(crate) matched_sample_count: usize,
+    pub(crate) mismatched_sample_count: usize,
+    pub(crate) excluded_sample_count: usize,
+    pub(crate) overlap_ratio: Option<f64>,
+    pub(crate) minimum_overlap_ratio: f64,
+    pub(crate) overlap_threshold_met: bool,
+    pub(crate) e3_payload_coverage_met: bool,
+    pub(crate) e3_payload_health_met: bool,
+    pub(crate) threshold_met: bool,
 }
 
 pub(crate) async fn init_execution_graph_tables(store: &McpStore) -> Result<(), McpError> {
@@ -475,6 +510,255 @@ pub(crate) async fn list_execution_graph_snapshots_for_session(
         })
         .collect()
 }
+
+pub(crate) async fn summarize_frame_route_overlap_readiness(
+    store: &McpStore,
+    window_start_unix_ms: Option<i64>,
+    window_end_unix_ms: Option<i64>,
+) -> Result<FrameRouteOverlapReadiness, McpError> {
+    e3_readiness::validate_frame_route_overlap_readiness_window(
+        window_start_unix_ms,
+        window_end_unix_ms,
+    )
+    .map_err(|message| McpError::validation(message))?;
+
+    let rows = sqlx::query(
+        r#"
+        SELECT graph_payload_json, updated_at_unix_ms
+        FROM local_execution_graph_run
+        WHERE (? IS NULL OR updated_at_unix_ms >= ?)
+          AND (? IS NULL OR updated_at_unix_ms <= ?)
+        ORDER BY updated_at_unix_ms DESC
+        "#,
+    )
+    .bind(window_start_unix_ms)
+    .bind(window_start_unix_ms)
+    .bind(window_end_unix_ms)
+    .bind(window_end_unix_ms)
+    .fetch_all(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    let graph_count = rows.len();
+    let mut malformed_graph_payload_count = 0usize;
+    let mut malformed_e3_payload_count = 0usize;
+    let mut missing_e3_payload_count = 0usize;
+    let mut observed_payload_count = 0usize;
+    let mut eligible_sample_count = 0usize;
+    let mut matched_sample_count = 0usize;
+    let mut excluded_sample_count = 0usize;
+    let mut first_observed_payload_unix_ms: Option<i64> = None;
+    let mut last_observed_payload_unix_ms: Option<i64> = None;
+    let mut first_eligible_sample_unix_ms: Option<i64> = None;
+    let mut last_eligible_sample_unix_ms: Option<i64> = None;
+
+    for row in rows {
+        let updated_at_unix_ms = row
+            .try_get::<i64, _>("updated_at_unix_ms")
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        let payload_json = row
+            .try_get::<String, _>("graph_payload_json")
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        let Ok(payload) = serde_json::from_str::<serde_json::Value>(&payload_json) else {
+            malformed_graph_payload_count += 1;
+            continue;
+        };
+        let Some(resolution) = payload.pointer("/metadata/runtime_phase_resolution") else {
+            missing_e3_payload_count += 1;
+            continue;
+        };
+        if resolution.get("e3_readiness").is_none() {
+            missing_e3_payload_count += 1;
+            continue;
+        }
+        let metric = resolution
+            .pointer("/e3_readiness/metric")
+            .and_then(serde_json::Value::as_str);
+
+        observed_payload_count += 1;
+        extend_unix_ms_range(
+            &mut first_observed_payload_unix_ms,
+            &mut last_observed_payload_unix_ms,
+            updated_at_unix_ms,
+        );
+        if metric != Some(e3_readiness::FRAME_ROUTE_OVERLAP_METRIC) {
+            malformed_e3_payload_count += 1;
+            continue;
+        }
+        if !e3_readiness_contract_matches(resolution) {
+            malformed_e3_payload_count += 1;
+            continue;
+        }
+        let Some(sample_eligible) = read_e3_sample_eligibility(resolution) else {
+            malformed_e3_payload_count += 1;
+            continue;
+        };
+        let alignment_status = resolution
+            .pointer("/route_policy_alignment/status")
+            .and_then(serde_json::Value::as_str);
+
+        if !sample_eligible {
+            if e3_excluded_sample_contract_matches(resolution, alignment_status) {
+                excluded_sample_count += 1;
+            } else {
+                malformed_e3_payload_count += 1;
+            }
+            continue;
+        }
+
+        let matched = match alignment_status {
+            Some(status) if status == e3_readiness::ROUTE_ALIGNMENT_MATCHED => true,
+            Some(status) if status == e3_readiness::ROUTE_ALIGNMENT_MISMATCHED => false,
+            _ => {
+                malformed_e3_payload_count += 1;
+                continue;
+            }
+        };
+
+        extend_unix_ms_range(
+            &mut first_eligible_sample_unix_ms,
+            &mut last_eligible_sample_unix_ms,
+            updated_at_unix_ms,
+        );
+        eligible_sample_count += 1;
+        if matched {
+            matched_sample_count += 1;
+        }
+    }
+
+    let mismatched_sample_count = eligible_sample_count.saturating_sub(matched_sample_count);
+    let overlap_ratio = if eligible_sample_count == 0 {
+        None
+    } else {
+        Some(matched_sample_count as f64 / eligible_sample_count as f64)
+    };
+    let observation_window_ms = match (first_eligible_sample_unix_ms, last_eligible_sample_unix_ms)
+    {
+        (Some(start), Some(end)) => Some(end.saturating_sub(start).max(0)),
+        _ => None,
+    };
+    let observation_window_met = observation_window_ms
+        .map(|duration| duration >= e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS)
+        .unwrap_or(false);
+    let overlap_threshold_met = overlap_ratio
+        .map(|ratio| ratio >= e3_readiness::MINIMUM_OVERLAP_RATIO)
+        .unwrap_or(false);
+    let malformed_payload_count = malformed_graph_payload_count + malformed_e3_payload_count;
+    let e3_payload_coverage_met = missing_e3_payload_count == 0;
+    let e3_payload_health_met = malformed_e3_payload_count == 0;
+    let threshold_met = observation_window_met
+        && overlap_threshold_met
+        && e3_payload_coverage_met
+        && e3_payload_health_met;
+
+    Ok(FrameRouteOverlapReadiness {
+        metric: e3_readiness::FRAME_ROUTE_OVERLAP_METRIC,
+        contract_schema_version: e3_readiness::CONTRACT_SCHEMA_VERSION,
+        observation_window: e3_readiness::OBSERVATION_WINDOW_LABEL,
+        window_start_unix_ms,
+        window_end_unix_ms,
+        observed_payload_start_unix_ms: first_observed_payload_unix_ms,
+        observed_payload_end_unix_ms: last_observed_payload_unix_ms,
+        eligible_sample_start_unix_ms: first_eligible_sample_unix_ms,
+        eligible_sample_end_unix_ms: last_eligible_sample_unix_ms,
+        observation_window_ms,
+        minimum_observation_window_ms: e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS,
+        observation_window_met,
+        graph_count,
+        malformed_payload_count,
+        malformed_graph_payload_count,
+        malformed_e3_payload_count,
+        missing_e3_payload_count,
+        observed_payload_count,
+        eligible_sample_count,
+        matched_sample_count,
+        mismatched_sample_count,
+        excluded_sample_count,
+        overlap_ratio,
+        minimum_overlap_ratio: e3_readiness::MINIMUM_OVERLAP_RATIO,
+        overlap_threshold_met,
+        e3_payload_coverage_met,
+        e3_payload_health_met,
+        threshold_met,
+    })
+}
+
+fn extend_unix_ms_range(start: &mut Option<i64>, end: &mut Option<i64>, unix_ms: i64) {
+    *start = Some(
+        start
+            .map(|existing| existing.min(unix_ms))
+            .unwrap_or(unix_ms),
+    );
+    *end = Some(end.map(|existing| existing.max(unix_ms)).unwrap_or(unix_ms));
+}
+
+fn e3_readiness_contract_matches(resolution: &serde_json::Value) -> bool {
+    let contract_schema_version = resolution
+        .pointer("/e3_readiness/contract_schema_version")
+        .and_then(serde_json::Value::as_i64);
+    let minimum_overlap_ratio = resolution
+        .pointer("/e3_readiness/minimum_overlap_ratio")
+        .and_then(serde_json::Value::as_f64);
+    let minimum_observation_window_ms = resolution
+        .pointer("/e3_readiness/minimum_observation_window_ms")
+        .and_then(serde_json::Value::as_i64);
+    let observation_window = resolution
+        .pointer("/e3_readiness/observation_window")
+        .and_then(serde_json::Value::as_str);
+    let requires_observation_window = resolution
+        .pointer("/e3_readiness/requires_observation_window")
+        .and_then(serde_json::Value::as_bool);
+    let comparison_basis = resolution
+        .pointer("/route_policy_alignment/comparison_basis")
+        .and_then(serde_json::Value::as_str);
+
+    let overlap_ratio_matches = minimum_overlap_ratio
+        .map(|ratio| {
+            (ratio - e3_readiness::MINIMUM_OVERLAP_RATIO).abs() <= E3_READINESS_RATIO_TOLERANCE
+        })
+        .unwrap_or(false);
+
+    contract_schema_version == Some(e3_readiness::CONTRACT_SCHEMA_VERSION)
+        && overlap_ratio_matches
+        && minimum_observation_window_ms == Some(e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS)
+        && observation_window == Some(e3_readiness::OBSERVATION_WINDOW_LABEL)
+        && requires_observation_window == Some(true)
+        && comparison_basis == Some(e3_readiness::LEGACY_EFFECTIVE_PHASE_STEP_BASIS)
+}
+
+fn e3_excluded_sample_contract_matches(
+    resolution: &serde_json::Value,
+    alignment_status: Option<&str>,
+) -> bool {
+    let alignment_exclusion_reason = resolution
+        .pointer("/route_policy_alignment/sample_exclusion_reason")
+        .and_then(serde_json::Value::as_str);
+    let readiness_exclusion_reason = resolution
+        .pointer("/e3_readiness/sample_exclusion_reason")
+        .and_then(serde_json::Value::as_str);
+
+    alignment_status == Some(e3_readiness::FRAME_STRATEGY_STEP_MISSING)
+        && alignment_exclusion_reason == Some(e3_readiness::FRAME_STRATEGY_STEP_MISSING)
+        && readiness_exclusion_reason == Some(e3_readiness::FRAME_STRATEGY_STEP_MISSING)
+}
+
+fn read_e3_sample_eligibility(resolution: &serde_json::Value) -> Option<bool> {
+    let alignment_eligible = resolution
+        .pointer("/route_policy_alignment/sample_eligible")
+        .and_then(serde_json::Value::as_bool);
+    let readiness_eligible = resolution
+        .pointer("/e3_readiness/sample_eligible")
+        .and_then(serde_json::Value::as_bool);
+
+    // The deletion gate is intentionally stricter than the runtime producer:
+    // stale or partially written historical payloads should reduce confidence,
+    // not silently enter the overlap denominator.
+    match (alignment_eligible, readiness_eligible) {
+        (Some(alignment), Some(readiness)) if alignment == readiness => Some(alignment),
+        _ => None,
+    }
+}
+
 pub(crate) async fn persist_execution_graph_runtime_context(
     store: &McpStore,
     execution_id: &str,
@@ -642,10 +926,12 @@ mod tests {
         delete_execution_graph_runtime_context, list_execution_graph_snapshots_for_session,
         load_execution_graph_snapshot, migrate_execution_graph_runtime_bootstrap,
         persist_execution_graph_runtime_context, persist_execution_graph_snapshot,
+        summarize_frame_route_overlap_readiness,
     };
+    use crate::modules::desktop_runtime::runtime::e3_readiness;
     use crate::modules::mcp::store::McpStore;
     use mcp_session::conversation::LocalConversationCreateRequest;
-    use serde_json::json;
+    use serde_json::{json, Value};
     use uuid::Uuid;
 
     async fn create_test_store(name: &str) -> McpStore {
@@ -654,6 +940,212 @@ mod tests {
         McpStore::new(&database_url)
             .await
             .expect("test store should be created")
+    }
+
+    async fn insert_e3_readiness_graph(
+        store: &McpStore,
+        execution_id: &str,
+        updated_at_unix_ms: i64,
+        runtime_phase_resolution: Option<serde_json::Value>,
+    ) {
+        let graph = json!({
+            "execution_id": execution_id,
+            "route": "direct",
+            "phase_step_type": "direct_chat",
+            "events": [],
+            "metadata": {
+                "runtime_phase_resolution": runtime_phase_resolution
+            }
+        });
+
+        sqlx::query(
+            r#"
+            INSERT INTO local_execution_graph_run (
+              execution_id, session_id, route, plane, status, root_execution_id, request_id,
+              source_kind, graph_payload_json, created_at_unix_ms, updated_at_unix_ms
+            ) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(execution_id)
+        .bind("session-e3")
+        .bind("direct")
+        .bind("direct_chat")
+        .bind("completed")
+        .bind("desktop_local_chat")
+        .bind(graph.to_string())
+        .bind(updated_at_unix_ms)
+        .bind(updated_at_unix_ms)
+        .execute(&store.write_pool)
+        .await
+        .expect("insert execution graph");
+    }
+
+    async fn insert_raw_execution_graph_payload(
+        store: &McpStore,
+        execution_id: &str,
+        updated_at_unix_ms: i64,
+        graph_payload_json: &str,
+    ) {
+        sqlx::query(
+            r#"
+            INSERT INTO local_execution_graph_run (
+              execution_id, session_id, route, plane, status, root_execution_id, request_id,
+              source_kind, graph_payload_json, created_at_unix_ms, updated_at_unix_ms
+            ) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(execution_id)
+        .bind("session-e3")
+        .bind("direct")
+        .bind("direct_chat")
+        .bind("completed")
+        .bind("desktop_local_chat")
+        .bind(graph_payload_json)
+        .bind(updated_at_unix_ms)
+        .bind(updated_at_unix_ms)
+        .execute(&store.write_pool)
+        .await
+        .expect("insert raw execution graph");
+    }
+
+    fn e3_resolution(status: &str, sample_eligible: bool) -> serde_json::Value {
+        let sample_exclusion_reason = if sample_eligible {
+            Value::Null
+        } else {
+            json!("missing_frame_strategy_step")
+        };
+
+        e3_resolution_from_parts(json!({
+            "route_policy_alignment": {
+                "status": status,
+                "sample_eligible": sample_eligible,
+                "sample_exclusion_reason": sample_exclusion_reason
+            },
+            "e3_readiness": {
+                "metric": "frame_route_phase_step_overlap",
+                "sample_eligible": sample_eligible,
+                "sample_exclusion_reason": sample_exclusion_reason
+            }
+        }))
+    }
+
+    fn e3_resolution_with_readiness_eligibility(
+        status: &str,
+        alignment_sample_eligible: bool,
+        readiness_sample_eligible: bool,
+    ) -> serde_json::Value {
+        let alignment_exclusion_reason = if alignment_sample_eligible {
+            Value::Null
+        } else {
+            json!("missing_frame_strategy_step")
+        };
+        let readiness_exclusion_reason = if readiness_sample_eligible {
+            Value::Null
+        } else {
+            json!("missing_frame_strategy_step")
+        };
+
+        e3_resolution_from_parts(json!({
+            "route_policy_alignment": {
+                "status": status,
+                "sample_eligible": alignment_sample_eligible,
+                "sample_exclusion_reason": alignment_exclusion_reason
+            },
+            "e3_readiness": {
+                "metric": "frame_route_phase_step_overlap",
+                "sample_eligible": readiness_sample_eligible,
+                "sample_exclusion_reason": readiness_exclusion_reason
+            }
+        }))
+    }
+
+    fn e3_resolution_missing_alignment_exclusion_reason(status: &str) -> serde_json::Value {
+        e3_resolution_from_parts(json!({
+            "route_policy_alignment": {
+                "status": status,
+                "sample_eligible": false
+            },
+            "e3_readiness": {
+                "metric": "frame_route_phase_step_overlap",
+                "sample_eligible": false,
+                "sample_exclusion_reason": "missing_frame_strategy_step"
+            }
+        }))
+    }
+
+    fn e3_resolution_missing_sample_eligibility(status: &str) -> serde_json::Value {
+        e3_resolution_from_parts(json!({
+            "route_policy_alignment": {
+                "status": status
+            },
+            "e3_readiness": {
+                "metric": "frame_route_phase_step_overlap",
+                "sample_exclusion_reason": Value::Null
+            }
+        }))
+    }
+
+    fn e3_resolution_with_mismatched_contract(
+        mut resolution: serde_json::Value,
+    ) -> serde_json::Value {
+        if let Some(readiness) = resolution
+            .get_mut("e3_readiness")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            readiness.insert("minimum_overlap_ratio".to_string(), json!(0.90));
+        }
+        resolution
+    }
+
+    fn e3_resolution_with_mismatched_metric(
+        mut resolution: serde_json::Value,
+    ) -> serde_json::Value {
+        if let Some(readiness) = resolution
+            .get_mut("e3_readiness")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            readiness.insert(
+                "metric".to_string(),
+                json!("frame_route_phase_step_overlap_v2"),
+            );
+        }
+        resolution
+    }
+
+    fn e3_resolution_without_metric(mut resolution: serde_json::Value) -> serde_json::Value {
+        if let Some(readiness) = resolution
+            .get_mut("e3_readiness")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            readiness.remove("metric");
+        }
+        resolution
+    }
+
+    fn e3_resolution_from_parts(mut resolution: serde_json::Value) -> serde_json::Value {
+        if let Some(alignment) = resolution
+            .get_mut("route_policy_alignment")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            alignment.insert(
+                "comparison_basis".to_string(),
+                json!("legacy_effective_phase_step"),
+            );
+        }
+        if let Some(readiness) = resolution
+            .get_mut("e3_readiness")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            readiness.insert("contract_schema_version".to_string(), json!(1));
+            readiness.insert("minimum_overlap_ratio".to_string(), json!(0.95));
+            readiness.insert(
+                "minimum_observation_window_ms".to_string(),
+                json!(604800000),
+            );
+            readiness.insert("observation_window".to_string(), json!("1-2w"));
+            readiness.insert("requires_observation_window".to_string(), json!(true));
+        }
+        resolution
     }
 
     #[tokio::test]
@@ -794,6 +1286,410 @@ mod tests {
         assert_eq!(snapshots[0]["execution_id"], json!("graph-session-new"));
         assert_eq!(snapshots[1]["execution_id"], json!("graph-session-old"));
     }
+
+    #[tokio::test]
+    async fn summarize_frame_route_overlap_readiness_counts_persisted_e3_samples() {
+        let store = create_test_store("execution-graph-e3-readiness").await;
+        store.init().await.expect("init store");
+
+        for (execution_id, updated_at_unix_ms, runtime_phase_resolution) in [
+            (
+                "graph-e3-matched",
+                20_i64,
+                Some(e3_resolution("matched", true)),
+            ),
+            (
+                "graph-e3-mismatched",
+                30_i64,
+                Some(e3_resolution("mismatched", true)),
+            ),
+            (
+                "graph-e3-excluded",
+                40_i64,
+                Some(e3_resolution("missing_frame_strategy_step", false)),
+            ),
+            (
+                "graph-e3-unknown-status",
+                42_i64,
+                Some(e3_resolution("unknown", true)),
+            ),
+            (
+                "graph-e3-inconsistent-eligibility",
+                43_i64,
+                Some(e3_resolution_with_readiness_eligibility(
+                    "matched", true, false,
+                )),
+            ),
+            (
+                "graph-e3-missing-eligibility",
+                44_i64,
+                Some(e3_resolution_missing_sample_eligibility("matched")),
+            ),
+            (
+                "graph-e3-bad-excluded-contract",
+                46_i64,
+                Some(e3_resolution_missing_alignment_exclusion_reason(
+                    "missing_frame_strategy_step",
+                )),
+            ),
+            (
+                "graph-e3-drifted-metric",
+                47_i64,
+                Some(e3_resolution_with_mismatched_metric(e3_resolution(
+                    "matched", true,
+                ))),
+            ),
+            (
+                "graph-e3-missing-metric",
+                48_i64,
+                Some(e3_resolution_without_metric(e3_resolution("matched", true))),
+            ),
+            ("graph-e3-no-payload", 50_i64, None),
+            (
+                "graph-e3-window-outside",
+                5_i64,
+                Some(e3_resolution("matched", true)),
+            ),
+        ] {
+            insert_e3_readiness_graph(
+                &store,
+                execution_id,
+                updated_at_unix_ms,
+                runtime_phase_resolution,
+            )
+            .await;
+        }
+        insert_raw_execution_graph_payload(&store, "graph-e3-malformed", 45, "{").await;
+
+        let readiness = summarize_frame_route_overlap_readiness(&store, Some(10), Some(60))
+            .await
+            .expect("summarize e3 readiness");
+
+        assert_eq!(readiness.window_start_unix_ms, Some(10));
+        assert_eq!(readiness.window_end_unix_ms, Some(60));
+        assert_eq!(readiness.metric, e3_readiness::FRAME_ROUTE_OVERLAP_METRIC);
+        assert_eq!(
+            readiness.contract_schema_version,
+            e3_readiness::CONTRACT_SCHEMA_VERSION
+        );
+        assert_eq!(
+            readiness.observation_window,
+            e3_readiness::OBSERVATION_WINDOW_LABEL
+        );
+        assert_eq!(readiness.observed_payload_start_unix_ms, Some(20));
+        assert_eq!(readiness.observed_payload_end_unix_ms, Some(48));
+        assert_eq!(readiness.eligible_sample_start_unix_ms, Some(20));
+        assert_eq!(readiness.eligible_sample_end_unix_ms, Some(30));
+        assert_eq!(readiness.observation_window_ms, Some(10));
+        assert_eq!(
+            readiness.minimum_observation_window_ms,
+            e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS
+        );
+        assert!(!readiness.observation_window_met);
+        assert_eq!(readiness.graph_count, 11);
+        assert_eq!(readiness.malformed_payload_count, 7);
+        assert_eq!(readiness.malformed_graph_payload_count, 1);
+        assert_eq!(readiness.malformed_e3_payload_count, 6);
+        assert_eq!(readiness.missing_e3_payload_count, 1);
+        assert_eq!(readiness.observed_payload_count, 9);
+        assert_eq!(readiness.eligible_sample_count, 2);
+        assert_eq!(readiness.matched_sample_count, 1);
+        assert_eq!(readiness.mismatched_sample_count, 1);
+        assert_eq!(readiness.excluded_sample_count, 1);
+        assert_eq!(readiness.overlap_ratio, Some(0.5));
+        assert_eq!(readiness.minimum_overlap_ratio, 0.95);
+        assert!(!readiness.overlap_threshold_met);
+        assert!(!readiness.e3_payload_coverage_met);
+        assert!(!readiness.e3_payload_health_met);
+        assert!(!readiness.threshold_met);
+    }
+
+    #[tokio::test]
+    async fn summarize_frame_route_overlap_readiness_rejects_invalid_windows() {
+        let store = create_test_store("execution-graph-e3-readiness-window-validation").await;
+        store.init().await.expect("init store");
+
+        for (window_start_unix_ms, window_end_unix_ms, expected_message) in [
+            (
+                Some(-1_i64),
+                Some(100_i64),
+                e3_readiness::WINDOW_START_NEGATIVE_ERROR,
+            ),
+            (
+                Some(0_i64),
+                Some(-1_i64),
+                e3_readiness::WINDOW_END_NEGATIVE_ERROR,
+            ),
+            (
+                Some(101_i64),
+                Some(100_i64),
+                e3_readiness::WINDOW_REVERSED_ERROR,
+            ),
+        ] {
+            let error = summarize_frame_route_overlap_readiness(
+                &store,
+                window_start_unix_ms,
+                window_end_unix_ms,
+            )
+            .await
+            .expect_err("invalid readiness window should be rejected by the store");
+
+            assert!(
+                error.to_string().contains(expected_message),
+                "expected error to contain {expected_message:?}, got {error}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn summarize_frame_route_overlap_readiness_requires_eligible_window_and_overlap() {
+        let store = create_test_store("execution-graph-e3-readiness-threshold").await;
+        store.init().await.expect("init store");
+
+        insert_e3_readiness_graph(
+            &store,
+            "graph-e3-day-0",
+            0,
+            Some(e3_resolution("matched", true)),
+        )
+        .await;
+        insert_e3_readiness_graph(
+            &store,
+            "graph-e3-excluded-after-window",
+            e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS + 1,
+            Some(e3_resolution("missing_frame_strategy_step", false)),
+        )
+        .await;
+
+        let short_eligible_window = summarize_frame_route_overlap_readiness(
+            &store,
+            Some(0),
+            Some(e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS + 1),
+        )
+        .await
+        .expect("summarize e3 readiness before enough eligible samples");
+
+        assert_eq!(short_eligible_window.overlap_ratio, Some(1.0));
+        assert!(short_eligible_window.overlap_threshold_met);
+        assert_eq!(short_eligible_window.observation_window_ms, Some(0));
+        assert!(!short_eligible_window.observation_window_met);
+        assert!(!short_eligible_window.threshold_met);
+
+        insert_e3_readiness_graph(
+            &store,
+            "graph-e3-day-7",
+            e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS,
+            Some(e3_resolution("matched", true)),
+        )
+        .await;
+
+        let readiness = summarize_frame_route_overlap_readiness(
+            &store,
+            Some(0),
+            Some(e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS + 1),
+        )
+        .await
+        .expect("summarize e3 readiness");
+
+        assert_eq!(readiness.observed_payload_start_unix_ms, Some(0));
+        assert_eq!(
+            readiness.observed_payload_end_unix_ms,
+            Some(e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS + 1)
+        );
+        assert_eq!(readiness.eligible_sample_start_unix_ms, Some(0));
+        assert_eq!(
+            readiness.eligible_sample_end_unix_ms,
+            Some(e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS)
+        );
+        assert_eq!(
+            readiness.observation_window_ms,
+            Some(e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS)
+        );
+        assert!(readiness.observation_window_met);
+        assert_eq!(readiness.malformed_payload_count, 0);
+        assert_eq!(readiness.malformed_graph_payload_count, 0);
+        assert_eq!(readiness.malformed_e3_payload_count, 0);
+        assert_eq!(readiness.missing_e3_payload_count, 0);
+        assert_eq!(readiness.eligible_sample_count, 2);
+        assert_eq!(readiness.matched_sample_count, 2);
+        assert_eq!(readiness.mismatched_sample_count, 0);
+        assert_eq!(readiness.excluded_sample_count, 1);
+        assert_eq!(readiness.overlap_ratio, Some(1.0));
+        assert!(readiness.overlap_threshold_met);
+        assert!(readiness.e3_payload_coverage_met);
+        assert!(readiness.e3_payload_health_met);
+        assert!(readiness.threshold_met);
+
+        insert_e3_readiness_graph(
+            &store,
+            "graph-e3-missing-payload-after-ready-window",
+            e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS + 1,
+            None,
+        )
+        .await;
+
+        let missing_payload = summarize_frame_route_overlap_readiness(
+            &store,
+            Some(0),
+            Some(e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS + 1),
+        )
+        .await
+        .expect("summarize e3 readiness with missing e3 payload");
+
+        assert_eq!(missing_payload.overlap_ratio, Some(1.0));
+        assert!(missing_payload.observation_window_met);
+        assert!(missing_payload.overlap_threshold_met);
+        assert_eq!(missing_payload.malformed_e3_payload_count, 0);
+        assert_eq!(missing_payload.missing_e3_payload_count, 1);
+        assert!(!missing_payload.e3_payload_coverage_met);
+        assert!(missing_payload.e3_payload_health_met);
+        assert!(!missing_payload.threshold_met);
+
+        insert_e3_readiness_graph(
+            &store,
+            "graph-e3-bad-contract-after-ready-window",
+            e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS + 1,
+            Some(e3_resolution_missing_sample_eligibility("matched")),
+        )
+        .await;
+
+        let unhealthy = summarize_frame_route_overlap_readiness(
+            &store,
+            Some(0),
+            Some(e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS + 1),
+        )
+        .await
+        .expect("summarize e3 readiness with malformed e3 payload");
+
+        assert_eq!(unhealthy.overlap_ratio, Some(1.0));
+        assert!(unhealthy.observation_window_met);
+        assert!(unhealthy.overlap_threshold_met);
+        assert_eq!(unhealthy.observed_payload_count, 4);
+        assert_eq!(unhealthy.eligible_sample_count, 2);
+        assert_eq!(unhealthy.observed_payload_start_unix_ms, Some(0));
+        assert_eq!(
+            unhealthy.observed_payload_end_unix_ms,
+            Some(e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS + 1)
+        );
+        assert_eq!(unhealthy.eligible_sample_start_unix_ms, Some(0));
+        assert_eq!(
+            unhealthy.eligible_sample_end_unix_ms,
+            Some(e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS)
+        );
+        assert_eq!(unhealthy.malformed_graph_payload_count, 0);
+        assert_eq!(unhealthy.malformed_e3_payload_count, 1);
+        assert_eq!(unhealthy.missing_e3_payload_count, 1);
+        assert!(!unhealthy.e3_payload_coverage_met);
+        assert!(!unhealthy.e3_payload_health_met);
+        assert!(!unhealthy.threshold_met);
+    }
+
+    #[tokio::test]
+    async fn summarize_frame_route_overlap_readiness_rejects_mismatched_contract_payloads() {
+        let store = create_test_store("execution-graph-e3-readiness-contract").await;
+        store.init().await.expect("init store");
+
+        insert_e3_readiness_graph(
+            &store,
+            "graph-e3-day-0",
+            0,
+            Some(e3_resolution("matched", true)),
+        )
+        .await;
+        insert_e3_readiness_graph(
+            &store,
+            "graph-e3-day-7",
+            e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS,
+            Some(e3_resolution("matched", true)),
+        )
+        .await;
+        insert_e3_readiness_graph(
+            &store,
+            "graph-e3-contract-drift",
+            e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS + 1,
+            Some(e3_resolution_with_mismatched_contract(e3_resolution(
+                "matched", true,
+            ))),
+        )
+        .await;
+        insert_e3_readiness_graph(
+            &store,
+            "graph-e3-metric-drift",
+            e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS + 2,
+            Some(e3_resolution_with_mismatched_metric(e3_resolution(
+                "matched", true,
+            ))),
+        )
+        .await;
+        insert_e3_readiness_graph(
+            &store,
+            "graph-e3-missing-metric",
+            e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS + 3,
+            Some(e3_resolution_without_metric(e3_resolution("matched", true))),
+        )
+        .await;
+
+        let readiness = summarize_frame_route_overlap_readiness(
+            &store,
+            Some(0),
+            Some(e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS + 3),
+        )
+        .await
+        .expect("summarize e3 readiness with mismatched contract");
+
+        assert_eq!(readiness.overlap_ratio, Some(1.0));
+        assert!(readiness.observation_window_met);
+        assert!(readiness.overlap_threshold_met);
+        assert_eq!(readiness.observed_payload_count, 5);
+        assert_eq!(readiness.eligible_sample_count, 2);
+        assert_eq!(readiness.malformed_payload_count, 3);
+        assert_eq!(readiness.malformed_graph_payload_count, 0);
+        assert_eq!(readiness.malformed_e3_payload_count, 3);
+        assert_eq!(readiness.missing_e3_payload_count, 0);
+        assert!(readiness.e3_payload_coverage_met);
+        assert!(!readiness.e3_payload_health_met);
+        assert!(!readiness.threshold_met);
+    }
+
+    #[tokio::test]
+    async fn summarize_frame_route_overlap_readiness_stays_unready_without_eligible_samples() {
+        let store = create_test_store("execution-graph-e3-readiness-empty").await;
+        store.init().await.expect("init store");
+
+        insert_e3_readiness_graph(&store, "graph-e3-no-payload", 10, None).await;
+        insert_e3_readiness_graph(
+            &store,
+            "graph-e3-excluded",
+            20,
+            Some(e3_resolution("missing_frame_strategy_step", false)),
+        )
+        .await;
+
+        let readiness = summarize_frame_route_overlap_readiness(&store, Some(0), Some(30))
+            .await
+            .expect("summarize e3 readiness");
+
+        assert_eq!(readiness.graph_count, 2);
+        assert_eq!(readiness.observed_payload_count, 1);
+        assert_eq!(readiness.excluded_sample_count, 1);
+        assert_eq!(readiness.malformed_payload_count, 0);
+        assert_eq!(readiness.malformed_graph_payload_count, 0);
+        assert_eq!(readiness.malformed_e3_payload_count, 0);
+        assert_eq!(readiness.missing_e3_payload_count, 1);
+        assert_eq!(readiness.eligible_sample_count, 0);
+        assert_eq!(readiness.matched_sample_count, 0);
+        assert_eq!(readiness.mismatched_sample_count, 0);
+        assert_eq!(readiness.overlap_ratio, None);
+        assert_eq!(readiness.eligible_sample_start_unix_ms, None);
+        assert_eq!(readiness.eligible_sample_end_unix_ms, None);
+        assert_eq!(readiness.observation_window_ms, None);
+        assert!(!readiness.observation_window_met);
+        assert!(!readiness.overlap_threshold_met);
+        assert!(!readiness.e3_payload_coverage_met);
+        assert!(readiness.e3_payload_health_met);
+        assert!(!readiness.threshold_met);
+    }
+
     #[tokio::test]
     async fn delete_runtime_context_removes_active_execution_state() {
         let store = create_test_store("execution-graph-runtime-context-delete").await;

@@ -6,7 +6,7 @@ use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::modules::custom_task_agents::types::CustomTaskAgentProfile;
 use crate::modules::desktop_runtime::runtime::chat_tool_runtime::DitingThinkExtract;
 use crate::state::AppState;
-use desktop_runtime_core::TaskInputSource;
+use desktop_runtime_core::{TaskInputSource, UserInterruption};
 use mcp_core::types::LocalChatInputMessage;
 use serde_json::Value;
 use tauri::AppHandle;
@@ -23,6 +23,7 @@ pub(crate) struct LocalExecutionRequest {
     pub(crate) explicit_task_agent_profile_override: Option<CustomTaskAgentProfile>,
     pub(crate) root_execution_id: Option<String>,
     pub(crate) task_input_source: TaskInputSource,
+    pub(crate) user_interruption: Option<UserInterruption>,
     pub(crate) messages: Vec<LocalChatInputMessage>,
     pub(crate) execution_policy: LocalExecutionPolicy,
     pub(crate) temperature: Option<f32>,

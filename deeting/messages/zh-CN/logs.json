@@ -213,6 +213,22 @@
       "selected": "Selected",
       "none": "None"
     },
+    "readiness": {
+      "title": "E3 路由重合门槛",
+      "overlap": "重合率",
+      "samples": "匹配 / 有效样本",
+      "window": "有效 / 要求",
+      "excluded": "排除样本",
+      "malformed": "缺 E3 / 坏 E3 / 坏 graph / 总坏载荷",
+      "error": "Readiness 不可用：{message}",
+      "status": {
+        "ready": "已达标",
+        "collecting": "采集中",
+        "unhealthy": "载荷异常",
+        "loading": "加载中",
+        "unavailable": "不可用"
+      }
+    },
     "footer": {
       "pageInfoLabel": "第 {page} / {totalPages} 页",
       "items": "Items",

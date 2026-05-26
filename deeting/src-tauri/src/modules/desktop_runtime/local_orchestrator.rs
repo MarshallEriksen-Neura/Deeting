@@ -89,6 +89,8 @@ pub struct LocalOrchestratorInput {
     pub provider_model_id: Option<String>,
     pub explicit_task_agent_id: Option<String>,
     pub root_execution_id: Option<String>,
+    pub task_input_source: Option<desktop_runtime_core::TaskInputSource>,
+    pub user_interruption: Option<desktop_runtime_core::UserInterruption>,
     pub generated_artifact_context: Option<GeneratedArtifactContext>,
     pub session_id: String,
     pub capability_id: Option<String>,
@@ -486,6 +488,10 @@ pub async fn execute_local_orchestrated_chat(
         .or_else(|| ctx.execution_policy.clone())
         .clone()
         .unwrap_or_else(build_default_local_execution_policy);
+    let task_input_source = input
+        .task_input_source
+        .clone()
+        .unwrap_or(desktop_runtime_core::TaskInputSource::UserChat);
     let execution_outcome = run_local_runtime_composition_entrypoint(
         LocalExecutionRequest {
             app_handle: app_handle.clone(),
@@ -496,7 +502,8 @@ pub async fn execute_local_orchestrated_chat(
             explicit_task_agent_id: input.explicit_task_agent_id.clone(),
             explicit_task_agent_profile_override: None,
             root_execution_id: input.root_execution_id.clone(),
-            task_input_source: desktop_runtime_core::TaskInputSource::UserChat,
+            task_input_source,
+            user_interruption: input.user_interruption.clone(),
             messages: ctx.messages.clone(),
             execution_policy: execution_policy.clone(),
             temperature: input.temperature,

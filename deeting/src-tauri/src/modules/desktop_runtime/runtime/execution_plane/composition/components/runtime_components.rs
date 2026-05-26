@@ -2,16 +2,23 @@ use super::super::super::user_input::latest_user_message;
 use super::super::super::LocalExecutionRequest;
 use super::super::phase_step::{phase_step_for_strategy, phase_step_type_name};
 use super::frame_bootstrap;
+use crate::modules::ai_upstream::ReasoningRequestConfig;
 use crate::modules::desktop_runtime::runtime::chat_completion::request_provider_chat_completion;
+use crate::modules::desktop_runtime::runtime::chat_tool_runtime::{
+    inject_diting_think_tool, parse_diting_think_arguments, DitingThinkExtract,
+    DITING_THINK_TOOL_NAME,
+};
+use crate::modules::desktop_runtime::runtime::extract_chat_tool_calls;
 use crate::modules::desktop_runtime::runtime::task_learning::ACTION_VERIFICATION_STRONGER_CHECKS;
 use crate::modules::mcp::store::McpStore;
 use crate::modules::providers::model_guard::resolve_local_secretary_model_connection;
 use crate::state::AppState;
 use desktop_runtime_core::{
-    ConfidenceLevel, EventStore, FrameArtifactGenerator, FrameBootstrapOutput, FrameRefreshRequest,
-    FrameValidation, InterruptionChannel, PhaseProposal, PhaseProposalGenerator, PhaseStepType,
-    PlanArtifact, RuntimeCoreResult, RuntimeEvent, Tier2Validator, UserInput, UserInterruption,
-    WorldModelFrame, WorldModelFrameStatus,
+    Assumption, ConfidenceLevel, EventStore, Fact, FrameArtifactGenerator, FrameBootstrapOutput,
+    FrameProvenance, FrameRefreshArtifact, FrameRefreshRequest, FrameValidation,
+    InterruptionChannel, PhaseProposal, PhaseProposalGenerator, PhaseStepType, PlanArtifact, Rule,
+    RuntimeCoreError, RuntimeCoreResult, RuntimeEvent, Tier2Validator, UserInput, UserInterruption,
+    VerificationTarget, WorldModelFrame, WorldModelFrameStatus,
 };
 use mcp_core::types::LocalChatInputMessage;
 use serde_json::json;
@@ -23,6 +30,8 @@ const TIER2_VALIDATION_CACHE_TTL: Duration = Duration::from_secs(5 * 60);
 const TIER2_VALIDATION_CACHE_MAX_ENTRIES: usize = 256;
 const TIER2_VALIDATION_AUXILIARY_TEMPERATURE: f32 = 0.1;
 const TIER2_VALIDATION_MAX_TOKENS: u32 = 240;
+const DITING_FRAME_REFRESH_TEMPERATURE: f32 = 0.1;
+const DITING_FRAME_REFRESH_MAX_TOKENS: u32 = 520;
 const TIER2_VALIDATION_PROMPT_TEMPLATE_ZH: &str = r#"
 你是一个廉价的 frame 新鲜度判定器。
 
@@ -575,8 +584,64 @@ impl Tier2Validator for DeetingTier2Validator {
     }
 }
 
-#[derive(Default)]
-pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) struct DeetingFrameArtifactGenerator;
+pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) struct DeetingFrameArtifactGenerator
+{
+    request: Option<LocalExecutionRequest>,
+}
+
+impl DeetingFrameArtifactGenerator {
+    pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) fn new(
+        request: LocalExecutionRequest,
+    ) -> Self {
+        Self {
+            request: Some(request),
+        }
+    }
+
+    fn refreshed_frame_base(
+        current_frame: &WorldModelFrame,
+        request: &FrameRefreshRequest,
+    ) -> WorldModelFrame {
+        let mut refreshed = current_frame.clone();
+        refreshed.parent_frame_id = Some(current_frame.frame_version_id.clone());
+        refreshed.frame_version_id = format!(
+            "{}:{}",
+            current_frame.frame_version_id,
+            frame_refresh_suffix(request.artifact)
+        );
+        refreshed.status = WorldModelFrameStatus::Fresh;
+        refreshed.provenance = FrameProvenance {
+            produced_by: "deeting_runtime_composition".to_string(),
+            reason: request.reason.clone(),
+            evidence_refs: vec![format!(
+                "frame_refresh_artifact:{}",
+                frame_refresh_artifact_name(request.artifact)
+            )],
+        };
+        refreshed
+    }
+
+    fn resolve_diting_think_extract(
+        &self,
+        current_frame: &WorldModelFrame,
+        request: &FrameRefreshRequest,
+    ) -> Option<DitingThinkExtract> {
+        #[cfg(test)]
+        if let Some(result) = invoke_test_diting_frame_refresh(current_frame, request) {
+            return result.ok();
+        }
+
+        let runtime_request = self.request.as_ref()?;
+        let output = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(request_diting_think_frame_extract(
+                runtime_request,
+                current_frame,
+                request,
+            ))
+        });
+        output.ok().flatten()
+    }
+}
 
 impl FrameArtifactGenerator for DeetingFrameArtifactGenerator {
     fn refresh_frame(
@@ -584,12 +649,224 @@ impl FrameArtifactGenerator for DeetingFrameArtifactGenerator {
         current_frame: &WorldModelFrame,
         request: &FrameRefreshRequest,
     ) -> RuntimeCoreResult<WorldModelFrame> {
-        let mut refreshed = current_frame.clone();
-        refreshed.parent_frame_id = Some(current_frame.frame_version_id.clone());
-        refreshed.frame_version_id = format!("{}:refresh", current_frame.frame_version_id);
-        refreshed.provenance.reason = request.reason.clone();
+        let mut refreshed = Self::refreshed_frame_base(current_frame, request);
+        if matches!(
+            request.artifact,
+            Some(FrameRefreshArtifact::DitingThinkPreflight)
+        ) {
+            let extract = self
+                .resolve_diting_think_extract(current_frame, request)
+                .ok_or_else(|| {
+                    RuntimeCoreError::RequiredArtifactMissing("diting_think_preflight".to_string())
+                })?;
+            refreshed = apply_diting_think_extract_to_frame(refreshed, Some(&extract));
+            refreshed.provenance.evidence_refs.push(format!(
+                "diting_think_extract:facts={},assumptions={},verification_targets={},rules={}",
+                extract.facts.len(),
+                extract.assumptions.len(),
+                extract.verification_targets.len(),
+                extract.rules.len()
+            ));
+        }
         Ok(refreshed)
     }
+}
+
+fn frame_refresh_suffix(artifact: Option<FrameRefreshArtifact>) -> &'static str {
+    match artifact {
+        Some(FrameRefreshArtifact::WorldModelFrameRevision) => "revision",
+        Some(FrameRefreshArtifact::DitingThinkPreflight) => "diting-think",
+        Some(FrameRefreshArtifact::WorldModelFrameRefresh) | None => "refresh",
+    }
+}
+
+fn frame_refresh_artifact_name(artifact: Option<FrameRefreshArtifact>) -> &'static str {
+    match artifact {
+        Some(FrameRefreshArtifact::WorldModelFrameRevision) => "world_model_frame_revision",
+        Some(FrameRefreshArtifact::DitingThinkPreflight) => "diting_think_preflight",
+        Some(FrameRefreshArtifact::WorldModelFrameRefresh) => "world_model_frame_refresh",
+        None => "unspecified",
+    }
+}
+
+async fn request_diting_think_frame_extract(
+    runtime_request: &LocalExecutionRequest,
+    current_frame: &WorldModelFrame,
+    refresh_request: &FrameRefreshRequest,
+) -> Result<Option<DitingThinkExtract>, String> {
+    let prompt = build_diting_think_frame_refresh_prompt(current_frame, refresh_request);
+    let response = request_provider_chat_completion(
+        &runtime_request.app_state,
+        &runtime_request.model_connection.provider_model_id,
+        &runtime_request.model_connection.model_id,
+        vec![LocalChatInputMessage {
+            role: "user".to_string(),
+            content: prompt,
+            reasoning_content: None,
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
+        }],
+        inject_diting_think_tool(None),
+        Some(DITING_FRAME_REFRESH_TEMPERATURE),
+        Some(DITING_FRAME_REFRESH_MAX_TOKENS),
+        ReasoningRequestConfig {
+            enabled: runtime_request.reasoning_enabled,
+            effort: runtime_request.reasoning_effort.clone(),
+        },
+        runtime_request.trace_id.as_deref(),
+        Some(&runtime_request.session_id),
+    )
+    .await
+    .map_err(|err| err.to_string())?;
+
+    Ok(extract_chat_tool_calls(&response)
+        .into_iter()
+        .find(|call| {
+            call.name
+                .trim()
+                .eq_ignore_ascii_case(DITING_THINK_TOOL_NAME)
+        })
+        .map(|call| parse_diting_think_arguments(&call.arguments)))
+}
+
+fn build_diting_think_frame_refresh_prompt(
+    current_frame: &WorldModelFrame,
+    refresh_request: &FrameRefreshRequest,
+) -> String {
+    let frame_json =
+        serde_json::to_string_pretty(current_frame).unwrap_or_else(|_| "{}".to_string());
+    let interruption = refresh_request
+        .interruption
+        .as_ref()
+        .map(|interruption| interruption.content.as_str())
+        .unwrap_or("");
+    format!(
+        concat!(
+            "Call the `diting_think` tool exactly once to refresh the world-model frame metadata.\n",
+            "Do not answer in normal text. Use the tool call arguments to summarize intent, facts, assumptions, verification targets, and constraints.\n\n",
+            "Refresh reason:\n{reason}\n\n",
+            "User interruption, if any:\n{interruption}\n\n",
+            "Current frame JSON:\n{frame_json}\n"
+        ),
+        reason = refresh_request.reason.as_str(),
+        interruption = interruption,
+        frame_json = frame_json
+    )
+}
+
+pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) fn apply_diting_think_extract_to_frame(
+    mut frame: WorldModelFrame,
+    extract: Option<&DitingThinkExtract>,
+) -> WorldModelFrame {
+    let Some(extract) = extract else {
+        return frame;
+    };
+
+    for statement in &extract.facts {
+        if frame
+            .known_facts
+            .iter()
+            .any(|fact| fact.source == "diting_think" && fact.statement == statement.as_str())
+        {
+            continue;
+        }
+        let index = frame.known_facts.len();
+        frame.known_facts.push(Fact {
+            id: format!("diting-fact-{index}"),
+            statement: statement.clone(),
+            source: "diting_think".to_string(),
+        });
+    }
+    if !frame
+        .known_facts
+        .iter()
+        .any(|fact| fact.source == "diting_think")
+    {
+        let index = frame.known_facts.len();
+        frame.known_facts.push(Fact {
+            id: format!("diting-fact-{index}"),
+            statement: extract
+                .intent
+                .clone()
+                .unwrap_or_else(|| "diting_think preflight captured frame metadata".to_string()),
+            source: "diting_think".to_string(),
+        });
+    }
+    for statement in &extract.assumptions {
+        if frame
+            .assumptions
+            .iter()
+            .any(|assumption| assumption.statement == statement.as_str())
+        {
+            continue;
+        }
+        let index = frame.assumptions.len();
+        frame.assumptions.push(Assumption {
+            id: format!("diting-assumption-{index}"),
+            statement: statement.clone(),
+        });
+    }
+    for description in &extract.verification_targets {
+        if frame
+            .verification_targets
+            .iter()
+            .any(|target| target.description == description.as_str())
+        {
+            continue;
+        }
+        let index = frame.verification_targets.len();
+        frame.verification_targets.push(VerificationTarget {
+            id: format!("diting-vt-{index}"),
+            description: description.clone(),
+        });
+    }
+    for instruction in &extract.rules {
+        if frame
+            .adaptation_rules
+            .iter()
+            .any(|rule| rule.instruction == instruction.as_str())
+        {
+            continue;
+        }
+        let index = frame.adaptation_rules.len();
+        frame.adaptation_rules.push(Rule {
+            id: format!("diting-rule-{index}"),
+            instruction: instruction.clone(),
+        });
+    }
+    frame
+}
+
+#[cfg(test)]
+type TestDitingFrameRefreshHook = dyn Fn(&WorldModelFrame, &FrameRefreshRequest) -> Result<DitingThinkExtract, String>
+    + Send
+    + Sync
+    + 'static;
+
+#[cfg(test)]
+static TEST_DITING_FRAME_REFRESH_HOOK: OnceLock<Mutex<Option<Arc<TestDitingFrameRefreshHook>>>> =
+    OnceLock::new();
+
+#[cfg(test)]
+fn test_diting_frame_refresh_hook() -> &'static Mutex<Option<Arc<TestDitingFrameRefreshHook>>> {
+    TEST_DITING_FRAME_REFRESH_HOOK.get_or_init(|| Mutex::new(None))
+}
+
+#[cfg(test)]
+fn set_test_diting_frame_refresh_hook(hook: Option<Arc<TestDitingFrameRefreshHook>>) {
+    if let Ok(mut slot) = test_diting_frame_refresh_hook().lock() {
+        *slot = hook;
+    }
+}
+
+#[cfg(test)]
+fn invoke_test_diting_frame_refresh(
+    frame: &WorldModelFrame,
+    request: &FrameRefreshRequest,
+) -> Option<Result<DitingThinkExtract, String>> {
+    let hook = test_diting_frame_refresh_hook().lock().ok()?.clone()?;
+    Some(hook(frame, request))
 }
 
 #[derive(Default)]
@@ -626,11 +903,22 @@ impl PhaseProposalGenerator for DeetingPhaseProposalGenerator {
 }
 
 #[derive(Default)]
-pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) struct DeetingInterruptionChannel;
+pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) struct DeetingInterruptionChannel
+{
+    pending: Option<UserInterruption>,
+}
+
+impl DeetingInterruptionChannel {
+    pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) fn new(
+        pending: Option<UserInterruption>,
+    ) -> Self {
+        Self { pending }
+    }
+}
 
 impl InterruptionChannel for DeetingInterruptionChannel {
     fn next_interruption(&mut self) -> RuntimeCoreResult<Option<UserInterruption>> {
-        Ok(None)
+        Ok(self.pending.take())
     }
 }
 
@@ -696,6 +984,16 @@ mod tests {
         if let Ok(mut order) = tier2_validation_cache_order().lock() {
             order.clear();
         }
+    }
+
+    static TEST_DITING_REFRESH_STATE_LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
+
+    fn test_diting_refresh_state_lock() -> &'static std::sync::Mutex<()> {
+        TEST_DITING_REFRESH_STATE_LOCK.get_or_init(|| std::sync::Mutex::new(()))
+    }
+
+    fn clear_test_diting_refresh_state() {
+        set_test_diting_frame_refresh_hook(None);
     }
     #[test]
     fn runtime_event_store_clones_share_buffer() {
@@ -867,5 +1165,97 @@ mod tests {
 
             assert_eq!(proposal.step_type, expected_step_type);
         }
+    }
+
+    #[test]
+    fn diting_preflight_refresh_attaches_frame_metadata() {
+        let _guard = test_diting_refresh_state_lock()
+            .lock()
+            .expect("lock diting refresh state");
+        clear_test_diting_refresh_state();
+        set_test_diting_frame_refresh_hook(Some(Arc::new(|_, _| {
+            Ok(DitingThinkExtract {
+                intent: Some("refresh frame".to_string()),
+                facts: vec!["The implementation needs a live owner patch".to_string()],
+                assumptions: vec!["Assume existing runtime contracts stay stable".to_string()],
+                verification_targets: vec!["Focused cargo tests pass".to_string()],
+                rules: vec!["Keep the diff narrow".to_string()],
+            })
+        })));
+
+        let mut frame = test_frame("frame-diting-refresh");
+        frame.mark_stale();
+        let mut generator = DeetingFrameArtifactGenerator { request: None };
+
+        let refreshed = generator
+            .refresh_frame(
+                &frame,
+                &FrameRefreshRequest {
+                    reason: "hook requested diting_think".to_string(),
+                    interruption: None,
+                    artifact: Some(FrameRefreshArtifact::DitingThinkPreflight),
+                },
+            )
+            .expect("refresh frame");
+
+        assert_eq!(
+            refreshed.parent_frame_id.as_deref(),
+            Some("frame-diting-refresh")
+        );
+        assert_eq!(refreshed.status, WorldModelFrameStatus::Fresh);
+        assert_eq!(
+            refreshed
+                .known_facts
+                .first()
+                .map(|fact| fact.source.as_str()),
+            Some("diting_think")
+        );
+        assert_eq!(
+            refreshed
+                .verification_targets
+                .first()
+                .map(|target| target.description.as_str()),
+            Some("Focused cargo tests pass")
+        );
+        assert!(refreshed
+            .provenance
+            .evidence_refs
+            .iter()
+            .any(|item| item.contains("diting_think_extract")));
+        clear_test_diting_refresh_state();
+    }
+
+    #[test]
+    fn normal_frame_refresh_does_not_require_diting_extract() {
+        let _guard = test_diting_refresh_state_lock()
+            .lock()
+            .expect("lock diting refresh state");
+        clear_test_diting_refresh_state();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_for_hook = calls.clone();
+        set_test_diting_frame_refresh_hook(Some(Arc::new(move |_, _| {
+            calls_for_hook.fetch_add(1, Ordering::SeqCst);
+            Ok(DitingThinkExtract::default())
+        })));
+
+        let mut frame = test_frame("frame-normal-refresh");
+        frame.mark_stale();
+        let mut generator = DeetingFrameArtifactGenerator { request: None };
+
+        let refreshed = generator
+            .refresh_frame(
+                &frame,
+                &FrameRefreshRequest {
+                    reason: "tier2 invalid".to_string(),
+                    interruption: None,
+                    artifact: Some(FrameRefreshArtifact::WorldModelFrameRefresh),
+                },
+            )
+            .expect("refresh frame");
+
+        assert_eq!(refreshed.status, WorldModelFrameStatus::Fresh);
+        assert!(refreshed.known_facts.is_empty());
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        clear_test_diting_refresh_state();
     }
 }

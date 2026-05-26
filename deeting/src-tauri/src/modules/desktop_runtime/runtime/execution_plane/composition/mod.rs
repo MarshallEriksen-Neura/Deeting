@@ -5,16 +5,19 @@ pub(super) mod phase_step;
 use self::components::phase_executor_impl::{shared_phase_outcome, DeetingRealPhaseExecutor};
 use self::components::policy_hook_adapters::build_deeting_policy_hook_registry;
 use self::components::runtime_components::{
-    task_id_from_request, user_input_from_request, DeetingBootstrapPrompt,
-    DeetingFrameArtifactGenerator, DeetingInterruptionChannel, DeetingPhaseProposalGenerator,
-    DeetingRuntimeEventStore, DeetingTier2Validator,
+    apply_diting_think_extract_to_frame, task_id_from_request, user_input_from_request,
+    DeetingBootstrapPrompt, DeetingFrameArtifactGenerator, DeetingInterruptionChannel,
+    DeetingPhaseProposalGenerator, DeetingRuntimeEventStore, DeetingTier2Validator,
 };
-use self::phase_step::phase_step_type_name;
+use self::phase_step::{
+    initial_phase_step_for_policy, phase_step_for_observable_frame_strategy, phase_step_type_name,
+};
+use super::super::control_plane::LocalExecutionPolicy;
+use super::super::e3_readiness;
 use super::{LocalExecutionOutcome, LocalExecutionRequest};
-use crate::modules::desktop_runtime::runtime::chat_tool_runtime::DitingThinkExtract;
 use desktop_runtime_core::{
-    Assumption, Fact, HookDecision, HookEvent, Rule, RuntimeComponents, RuntimeComposition,
-    RuntimeEvent, RuntimeTickResult, TaskInputSource, VerificationTarget, WorldModelFrame,
+    HookDecision, HookEvent, PhaseStepType, RuntimeComponents, RuntimeComposition, RuntimeEvent,
+    RuntimeTickResult, TaskInputSource, WorldModelFrame,
 };
 use serde_json::{json, Value};
 
@@ -40,22 +43,24 @@ where
     let task_id = task_id_from_request(&request);
     let input = user_input_from_request(&request, task_id.clone());
     let task_input_source = request.task_input_source.clone();
+    let user_interruption = request.user_interruption.clone();
     let phase_outcome = shared_phase_outcome();
     let hook_store = request.app_state.mcp.store.clone();
     let runtime_event_store = DeetingRuntimeEventStore::default();
+    let frame_resolution_policy = request.execution_policy.clone();
     let app_state = request.app_state.clone();
     let result = {
         let components = RuntimeComponents {
             bootstrap: DeetingBootstrapPrompt::new(request.clone(), task_id, hook_store.clone()),
             validator: DeetingTier2Validator::new(app_state),
-            frame_generator: DeetingFrameArtifactGenerator::default(),
+            frame_generator: DeetingFrameArtifactGenerator::new(request.clone()),
             phase_proposal_generator: DeetingPhaseProposalGenerator::new(),
             phase_executor: DeetingRealPhaseExecutor::new(
                 request,
                 &mut emit_status,
                 phase_outcome.clone(),
             ),
-            interruptions: DeetingInterruptionChannel::default(),
+            interruptions: DeetingInterruptionChannel::new(user_interruption),
             event_store: runtime_event_store.clone(),
             hook_registry: build_deeting_policy_hook_registry(hook_store),
         };
@@ -64,29 +69,120 @@ where
     };
     let runtime_events = runtime_event_store.events();
 
-    let derived_step = result
-        .plan
-        .committed_phases
-        .first()
-        .map(|phase| phase.step_type);
+    let frame_resolved_payload = frame_resolved_status_payload(&frame_resolution_policy, &result);
     emit_status(
         "evolve",
         Some("phase_executor"),
         "success",
         "runtime.phase_executor.frame_resolved",
-        Some(json!({
-            "frame_strategy": result.frame.execution_strategy,
-            "derived_phase_step_type": derived_step.map(phase_step_type_name),
-            "phase_committed_count": result.plan.committed_phases.len(),
-            "final_answer_present": result.final_answer.is_some(),
-        })),
+        Some(frame_resolved_payload.clone()),
     );
 
     let mut outcome = phase_outcome.borrow_mut().take().ok_or_else(|| {
         "runtime composition completed without local execution outcome".to_string()
     })?;
-    attach_runtime_result_to_outcome(&mut outcome, &result, &task_input_source, &runtime_events);
+    attach_runtime_result_to_outcome(
+        &mut outcome,
+        &result,
+        &task_input_source,
+        &runtime_events,
+        &frame_resolved_payload,
+    );
     Ok(outcome)
+}
+
+fn frame_resolved_status_payload(
+    execution_policy: &LocalExecutionPolicy,
+    result: &RuntimeTickResult,
+) -> Value {
+    let legacy_policy_step = execution_policy.initial_phase_step;
+    let effective_policy_step = initial_phase_step_for_policy(execution_policy);
+    let frame_step = phase_step_for_observable_frame_strategy(result.frame.execution_strategy);
+    let committed_step = result
+        .plan
+        .committed_phases
+        .first()
+        .map(|phase| phase.step_type);
+    let frame_step_name = frame_step.map(phase_step_type_name);
+    let committed_step_name = committed_step.map(phase_step_type_name);
+    let legacy_policy_step_name = phase_step_type_name(legacy_policy_step);
+    let effective_policy_step_name = phase_step_type_name(effective_policy_step);
+    let alignment_payload =
+        frame_route_policy_alignment_payload(legacy_policy_step, effective_policy_step, frame_step);
+    let sample_eligible = frame_step.is_some();
+    let sample_exclusion_reason = frame_step_sample_exclusion_reason(frame_step);
+
+    json!({
+        "frame_strategy": result.frame.execution_strategy,
+        "derived_phase_step_type": frame_step_name,
+        "phase_committed_count": result.plan.committed_phases.len(),
+        "committed_phase_step_type": committed_step_name,
+        "final_answer_present": result.final_answer.is_some(),
+        "route_policy": {
+            "route": execution_policy.route.as_str(),
+            "initial_phase_step": legacy_policy_step_name,
+            "effective_phase_step": effective_policy_step_name,
+            "prefer_workflow_runtime": execution_policy.prefer_workflow_runtime,
+            "allow_worker_delegation": execution_policy.allow_worker_delegation,
+        },
+        "world_model_frame": {
+            "execution_strategy": result.frame.execution_strategy,
+            "derived_phase_step_type": frame_step_name,
+        },
+        "execution_phase": {
+            "first_committed_phase_step_type": committed_step_name,
+        },
+        "route_policy_alignment": alignment_payload,
+        "e3_readiness": {
+            "metric": e3_readiness::FRAME_ROUTE_OVERLAP_METRIC,
+            "contract_schema_version": e3_readiness::CONTRACT_SCHEMA_VERSION,
+            "sample_eligible": sample_eligible,
+            "sample_exclusion_reason": sample_exclusion_reason,
+            "minimum_overlap_ratio": e3_readiness::MINIMUM_OVERLAP_RATIO,
+            "minimum_observation_window_ms": e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS,
+            "observation_window": e3_readiness::OBSERVATION_WINDOW_LABEL,
+            "requires_observation_window": true,
+        },
+    })
+}
+
+fn frame_step_sample_exclusion_reason(frame_step: Option<PhaseStepType>) -> Option<&'static str> {
+    if frame_step.is_some() {
+        None
+    } else {
+        Some(e3_readiness::FRAME_STRATEGY_STEP_MISSING)
+    }
+}
+
+fn frame_route_policy_alignment_payload(
+    legacy_policy_step: PhaseStepType,
+    effective_policy_step: PhaseStepType,
+    frame_step: Option<PhaseStepType>,
+) -> Value {
+    let legacy_policy_step_name = phase_step_type_name(legacy_policy_step);
+    let effective_policy_step_name = phase_step_type_name(effective_policy_step);
+    let frame_step_name = frame_step.map(phase_step_type_name);
+    let phase_step_aligned = frame_step
+        .map(|step| step == effective_policy_step)
+        .unwrap_or(false);
+    let alignment_status = match frame_step {
+        Some(step) if step == effective_policy_step => e3_readiness::ROUTE_ALIGNMENT_MATCHED,
+        Some(_) => e3_readiness::ROUTE_ALIGNMENT_MISMATCHED,
+        None => e3_readiness::FRAME_STRATEGY_STEP_MISSING,
+    };
+    let sample_eligible = frame_step.is_some();
+    let sample_exclusion_reason = frame_step_sample_exclusion_reason(frame_step);
+
+    json!({
+        "phase_step_aligned": phase_step_aligned,
+        "status": alignment_status,
+        "sample_eligible": sample_eligible,
+        "sample_exclusion_reason": sample_exclusion_reason,
+        "comparison_basis": e3_readiness::LEGACY_EFFECTIVE_PHASE_STEP_BASIS,
+        "legacy_initial_phase_step": legacy_policy_step_name,
+        "legacy_effective_phase_step": effective_policy_step_name,
+        "frame_derived_phase_step": frame_step_name,
+    })
 }
 
 fn attach_runtime_result_to_outcome(
@@ -94,9 +190,10 @@ fn attach_runtime_result_to_outcome(
     result: &RuntimeTickResult,
     task_input_source: &TaskInputSource,
     runtime_events: &[RuntimeEvent],
+    frame_resolved_payload: &Value,
 ) {
     let committed_phases = result.plan.committed_phases.clone();
-    let frame = refreshed_frame_with_diting_extract(
+    let frame = apply_diting_think_extract_to_frame(
         result.frame.clone(),
         outcome.captured_frame_extract.as_ref(),
     );
@@ -147,6 +244,10 @@ fn attach_runtime_result_to_outcome(
                 serde_json::to_value(task_input_source).unwrap_or(Value::Null),
             );
             metadata_object.insert("runtime_composition".to_string(), artifact.clone());
+            metadata_object.insert(
+                "runtime_phase_resolution".to_string(),
+                frame_resolved_payload.clone(),
+            );
         }
         append_runtime_core_events(object, runtime_events);
         append_runtime_frame_committed_event(object, &frame, result, task_input_source);
@@ -378,6 +479,7 @@ fn hook_decision_required_artifact(decision: &HookDecision) -> Option<String> {
         _ => None,
     }
 }
+
 fn runtime_event_type(event: &RuntimeEvent) -> &'static str {
     match event {
         RuntimeEvent::UserInputReceived { .. } => "runtime_core.user_input_received",
@@ -393,6 +495,7 @@ fn runtime_event_type(event: &RuntimeEvent) -> &'static str {
         RuntimeEvent::FinalAnswerReady { .. } => "runtime_core.final_answer_ready",
     }
 }
+
 fn append_runtime_frame_committed_event(
     execution_graph: &mut serde_json::Map<String, Value>,
     frame: &WorldModelFrame,
@@ -459,59 +562,7 @@ fn task_input_source_kind(task_input_source: &TaskInputSource) -> &'static str {
         TaskInputSource::ScheduledWakeup { .. } => "scheduled_wakeup",
     }
 }
-fn refreshed_frame_with_diting_extract(
-    mut frame: WorldModelFrame,
-    extract: Option<&DitingThinkExtract>,
-) -> WorldModelFrame {
-    let Some(extract) = extract else {
-        return frame;
-    };
 
-    frame.known_facts.extend(
-        extract
-            .facts
-            .iter()
-            .enumerate()
-            .map(|(index, statement)| Fact {
-                id: format!("diting-fact-{index}"),
-                statement: statement.clone(),
-                source: "diting_think".to_string(),
-            }),
-    );
-    frame.assumptions.extend(
-        extract
-            .assumptions
-            .iter()
-            .enumerate()
-            .map(|(index, statement)| Assumption {
-                id: format!("diting-assumption-{index}"),
-                statement: statement.clone(),
-            }),
-    );
-    frame
-        .verification_targets
-        .extend(
-            extract
-                .verification_targets
-                .iter()
-                .enumerate()
-                .map(|(index, description)| VerificationTarget {
-                    id: format!("diting-vt-{index}"),
-                    description: description.clone(),
-                }),
-        );
-    frame.adaptation_rules.extend(
-        extract
-            .rules
-            .iter()
-            .enumerate()
-            .map(|(index, instruction)| Rule {
-                id: format!("diting-rule-{index}"),
-                instruction: instruction.clone(),
-            }),
-    );
-    frame
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -519,37 +570,48 @@ mod tests {
         ExecutionStrategy, FrameProvenance, FrameValidation, HookDecision, HookEnforcementMode,
         Phase, PhaseStatus, PhaseStepType, PlanArtifact, RequiredArtifact,
     };
+    use mcp_runtime::route::LocalRouteKind;
     use serde_json::json;
 
-    #[test]
-    fn attach_runtime_result_to_outcome_records_committed_frame_event() {
-        let mut frame = WorldModelFrame::new(
+    fn test_execution_policy(
+        route: LocalRouteKind,
+        initial_phase_step: PhaseStepType,
+    ) -> LocalExecutionPolicy {
+        let worker_route = route == LocalRouteKind::Worker;
+        LocalExecutionPolicy {
+            route,
+            initial_phase_step,
+            allowed_tool_names: Vec::new(),
+            inject_execution_protocol: worker_route,
+            allow_worker_delegation: worker_route,
+            prefer_workflow_runtime: false,
+            require_diting_think_preflight: false,
+            capability_snapshot: None,
+        }
+    }
+
+    fn test_frame(
+        goal: &str,
+        strategy: ExecutionStrategy,
+        route_evidence: &str,
+    ) -> WorldModelFrame {
+        WorldModelFrame::new(
             "frame-session-task",
             "session-1",
             "task-1",
-            "answer the user",
-            ExecutionStrategy::DirectIteration,
+            goal,
+            strategy,
             FrameProvenance {
                 produced_by: "deeting_runtime_composition".to_string(),
                 reason: "bootstrap frame from local execution request".to_string(),
-                evidence_refs: vec!["route:direct".to_string()],
+                evidence_refs: vec![route_evidence.to_string()],
             },
-        );
-        frame.fingerprint_key = Some("fingerprint-1".to_string());
+        )
+    }
 
-        let mut plan = PlanArtifact::new("plan-1", frame.frame_version_id.clone());
-        plan.committed_phases.push(Phase {
-            phase_id: "phase-1".to_string(),
-            step_type: PhaseStepType::DirectChat,
-            payload: json!({"source":"test"}),
-            status: PhaseStatus::Done,
-            committed_at_frame_version: frame.frame_version_id.clone(),
-            observation_ref: Some("observation-1".to_string()),
-        });
-        plan.complete();
-
-        let result = RuntimeTickResult {
-            frame: frame.clone(),
+    fn test_tick_result(frame: WorldModelFrame, plan: PlanArtifact) -> RuntimeTickResult {
+        RuntimeTickResult {
+            frame,
             plan,
             validation: FrameValidation {
                 is_valid: true,
@@ -559,7 +621,236 @@ mod tests {
                 reason: "allowed".to_string(),
             },
             final_answer: Some("done".to_string()),
-        };
+        }
+    }
+
+    fn test_committed_phase(frame: &WorldModelFrame, step_type: PhaseStepType) -> Phase {
+        Phase {
+            phase_id: "phase-1".to_string(),
+            step_type,
+            payload: json!({"source":"test"}),
+            status: PhaseStatus::Done,
+            committed_at_frame_version: frame.frame_version_id.clone(),
+            observation_ref: Some("observation-1".to_string()),
+        }
+    }
+
+    #[test]
+    fn frame_route_policy_alignment_payload_marks_overlap_status() {
+        assert_eq!(
+            frame_route_policy_alignment_payload(
+                PhaseStepType::DirectChat,
+                PhaseStepType::DirectChat,
+                Some(PhaseStepType::DirectChat),
+            ),
+            json!({
+                "phase_step_aligned": true,
+                "status": "matched",
+                "sample_eligible": true,
+                "sample_exclusion_reason": null,
+                "comparison_basis": "legacy_effective_phase_step",
+                "legacy_initial_phase_step": "direct_chat",
+                "legacy_effective_phase_step": "direct_chat",
+                "frame_derived_phase_step": "direct_chat",
+            })
+        );
+        assert_eq!(
+            frame_route_policy_alignment_payload(
+                PhaseStepType::DirectChat,
+                PhaseStepType::DirectChat,
+                Some(PhaseStepType::DelegatedWorker),
+            ),
+            json!({
+                "phase_step_aligned": false,
+                "status": "mismatched",
+                "sample_eligible": true,
+                "sample_exclusion_reason": null,
+                "comparison_basis": "legacy_effective_phase_step",
+                "legacy_initial_phase_step": "direct_chat",
+                "legacy_effective_phase_step": "direct_chat",
+                "frame_derived_phase_step": "delegated_worker",
+            })
+        );
+        assert_eq!(
+            frame_route_policy_alignment_payload(
+                PhaseStepType::DelegatedWorker,
+                PhaseStepType::DelegatedWorker,
+                None,
+            ),
+            json!({
+                "phase_step_aligned": false,
+                "status": "missing_frame_strategy_step",
+                "sample_eligible": false,
+                "sample_exclusion_reason": "missing_frame_strategy_step",
+                "comparison_basis": "legacy_effective_phase_step",
+                "legacy_initial_phase_step": "delegated_worker",
+                "legacy_effective_phase_step": "delegated_worker",
+                "frame_derived_phase_step": null,
+            })
+        );
+        assert_eq!(
+            frame_route_policy_alignment_payload(
+                PhaseStepType::DelegatedWorker,
+                PhaseStepType::DelegatedWorkflow,
+                Some(PhaseStepType::DelegatedWorkflow),
+            ),
+            json!({
+                "phase_step_aligned": true,
+                "status": "matched",
+                "sample_eligible": true,
+                "sample_exclusion_reason": null,
+                "comparison_basis": "legacy_effective_phase_step",
+                "legacy_initial_phase_step": "delegated_worker",
+                "legacy_effective_phase_step": "delegated_workflow",
+                "frame_derived_phase_step": "delegated_workflow",
+            })
+        );
+    }
+
+    #[test]
+    fn frame_resolved_status_payload_matches_direct_frame_without_committed_phase() {
+        let frame = test_frame(
+            "answer directly",
+            ExecutionStrategy::DirectIteration,
+            "route:direct",
+        );
+        let plan = PlanArtifact::new("plan-1", frame.frame_version_id.clone());
+        let result = test_tick_result(frame, plan);
+        let execution_policy =
+            test_execution_policy(LocalRouteKind::Direct, PhaseStepType::DirectChat);
+
+        let payload = frame_resolved_status_payload(&execution_policy, &result);
+
+        assert_eq!(
+            payload.pointer("/world_model_frame/derived_phase_step_type"),
+            Some(&json!("direct_chat"))
+        );
+        assert_eq!(
+            payload.pointer("/execution_phase/first_committed_phase_step_type"),
+            Some(&Value::Null)
+        );
+        assert_eq!(
+            payload.pointer("/route_policy_alignment/status"),
+            Some(&json!("matched"))
+        );
+        assert_eq!(
+            payload.pointer("/route_policy_alignment/frame_derived_phase_step"),
+            Some(&json!("direct_chat"))
+        );
+        assert_eq!(
+            payload.pointer("/e3_readiness/sample_eligible"),
+            Some(&json!(true))
+        );
+        assert_eq!(
+            payload.pointer("/e3_readiness/contract_schema_version"),
+            Some(&json!(1))
+        );
+        assert_eq!(
+            payload.pointer("/e3_readiness/minimum_overlap_ratio"),
+            Some(&json!(0.95))
+        );
+        assert_eq!(
+            payload.pointer("/e3_readiness/minimum_observation_window_ms"),
+            Some(&json!(604800000))
+        );
+    }
+
+    #[test]
+    fn frame_resolved_status_payload_records_effective_policy_phase_step() {
+        let frame = test_frame(
+            "run the workflow",
+            ExecutionStrategy::DelegatedWorkflow,
+            "route:worker",
+        );
+        let mut plan = PlanArtifact::new("plan-1", frame.frame_version_id.clone());
+        plan.committed_phases.push(test_committed_phase(
+            &frame,
+            PhaseStepType::DelegatedWorkflow,
+        ));
+        let result = test_tick_result(frame, plan);
+        let mut execution_policy =
+            test_execution_policy(LocalRouteKind::Worker, PhaseStepType::DelegatedWorker);
+        execution_policy.prefer_workflow_runtime = true;
+
+        let payload = frame_resolved_status_payload(&execution_policy, &result);
+
+        assert_eq!(
+            payload.pointer("/route_policy/initial_phase_step"),
+            Some(&json!("delegated_worker"))
+        );
+        assert_eq!(
+            payload.pointer("/route_policy/effective_phase_step"),
+            Some(&json!("delegated_workflow"))
+        );
+        assert_eq!(
+            payload.pointer("/route_policy_alignment/status"),
+            Some(&json!("matched"))
+        );
+        assert_eq!(
+            payload.pointer("/route_policy_alignment/legacy_effective_phase_step"),
+            Some(&json!("delegated_workflow"))
+        );
+        assert_eq!(
+            payload.pointer("/e3_readiness/sample_eligible"),
+            Some(&json!(true))
+        );
+    }
+
+    #[test]
+    fn frame_resolved_status_payload_excludes_hybrid_from_overlap_samples() {
+        let frame = test_frame(
+            "mix direct and workflow handling",
+            ExecutionStrategy::Hybrid,
+            "route:worker",
+        );
+        let plan = PlanArtifact::new("plan-1", frame.frame_version_id.clone());
+        let result = test_tick_result(frame, plan);
+        let execution_policy =
+            test_execution_policy(LocalRouteKind::Worker, PhaseStepType::DelegatedWorker);
+
+        let payload = frame_resolved_status_payload(&execution_policy, &result);
+
+        assert_eq!(
+            payload.pointer("/world_model_frame/derived_phase_step_type"),
+            Some(&Value::Null)
+        );
+        assert_eq!(
+            payload.pointer("/route_policy_alignment/status"),
+            Some(&json!("missing_frame_strategy_step"))
+        );
+        assert_eq!(
+            payload.pointer("/route_policy_alignment/sample_eligible"),
+            Some(&json!(false))
+        );
+        assert_eq!(
+            payload.pointer("/route_policy_alignment/sample_exclusion_reason"),
+            Some(&json!("missing_frame_strategy_step"))
+        );
+        assert_eq!(
+            payload.pointer("/e3_readiness/sample_eligible"),
+            Some(&json!(false))
+        );
+        assert_eq!(
+            payload.pointer("/e3_readiness/sample_exclusion_reason"),
+            Some(&json!("missing_frame_strategy_step"))
+        );
+    }
+
+    #[test]
+    fn attach_runtime_result_to_outcome_records_committed_frame_event() {
+        let mut frame = test_frame(
+            "answer the user",
+            ExecutionStrategy::DirectIteration,
+            "route:direct",
+        );
+        frame.fingerprint_key = Some("fingerprint-1".to_string());
+
+        let mut plan = PlanArtifact::new("plan-1", frame.frame_version_id.clone());
+        plan.committed_phases
+            .push(test_committed_phase(&frame, PhaseStepType::DirectChat));
+        plan.complete();
+
+        let result = test_tick_result(frame.clone(), plan);
         let mut outcome = LocalExecutionOutcome {
             delegated_execution: None,
             execution_graph: json!({
@@ -587,11 +878,15 @@ mod tests {
                 phase_id: "phase-1".to_string(),
             },
         ];
+        let execution_policy =
+            test_execution_policy(LocalRouteKind::Direct, PhaseStepType::DirectChat);
+        let frame_resolved_payload = frame_resolved_status_payload(&execution_policy, &result);
         attach_runtime_result_to_outcome(
             &mut outcome,
             &result,
             &TaskInputSource::UserChat,
             &runtime_events,
+            &frame_resolved_payload,
         );
 
         let graph = outcome
@@ -605,6 +900,29 @@ mod tests {
         assert_eq!(
             graph.pointer("/metadata/runtime_composition/frame/frame_version_id"),
             Some(&json!("frame-session-task"))
+        );
+        assert_eq!(
+            graph.pointer("/metadata/runtime_phase_resolution/route_policy_alignment/status"),
+            Some(&json!("matched"))
+        );
+        assert_eq!(
+            graph.pointer("/metadata/runtime_phase_resolution/e3_readiness/metric"),
+            Some(&json!("frame_route_phase_step_overlap"))
+        );
+        assert_eq!(
+            graph.pointer("/metadata/runtime_phase_resolution/e3_readiness/sample_eligible"),
+            Some(&json!(true))
+        );
+        assert_eq!(
+            graph
+                .pointer("/metadata/runtime_phase_resolution/e3_readiness/contract_schema_version"),
+            Some(&json!(1))
+        );
+        assert_eq!(
+            graph.pointer(
+                "/metadata/runtime_phase_resolution/e3_readiness/minimum_observation_window_ms"
+            ),
+            Some(&json!(604800000))
         );
 
         let event = graph

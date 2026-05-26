@@ -4,7 +4,7 @@ use super::{
 };
 use crate::modules::ai_upstream::ReasoningRequestConfig;
 use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUNDS_CONFIG_KEY};
-use crate::modules::desktop_runtime::runtime::runtime_transition::projection::{
+use crate::modules::desktop_runtime::runtime::runtime_event_projection::projection::{
     attach_runtime_transition_blocks_to_response, project_execution_observation_decision_blocks,
     project_final_answer_decision_blocks, project_tool_call_proposal_decision_blocks,
     project_tool_execution_correlation_blocks, project_world_model_frame_decision_block,
@@ -31,8 +31,10 @@ mod tool_meta;
 pub(crate) use approval_commands::{
     dispatch_local_chat_execution_run_command, ExecutionRunCommand,
 };
-pub(crate) use frame_tools::DitingThinkExtract;
-use frame_tools::{inject_diting_think_tool, DITING_THINK_TOOL_NAME};
+pub(crate) use frame_tools::{
+    inject_diting_think_tool, parse_diting_think_arguments, DitingThinkExtract,
+    DITING_THINK_TOOL_NAME,
+};
 use lifecycle::finalize_tool_round;
 #[cfg(test)]
 use lifecycle::mark_delegated_wait_event_consumed;

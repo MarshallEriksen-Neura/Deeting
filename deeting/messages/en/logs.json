@@ -213,6 +213,22 @@
       "selected": "Selected",
       "none": "None"
     },
+    "readiness": {
+      "title": "E3 route overlap gate",
+      "overlap": "Overlap",
+      "samples": "Matched / eligible",
+      "window": "Eligible / required",
+      "excluded": "Excluded",
+      "malformed": "Missing / bad E3 / graph / total",
+      "error": "Readiness unavailable: {message}",
+      "status": {
+        "ready": "Ready",
+        "collecting": "Collecting",
+        "unhealthy": "Payload issue",
+        "loading": "Loading",
+        "unavailable": "Unavailable"
+      }
+    },
     "footer": {
       "pageInfoLabel": "Page {page} of {totalPages}",
       "items": "Items",

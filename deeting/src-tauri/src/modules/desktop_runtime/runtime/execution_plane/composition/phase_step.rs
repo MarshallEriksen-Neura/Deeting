@@ -23,6 +23,17 @@ pub(crate) const fn phase_step_for_strategy(
     }
 }
 
+pub(crate) const fn phase_step_for_observable_frame_strategy(
+    strategy: ExecutionStrategy,
+) -> Option<PhaseStepType> {
+    match strategy {
+        ExecutionStrategy::DirectIteration => Some(PhaseStepType::DirectChat),
+        ExecutionStrategy::DelegatedWorkflow => Some(PhaseStepType::DelegatedWorkflow),
+        ExecutionStrategy::DelegatedAgent => Some(PhaseStepType::DelegatedWorker),
+        ExecutionStrategy::Hybrid => None,
+    }
+}
+
 pub(crate) const fn phase_step_type_name(step_type: PhaseStepType) -> &'static str {
     match step_type {
         PhaseStepType::DirectChat => "direct_chat",
@@ -74,6 +85,26 @@ mod tests {
         assert_eq!(
             phase_step_for_strategy(ExecutionStrategy::Hybrid, PhaseStepType::DelegatedWorker,),
             PhaseStepType::DelegatedWorker
+        );
+    }
+
+    #[test]
+    fn observable_frame_strategy_keeps_hybrid_out_of_overlap_samples() {
+        assert_eq!(
+            phase_step_for_observable_frame_strategy(ExecutionStrategy::DirectIteration),
+            Some(PhaseStepType::DirectChat)
+        );
+        assert_eq!(
+            phase_step_for_observable_frame_strategy(ExecutionStrategy::DelegatedWorkflow),
+            Some(PhaseStepType::DelegatedWorkflow)
+        );
+        assert_eq!(
+            phase_step_for_observable_frame_strategy(ExecutionStrategy::DelegatedAgent),
+            Some(PhaseStepType::DelegatedWorker)
+        );
+        assert_eq!(
+            phase_step_for_observable_frame_strategy(ExecutionStrategy::Hybrid),
+            None
         );
     }
 }

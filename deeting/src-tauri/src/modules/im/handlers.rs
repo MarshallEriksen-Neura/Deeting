@@ -8,6 +8,7 @@ use crate::modules::im::{
     ToastResponse, ToastType,
 };
 use crate::state::AppState;
+use desktop_runtime_core::{ApprovalInheritance, TaskInputSource};
 
 pub(crate) use crate::modules::conversation::service::build_text_approval_prompt;
 
@@ -238,8 +239,14 @@ pub(crate) async fn generate_local_chat_reply_outcome(
     text: &str,
     session_id: &str,
 ) -> Result<Option<LocalChatReplyOutcome>, String> {
-    let Some(response) =
-        conversation::execute_text_chat_raw(app_state, app_handle, text, session_id).await?
+    let Some(response) = conversation::execute_text_chat_raw_with_input_source(
+        app_state,
+        app_handle,
+        text,
+        session_id,
+        Some(im_task_input_source(session_id)),
+    )
+    .await?
     else {
         return Ok(None);
     };
@@ -247,6 +254,14 @@ pub(crate) async fn generate_local_chat_reply_outcome(
     let response = conversation::compact_im_reply_response(&response);
 
     Ok(extract_local_chat_reply_outcome(&response))
+}
+
+fn im_task_input_source(session_id: &str) -> TaskInputSource {
+    TaskInputSource::AgentDelegation {
+        parent_task_id: session_id.trim().to_string(),
+        delegated_by: "im_runtime".to_string(),
+        approval_inheritance: ApprovalInheritance::UserRequired,
+    }
 }
 
 pub(crate) async fn build_direct_card_action_outcome(

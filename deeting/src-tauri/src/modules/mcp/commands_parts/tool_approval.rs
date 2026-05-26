@@ -2,7 +2,7 @@ use super::{
     runtime::{ApprovePersistMode, RejectPersistMode},
     support::*,
 };
-use crate::modules::desktop_runtime::runtime::runtime_transition::trace_contract::runtime_transition_trace_verdict_response;
+use crate::modules::desktop_runtime::runtime::runtime_event_projection::trace_contract::runtime_transition_trace_verdict_response;
 use crate::modules::desktop_runtime::runtime::{
     dispatch_local_chat_execution_run_command, list_canonical_pending_local_approval_snapshots,
     list_execution_graph_snapshots_for_session, load_execution_graph_snapshot, ExecutionRunCommand,

@@ -1,13 +1,15 @@
 use crate::error::RuntimeCoreResult;
 use crate::event::RuntimeEvent;
-use crate::frame::{ExecutionStrategy, FrameBootstrapOutput, FrameProvenance, WorldModelFrame};
+use crate::frame::{
+    ExecutionStrategy, Fact, FrameBootstrapOutput, FrameProvenance, WorldModelFrame,
+};
 use crate::plan::{Phase, PhaseProposal, PhaseStepType, PlanArtifact};
 use crate::runtime::{
     build_default_hook_registry, RuntimeComponents, RuntimeComposition, RuntimeTickResult,
 };
 use crate::task::{
-    FrameRefreshRequest, FrameValidation, PhaseObservation, TaskInputSource, UserInput,
-    UserInterruption,
+    FrameRefreshArtifact, FrameRefreshRequest, FrameValidation, PhaseObservation, TaskInputSource,
+    UserInput, UserInterruption,
 };
 use crate::traits::{
     BootstrapPrompt, EventStore, FrameArtifactGenerator, InterruptionChannel, PhaseExecutor,
@@ -54,9 +56,23 @@ impl FrameArtifactGenerator for DemoFrameArtifactGenerator {
     fn refresh_frame(
         &mut self,
         current_frame: &WorldModelFrame,
-        _request: &FrameRefreshRequest,
+        request: &FrameRefreshRequest,
     ) -> RuntimeCoreResult<WorldModelFrame> {
-        Ok(current_frame.clone())
+        let mut refreshed = current_frame.clone();
+        refreshed.parent_frame_id = Some(current_frame.frame_version_id.clone());
+        refreshed.frame_version_id = format!("{}:demo-refresh", current_frame.frame_version_id);
+        refreshed.provenance = FrameProvenance::bootstrap(request.reason.clone());
+        if matches!(
+            request.artifact,
+            Some(FrameRefreshArtifact::DitingThinkPreflight)
+        ) {
+            refreshed.known_facts.push(Fact {
+                id: "demo-diting-fact".to_string(),
+                statement: "demo diting preflight completed".to_string(),
+                source: "diting_think".to_string(),
+            });
+        }
+        Ok(refreshed)
     }
 }
 
@@ -92,6 +108,7 @@ impl PhaseExecutor for DemoPhaseExecutor {
             summary: "demo phase completed".to_string(),
             goal_satisfied: true,
             frame_still_valid: true,
+            hook_events: Vec::new(),
         })
     }
 }

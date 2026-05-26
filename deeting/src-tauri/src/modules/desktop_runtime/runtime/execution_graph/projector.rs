@@ -4,11 +4,11 @@ use super::types::{
     LocalExecutionGraphNode, LocalExecutionGraphNodeStatus, LocalExecutionGraphNodeType,
     LocalExecutionGraphSnapshot, LocalExecutionGraphStateScope, EXECUTION_GRAPH_SCHEMA_VERSION,
 };
-use crate::modules::desktop_runtime::runtime::runtime_transition::projection::{
+use crate::modules::desktop_runtime::runtime::runtime_event_projection::projection::{
     RUNTIME_TRANSITION_CORRELATION_BLOCK_TYPE, RUNTIME_TRANSITION_CORRELATION_EVENT_TYPE,
     RUNTIME_TRANSITION_DECISION_BLOCK_TYPE, RUNTIME_TRANSITION_DECISION_EVENT_TYPE,
 };
-use crate::modules::desktop_runtime::runtime::runtime_transition::trace_contract::project_runtime_transition_trace_verdicts;
+use crate::modules::desktop_runtime::runtime::runtime_event_projection::trace_contract::project_runtime_transition_trace_verdicts;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 

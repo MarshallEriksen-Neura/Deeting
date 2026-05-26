@@ -1,9 +1,14 @@
 use mcp_registry::diagnostics::{
     build_control_plane_asset_map, build_parity_item, build_registry_buckets,
 };
+use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, State};
 
+use crate::modules::desktop_runtime::runtime::e3_readiness;
+use crate::modules::desktop_runtime::runtime::execution_graph_store::{
+    summarize_frame_route_overlap_readiness, FrameRouteOverlapReadiness,
+};
 use crate::state::AppState;
 use mcp_registry::types::{
     LocalCapabilityRegistryDiagnosticsItem, LocalCapabilityRegistryDiagnosticsResponse,
@@ -27,6 +32,73 @@ use mcp_session::admin::{
 
 fn to_string(error: impl std::fmt::Display) -> String {
     error.to_string()
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LocalFrameRouteOverlapReadinessResponse {
+    pub metric: &'static str,
+    pub contract_schema_version: i64,
+    pub observation_window: &'static str,
+    pub window_start_unix_ms: Option<i64>,
+    pub window_end_unix_ms: Option<i64>,
+    pub observed_payload_start_unix_ms: Option<i64>,
+    pub observed_payload_end_unix_ms: Option<i64>,
+    pub eligible_sample_start_unix_ms: Option<i64>,
+    pub eligible_sample_end_unix_ms: Option<i64>,
+    pub observation_window_ms: Option<i64>,
+    pub minimum_observation_window_ms: i64,
+    pub observation_window_met: bool,
+    pub graph_count: usize,
+    pub malformed_payload_count: usize,
+    pub malformed_graph_payload_count: usize,
+    pub malformed_e3_payload_count: usize,
+    pub missing_e3_payload_count: usize,
+    pub observed_payload_count: usize,
+    pub eligible_sample_count: usize,
+    pub matched_sample_count: usize,
+    pub mismatched_sample_count: usize,
+    pub excluded_sample_count: usize,
+    pub overlap_ratio: Option<f64>,
+    pub minimum_overlap_ratio: f64,
+    pub overlap_threshold_met: bool,
+    pub e3_payload_coverage_met: bool,
+    pub e3_payload_health_met: bool,
+    pub threshold_met: bool,
+}
+
+impl From<FrameRouteOverlapReadiness> for LocalFrameRouteOverlapReadinessResponse {
+    fn from(readiness: FrameRouteOverlapReadiness) -> Self {
+        Self {
+            metric: readiness.metric,
+            contract_schema_version: readiness.contract_schema_version,
+            observation_window: readiness.observation_window,
+            window_start_unix_ms: readiness.window_start_unix_ms,
+            window_end_unix_ms: readiness.window_end_unix_ms,
+            observed_payload_start_unix_ms: readiness.observed_payload_start_unix_ms,
+            observed_payload_end_unix_ms: readiness.observed_payload_end_unix_ms,
+            eligible_sample_start_unix_ms: readiness.eligible_sample_start_unix_ms,
+            eligible_sample_end_unix_ms: readiness.eligible_sample_end_unix_ms,
+            observation_window_ms: readiness.observation_window_ms,
+            minimum_observation_window_ms: readiness.minimum_observation_window_ms,
+            observation_window_met: readiness.observation_window_met,
+            graph_count: readiness.graph_count,
+            malformed_payload_count: readiness.malformed_payload_count,
+            malformed_graph_payload_count: readiness.malformed_graph_payload_count,
+            malformed_e3_payload_count: readiness.malformed_e3_payload_count,
+            missing_e3_payload_count: readiness.missing_e3_payload_count,
+            observed_payload_count: readiness.observed_payload_count,
+            eligible_sample_count: readiness.eligible_sample_count,
+            matched_sample_count: readiness.matched_sample_count,
+            mismatched_sample_count: readiness.mismatched_sample_count,
+            excluded_sample_count: readiness.excluded_sample_count,
+            overlap_ratio: readiness.overlap_ratio,
+            minimum_overlap_ratio: readiness.minimum_overlap_ratio,
+            overlap_threshold_met: readiness.overlap_threshold_met,
+            e3_payload_coverage_met: readiness.e3_payload_coverage_met,
+            e3_payload_health_met: readiness.e3_payload_health_met,
+            threshold_met: readiness.threshold_met,
+        }
+    }
 }
 
 #[tauri::command]
@@ -394,6 +466,27 @@ pub async fn get_local_gateway_log_stats(
         .get_local_gateway_log_stats(query.unwrap_or_default())
         .await
         .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn get_local_frame_route_overlap_readiness(
+    state: State<'_, AppState>,
+    window_start_unix_ms: Option<i64>,
+    window_end_unix_ms: Option<i64>,
+) -> Result<LocalFrameRouteOverlapReadinessResponse, String> {
+    e3_readiness::validate_frame_route_overlap_readiness_window(
+        window_start_unix_ms,
+        window_end_unix_ms,
+    )
+    .map_err(str::to_string)?;
+    summarize_frame_route_overlap_readiness(
+        state.mcp.store.as_ref(),
+        window_start_unix_ms,
+        window_end_unix_ms,
+    )
+    .await
+    .map(LocalFrameRouteOverlapReadinessResponse::from)
+    .map_err(to_string)
 }
 
 #[tauri::command]
@@ -828,4 +921,41 @@ async fn persist_action_log(
         .create_local_maintenance_log(kind, status, &message, details.as_ref())
         .await
         .map_err(to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::modules::desktop_runtime::runtime::e3_readiness::{
+        validate_frame_route_overlap_readiness_window, WINDOW_END_NEGATIVE_ERROR,
+        WINDOW_REVERSED_ERROR, WINDOW_START_NEGATIVE_ERROR,
+    };
+
+    #[test]
+    fn frame_route_overlap_readiness_window_accepts_open_and_ordered_bounds() {
+        assert!(validate_frame_route_overlap_readiness_window(None, None).is_ok());
+        assert!(validate_frame_route_overlap_readiness_window(Some(0), None).is_ok());
+        assert!(validate_frame_route_overlap_readiness_window(None, Some(100)).is_ok());
+        assert!(validate_frame_route_overlap_readiness_window(Some(0), Some(100)).is_ok());
+        assert!(validate_frame_route_overlap_readiness_window(Some(100), Some(100)).is_ok());
+    }
+
+    #[test]
+    fn frame_route_overlap_readiness_window_rejects_negative_bounds() {
+        assert_eq!(
+            validate_frame_route_overlap_readiness_window(Some(-1), Some(100)),
+            Err(WINDOW_START_NEGATIVE_ERROR)
+        );
+        assert_eq!(
+            validate_frame_route_overlap_readiness_window(Some(0), Some(-1)),
+            Err(WINDOW_END_NEGATIVE_ERROR)
+        );
+    }
+
+    #[test]
+    fn frame_route_overlap_readiness_window_rejects_reversed_bounds() {
+        assert_eq!(
+            validate_frame_route_overlap_readiness_window(Some(101), Some(100)),
+            Err(WINDOW_REVERSED_ERROR)
+        );
+    }
 }

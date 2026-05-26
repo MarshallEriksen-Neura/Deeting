@@ -6,12 +6,12 @@ use crate::hook::{
     RequiredArtifact, RuntimeStateView,
 };
 use crate::plan::{PhaseProposal, PhaseStatus, PlanArtifact};
-use crate::task::{FrameRefreshRequest, FrameValidation, UserInput};
+use crate::task::{FrameRefreshArtifact, FrameRefreshRequest, FrameValidation, UserInput};
 use crate::traits::{
     BootstrapPrompt, EventStore, FrameArtifactGenerator, InterruptionChannel, PhaseExecutor,
     PhaseProposalGenerator, Tier2Validator,
 };
-use serde_json::{json, Value};
+use serde_json::json;
 
 const MAX_PHASE_ITERATIONS: usize = 8;
 
@@ -79,6 +79,7 @@ where
                 &FrameRefreshRequest {
                     reason: validation.reason.clone(),
                     interruption: None,
+                    artifact: Some(FrameRefreshArtifact::WorldModelFrameRefresh),
                 },
             )?;
             self.components
@@ -111,6 +112,7 @@ where
                 &FrameRefreshRequest {
                     reason: "user interruption arrived before commit boundary".to_string(),
                     interruption: Some(interruption),
+                    artifact: Some(FrameRefreshArtifact::WorldModelFrameRefresh),
                 },
             )?;
             self.components
@@ -140,11 +142,14 @@ where
                 || decision.contains_required_artifact(RequiredArtifact::WorldModelFrameRevision)
                 || decision.contains_required_artifact(RequiredArtifact::DitingThinkPreflight)
             {
+                let artifact = frame_refresh_artifact_for_decision(&decision)
+                    .unwrap_or(FrameRefreshArtifact::WorldModelFrameRefresh);
                 frame = self.components.frame_generator.refresh_frame(
                     &frame,
                     &FrameRefreshRequest {
                         reason: "hook requested frame artifact before next phase".to_string(),
                         interruption: None,
+                        artifact: Some(artifact),
                     },
                 )?;
                 self.components
@@ -205,11 +210,29 @@ where
             }
             if execution_decision.contains_required_artifact(RequiredArtifact::DitingThinkPreflight)
             {
-                annotate_phase_proposal_required_artifact(
-                    &mut plan,
-                    &proposal_id,
-                    RequiredArtifact::DitingThinkPreflight,
-                );
+                frame = self.components.frame_generator.refresh_frame(
+                    &frame,
+                    &FrameRefreshRequest {
+                        reason: "hook requested diting_think preflight before phase execution"
+                            .to_string(),
+                        interruption: None,
+                        artifact: Some(FrameRefreshArtifact::DitingThinkPreflight),
+                    },
+                )?;
+                self.components
+                    .event_store
+                    .append_event(RuntimeEvent::FrameRefreshed {
+                        frame_version_id: frame.frame_version_id.clone(),
+                    })?;
+                plan = PlanArtifact::from_frame(format!("plan:{}", frame.frame_version_id), &frame);
+                validation = self
+                    .components
+                    .validator
+                    .validate_frame(&frame, Some(&plan))?;
+                if !validation.is_valid {
+                    frame.mark_insufficient_for_commit();
+                }
+                continue;
             }
 
             let phase = plan.commit_proposal(&proposal_id, phase_id)?;
@@ -222,6 +245,8 @@ where
                 .components
                 .phase_executor
                 .execute_phase(&frame, &phase)?;
+            let candidate_memory_facts =
+                candidate_memory_facts_from_observation(&phase.phase_id, &observation);
             plan.mark_phase_observed(
                 &phase.phase_id,
                 PhaseStatus::Done,
@@ -258,12 +283,15 @@ where
                     phase_id: phase.phase_id.clone(),
                     observation_ref: observation.observation_ref.clone(),
                 })?;
+            for hook_event in observation.hook_events.clone() {
+                self.evaluate_hook_event_and_record(hook_event, &frame, Some(&plan))?;
+            }
             if !observation.frame_still_valid {
                 frame.mark_contradicted();
                 self.evaluate_hook_event_and_record(
                     HookEvent::PhaseCompleted {
                         phase_id: phase.phase_id.clone(),
-                        candidate_memory_facts: Vec::new(),
+                        candidate_memory_facts: candidate_memory_facts.clone(),
                     },
                     &frame,
                     Some(&plan),
@@ -276,7 +304,7 @@ where
                 self.evaluate_hook_event_and_record(
                     HookEvent::PhaseCompleted {
                         phase_id: phase.phase_id.clone(),
-                        candidate_memory_facts: Vec::new(),
+                        candidate_memory_facts: candidate_memory_facts.clone(),
                     },
                     &frame,
                     Some(&plan),
@@ -287,7 +315,7 @@ where
             self.evaluate_hook_event_and_record(
                 HookEvent::PhaseCompleted {
                     phase_id: phase.phase_id.clone(),
-                    candidate_memory_facts: Vec::new(),
+                    candidate_memory_facts,
                 },
                 &frame,
                 Some(&plan),
@@ -395,35 +423,36 @@ where
     }
 }
 
-fn annotate_phase_proposal_required_artifact(
-    plan: &mut PlanArtifact,
-    proposal_id: &str,
-    artifact: RequiredArtifact,
-) {
-    let Some(proposal) = plan
-        .proposed_phases
-        .iter_mut()
-        .find(|proposal| proposal.proposal_id == proposal_id)
-    else {
-        return;
-    };
-    if !proposal.payload.is_object() {
-        let original = std::mem::replace(&mut proposal.payload, json!({}));
-        proposal.payload["payload"] = original;
+fn frame_refresh_artifact_for_decision(decision: &HookDecision) -> Option<FrameRefreshArtifact> {
+    if decision.contains_required_artifact(RequiredArtifact::WorldModelFrameRevision) {
+        return Some(FrameRefreshArtifact::WorldModelFrameRevision);
     }
-    let Some(object) = proposal.payload.as_object_mut() else {
-        return;
-    };
-    let artifact_value = serde_json::to_value(artifact).unwrap_or(Value::Null);
-    let artifacts = object
-        .entry("runtime_required_artifacts".to_string())
-        .or_insert_with(|| json!([]));
-    let Some(artifacts) = artifacts.as_array_mut() else {
-        return;
-    };
-    if !artifacts.iter().any(|item| item == &artifact_value) {
-        artifacts.push(artifact_value);
+    if decision.contains_required_artifact(RequiredArtifact::WorldModelFrameRefresh) {
+        return Some(FrameRefreshArtifact::WorldModelFrameRefresh);
     }
+    if decision.contains_required_artifact(RequiredArtifact::DitingThinkPreflight) {
+        return Some(FrameRefreshArtifact::DitingThinkPreflight);
+    }
+    None
+}
+
+fn candidate_memory_facts_from_observation(
+    phase_id: &str,
+    observation: &crate::task::PhaseObservation,
+) -> Vec<serde_json::Value> {
+    let summary = observation.summary.trim();
+    if summary.is_empty() {
+        return Vec::new();
+    }
+
+    vec![json!({
+        "kind": "phase_observation_summary",
+        "phase_id": phase_id,
+        "observation_ref": observation.observation_ref.clone(),
+        "summary": summary,
+        "goal_satisfied": observation.goal_satisfied,
+        "frame_still_valid": observation.frame_still_valid,
+    })]
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -440,6 +469,10 @@ pub fn build_default_hook_registry() -> HookRegistry {
     registry.register(PlanDraftHook);
     registry.register(FrameFreshnessHook);
     registry.register(crate::hook::DitingThinkPreflightHook);
+    registry.register(crate::hook::RuntimeApprovalHook);
+    registry.register(crate::hook::RuntimeCompressionHook);
+    registry.register(crate::hook::RuntimeMemoryHook);
+    registry.register(crate::hook::RuntimeCapabilityChangeHook);
     registry
 }
 
@@ -448,13 +481,14 @@ mod tests {
     use super::*;
     use crate::event::RuntimeEvent;
     use crate::frame::{
-        ExecutionStrategy, FrameBootstrapOutput, FrameProvenance, WorldModelFrame,
+        ExecutionStrategy, Fact, FrameBootstrapOutput, FrameProvenance, WorldModelFrame,
         WorldModelFrameStatus,
     };
     use crate::hook::{HookDecision, HookEnforcementMode, RequiredArtifact};
     use crate::plan::{Phase, PhaseProposal, PhaseStatus, PhaseStepType, PlanStatus};
     use crate::task::{
-        FrameRefreshRequest, FrameValidation, PhaseObservation, TaskInputSource, UserInterruption,
+        FrameRefreshArtifact, FrameRefreshRequest, FrameValidation, PhaseObservation,
+        TaskInputSource, UserInterruption,
     };
     use crate::traits::{
         BootstrapPrompt, EventStore, FrameArtifactGenerator, InterruptionChannel, PhaseExecutor,
@@ -510,6 +544,16 @@ mod tests {
             refreshed.parent_frame_id = Some(current_frame.frame_version_id.clone());
             refreshed.frame_version_id = format!("{}:refreshed", current_frame.frame_version_id);
             refreshed.provenance = FrameProvenance::bootstrap(request.reason.clone());
+            if matches!(
+                request.artifact,
+                Some(FrameRefreshArtifact::DitingThinkPreflight)
+            ) {
+                refreshed.known_facts.push(Fact {
+                    id: "diting-fact-1".to_string(),
+                    statement: "diting preflight completed".to_string(),
+                    source: "diting_think".to_string(),
+                });
+            }
             Ok(refreshed)
         }
     }
@@ -546,6 +590,7 @@ mod tests {
                 summary: "phase finished".to_string(),
                 goal_satisfied: true,
                 frame_still_valid: true,
+                hook_events: Vec::new(),
             })
         }
     }
@@ -605,11 +650,21 @@ mod tests {
         assert_eq!(result.plan.plan_status, PlanStatus::Completed);
         assert_eq!(result.plan.committed_phases.len(), 1);
         assert_eq!(result.plan.committed_phases[0].status, PhaseStatus::Done);
+        assert!(result.plan.committed_phases[0]
+            .payload
+            .pointer("/runtime_required_artifacts/0")
+            .is_none());
         assert_eq!(
-            result.plan.committed_phases[0]
-                .payload
-                .pointer("/runtime_required_artifacts/0"),
-            Some(&json!("diting_think_preflight"))
+            result.plan.committed_phases[0].committed_at_frame_version,
+            "frame-1:refreshed"
+        );
+        assert_eq!(
+            result
+                .frame
+                .known_facts
+                .first()
+                .map(|fact| fact.source.as_str()),
+            Some("diting_think")
         );
         assert!(matches!(
             result.decision,
@@ -620,6 +675,25 @@ mod tests {
             }
         ));
         assert!(result.final_answer.is_some());
+    }
+
+    #[test]
+    fn phase_observation_summary_becomes_candidate_memory_fact() {
+        let facts = candidate_memory_facts_from_observation(
+            "phase-1",
+            &PhaseObservation {
+                observation_ref: "observation-1".to_string(),
+                summary: "phase finished".to_string(),
+                goal_satisfied: true,
+                frame_still_valid: true,
+                hook_events: Vec::new(),
+            },
+        );
+
+        assert_eq!(facts.len(), 1);
+        assert_eq!(facts[0]["kind"], json!("phase_observation_summary"));
+        assert_eq!(facts[0]["phase_id"], json!("phase-1"));
+        assert_eq!(facts[0]["summary"], json!("phase finished"));
     }
 
     #[test]
@@ -649,10 +723,13 @@ mod tests {
             })
             .expect("runtime tick");
 
-        assert_eq!(result.frame.parent_frame_id.as_deref(), Some("frame-1"));
+        assert_eq!(
+            result.frame.parent_frame_id.as_deref(),
+            Some("frame-1:refreshed")
+        );
         assert_eq!(
             result.plan.committed_phases[0].committed_at_frame_version,
-            "frame-1:refreshed"
+            "frame-1:refreshed:refreshed"
         );
     }
 }

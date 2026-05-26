@@ -1,4 +1,4 @@
-use crate::modules::desktop_runtime::runtime::runtime_transition::projection::runtime_transition_response_field;
+use crate::modules::desktop_runtime::runtime::runtime_event_projection::projection::runtime_transition_response_field;
 use crate::modules::desktop_runtime::runtime::{
     project_execution_graph_snapshot, GraphProjectionInput, LocalExecutionPolicy,
 };

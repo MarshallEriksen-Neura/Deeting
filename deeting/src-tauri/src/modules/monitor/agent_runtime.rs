@@ -303,6 +303,7 @@ pub(crate) async fn execute_monitor_task_agent(
             explicit_task_agent_profile_override: Some(effective_profile),
             root_execution_id: Some(execution_id.to_string()),
             task_input_source: monitor_task_input_source_for_run(task, Some(execution_id)),
+            user_interruption: None,
             messages: vec![LocalChatInputMessage {
                 role: "user".to_string(),
                 content: message.to_string(),

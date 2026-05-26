@@ -10,6 +10,7 @@ import {
   fetchAdminGatewayLogStats,
   fetchAdminPendingReviewCounts,
   fetchAdminPluginMarketReviews,
+  fetchLocalFrameRouteOverlapReadiness,
   fetchLocalConversationSummaryIdleTasks,
   fetchLocalConversationSummaryJobs,
   fetchLocalConversationSummaryQueueStats,
@@ -37,11 +38,51 @@ const windowWithTauri = window as Window & {
   __TAURI_INTERNALS__?: unknown
 }
 
+function frameRouteOverlapReadinessPayload(
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
+  return {
+    metric: "frame_route_phase_step_overlap",
+    contract_schema_version: 1,
+    observation_window: "1-2w",
+    window_start_unix_ms: 1000,
+    window_end_unix_ms: 604801000,
+    observed_payload_start_unix_ms: 1000,
+    observed_payload_end_unix_ms: 604801000,
+    eligible_sample_start_unix_ms: 1000,
+    eligible_sample_end_unix_ms: 604801000,
+    observation_window_ms: 604800000,
+    minimum_observation_window_ms: 604800000,
+    observation_window_met: true,
+    graph_count: 10,
+    malformed_payload_count: 0,
+    malformed_graph_payload_count: 0,
+    malformed_e3_payload_count: 0,
+    missing_e3_payload_count: 0,
+    observed_payload_count: 10,
+    eligible_sample_count: 8,
+    matched_sample_count: 8,
+    mismatched_sample_count: 0,
+    excluded_sample_count: 2,
+    overlap_ratio: 1,
+    minimum_overlap_ratio: 0.95,
+    overlap_threshold_met: true,
+    e3_payload_coverage_met: true,
+    e3_payload_health_met: true,
+    threshold_met: true,
+    ...overrides,
+  }
+}
+
 describe("admin dashboard api", () => {
   afterEach(() => {
     mockRequest.mockReset()
     mockInvoke.mockReset()
-    process.env.NEXT_PUBLIC_IS_TAURI = originalTauriFlag
+    if (originalTauriFlag === undefined) {
+      delete process.env.NEXT_PUBLIC_IS_TAURI
+    } else {
+      process.env.NEXT_PUBLIC_IS_TAURI = originalTauriFlag
+    }
     delete windowWithTauri.__TAURI__
     delete windowWithTauri.__TAURI_INTERNALS__
   })
@@ -704,6 +745,658 @@ describe("admin dashboard api", () => {
       },
     })
     expect(mockInvoke).not.toHaveBeenCalled()
+  })
+
+  it("gets local frame-route overlap readiness via tauri command", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(frameRouteOverlapReadinessPayload())
+
+    const result = await fetchLocalFrameRouteOverlapReadiness({
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+
+    expect(result.threshold_met).toBe(true)
+    expect(result.metric).toBe("frame_route_phase_step_overlap")
+    expect(result.contract_schema_version).toBe(1)
+    expect(result.observation_window).toBe("1-2w")
+    expect(result.observation_window_met).toBe(true)
+    expect(result.overlap_threshold_met).toBe(true)
+    expect(result.e3_payload_coverage_met).toBe(true)
+    expect(result.e3_payload_health_met).toBe(true)
+    expect(result.minimum_observation_window_ms).toBe(604800000)
+    expect(result.malformed_payload_count).toBe(0)
+    expect(result.malformed_graph_payload_count).toBe(0)
+    expect(result.malformed_e3_payload_count).toBe(0)
+    expect(result.missing_e3_payload_count).toBe(0)
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("gets local frame-route overlap readiness without a bounded request window", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(
+      frameRouteOverlapReadinessPayload({
+        window_start_unix_ms: null,
+        window_end_unix_ms: null,
+      })
+    )
+
+    const result = await fetchLocalFrameRouteOverlapReadiness()
+
+    expect(result.window_start_unix_ms).toBeNull()
+    expect(result.window_end_unix_ms).toBeNull()
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: undefined,
+      windowEndUnixMs: undefined,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("gets local frame-route overlap readiness with open-ended request windows", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValueOnce(
+      frameRouteOverlapReadinessPayload({
+        window_end_unix_ms: null,
+      })
+    )
+
+    const fromStart = await fetchLocalFrameRouteOverlapReadiness({
+      windowStartUnixMs: 1000,
+    })
+
+    expect(fromStart.window_start_unix_ms).toBe(1000)
+    expect(fromStart.window_end_unix_ms).toBeNull()
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, "get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: undefined,
+    })
+
+    mockInvoke.mockResolvedValueOnce(
+      frameRouteOverlapReadinessPayload({
+        window_start_unix_ms: null,
+      })
+    )
+
+    const untilEnd = await fetchLocalFrameRouteOverlapReadiness({
+      windowEndUnixMs: 604801000,
+    })
+
+    expect(untilEnd.window_start_unix_ms).toBeNull()
+    expect(untilEnd.window_end_unix_ms).toBe(604801000)
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: undefined,
+      windowEndUnixMs: 604801000,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("accepts collecting frame-route overlap readiness with nullable ranges", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(
+      frameRouteOverlapReadinessPayload({
+        window_start_unix_ms: 1000,
+        window_end_unix_ms: 2000,
+        observed_payload_start_unix_ms: null,
+        observed_payload_end_unix_ms: null,
+        eligible_sample_start_unix_ms: null,
+        eligible_sample_end_unix_ms: null,
+        observation_window_ms: null,
+        minimum_observation_window_ms: 604800000,
+        observation_window_met: false,
+        graph_count: 0,
+        malformed_payload_count: 0,
+        malformed_graph_payload_count: 0,
+        malformed_e3_payload_count: 0,
+        missing_e3_payload_count: 0,
+        observed_payload_count: 0,
+        eligible_sample_count: 0,
+        matched_sample_count: 0,
+        mismatched_sample_count: 0,
+        excluded_sample_count: 0,
+        overlap_ratio: null,
+        minimum_overlap_ratio: 0.95,
+        overlap_threshold_met: false,
+        e3_payload_coverage_met: true,
+        e3_payload_health_met: true,
+        threshold_met: false,
+      })
+    )
+
+    const result = await fetchLocalFrameRouteOverlapReadiness({
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 2000,
+    })
+
+    expect(result.threshold_met).toBe(false)
+    expect(result.overlap_ratio).toBeNull()
+    expect(result.observation_window_ms).toBeNull()
+    expect(result.eligible_sample_start_unix_ms).toBeNull()
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 2000,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("accepts unhealthy frame-route overlap readiness when e3 payload health fails", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(
+      frameRouteOverlapReadinessPayload({
+        graph_count: 11,
+        malformed_payload_count: 2,
+        malformed_graph_payload_count: 1,
+        malformed_e3_payload_count: 1,
+        excluded_sample_count: 1,
+        e3_payload_health_met: false,
+        threshold_met: false,
+      })
+    )
+
+    const result = await fetchLocalFrameRouteOverlapReadiness({
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+
+    expect(result.observation_window_met).toBe(true)
+    expect(result.overlap_threshold_met).toBe(true)
+    expect(result.e3_payload_coverage_met).toBe(true)
+    expect(result.e3_payload_health_met).toBe(false)
+    expect(result.threshold_met).toBe(false)
+    expect(result.malformed_payload_count).toBe(2)
+    expect(result.malformed_graph_payload_count).toBe(1)
+    expect(result.malformed_e3_payload_count).toBe(1)
+    expect(result.missing_e3_payload_count).toBe(0)
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("accepts unhealthy frame-route overlap readiness when E3 payload coverage fails", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(
+      frameRouteOverlapReadinessPayload({
+        graph_count: 11,
+        missing_e3_payload_count: 1,
+        e3_payload_coverage_met: false,
+        threshold_met: false,
+      })
+    )
+
+    const result = await fetchLocalFrameRouteOverlapReadiness({
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+
+    expect(result.observation_window_met).toBe(true)
+    expect(result.overlap_threshold_met).toBe(true)
+    expect(result.e3_payload_coverage_met).toBe(false)
+    expect(result.e3_payload_health_met).toBe(true)
+    expect(result.threshold_met).toBe(false)
+    expect(result.missing_e3_payload_count).toBe(1)
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("rejects frame-route overlap readiness responses with inconsistent derived counts", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(
+      frameRouteOverlapReadinessPayload({
+        graph_count: 11,
+        malformed_payload_count: 0,
+        malformed_graph_payload_count: 1,
+        malformed_e3_payload_count: 1,
+        excluded_sample_count: 1,
+      })
+    )
+
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: 1000,
+        windowEndUnixMs: 604801000,
+      })
+    ).rejects.toThrow("malformed_payload_count")
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("rejects frame-route overlap readiness responses with inconsistent observed payload breakdown", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(
+      frameRouteOverlapReadinessPayload({
+        observed_payload_count: 9,
+      })
+    )
+
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: 1000,
+        windowEndUnixMs: 604801000,
+      })
+    ).rejects.toThrow("observed_payload_count")
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("rejects frame-route overlap readiness responses that mark unhealthy payloads ready", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(
+      frameRouteOverlapReadinessPayload({
+        malformed_payload_count: 1,
+        malformed_e3_payload_count: 1,
+        excluded_sample_count: 1,
+        e3_payload_health_met: false,
+        threshold_met: true,
+      })
+    )
+
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: 1000,
+        windowEndUnixMs: 604801000,
+      })
+    ).rejects.toThrow("threshold_met")
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("rejects frame-route overlap readiness responses with inconsistent E3 payload coverage", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(
+      frameRouteOverlapReadinessPayload({
+        graph_count: 11,
+        missing_e3_payload_count: 1,
+        e3_payload_coverage_met: true,
+        threshold_met: true,
+      })
+    )
+
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: 1000,
+        windowEndUnixMs: 604801000,
+      })
+    ).rejects.toThrow("e3_payload_coverage_met")
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("rejects frame-route overlap readiness responses that mark missing E3 payloads ready", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(
+      frameRouteOverlapReadinessPayload({
+        graph_count: 11,
+        missing_e3_payload_count: 1,
+        e3_payload_coverage_met: false,
+        threshold_met: true,
+      })
+    )
+
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: 1000,
+        windowEndUnixMs: 604801000,
+      })
+    ).rejects.toThrow("threshold_met")
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("rejects frame-route overlap readiness responses that undercount graph rows", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(
+      frameRouteOverlapReadinessPayload({
+        graph_count: 10,
+        malformed_payload_count: 1,
+        malformed_graph_payload_count: 1,
+      })
+    )
+
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: 1000,
+        windowEndUnixMs: 604801000,
+      })
+    ).rejects.toThrow("graph_count")
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("rejects frame-route overlap readiness responses with unsafe integer counters", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(
+      frameRouteOverlapReadinessPayload({
+        graph_count: Number.MAX_SAFE_INTEGER + 1,
+      })
+    )
+
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: 1000,
+        windowEndUnixMs: 604801000,
+      })
+    ).rejects.toThrow("graph_count")
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("rejects frame-route overlap readiness responses with inconsistent overlap ratio", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(
+      frameRouteOverlapReadinessPayload({
+        matched_sample_count: 7,
+        mismatched_sample_count: 1,
+        overlap_ratio: 1,
+      })
+    )
+
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: 1000,
+        windowEndUnixMs: 604801000,
+      })
+    ).rejects.toThrow("overlap_ratio")
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("rejects frame-route overlap readiness responses with inconsistent eligible window", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(
+      frameRouteOverlapReadinessPayload({
+        eligible_sample_end_unix_ms: null,
+        observation_window_ms: 604800000,
+      })
+    )
+
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: 1000,
+        windowEndUnixMs: 604801000,
+      })
+    ).rejects.toThrow("eligible sample range")
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("rejects frame-route overlap readiness responses outside the requested window", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(
+      frameRouteOverlapReadinessPayload({
+        observed_payload_start_unix_ms: 999,
+      })
+    )
+
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: 1000,
+        windowEndUnixMs: 604801000,
+      })
+    ).rejects.toThrow("observed payload range")
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("rejects frame-route overlap readiness responses for a different requested window", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValueOnce(
+      frameRouteOverlapReadinessPayload({
+        window_start_unix_ms: 0,
+      })
+    )
+
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: 1000,
+        windowEndUnixMs: 604801000,
+      })
+    ).rejects.toThrow("window_start_unix_ms")
+
+    mockInvoke.mockResolvedValueOnce(
+      frameRouteOverlapReadinessPayload({
+        window_end_unix_ms: 604802000,
+      })
+    )
+
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: 1000,
+        windowEndUnixMs: 604801000,
+      })
+    ).rejects.toThrow("window_end_unix_ms")
+    expect(mockInvoke).toHaveBeenCalledTimes(2)
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("rejects frame-route overlap readiness responses with eligible samples outside observed range", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(
+      frameRouteOverlapReadinessPayload({
+        eligible_sample_end_unix_ms: 604801001,
+        observation_window_ms: 604800001,
+      })
+    )
+
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: 1000,
+        windowEndUnixMs: 604801000,
+      })
+    ).rejects.toThrow("eligible sample range")
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("rejects frame-route overlap readiness responses with drifted overlap gate constant", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(
+      frameRouteOverlapReadinessPayload({
+        minimum_overlap_ratio: 0.9,
+      })
+    )
+
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: 1000,
+        windowEndUnixMs: 604801000,
+      })
+    ).rejects.toThrow("minimum_overlap_ratio")
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("rejects frame-route overlap readiness responses with drifted contract identity", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(
+      frameRouteOverlapReadinessPayload({
+        metric: "other_metric",
+      })
+    )
+
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: 1000,
+        windowEndUnixMs: 604801000,
+      })
+    ).rejects.toThrow("metric")
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("rejects frame-route overlap readiness responses with drifted contract schema version", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(
+      frameRouteOverlapReadinessPayload({
+        contract_schema_version: 2,
+      })
+    )
+
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: 1000,
+        windowEndUnixMs: 604801000,
+      })
+    ).rejects.toThrow("contract_schema_version")
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("rejects frame-route overlap readiness responses with drifted observation window label", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(
+      frameRouteOverlapReadinessPayload({
+        observation_window: "7d",
+      })
+    )
+
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: 1000,
+        windowEndUnixMs: 604801000,
+      })
+    ).rejects.toThrow("observation_window")
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("rejects frame-route overlap readiness responses with drifted observation window constant", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(
+      frameRouteOverlapReadinessPayload({
+        minimum_observation_window_ms: 86400000,
+      })
+    )
+
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: 1000,
+        windowEndUnixMs: 604801000,
+      })
+    ).rejects.toThrow("minimum_observation_window_ms")
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+      windowStartUnixMs: 1000,
+      windowEndUnixMs: 604801000,
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("throws for local frame-route overlap readiness outside tauri runtime", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "false"
+
+    await expect(fetchLocalFrameRouteOverlapReadiness()).rejects.toThrow(
+      "fetchLocalFrameRouteOverlapReadiness is only supported in Tauri runtime"
+    )
+    expect(mockInvoke).not.toHaveBeenCalled()
+    expect(mockRequest).not.toHaveBeenCalled()
+  })
+
+  it("rejects invalid local frame-route overlap readiness windows before invoking tauri", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: -1,
+        windowEndUnixMs: 604801000,
+      })
+    ).rejects.toThrow("windowStartUnixMs")
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: 1000,
+        windowEndUnixMs: -1,
+      })
+    ).rejects.toThrow("windowEndUnixMs")
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: 2000,
+        windowEndUnixMs: 1000,
+      })
+    ).rejects.toThrow("windowStartUnixMs must be less than or equal to windowEndUnixMs")
+    await expect(
+      fetchLocalFrameRouteOverlapReadiness({
+        windowStartUnixMs: 1000.5,
+        windowEndUnixMs: 604801000,
+      })
+    ).rejects.toThrow("windowStartUnixMs")
+
+    expect(mockInvoke).not.toHaveBeenCalled()
+    expect(mockRequest).not.toHaveBeenCalled()
   })
 
   it("aggregates pending knowledge and plugin review counts", async () => {

@@ -2,8 +2,9 @@ use std::collections::{BTreeSet, HashSet};
 
 use serde_json::{json, Map, Value};
 
-use super::runtime_transition::projection::{
-    project_capability_exposure_decision_blocks, CapabilityExposureProjectionInput,
+use super::runtime_event_projection::projection::{
+    project_capability_admit_decision_block, project_capability_exposure_decision_blocks,
+    CapabilityAdmitProjectionInput, CapabilityExposureProjectionInput,
 };
 use super::search_feedback::{
     compute_feedback_boost, historical_affinity_from_rows, query_affinity_from_rows,
@@ -66,14 +67,30 @@ pub(crate) fn project_capability_search_result_transition_blocks(
     query: &str,
     bundle: &CapabilitySearchResultBundle,
 ) -> Vec<Value> {
-    project_capability_exposure_decision_blocks(CapabilityExposureProjectionInput {
+    let mut blocks =
+        project_capability_exposure_decision_blocks(CapabilityExposureProjectionInput {
+            trace_id,
+            request_id,
+            session_id,
+            call_id,
+            query,
+            full_payload: &bundle.full_payload,
+        });
+    let added_capabilities = capability_change_added_refs(&bundle.full_payload);
+    let removed_capabilities = Vec::new();
+    if let Some(block) = project_capability_admit_decision_block(CapabilityAdmitProjectionInput {
         trace_id,
         request_id,
         session_id,
         call_id,
         query,
+        added_capabilities: &added_capabilities,
+        removed_capabilities: &removed_capabilities,
         full_payload: &bundle.full_payload,
-    })
+    }) {
+        blocks.push(block);
+    }
+    blocks
 }
 
 #[derive(Clone)]
@@ -891,6 +908,38 @@ fn capability_dedupe_key(value: &Value) -> Option<String> {
         .map(str::trim)
         .filter(|item| !item.is_empty())
         .map(|item| item.to_lowercase())
+}
+
+fn capability_change_added_refs(full_payload: &Value) -> Vec<String> {
+    full_payload
+        .get("capabilities")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|capability| is_admittable_capability_change(capability))
+        .filter_map(capability_admit_ref)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn is_admittable_capability_change(capability: &Value) -> bool {
+    capability
+        .get("status")
+        .and_then(|status| status.get("callable"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        && capability.get("asset_namespace").and_then(Value::as_str) != Some("core")
+}
+
+fn capability_admit_ref(capability: &Value) -> Option<String> {
+    capability
+        .get("capability_id")
+        .and_then(Value::as_str)
+        .or_else(|| capability.get("name").and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 fn rank_registry_entry_with_feedback(
@@ -3233,7 +3282,7 @@ mod tests {
 
         assert_eq!(bundle.summary_payload, original_summary);
         assert_eq!(bundle.full_payload, original_full);
-        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks.len(), 3);
         assert_eq!(
             blocks[0]["payload"]["required_artifact"],
             json!("capability_lease")
@@ -3241,6 +3290,18 @@ mod tests {
         assert_eq!(
             blocks[1]["payload"]["required_artifact"],
             json!("plan_draft")
+        );
+        assert_eq!(
+            blocks[2]["payload"]["proposed_action"],
+            json!("admit_executable_capability")
+        );
+        assert_eq!(
+            blocks[2]["payload"]["required_artifact"],
+            json!("capability_lease")
+        );
+        assert_eq!(
+            blocks[2]["payload"]["transition"]["metadata_json"]["commit_boundary"],
+            json!("propose_capability_admit")
         );
     }
     #[test]

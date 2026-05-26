@@ -1,3 +1,4 @@
+use crate::hook::HookEvent;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -106,6 +107,16 @@ pub enum DelegationReturnChannel {
 pub struct FrameRefreshRequest {
     pub reason: String,
     pub interruption: Option<UserInterruption>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact: Option<FrameRefreshArtifact>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FrameRefreshArtifact {
+    WorldModelFrameRefresh,
+    WorldModelFrameRevision,
+    DitingThinkPreflight,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -120,12 +131,14 @@ pub struct UserInterruption {
     pub content: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PhaseObservation {
     pub observation_ref: String,
     pub summary: String,
     pub goal_satisfied: bool,
     pub frame_still_valid: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hook_events: Vec<HookEvent>,
 }
 
 #[cfg(test)]

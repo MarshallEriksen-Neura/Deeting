@@ -2,6 +2,7 @@ use serde_json::{Map, Value};
 use tauri::AppHandle;
 
 use crate::state::AppState;
+use desktop_runtime_core::TaskInputSource;
 
 use super::types::{ApprovalActionResult, TextChatReply, ToolApprovalPayload};
 
@@ -309,6 +310,16 @@ pub async fn execute_text_chat_raw(
     text: &str,
     session_id: &str,
 ) -> Result<Option<Value>, String> {
+    execute_text_chat_raw_with_input_source(app_state, app_handle, text, session_id, None).await
+}
+
+pub async fn execute_text_chat_raw_with_input_source(
+    app_state: &AppState,
+    app_handle: &AppHandle,
+    text: &str,
+    session_id: &str,
+    task_input_source: Option<TaskInputSource>,
+) -> Result<Option<Value>, String> {
     use crate::modules::desktop_runtime::local_orchestrator::{
         execute_local_orchestrated_chat, LocalOrchestratorInput,
     };
@@ -343,6 +354,8 @@ pub async fn execute_text_chat_raw(
             provider_model_id: session_model_selection.provider_model_id,
             explicit_task_agent_id: None,
             root_execution_id: None,
+            task_input_source: task_input_source.clone(),
+            user_interruption: None,
             generated_artifact_context: None,
             session_id: session_id.trim().to_string(),
             capability_id: None,
@@ -411,6 +424,8 @@ pub async fn execute_text_chat_raw(
         provider_model_id,
         explicit_task_agent_id: None,
         root_execution_id: None,
+        task_input_source,
+        user_interruption: None,
         generated_artifact_context: None,
         session_id: session_id.trim().to_string(),
         capability_id: None,

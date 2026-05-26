@@ -1,5 +1,5 @@
 use super::super::super::chat_tool_runtime::DitingThinkExtract;
-use super::super::super::runtime_transition::projection::merge_runtime_transition_events_into_trace_blocks;
+use super::super::super::runtime_event_projection::projection::merge_runtime_transition_events_into_trace_blocks;
 use super::super::{DelegatedExecutionSession, DelegatedExecutionStatus, LocalExecutionOutcome};
 use super::snapshot::{
     project_local_execution_graph, ExecutionGraphContext, ExecutionGraphProjection,

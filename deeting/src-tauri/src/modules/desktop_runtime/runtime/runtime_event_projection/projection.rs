@@ -32,6 +32,18 @@ pub(crate) struct CapabilityExposureProjectionInput<'a> {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) struct CapabilityAdmitProjectionInput<'a> {
+    pub(crate) trace_id: &'a str,
+    pub(crate) request_id: Option<&'a str>,
+    pub(crate) session_id: &'a str,
+    pub(crate) call_id: &'a str,
+    pub(crate) query: &'a str,
+    pub(crate) added_capabilities: &'a [String],
+    pub(crate) removed_capabilities: &'a [String],
+    pub(crate) full_payload: &'a Value,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct CapabilityContractProjectionInput<'a> {
     pub(crate) trace_id: &'a str,
     pub(crate) request_id: Option<&'a str>,
@@ -380,6 +392,62 @@ pub(crate) fn project_capability_exposure_decision_blocks(
     }
 
     blocks
+}
+
+pub(crate) fn project_capability_admit_decision_block(
+    input: CapabilityAdmitProjectionInput<'_>,
+) -> Option<Value> {
+    if input.added_capabilities.is_empty() && input.removed_capabilities.is_empty() {
+        return None;
+    }
+
+    let capability_id = (input.added_capabilities.len() == 1
+        && input.removed_capabilities.is_empty())
+    .then(|| input.added_capabilities[0].clone());
+    let transition = RuntimeTransition {
+        transition_id: format!("runtime-transition:capability-admit:{}", input.call_id),
+        trace_id: input.trace_id.to_string(),
+        request_id: input.request_id.map(str::to_string),
+        session_id: input.session_id.to_string(),
+        source: TransitionSource::CapabilityDiscovery,
+        from_state: RuntimeStateKind::CapabilityExposed,
+        to_state: RuntimeStateKind::CapabilityExecutable,
+        proposed_action: ProposedAction::AdmitExecutableCapability,
+        capability_id,
+        tool_name: Some("search_sdk".to_string()),
+        effect_scope: EffectScope::Session,
+        observed_evidence: vec![EvidenceRef {
+            kind: "capability_search_result".to_string(),
+            source: "search_sdk".to_string(),
+            id: Some(input.call_id.to_string()),
+            metadata_json: json!({
+                "query": input.query,
+                "added_capabilities": input.added_capabilities,
+                "removed_capabilities": input.removed_capabilities,
+                "detail_level": input.full_payload.get("detail_level").cloned().unwrap_or(Value::Null),
+            }),
+        }],
+        uncertainty_flags: vec![
+            "dynamic_capability_set_changed".to_string(),
+            "capability_admit_requires_frame_validation".to_string(),
+        ],
+        metadata_json: json!({
+            "call_id": input.call_id,
+            "query": input.query,
+            "commit_boundary": "propose_capability_admit",
+            "hook_event": "capability_changed",
+            "added_capabilities": input.added_capabilities,
+            "removed_capabilities": input.removed_capabilities,
+            "capability_count": input
+                .full_payload
+                .get("capabilities")
+                .and_then(Value::as_array)
+                .map(Vec::len)
+                .unwrap_or(0),
+        }),
+    };
+
+    Some(project_transition_audit_block(&transition))
 }
 
 pub(crate) fn project_capability_contract_decision_block(
@@ -1079,6 +1147,43 @@ mod tests {
         assert_eq!(
             events[1]["payload"]["transition"]["metadata_json"]["artifact_shape"],
             json!("intent_constraints_unknowns_adaptation_rules_verification_targets")
+        );
+    }
+
+    #[test]
+    fn projects_capability_admit_as_commit_boundary() {
+        let added_capabilities = vec!["tool.search_web".to_string()];
+        let removed_capabilities = Vec::new();
+        let event = project_capability_admit_decision_block(CapabilityAdmitProjectionInput {
+            trace_id: "trace-1",
+            request_id: Some("request-1"),
+            session_id: "session-1",
+            call_id: "search-call-1",
+            query: "search web",
+            added_capabilities: &added_capabilities,
+            removed_capabilities: &removed_capabilities,
+            full_payload: &json!({
+                "detail_level": "full",
+                "capabilities": [{"name": "search_web"}]
+            }),
+        })
+        .expect("admit boundary");
+
+        assert_eq!(
+            event["payload"]["transition_id"],
+            json!("runtime-transition:capability-admit:search-call-1")
+        );
+        assert_eq!(
+            event["payload"]["proposed_action"],
+            json!("admit_executable_capability")
+        );
+        assert_eq!(
+            event["payload"]["required_artifact"],
+            json!("capability_lease")
+        );
+        assert_eq!(
+            event["payload"]["transition"]["metadata_json"]["hook_event"],
+            json!("capability_changed")
         );
     }
 

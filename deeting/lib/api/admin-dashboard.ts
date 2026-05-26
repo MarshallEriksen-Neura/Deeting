@@ -1,12 +1,66 @@
 import { z } from "zod"
 
 import { request } from "@/lib/http"
+import { isTauriCommandRuntime } from "@/lib/runtime/tauri"
 
 const ADMIN_BASE = "/api/v1/admin"
-const isTauriRuntime = () =>
-  process.env.NEXT_PUBLIC_IS_TAURI === "true" &&
-  typeof window !== "undefined" &&
-  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
+const isTauriRuntime = isTauriCommandRuntime
+const FRAME_ROUTE_OVERLAP_METRIC = "frame_route_phase_step_overlap"
+const FRAME_ROUTE_OVERLAP_CONTRACT_SCHEMA_VERSION = 1
+const FRAME_ROUTE_OVERLAP_OBSERVATION_WINDOW = "1-2w"
+const FRAME_ROUTE_OVERLAP_RATIO_TOLERANCE = 0.000_000_001
+const FRAME_ROUTE_OVERLAP_MINIMUM_RATIO = 0.95
+const FRAME_ROUTE_OVERLAP_MINIMUM_OBSERVATION_WINDOW_MS = 604800000
+const NonNegativeSafeIntegerSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(Number.MAX_SAFE_INTEGER)
+
+export type LocalFrameRouteOverlapReadinessParams = {
+  windowStartUnixMs?: number
+  windowEndUnixMs?: number
+}
+
+function isValidUnixMsBound(value: number | undefined) {
+  return value === undefined || (Number.isSafeInteger(value) && value >= 0)
+}
+
+export function isLocalFrameRouteOverlapReadinessWindowValid(
+  params?: LocalFrameRouteOverlapReadinessParams
+) {
+  const { windowStartUnixMs, windowEndUnixMs } = params ?? {}
+  if (!isValidUnixMsBound(windowStartUnixMs)) return false
+  if (!isValidUnixMsBound(windowEndUnixMs)) return false
+  if (
+    windowStartUnixMs !== undefined &&
+    windowEndUnixMs !== undefined &&
+    windowStartUnixMs > windowEndUnixMs
+  ) {
+    return false
+  }
+
+  return true
+}
+
+function assertLocalFrameRouteOverlapReadinessWindow(
+  params?: LocalFrameRouteOverlapReadinessParams
+) {
+  const { windowStartUnixMs, windowEndUnixMs } = params ?? {}
+  if (!isValidUnixMsBound(windowStartUnixMs)) {
+    throw new Error("windowStartUnixMs must be a non-negative safe integer")
+  }
+  if (!isValidUnixMsBound(windowEndUnixMs)) {
+    throw new Error("windowEndUnixMs must be a non-negative safe integer")
+  }
+  if (
+    windowStartUnixMs !== undefined &&
+    windowEndUnixMs !== undefined &&
+    windowStartUnixMs > windowEndUnixMs
+  ) {
+    throw new Error("windowStartUnixMs must be less than or equal to windowEndUnixMs")
+  }
+}
 
 async function invokeTauri<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core")
@@ -911,6 +965,358 @@ export async function fetchAdminGatewayLogStats(
     },
   })
   return GatewayLogStatsSchema.parse(data)
+}
+
+export const LocalFrameRouteOverlapReadinessSchema = z.object({
+  metric: z.string(),
+  contract_schema_version: NonNegativeSafeIntegerSchema,
+  observation_window: z.string(),
+  window_start_unix_ms: NonNegativeSafeIntegerSchema.nullable(),
+  window_end_unix_ms: NonNegativeSafeIntegerSchema.nullable(),
+  observed_payload_start_unix_ms: NonNegativeSafeIntegerSchema.nullable(),
+  observed_payload_end_unix_ms: NonNegativeSafeIntegerSchema.nullable(),
+  eligible_sample_start_unix_ms: NonNegativeSafeIntegerSchema.nullable(),
+  eligible_sample_end_unix_ms: NonNegativeSafeIntegerSchema.nullable(),
+  observation_window_ms: NonNegativeSafeIntegerSchema.nullable(),
+  minimum_observation_window_ms: NonNegativeSafeIntegerSchema,
+  observation_window_met: z.boolean(),
+  graph_count: NonNegativeSafeIntegerSchema,
+  malformed_payload_count: NonNegativeSafeIntegerSchema,
+  malformed_graph_payload_count: NonNegativeSafeIntegerSchema,
+  malformed_e3_payload_count: NonNegativeSafeIntegerSchema,
+  missing_e3_payload_count: NonNegativeSafeIntegerSchema,
+  observed_payload_count: NonNegativeSafeIntegerSchema,
+  eligible_sample_count: NonNegativeSafeIntegerSchema,
+  matched_sample_count: NonNegativeSafeIntegerSchema,
+  mismatched_sample_count: NonNegativeSafeIntegerSchema,
+  excluded_sample_count: NonNegativeSafeIntegerSchema,
+  overlap_ratio: z.number().min(0).max(1).nullable(),
+  minimum_overlap_ratio: z.number().min(0).max(1),
+  overlap_threshold_met: z.boolean(),
+  e3_payload_coverage_met: z.boolean(),
+  e3_payload_health_met: z.boolean(),
+  threshold_met: z.boolean(),
+}).superRefine((readiness, ctx) => {
+  const addIssue = (path: string, message: string) => {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message,
+      path: [path],
+    })
+  }
+
+  if (
+    readiness.window_start_unix_ms !== null &&
+    readiness.window_end_unix_ms !== null &&
+    readiness.window_start_unix_ms > readiness.window_end_unix_ms
+  ) {
+    addIssue(
+      "window_start_unix_ms",
+      "window_start_unix_ms must be less than or equal to window_end_unix_ms"
+    )
+  }
+
+  if (
+    readiness.observed_payload_start_unix_ms !== null &&
+    readiness.observed_payload_end_unix_ms !== null &&
+    readiness.observed_payload_start_unix_ms > readiness.observed_payload_end_unix_ms
+  ) {
+    addIssue(
+      "observed_payload_start_unix_ms",
+      "observed_payload_start_unix_ms must be less than or equal to observed_payload_end_unix_ms"
+    )
+  }
+  if (
+    (readiness.observed_payload_start_unix_ms === null) !==
+    (readiness.observed_payload_end_unix_ms === null)
+  ) {
+    addIssue(
+      "observed_payload_start_unix_ms",
+      "observed payload range bounds must both be null or both be present"
+    )
+  }
+  if (
+    (readiness.observed_payload_count === 0) !==
+    (readiness.observed_payload_start_unix_ms === null &&
+      readiness.observed_payload_end_unix_ms === null)
+  ) {
+    addIssue(
+      "observed_payload_count",
+      "observed payload range must be null only when there are no observed payloads"
+    )
+  }
+  if (
+    readiness.window_start_unix_ms !== null &&
+    readiness.observed_payload_start_unix_ms !== null &&
+    readiness.observed_payload_start_unix_ms < readiness.window_start_unix_ms
+  ) {
+    addIssue(
+      "observed_payload_start_unix_ms",
+      "observed payload range must stay within the requested window"
+    )
+  }
+  if (
+    readiness.window_end_unix_ms !== null &&
+    readiness.observed_payload_end_unix_ms !== null &&
+    readiness.observed_payload_end_unix_ms > readiness.window_end_unix_ms
+  ) {
+    addIssue(
+      "observed_payload_end_unix_ms",
+      "observed payload range must stay within the requested window"
+    )
+  }
+
+  if (
+    readiness.eligible_sample_start_unix_ms !== null &&
+    readiness.eligible_sample_end_unix_ms !== null &&
+    readiness.eligible_sample_start_unix_ms > readiness.eligible_sample_end_unix_ms
+  ) {
+    addIssue(
+      "eligible_sample_start_unix_ms",
+      "eligible_sample_start_unix_ms must be less than or equal to eligible_sample_end_unix_ms"
+    )
+  }
+  if (
+    (readiness.eligible_sample_start_unix_ms === null) !==
+    (readiness.eligible_sample_end_unix_ms === null)
+  ) {
+    addIssue(
+      "eligible_sample_start_unix_ms",
+      "eligible sample range bounds must both be null or both be present"
+    )
+  }
+  if (
+    (readiness.eligible_sample_count === 0) !==
+    (readiness.eligible_sample_start_unix_ms === null &&
+      readiness.eligible_sample_end_unix_ms === null)
+  ) {
+    addIssue(
+      "eligible_sample_count",
+      "eligible sample range must be null only when there are no eligible samples"
+    )
+  }
+  if (
+    readiness.observed_payload_start_unix_ms !== null &&
+    readiness.eligible_sample_start_unix_ms !== null &&
+    readiness.eligible_sample_start_unix_ms < readiness.observed_payload_start_unix_ms
+  ) {
+    addIssue(
+      "eligible_sample_start_unix_ms",
+      "eligible sample range must stay within the observed payload range"
+    )
+  }
+  if (
+    readiness.observed_payload_end_unix_ms !== null &&
+    readiness.eligible_sample_end_unix_ms !== null &&
+    readiness.eligible_sample_end_unix_ms > readiness.observed_payload_end_unix_ms
+  ) {
+    addIssue(
+      "eligible_sample_end_unix_ms",
+      "eligible sample range must stay within the observed payload range"
+    )
+  }
+
+  if (
+    readiness.graph_count !==
+    readiness.observed_payload_count +
+      readiness.missing_e3_payload_count +
+      readiness.malformed_graph_payload_count
+  ) {
+    addIssue(
+      "graph_count",
+      "graph_count must equal observed payloads plus missing E3 payloads plus malformed graph payloads"
+    )
+  }
+
+  if (readiness.metric !== FRAME_ROUTE_OVERLAP_METRIC) {
+    addIssue("metric", "metric must match the E3 readiness contract")
+  }
+
+  if (readiness.contract_schema_version !== FRAME_ROUTE_OVERLAP_CONTRACT_SCHEMA_VERSION) {
+    addIssue(
+      "contract_schema_version",
+      "contract_schema_version must match the E3 readiness contract"
+    )
+  }
+
+  if (readiness.observation_window !== FRAME_ROUTE_OVERLAP_OBSERVATION_WINDOW) {
+    addIssue(
+      "observation_window",
+      "observation_window must match the E3 readiness contract"
+    )
+  }
+
+  if (
+    Math.abs(readiness.minimum_overlap_ratio - FRAME_ROUTE_OVERLAP_MINIMUM_RATIO) >
+    FRAME_ROUTE_OVERLAP_RATIO_TOLERANCE
+  ) {
+    addIssue(
+      "minimum_overlap_ratio",
+      "minimum_overlap_ratio must match the E3 readiness contract"
+    )
+  }
+
+  if (
+    readiness.minimum_observation_window_ms !==
+    FRAME_ROUTE_OVERLAP_MINIMUM_OBSERVATION_WINDOW_MS
+  ) {
+    addIssue(
+      "minimum_observation_window_ms",
+      "minimum_observation_window_ms must match the E3 readiness contract"
+    )
+  }
+
+  if (
+    readiness.malformed_payload_count !==
+    readiness.malformed_graph_payload_count + readiness.malformed_e3_payload_count
+  ) {
+    addIssue(
+      "malformed_payload_count",
+      "malformed_payload_count must equal malformed_graph_payload_count plus malformed_e3_payload_count"
+    )
+  }
+
+  if (
+    readiness.eligible_sample_count !==
+    readiness.matched_sample_count + readiness.mismatched_sample_count
+  ) {
+    addIssue(
+      "eligible_sample_count",
+      "eligible_sample_count must equal matched_sample_count plus mismatched_sample_count"
+    )
+  }
+
+  if (
+    readiness.observed_payload_count !==
+    readiness.eligible_sample_count +
+      readiness.excluded_sample_count +
+      readiness.malformed_e3_payload_count
+  ) {
+    addIssue(
+      "observed_payload_count",
+      "observed_payload_count must equal eligible, excluded, and malformed E3 payload counts"
+    )
+  }
+
+  const expectedOverlapRatio =
+    readiness.eligible_sample_count === 0
+      ? null
+      : readiness.matched_sample_count / readiness.eligible_sample_count
+  if (expectedOverlapRatio === null) {
+    if (readiness.overlap_ratio !== null) {
+      addIssue(
+        "overlap_ratio",
+        "overlap_ratio must be null when there are no eligible samples"
+      )
+    }
+  } else if (
+    readiness.overlap_ratio === null ||
+    Math.abs(readiness.overlap_ratio - expectedOverlapRatio) >
+      FRAME_ROUTE_OVERLAP_RATIO_TOLERANCE
+  ) {
+    addIssue(
+      "overlap_ratio",
+      "overlap_ratio must equal matched_sample_count divided by eligible_sample_count"
+    )
+  }
+
+  const expectedOverlapThresholdMet =
+    readiness.overlap_ratio !== null &&
+    readiness.overlap_ratio >= readiness.minimum_overlap_ratio
+  if (readiness.overlap_threshold_met !== expectedOverlapThresholdMet) {
+    addIssue(
+      "overlap_threshold_met",
+      "overlap_threshold_met must reflect overlap_ratio and minimum_overlap_ratio"
+    )
+  }
+
+  const expectedObservationWindowMs =
+    readiness.eligible_sample_start_unix_ms === null ||
+    readiness.eligible_sample_end_unix_ms === null
+      ? null
+      : Math.max(
+          readiness.eligible_sample_end_unix_ms - readiness.eligible_sample_start_unix_ms,
+          0
+        )
+  if (readiness.observation_window_ms !== expectedObservationWindowMs) {
+    addIssue(
+      "observation_window_ms",
+      "observation_window_ms must match the eligible sample range"
+    )
+  }
+
+  const expectedObservationWindowMet =
+    readiness.observation_window_ms !== null &&
+    readiness.observation_window_ms >= readiness.minimum_observation_window_ms
+  if (readiness.observation_window_met !== expectedObservationWindowMet) {
+    addIssue(
+      "observation_window_met",
+      "observation_window_met must reflect observation_window_ms and minimum_observation_window_ms"
+    )
+  }
+
+  if (readiness.e3_payload_health_met !== (readiness.malformed_e3_payload_count === 0)) {
+    addIssue(
+      "e3_payload_health_met",
+      "e3_payload_health_met must reflect malformed_e3_payload_count"
+    )
+  }
+
+  if (readiness.e3_payload_coverage_met !== (readiness.missing_e3_payload_count === 0)) {
+    addIssue(
+      "e3_payload_coverage_met",
+      "e3_payload_coverage_met must reflect missing_e3_payload_count"
+    )
+  }
+
+  if (
+    readiness.threshold_met !==
+    (readiness.observation_window_met &&
+      readiness.overlap_threshold_met &&
+      readiness.e3_payload_coverage_met &&
+      readiness.e3_payload_health_met)
+  ) {
+    addIssue(
+      "threshold_met",
+      "threshold_met must require observation window, overlap threshold, E3 payload coverage, and E3 payload health"
+    )
+  }
+})
+
+export type LocalFrameRouteOverlapReadiness = z.infer<
+  typeof LocalFrameRouteOverlapReadinessSchema
+>
+
+function assertLocalFrameRouteOverlapReadinessResponseWindow(
+  readiness: LocalFrameRouteOverlapReadiness,
+  params?: LocalFrameRouteOverlapReadinessParams
+) {
+  const expectedWindowStartUnixMs = params?.windowStartUnixMs ?? null
+  const expectedWindowEndUnixMs = params?.windowEndUnixMs ?? null
+
+  if (readiness.window_start_unix_ms !== expectedWindowStartUnixMs) {
+    throw new Error("window_start_unix_ms must match the requested windowStartUnixMs")
+  }
+  if (readiness.window_end_unix_ms !== expectedWindowEndUnixMs) {
+    throw new Error("window_end_unix_ms must match the requested windowEndUnixMs")
+  }
+}
+
+export async function fetchLocalFrameRouteOverlapReadiness(
+  params?: LocalFrameRouteOverlapReadinessParams
+): Promise<LocalFrameRouteOverlapReadiness> {
+  if (!isTauriCommandRuntime()) {
+    throw new Error("fetchLocalFrameRouteOverlapReadiness is only supported in Tauri runtime")
+  }
+  assertLocalFrameRouteOverlapReadinessWindow(params)
+
+  const data = await invokeTauri<unknown>("get_local_frame_route_overlap_readiness", {
+    windowStartUnixMs: params?.windowStartUnixMs,
+    windowEndUnixMs: params?.windowEndUnixMs,
+  })
+  const readiness = LocalFrameRouteOverlapReadinessSchema.parse(data)
+  assertLocalFrameRouteOverlapReadinessResponseWindow(readiness, params)
+  return readiness
 }
 
 const KnowledgeArtifactItemSchema = z.object({
