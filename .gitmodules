@@ -1,9 +1,6 @@
 [submodule "deeting-relay"]
 	path = deeting-relay
 	url = https://github.com/MarshallEriksen-Neura/deeting_relay.git
-[submodule "scout"]
-	path = scout
-	url = https://github.com/MarshallEriksen-Neura/scout.git
 [submodule "deeting_core"]
 	path = deeting_core
 	url = https://github.com/MarshallEriksen-Neura/deeting_core.git
