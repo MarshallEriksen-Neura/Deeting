@@ -37,7 +37,6 @@ jobs:
     runs-on: ${{ matrix.platform }}
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
-      SCOUT_SERVICE_URL: ${{ vars.SCOUT_SERVICE_URL || secrets.SCOUT_SERVICE_URL }}
       NEXT_PUBLIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL || secrets.NEXT_PUBLIC_API_BASE_URL }}
       NEXT_PUBLIC_DESKTOP_EXTERNAL_LOGIN_URL: ${{ vars.NEXT_PUBLIC_DESKTOP_EXTERNAL_LOGIN_URL || secrets.NEXT_PUBLIC_DESKTOP_EXTERNAL_LOGIN_URL }}
       NEXT_PUBLIC_IS_TAURI: ${{ vars.NEXT_PUBLIC_IS_TAURI || secrets.NEXT_PUBLIC_IS_TAURI }}

@@ -9,9 +9,6 @@ use tokio::io::AsyncWriteExt;
 use crate::modules::custom_task_agents::types::{
     CustomTaskAgentBindableSkillAction, CustomTaskAgentSkillActionRef,
 };
-use crate::modules::mcp::commands::support::{
-    resolve_effective_desktop_scout_base_url, SCOUT_SERVICE_URL_ENV_KEY,
-};
 use crate::state::AppState;
 use crate::utils::configure_background_tokio_command;
 
@@ -385,18 +382,5 @@ async fn resolve_skill_action_env(
         "DEETING_SKILL_ACTION_ID".to_string(),
         action.action_id.clone(),
     );
-    if action.skill_id == "official.skills.crawler"
-        || matches!(
-            action.action_id.as_str(),
-            "fetch_web_content" | "crawl_website"
-        )
-    {
-        if let Some(url) = resolve_effective_desktop_scout_base_url(app_state.mcp.store.as_ref())
-            .await
-            .map_err(|err| err.to_string())?
-        {
-            env.insert(SCOUT_SERVICE_URL_ENV_KEY.to_string(), url);
-        }
-    }
     Ok(env)
 }

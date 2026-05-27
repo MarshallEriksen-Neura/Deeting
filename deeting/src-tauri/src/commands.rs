@@ -9,7 +9,6 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::ai_access::commands::start_local_ai_access_gateway,
         crate::modules::desktop_config::commands::set_cloud_base_url,
         crate::modules::desktop_config::commands::get_desktop_config,
-        crate::modules::desktop_config::commands::get_effective_desktop_scout_base_url,
         crate::modules::desktop_config::commands::get_island_toggle_shortcut,
         crate::modules::desktop_config::commands::get_selection_assistant_shortcut,
         crate::modules::desktop_config::commands::set_desktop_config,

@@ -6,7 +6,6 @@ export interface SettingsFormValues {
   desktopMultimodalProviderModelId: string;
   desktopProxyMode: "none" | "system" | "custom";
   desktopProxyUrl: string;
-  scoutBaseUrl: string;
   objectStorageProvider: "cloudflare_r2_s3" | "aliyun_oss";
   objectStorageBucket: string;
   objectStorageRegion: string;

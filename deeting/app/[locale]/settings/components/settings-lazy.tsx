@@ -79,14 +79,6 @@ export const DeferredDesktopNetworkSettingsCard = dynamic(
   { ssr: false }
 )
 
-export const DeferredDesktopScoutSettingsCard = dynamic(
-  () =>
-    import("./desktop-scout-settings-card").then(
-      (mod) => mod.DesktopScoutSettingsCard
-    ),
-  { ssr: false }
-)
-
 export const DeferredSettingsModelPicker = dynamic(
   () => import("@/components/models/model-picker").then((mod) => mod.ModelPicker),
   { ssr: false }

@@ -1413,19 +1413,19 @@ mod tests {
 
         std::fs::write(root.join("__init__.py"), "# root marker\n").expect("write root marker");
 
-        let crawler_dir = root.join("crawler");
-        std::fs::create_dir_all(&crawler_dir).expect("create crawler dir");
+        let crawler_dir = root.join("monitor");
+        std::fs::create_dir_all(&crawler_dir).expect("create monitor dir");
         std::fs::write(
             crawler_dir.join("deeting.json"),
             r#"{
-  "id":"official.skills.crawler",
-  "name":"Scout Crawler",
+  "id":"official.skills.monitor",
+  "name":"Monitor",
   "runtime":["cloud","local"]
 }"#,
         )
-        .expect("write crawler manifest");
-        std::fs::write(crawler_dir.join("SKILL.md"), "# Scout Crawler\n")
-            .expect("write crawler doc");
+        .expect("write monitor manifest");
+        std::fs::write(crawler_dir.join("SKILL.md"), "# Monitor\n")
+            .expect("write monitor doc");
 
         let interpreter_dir = root.join("code_interpreter");
         std::fs::create_dir_all(&interpreter_dir).expect("create interpreter dir");
@@ -1452,24 +1452,24 @@ mod tests {
         assert!(run
             .documents
             .iter()
-            .any(|item| item.bundle_id.as_deref() == Some("official.skills.crawler")));
+            .any(|item| item.bundle_id.as_deref() == Some("official.skills.monitor")));
         assert!(run
             .documents
             .iter()
             .any(|item| item.bundle_id.as_deref() == Some("official.skills.code_interpreter")));
 
-        let crawler_findings = run
+        let monitor_findings = run
             .findings
             .iter()
-            .filter(|item| item.bundle_id.as_deref() == Some("official.skills.crawler"))
+            .filter(|item| item.bundle_id.as_deref() == Some("official.skills.monitor"))
             .collect::<Vec<_>>();
-        assert!(!crawler_findings.is_empty());
-        assert!(crawler_findings.iter().all(|item| {
+        assert!(!monitor_findings.is_empty());
+        assert!(monitor_findings.iter().all(|item| {
             item.action
                 .as_ref()
                 .and_then(|action| action.bundle_id.as_deref())
-                .unwrap_or("official.skills.crawler")
-                == "official.skills.crawler"
+                .unwrap_or("official.skills.monitor")
+                == "official.skills.monitor"
         }));
 
         let _ = std::fs::remove_dir_all(root);

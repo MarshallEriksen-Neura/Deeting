@@ -1,9 +1,6 @@
 mod node;
 mod python;
 
-use crate::modules::mcp::commands::support::{
-    resolve_effective_desktop_scout_base_url, SCOUT_SERVICE_URL_ENV_KEY,
-};
 use crate::modules::mcp::store::McpStore;
 use crate::state::AppState;
 use crate::utils::configure_background_tokio_command;
@@ -351,19 +348,6 @@ pub(crate) async fn resolve_skill_binding_env(
                 .map(|existing| format!("{pythonpath}:{existing}"))
                 .unwrap_or(pythonpath);
             env.insert("PYTHONPATH".to_string(), merged);
-        }
-    }
-    if binding.skill_id == "official.skills.crawler"
-        || matches!(
-            binding.tool_name.as_str(),
-            "fetch_web_content" | "crawl_website"
-        )
-    {
-        if let Some(override_url) = resolve_effective_desktop_scout_base_url(store)
-            .await
-            .map_err(|err| err.to_string())?
-        {
-            env.insert(SCOUT_SERVICE_URL_ENV_KEY.to_string(), override_url);
         }
     }
     if let Some(install) = store
@@ -808,25 +792,10 @@ fn parse_timeout_from_tool(tool: &McpTool) -> u64 {
 }
 
 pub(crate) async fn resolve_local_tool_env(
-    store: &McpStore,
+    _store: &McpStore,
     tool: &McpTool,
 ) -> Result<Option<HashMap<String, String>>, String> {
-    let mut env = tool.env.clone().unwrap_or_default();
-    let is_official_crawler_tool = tool
-        .identifier
-        .as_deref()
-        .map(|id| id.starts_with("official.skills.crawler/"))
-        .unwrap_or(false)
-        || matches!(tool.name.as_str(), "fetch_web_content" | "crawl_website");
-    if is_official_crawler_tool {
-        env.remove(SCOUT_SERVICE_URL_ENV_KEY);
-        let override_url = resolve_effective_desktop_scout_base_url(store)
-            .await
-            .map_err(|err| err.to_string())?;
-        if let Some(normalized) = override_url {
-            env.insert(SCOUT_SERVICE_URL_ENV_KEY.to_string(), normalized);
-        }
-    }
+    let env = tool.env.clone().unwrap_or_default();
     if env.is_empty() {
         Ok(None)
     } else {
@@ -1095,96 +1064,6 @@ mod tests {
                 "Paris".to_string(),
             ]
         );
-    }
-
-    #[tokio::test]
-    async fn resolve_skill_binding_env_applies_scout_override_and_config_json() {
-        let store = create_test_store("resolve-skill-binding-env").await;
-        let skill_id = "official.skills.crawler";
-        let skill_root = std::env::temp_dir().join(format!(
-            "deeting-skill-runtime-env-{}",
-            Uuid::new_v4().simple()
-        ));
-        std::fs::create_dir_all(&skill_root).expect("create temp skill dir");
-        std::fs::write(skill_root.join("main.py"), "print('ok')").expect("write skill entry");
-        let manifest_json = serde_json::json!({
-            "id": skill_id,
-            "name": "Crawler Skill",
-            "entry": { "backend": "main.py" },
-            "runtime": ["local"]
-        })
-        .to_string();
-
-        store
-            .upsert_local_skill_install(
-                skill_id,
-                Some("1.0.0"),
-                Some("python"),
-                &manifest_json,
-                &skill_root.to_string_lossy(),
-            )
-            .await
-            .expect("upsert local skill install");
-        store
-            .update_local_skill_user_settings(
-                skill_id,
-                &serde_json::json!({
-                    "config_json": {
-                        "mode": "deep",
-                        "max_pages": 3
-                    }
-                }),
-            )
-            .await
-            .expect("update skill settings");
-        store
-            .set_desktop_config("scout.base_url", "https://scout.example.com/")
-            .await
-            .expect("set desktop scout base url");
-
-        let binding = LocalSkillToolBindingSnapshot {
-            binding_id: "skill_binding::official.skills.crawler::crawl_website".to_string(),
-            skill_id: skill_id.to_string(),
-            callable_name: "skill.official.skills.crawler.crawl_website".to_string(),
-            tool_name: "crawl_website".to_string(),
-            description: "Crawl website".to_string(),
-            binding_kind: "deeting_tool".to_string(),
-            input_schema: None,
-            output_schema: None,
-            entry_path: skill_root.join("main.py").to_string_lossy().to_string(),
-            runtime: "python".to_string(),
-            timeout_seconds: 15,
-            updated_at: "2026-03-18T00:00:00Z".to_string(),
-        };
-
-        let env = resolve_skill_binding_env(&store, &binding)
-            .await
-            .expect("resolve skill binding env")
-            .expect("skill binding env should exist");
-
-        assert_eq!(
-            env.get("SCOUT_SERVICE_URL").map(String::as_str),
-            Some("https://scout.example.com")
-        );
-        assert_eq!(
-            env.get("DEETING_SKILL_ID").map(String::as_str),
-            Some("official.skills.crawler")
-        );
-        assert_eq!(
-            env.get("DEETING_SKILL_ACTION_ID").map(String::as_str),
-            Some("crawl_website")
-        );
-        assert_eq!(
-            env.get("PYTHONIOENCODING").map(String::as_str),
-            Some("utf-8")
-        );
-        assert_eq!(env.get("PYTHONUTF8").map(String::as_str), Some("1"));
-        assert_eq!(
-            env.get("DEETING_SKILL_CONFIG_JSON").map(String::as_str),
-            Some(r#"{"max_pages":3,"mode":"deep"}"#)
-        );
-
-        let _ = std::fs::remove_dir_all(&skill_root);
     }
 
     #[cfg(not(target_os = "windows"))]

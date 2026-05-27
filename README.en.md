@@ -307,7 +307,6 @@ bun run desktop:build
 ├─ deeting_core/      # Core backend / task and test assets
 ├─ deeting-relay/     # IM relay service as public ingress boundary
 ├─ installer/         # Windows graphical installer
-├─ scout/             # Standalone reconnaissance / crawling service
 ├─ packages/          # Extension-related templates, SDK, and compatibility assets
 │  └─ deeting_chrome/ # Chrome browser execution extension
 ├─ docs/              # Documentation and README images
@@ -320,7 +319,6 @@ Key directories:
 - [`deeting-relay/`](./deeting-relay/): puts Feishu and other IM callbacks behind a relay before the desktop executes them.
 - [`packages/`](./packages/): extension-related templates, SDK, and compatibility assets.
 - [`packages/deeting_chrome/`](./packages/deeting_chrome/): browser execution surface.
-- [`scout/`](./scout/): web reconnaissance, scraping, and deep-crawling service.
 
 ## Major Capability Domains Already Present
 
@@ -348,10 +346,6 @@ Key directories:
 ### `deeting-relay`
 
 Lightweight relay service that accepts Feishu and other IM callbacks, then forwards them to the local desktop runtime.
-
-### `scout`
-
-Standalone reconnaissance service for web extraction, anti-bot handling, and deep crawling. Suited to external knowledge acquisition.
 
 ### `packages`
 

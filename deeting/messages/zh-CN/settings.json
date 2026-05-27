@@ -92,13 +92,6 @@
         "urlPlaceholder": "http://127.0.0.1:7890",
         "urlHelp": "支持 http://、https:// 与 socks5://。仅在“自定义代理”模式下需要填写。",
         "footerHint": "仅当前桌面端使用。既作用于 Rust 运行时创建上游 HTTP client，也作用于受管 BoxLite 沙箱在 WSL 中下载资源和拉取镜像。"
-      },
-      "scout": {
-        "title": "桌面 Scout 服务",
-        "description": "配置本地官方爬虫工具使用的 Scout 抓取服务地址，可填写你自建的 Scout，也可填写官方服务地址。",
-        "baseUrlLabel": "Scout 服务地址",
-        "baseUrlHelp": "例如 https://your-scout.example.com。留空时会回退到桌面启动环境中的 SCOUT_SERVICE_URL，若仍未配置则使用 skill 默认地址。",
-        "footerHint": "仅当前桌面端使用，不会同步到云端。修改后会刷新本地官方技能注册。"
       }
     },
     "personal": {
@@ -621,7 +614,7 @@
       "browser": "Browser",
       "browserDesc": "浏览器调试与桥接",
       "relay": "网络与本地服务",
-      "relayDesc": "桌面代理、Scout 等本地配置",
+      "relayDesc": "桌面代理等本地配置",
       "shortcuts": "快捷键管理",
       "shortcutsDesc": "灵动岛与划词唤醒快捷键",
       "window": "窗口",
@@ -647,7 +640,6 @@
       "repairFailed": "本地注册表与索引修复失败，请稍后重试",
       "desktopProxyValidation": "自定义代理模式必须填写代理地址",
       "desktopProxyUpdated": "桌面网络代理配置已更新",
-      "desktopScoutUpdated": "桌面 Scout 配置已更新",
       "desktopObjectStorageUpdated": "桌面对象存储配置已更新"
     },
     "shortcuts": {

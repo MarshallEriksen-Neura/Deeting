@@ -461,35 +461,14 @@ meta: {
 
 ## 13. 怎么扩展
 
-### 加一个新的上下文源（例：`scout` 网页快照）
+### 加一个新的上下文源
 
-1. 在 [`adapters/`](../deeting/src-tauri/src/modules/desktop_runtime/context_orchestrator/adapters/) 加 `scout.rs`：
-
-   ```rust
-   //! Scout source adapter.
-   //!
-   //! No Double Lifecycle Rule: scout snapshots already carry a freshness
-   //! score from the scout crawler; this adapter must not re-decay them.
-
-   use crate::modules::desktop_runtime::context_orchestrator::adapters::ContextSourceAdapter;
-   use crate::modules::desktop_runtime::context_orchestrator::envelope::ContextSourceType;
-
-   #[derive(Debug, Clone, Copy, Default)]
-   pub struct ScoutContextAdapter;
-
-   impl ContextSourceAdapter for ScoutContextAdapter {
-       fn source_type(&self) -> ContextSourceType { ContextSourceType::Scout }
-       fn score_semantics(&self) -> &'static str {
-           "scout.score is page relevance from scout crawler (lexical + semantic + freshness, owned by scout)"
-       }
-   }
-   ```
-
-2. 在 [`envelope.rs::ContextSourceType`](../deeting/src-tauri/src/modules/desktop_runtime/context_orchestrator/envelope.rs) 加变体 `Scout` 并补 `as_str`。
+1. 在 [`adapters/`](../deeting/src-tauri/src/modules/desktop_runtime/context_orchestrator/adapters/) 加 `<source>.rs`，实现 `ContextSourceAdapter` trait。
+2. 在 [`envelope.rs::ContextSourceType`](../deeting/src-tauri/src/modules/desktop_runtime/context_orchestrator/envelope.rs) 加变体并补 `as_str`。
 3. 在 [`policy.rs::ContextRoutingPolicy::default`](../deeting/src-tauri/src/modules/desktop_runtime/context_orchestrator/policy.rs) 加策略条目（通常 `ManifestAndTools` 或 `ToolOnly`）。
 4. 在 [`tools.rs`](../deeting/src-tauri/src/modules/desktop_runtime/context_orchestrator/tools.rs) 的 `search_source` / `parse_source_type` / `auto` 列表 加分支。
-5. 实现 `search_scout(app_state, query, limit) -> ContextEvidenceEnvelope`，**调用 scout 模块原生检索**，把 scout 的命中映射成 `ContextEvidenceItem`。
-6. 写一个 adapter 不变形测试：断言 envelope 里的 `score` 与 scout 模块返回值逐字相等。
+5. 实现对应的 `search_<source>` 函数，把源的命中映射成 `ContextEvidenceItem`。
+6. 写一个 adapter 不变形测试：断言 envelope 里的 `score` 与源返回值一致。
 
 ### 加一个新的 context 工具（例：`context_pin`）
 

@@ -92,13 +92,6 @@
         "urlPlaceholder": "http://127.0.0.1:7890",
         "urlHelp": "Supports http://, https://, and socks5://. Leave empty unless Custom proxy is selected.",
         "footerHint": "Used only by this desktop app. It is applied when the Rust runtime creates outbound clients and when the managed BoxLite sandbox downloads assets or pulls images through WSL."
-      },
-      "scout": {
-        "title": "Desktop Scout Service",
-        "description": "Configure the Scout crawler endpoint used by local official crawler tools. You can point it to your own Scout deployment or the official service URL.",
-        "baseUrlLabel": "Scout service URL",
-        "baseUrlHelp": "For example https://your-scout.example.com. When left blank, the desktop app falls back to SCOUT_SERVICE_URL from the launch environment, then to the skill default.",
-        "footerHint": "Used only by this desktop app, never synced to cloud. Updating it refreshes local official skill registration."
       }
     },
     "personal": {
@@ -667,7 +660,7 @@
       "browser": "Browser",
       "browserDesc": "Browser debug and bridge",
       "relay": "Network & Services",
-      "relayDesc": "Desktop proxy, Scout, and other local-only settings",
+      "relayDesc": "Desktop proxy and other local-only settings",
       "shortcuts": "Shortcut Manager",
       "shortcutsDesc": "Island and selection wake shortcuts",
       "window": "Window",
@@ -693,7 +686,6 @@
       "repairFailed": "Local registry and index repair failed. Please try again.",
       "desktopProxyValidation": "Custom proxy mode requires a proxy URL",
       "desktopProxyUpdated": "Desktop network proxy settings updated",
-      "desktopScoutUpdated": "Desktop Scout settings updated",
       "desktopObjectStorageUpdated": "Desktop object storage settings updated"
     }
   }

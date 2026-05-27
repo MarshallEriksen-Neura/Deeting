@@ -1,6 +1,5 @@
 use tauri::{AppHandle, State};
 
-use crate::modules::mcp::commands::support::resolve_effective_desktop_scout_base_url;
 use crate::state::AppState;
 
 fn to_string(error: impl std::fmt::Display) -> String {
@@ -36,15 +35,6 @@ pub async fn get_desktop_config_value(
     key: String,
 ) -> Result<Option<String>, String> {
     get_desktop_config(state, key).await
-}
-
-#[tauri::command]
-pub async fn get_effective_desktop_scout_base_url(
-    state: State<'_, AppState>,
-) -> Result<Option<String>, String> {
-    resolve_effective_desktop_scout_base_url(state.mcp.store.as_ref())
-        .await
-        .map_err(to_string)
 }
 
 #[tauri::command]

@@ -369,35 +369,14 @@ By "what do I want to change":
 
 ## 13. How to extend
 
-### Add a new context source (example: `scout` web snapshot)
+### Add a new context source
 
-1. Add `scout.rs` under [`adapters/`](../deeting/src-tauri/src/modules/desktop_runtime/context_orchestrator/adapters/):
-
-   ```rust
-   //! Scout source adapter.
-   //!
-   //! No Double Lifecycle Rule: scout snapshots already carry a freshness
-   //! score from the scout crawler; this adapter must not re-decay them.
-
-   use crate::modules::desktop_runtime::context_orchestrator::adapters::ContextSourceAdapter;
-   use crate::modules::desktop_runtime::context_orchestrator::envelope::ContextSourceType;
-
-   #[derive(Debug, Clone, Copy, Default)]
-   pub struct ScoutContextAdapter;
-
-   impl ContextSourceAdapter for ScoutContextAdapter {
-       fn source_type(&self) -> ContextSourceType { ContextSourceType::Scout }
-       fn score_semantics(&self) -> &'static str {
-           "scout.score is page relevance from scout crawler (lexical + semantic + freshness, owned by scout)"
-       }
-   }
-   ```
-
-2. Add `Scout` variant to [`envelope.rs::ContextSourceType`](../deeting/src-tauri/src/modules/desktop_runtime/context_orchestrator/envelope.rs); update `as_str`.
+1. Add `<source>.rs` under [`adapters/`](../deeting/src-tauri/src/modules/desktop_runtime/context_orchestrator/adapters/) and implement the `ContextSourceAdapter` trait.
+2. Add a variant to [`envelope.rs::ContextSourceType`](../deeting/src-tauri/src/modules/desktop_runtime/context_orchestrator/envelope.rs); update `as_str`.
 3. Add a policy entry in [`policy.rs::ContextRoutingPolicy::default`](../deeting/src-tauri/src/modules/desktop_runtime/context_orchestrator/policy.rs) (usually `ManifestAndTools` or `ToolOnly`).
 4. Add branches in [`tools.rs`](../deeting/src-tauri/src/modules/desktop_runtime/context_orchestrator/tools.rs) `search_source` / `parse_source_type` / `auto` list.
-5. Implement `search_scout(app_state, query, limit) -> ContextEvidenceEnvelope` that **calls scout's native search** and maps hits to `ContextEvidenceItem`.
-6. Write an adapter-invariance test: assert the envelope's `score` equals the scout module's returned value byte-for-byte.
+5. Implement the corresponding `search_<source>` function that maps hits to `ContextEvidenceItem`.
+6. Write an adapter-invariance test: assert the envelope's `score` equals the source's returned value.
 
 ### Add a new context tool (example: `context_pin`)
 

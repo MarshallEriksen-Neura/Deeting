@@ -307,7 +307,6 @@ bun run desktop:build
 ├─ deeting_core/      # 核心后端/任务与测试资产
 ├─ deeting-relay/     # IM relay 服务，作为公网 ingress 边界
 ├─ installer/         # Windows 图形化安装器
-├─ scout/             # 独立侦察/抓取微服务
 ├─ packages/          # 扩展相关模板、SDK 与兼容资产
 │  └─ deeting_chrome/ # Chrome 浏览器执行面扩展
 ├─ docs/              # 文档与 README 配图
@@ -320,7 +319,6 @@ bun run desktop:build
 - [`deeting-relay/`](./deeting-relay/)：飞书等 IM 回调进入 relay，再由桌面端消费执行。
 - [`packages/`](./packages/)：扩展相关模板、SDK 与兼容资产。
 - [`packages/deeting_chrome/`](./packages/deeting_chrome/)：浏览器执行面扩展。
-- [`scout/`](./scout/)：网页侦察、抓取与深度 crawling 服务。
 
 ## 仓库内已经存在的关键能力域
 
@@ -348,10 +346,6 @@ bun run desktop:build
 ### `deeting-relay`
 
 轻量 relay 服务，承接飞书等 IM 的公网回调，再转交给本地桌面端执行。
-
-### `scout`
-
-独立侦察微服务，负责网页抓取、反爬对抗和深度 crawling，适合外部知识摄取。
 
 ### `packages`
 

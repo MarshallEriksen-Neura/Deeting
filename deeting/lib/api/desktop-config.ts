@@ -24,7 +24,6 @@ export const DESKTOP_CONFIG_KEYS = {
   authToken: "auth.token",
   desktopProxyMode: "network.proxy.mode",
   desktopProxyUrl: "network.proxy.url",
-  scoutBaseUrl: "scout.base_url",
 } as const;
 
 export type DesktopProxyMode = "none" | "system" | "custom";
@@ -187,19 +186,6 @@ export async function setDesktopNetworkProxySettings(
       settings.url.trim(),
     ),
   ]);
-}
-
-export async function getDesktopScoutBaseUrl(): Promise<string> {
-  if (!isTauriRuntime()) return "";
-  const { invoke } = await import("@tauri-apps/api/core");
-  return (
-    (await invoke<string | null>("get_effective_desktop_scout_base_url")) ?? ""
-  );
-}
-
-export async function setDesktopScoutBaseUrl(value: string): Promise<void> {
-  if (!isTauriRuntime()) return;
-  await setDesktopConfig(DESKTOP_CONFIG_KEYS.scoutBaseUrl, value.trim());
 }
 
 export function isTauriRuntime(): boolean {
