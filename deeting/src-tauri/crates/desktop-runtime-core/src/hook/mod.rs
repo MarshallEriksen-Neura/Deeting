@@ -1,4 +1,4 @@
-use crate::frame::WorldModelFrame;
+use crate::frame::{ExecutionStrategy, WorldModelFrame};
 use crate::plan::{PhaseId, PlanArtifact};
 use crate::task::TaskInputSource;
 use serde::{Deserialize, Serialize};
@@ -393,6 +393,14 @@ const DITING_THINK_PREFLIGHT_INTERESTS: [HookEventInterest; 1] =
     [HookEventInterest::ProposePhaseExecution];
 const DITING_THINK_SAFETY_NET_N: usize = 10;
 
+const fn r2_thresholds(strategy: ExecutionStrategy) -> (usize, usize) {
+    match strategy {
+        ExecutionStrategy::DelegatedWorkflow | ExecutionStrategy::DelegatedAgent => (2, 1),
+        ExecutionStrategy::Hybrid => (3, 1),
+        ExecutionStrategy::DirectIteration => (5, 2),
+    }
+}
+
 impl Hook for DitingThinkPreflightHook {
     fn name(&self) -> &'static str {
         "diting_think_preflight"
@@ -435,9 +443,10 @@ impl Hook for DitingThinkPreflightHook {
             .iter()
             .filter(|commit| commit.committed_at > highwater)
             .count();
-        if new_observations >= 3 || new_commits >= 1 {
+        let (obs_threshold, commit_threshold) = r2_thresholds(frame.execution_strategy);
+        if new_observations >= obs_threshold || new_commits >= commit_threshold {
             return require_diting_think_preflight(format!(
-                "R2: world changes accumulated (obs={new_observations}, commits={new_commits})"
+                "R2: world changes accumulated (obs={new_observations}/{obs_threshold}, commits={new_commits}/{commit_threshold})"
             ));
         }
 
@@ -828,15 +837,17 @@ mod tests {
     }
 
     #[test]
-    fn diting_think_preflight_hook_triggers_for_world_observations_and_commits() {
+    fn diting_think_preflight_hook_r2_respects_strategy_thresholds() {
         let mut registry = HookRegistry::new();
         registry.register(DitingThinkPreflightHook);
         let event = HookEvent::CommitBoundary(CommitBoundary::ProposePhaseExecution {
             phase_id: "phase-1".to_string(),
         });
-        let mut observed_frame = frame(ExecutionStrategy::DirectIteration);
+
+        // DirectIteration: 3 obs should NOT trigger (threshold is 5)
+        let mut direct_frame = frame(ExecutionStrategy::DirectIteration);
         for index in 0..3 {
-            observed_frame
+            direct_frame
                 .append_observation(
                     format!("observation {index}"),
                     None,
@@ -848,28 +859,99 @@ mod tests {
                 )
                 .unwrap();
         }
-        let observed_state = RuntimeStateView {
-            current_frame: observed_frame,
+        let direct_state = RuntimeStateView {
+            current_frame: direct_frame,
             current_plan: None,
             metadata: Value::Null,
         };
         assert!(matches!(
-            registry.evaluate(&event, &observed_state),
+            registry.evaluate(&event, &direct_state),
+            HookDecision::Allow { .. }
+        ));
+
+        // DirectIteration: 5 obs SHOULD trigger
+        let mut direct_frame_5 = frame(ExecutionStrategy::DirectIteration);
+        for index in 0..5 {
+            direct_frame_5
+                .append_observation(
+                    format!("observation {index}"),
+                    None,
+                    ObservationSource {
+                        tool_call_id: format!("call-{index}"),
+                        tool_name: "read_file".to_string(),
+                    },
+                    None,
+                )
+                .unwrap();
+        }
+        let direct_state_5 = RuntimeStateView {
+            current_frame: direct_frame_5,
+            current_plan: None,
+            metadata: Value::Null,
+        };
+        assert!(matches!(
+            registry.evaluate(&event, &direct_state_5),
             HookDecision::RequireArtifact {
                 artifact: RequiredArtifact::DitingThinkPreflight,
                 ..
             }
         ));
 
-        let mut committed_frame = frame(ExecutionStrategy::Hybrid);
-        committed_frame.append_committed_action("fs.write(a) -> success", "call-1", "fs.write");
-        let committed_state = RuntimeStateView {
-            current_frame: committed_frame,
+        // DelegatedWorkflow: 2 obs SHOULD trigger (threshold is 2)
+        let mut delegated_frame = frame(ExecutionStrategy::DelegatedWorkflow);
+        for index in 0..2 {
+            delegated_frame
+                .append_observation(
+                    format!("observation {index}"),
+                    None,
+                    ObservationSource {
+                        tool_call_id: format!("call-{index}"),
+                        tool_name: "search_sdk".to_string(),
+                    },
+                    None,
+                )
+                .unwrap();
+        }
+        let delegated_state = RuntimeStateView {
+            current_frame: delegated_frame,
             current_plan: None,
             metadata: Value::Null,
         };
         assert!(matches!(
-            registry.evaluate(&event, &committed_state),
+            registry.evaluate(&event, &delegated_state),
+            HookDecision::RequireArtifact {
+                artifact: RequiredArtifact::DitingThinkPreflight,
+                ..
+            }
+        ));
+
+        // DirectIteration: 1 commit should NOT trigger (threshold is 2)
+        let mut direct_commit_frame = frame(ExecutionStrategy::DirectIteration);
+        direct_commit_frame.append_committed_action("fs.write(a) -> success", "call-1", "fs.write");
+        let direct_commit_state = RuntimeStateView {
+            current_frame: direct_commit_frame,
+            current_plan: None,
+            metadata: Value::Null,
+        };
+        assert!(matches!(
+            registry.evaluate(&event, &direct_commit_state),
+            HookDecision::Allow { .. }
+        ));
+
+        // DelegatedWorkflow: 1 commit SHOULD trigger (threshold is 1)
+        let mut delegated_commit_frame = frame(ExecutionStrategy::DelegatedWorkflow);
+        delegated_commit_frame.append_committed_action(
+            "fs.write(a) -> success",
+            "call-1",
+            "fs.write",
+        );
+        let delegated_commit_state = RuntimeStateView {
+            current_frame: delegated_commit_frame,
+            current_plan: None,
+            metadata: Value::Null,
+        };
+        assert!(matches!(
+            registry.evaluate(&event, &delegated_commit_state),
             HookDecision::RequireArtifact {
                 artifact: RequiredArtifact::DitingThinkPreflight,
                 ..

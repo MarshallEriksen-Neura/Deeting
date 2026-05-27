@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub mod snapshot_render;
+
 pub type FrameVersionId = String;
 pub type ModelTurnCount = u64;
 pub type SequenceNumber = u64;

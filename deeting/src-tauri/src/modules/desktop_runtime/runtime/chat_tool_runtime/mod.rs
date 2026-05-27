@@ -330,7 +330,8 @@ fn messages_with_world_model_snapshot(
     let Some(frame) = frame else {
         return messages.to_vec();
     };
-    let snapshot = render_world_model_snapshot(frame);
+    let config = desktop_runtime_core::frame::snapshot_render::SnapshotRenderConfig::default();
+    let snapshot = desktop_runtime_core::frame::snapshot_render::render_world_model_snapshot(frame, &config);
     let mut output = messages.to_vec();
     if let Some(message) = output
         .iter_mut()
@@ -351,129 +352,6 @@ fn messages_with_world_model_snapshot(
         );
     }
     output
-}
-
-fn render_world_model_snapshot(frame: &desktop_runtime_core::WorldModelFrame) -> String {
-    format!(
-        concat!(
-            "=== World Model Snapshot (turn {turn}) ===\n\n",
-            "[USER DIRECTIVES]\n{directives}\n\n",
-            "[WORLD OBSERVATIONS]\n{observations}\n\n",
-            "[AGENT COMMITTED ACTIONS]\n{committed}\n\n",
-            "[MODEL DECLARED]\n{declared}\n\n",
-            "=== End World Model Snapshot ==="
-        ),
-        turn = frame.model_turn_count.saturating_add(1),
-        directives = render_user_directives(frame),
-        observations = render_observations(frame),
-        committed = render_committed_actions(frame),
-        declared = render_model_declared(frame),
-    )
-}
-
-fn new_marker(sequence: u64, highwater: u64) -> &'static str {
-    if sequence > highwater {
-        "[NEW] "
-    } else {
-        ""
-    }
-}
-
-fn superseded_marker(supersedes: Option<&String>) -> &'static str {
-    if supersedes.is_some() {
-        "[~] "
-    } else {
-        ""
-    }
-}
-
-fn render_user_directives(frame: &desktop_runtime_core::WorldModelFrame) -> String {
-    if frame.user_directed.is_empty() {
-        return "- (no directives yet)".to_string();
-    }
-    frame
-        .user_directed
-        .iter()
-        .map(|directive| {
-            format!(
-                "- {}{}{}",
-                new_marker(directive.appended_at, frame.last_seen_by_model),
-                superseded_marker(directive.supersedes.as_ref()),
-                directive.text.trim()
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn render_observations(frame: &desktop_runtime_core::WorldModelFrame) -> String {
-    if frame.world_observed.is_empty() {
-        return "- (no observations yet)".to_string();
-    }
-    frame
-        .world_observed
-        .iter()
-        .map(|observation| {
-            format!(
-                "- {}{}{}",
-                new_marker(observation.appended_at, frame.last_seen_by_model),
-                superseded_marker(observation.supersedes.as_ref()),
-                observation.text.trim()
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn render_committed_actions(frame: &desktop_runtime_core::WorldModelFrame) -> String {
-    if frame.agent_committed.is_empty() {
-        return "- (no committed actions yet)".to_string();
-    }
-    frame
-        .agent_committed
-        .iter()
-        .map(|action| {
-            format!(
-                "- {}{}",
-                new_marker(action.committed_at, frame.last_seen_by_model),
-                action.action_text.trim()
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn render_model_declared(frame: &desktop_runtime_core::WorldModelFrame) -> String {
-    let mut lines = Vec::new();
-    lines.extend(
-        frame
-            .known_facts
-            .iter()
-            .map(|fact| format!("- fact: {}", fact.statement.trim())),
-    );
-    lines.extend(
-        frame
-            .assumptions
-            .iter()
-            .map(|assumption| format!("- assumption: {}", assumption.statement.trim())),
-    );
-    lines.extend(
-        frame
-            .verification_targets
-            .iter()
-            .map(|target| format!("- verification_target: {}", target.description.trim())),
-    );
-    lines.extend(
-        frame
-            .adaptation_rules
-            .iter()
-            .map(|rule| format!("- rule: {}", rule.instruction.trim())),
-    );
-    if lines.is_empty() {
-        "- (no model declarations yet)".to_string()
-    } else {
-        lines.join("\n")
-    }
 }
 
 pub(crate) async fn run_local_chat_complete_with_tools(
