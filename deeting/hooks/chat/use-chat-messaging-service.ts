@@ -407,7 +407,7 @@ function finalResponseBlockKey(block: MessageBlock): string {
   return JSON.stringify(record)
 }
 
-function extractAssistantResponseBlocks(responseBody: Record<string, unknown>): MessageBlock[] {
+export function extractAssistantResponseBlocks(responseBody: Record<string, unknown>): MessageBlock[] {
   const choices = Array.isArray(responseBody.choices) ? responseBody.choices : []
   const firstChoice = choices[0]
   const responseMessage = firstChoice && typeof firstChoice === "object"
@@ -419,9 +419,13 @@ function extractAssistantResponseBlocks(responseBody: Record<string, unknown>): 
 
   const messageObject = responseMessage as Record<string, unknown>
   const metaBlocks = extractAssistantMetaBlocks(responseBody)
-  const nextBlocks: MessageBlock[] = metaBlocks.filter(
+  const metaNarrativeBlocks = metaBlocks.filter(
     (block) => block.type !== "tool_call" && block.type !== "tool_result"
   )
+  const nextBlocks: MessageBlock[] = [
+    ...metaNarrativeBlocks.filter((block) => block.type !== "text"),
+    ...metaNarrativeBlocks.filter((block) => block.type === "text"),
+  ]
 
   if (metaBlocks.length === 0) {
     const reasoning = typeof messageObject.reasoning_content === "string"
@@ -549,6 +553,13 @@ export function filterFinalResponseBlocks({
       return []
     }
     nextBlocks = nextBlocks.filter((block) => block.type !== "text")
+  }
+
+  if (nextBlocks.length === 0) return []
+
+  const hasCurrentText = hasRenderableTextBlock(currentBlocks)
+  if (hasCurrentText) {
+    nextBlocks = nextBlocks.filter((block) => block.type !== "thought")
   }
 
   if (nextBlocks.length === 0) return []

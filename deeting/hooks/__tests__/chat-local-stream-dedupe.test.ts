@@ -1,5 +1,6 @@
 import {
   extractAssistantResponseToolBlocks,
+  extractAssistantResponseBlocks,
   filterFinalResponseBlocks,
   filterIncomingStructuredBlocks,
   shouldAppendFinalResponseBlocks,
@@ -86,6 +87,41 @@ describe("local chat stream dedupe helpers", () => {
         receivedStructuredBlocks: true,
       })
     ).toEqual([])
+  })
+
+  it("drops late terminal thought after a streamed final answer", () => {
+    expect(
+      filterFinalResponseBlocks({
+        currentBlocks: [{ type: "text", content: "final answer" } as MessageBlock],
+        responseBlocks: [
+          { type: "thought", content: "provider reasoning" } as MessageBlock,
+        ],
+        receivedStructuredBlocks: true,
+      })
+    ).toEqual([])
+  })
+
+  it("orders terminal meta narrative before final content", () => {
+    expect(
+      extractAssistantResponseBlocks({
+        choices: [
+          {
+            message: {
+              content: "final answer",
+              meta_info: {
+                blocks: [
+                  { type: "text", content: "final answer" },
+                  { type: "thought", content: "provider reasoning" },
+                ],
+              },
+            },
+          },
+        ],
+      })
+    ).toEqual([
+      { type: "thought", content: "provider reasoning" },
+      { type: "text", content: "final answer" },
+    ])
   })
 
   it("keeps final tool status blocks from completion payload for stream cleanup", () => {

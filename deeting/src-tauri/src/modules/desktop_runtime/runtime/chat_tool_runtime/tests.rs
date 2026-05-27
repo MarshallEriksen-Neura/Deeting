@@ -12,6 +12,7 @@ use crate::modules::desktop_runtime::runtime::{
     DelegatedExecutionRecord, DelegatedExecutionSelection, DelegatedExecutionStatus,
     DelegatedExecutionTarget,
 };
+use desktop_runtime_core::snapshot_render::{render_world_model_snapshot, SnapshotRenderConfig};
 
 #[test]
 fn build_execution_contract_from_search_result_requires_capabilities() {
@@ -100,7 +101,8 @@ fn world_model_snapshot_renders_four_sections_and_new_directive() {
     );
     frame.append_user_directive("do the thing", None).unwrap();
 
-    let snapshot = render_world_model_snapshot(&frame);
+    let config = SnapshotRenderConfig::default();
+    let snapshot = render_world_model_snapshot(&frame, &config);
 
     assert!(snapshot.contains("[USER DIRECTIVES]"));
     assert!(snapshot.contains("[WORLD OBSERVATIONS]"));
@@ -122,10 +124,11 @@ fn world_model_snapshot_drops_new_marker_after_model_seen() {
         desktop_runtime_core::FrameProvenance::bootstrap("test"),
     );
     frame.append_user_directive("do the thing", None).unwrap();
-    assert!(render_world_model_snapshot(&frame).contains("[NEW] do the thing"));
+    let config = SnapshotRenderConfig::default();
+    assert!(render_world_model_snapshot(&frame, &config).contains("[NEW] do the thing"));
 
     frame.mark_seen();
-    let snapshot = render_world_model_snapshot(&frame);
+    let snapshot = render_world_model_snapshot(&frame, &config);
 
     assert!(snapshot.contains("- do the thing"));
     assert!(!snapshot.contains("[NEW] do the thing"));
