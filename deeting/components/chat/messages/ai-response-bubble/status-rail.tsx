@@ -11,6 +11,35 @@ import {
   resolveStageIndex,
 } from "@/components/chat/visuals/status-visuals";
 
+const MIN_RAIL_DISPLAY_MS = 800;
+
+function useMinRailDisplay(active: boolean): boolean {
+  const [held, setHeld] = useState(false);
+  const shownAtRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (active && !shownAtRef.current) {
+      shownAtRef.current = Date.now();
+      setHeld(true);
+    }
+    if (!active && shownAtRef.current) {
+      const elapsed = Date.now() - shownAtRef.current;
+      const remaining = MIN_RAIL_DISPLAY_MS - elapsed;
+      if (remaining > 0) {
+        const timer = setTimeout(() => {
+          setHeld(false);
+          shownAtRef.current = null;
+        }, remaining);
+        return () => clearTimeout(timer);
+      }
+      setHeld(false);
+      shownAtRef.current = null;
+    }
+  }, [active]);
+
+  return active || held;
+}
+
 // Slow-upstream hint thresholds (seconds). Once the assistant has been "active"
 // (request in flight, no content yet) for this long, surface a friendly hint so
 // users don't think the app is stuck on a poor network.
@@ -187,19 +216,19 @@ export function AIResponseStatusRail({
 
   // Show the status rail whenever the bubble is active and has not yet
   // produced user-visible answer content (text / thought / error / UI block).
-  // Tool calls and intermediate execution blocks are deliberately ignored
-  // here so the loading indicator keeps spinning between phases (e.g. while
-  // the model is still composing a reply after a tool result has arrived).
-  const shouldShowStatusRail = isActive && !hasContent;
+  // Hold for a minimum window so users actually see the loader on fast paths.
+  const rawShow = isActive && !hasContent;
+  const shouldShowStatusRail = useMinRailDisplay(rawShow);
 
   return (
     <AnimatePresence>
       {shouldShowStatusRail && (
         <motion.div
           key="minimal-status"
-          initial={{ opacity: 0, y: 5 }}
+          initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, transition: { duration: 0.2 } }}
+          exit={{ opacity: 0, y: -2, transition: { duration: 0.4, ease: [0.25, 0.1, 0.25, 1] } }}
+          transition={{ duration: 0.35, ease: [0.25, 0.1, 0.25, 1] }}
           className="mb-2"
         >
           <MinimalStatusIndicator

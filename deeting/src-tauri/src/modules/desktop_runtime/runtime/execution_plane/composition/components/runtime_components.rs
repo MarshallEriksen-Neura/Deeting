@@ -1060,7 +1060,7 @@ fn all_verification_targets_met(frame: &WorldModelFrame, plan: &PlanArtifact) ->
             }
         }) || frame.world_observed.iter().any(|obs| {
             // Check if any observation in frame mentions this target
-            obs.content.contains(&target.description)
+            obs.text.contains(&target.description)
         });
 
         if !target_met {

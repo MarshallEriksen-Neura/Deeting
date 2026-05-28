@@ -1,45 +1,79 @@
 "use client";
 
-import { memo } from "react";
-import { AlertCircle, Check, Circle, Clock, Loader2, MoreHorizontal, ShieldAlert } from "lucide-react";
+import { memo, useEffect, useRef, useState } from "react";
+import { AlertCircle, Check, MoreHorizontal, ShieldAlert } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 import type { ActivityTimelineBlock, RuntimeActivityEvent } from "@/lib/chat/message-protocol";
 import { buildActivityTimelineViewModel } from "@/lib/chat/runtime-activity";
 import { cn } from "@/lib/utils";
 
-function StatusIcon({ event }: { event: RuntimeActivityEvent }) {
-  const iconClass = cn(event.status === "running" && "animate-spin");
-  const props = { size: 9, strokeWidth: 2.2, className: iconClass };
-  if (event.level === "action" || event.status === "waiting") return <ShieldAlert {...props} />;
-  if (event.level === "error" || event.status === "failed") return <AlertCircle {...props} />;
-  if (event.level === "warning" || event.status === "cancelled") return <AlertCircle {...props} />;
-  if (event.status === "done") return <Check {...props} />;
-  if (event.status === "running") return <Loader2 {...props} />;
-  return <Circle {...props} />;
+const MIN_DISPLAY_MS = 900;
+
+function useMinDisplayTime(visible: boolean): boolean {
+  const [held, setHeld] = useState(false);
+  const shownAtRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (visible && !shownAtRef.current) {
+      shownAtRef.current = Date.now();
+      setHeld(true);
+    }
+    if (!visible && shownAtRef.current) {
+      const elapsed = Date.now() - shownAtRef.current;
+      const remaining = MIN_DISPLAY_MS - elapsed;
+      if (remaining > 0) {
+        const timer = setTimeout(() => {
+          setHeld(false);
+          shownAtRef.current = null;
+        }, remaining);
+        return () => clearTimeout(timer);
+      }
+      setHeld(false);
+      shownAtRef.current = null;
+    }
+  }, [visible]);
+
+  return visible || held;
 }
 
-function dotClass(event: RuntimeActivityEvent) {
+function StatusDot({ event }: { event: RuntimeActivityEvent }) {
   if (event.level === "action" || event.status === "waiting") {
-    return "border-amber-400 bg-amber-100 text-amber-700 dark:border-amber-300/70 dark:bg-amber-400/15 dark:text-amber-200";
+    return (
+      <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full border border-amber-300/80 bg-amber-50 dark:border-amber-400/40 dark:bg-amber-400/10">
+        <ShieldAlert size={9} strokeWidth={2} className="text-amber-600 dark:text-amber-300" />
+      </span>
+    );
   }
   if (event.level === "error" || event.status === "failed") {
-    return "border-red-400 bg-red-50 text-red-700 dark:border-red-400/70 dark:bg-red-500/15 dark:text-red-200";
+    return (
+      <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full border border-red-300/80 bg-red-50 dark:border-red-400/40 dark:bg-red-400/10">
+        <AlertCircle size={9} strokeWidth={2} className="text-red-600 dark:text-red-300" />
+      </span>
+    );
   }
-  if (event.level === "warning" || event.status === "cancelled") {
-    return "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-300/70 dark:bg-orange-400/15 dark:text-orange-200";
+  if (event.status === "done") {
+    return (
+      <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-emerald-500/10 dark:bg-emerald-400/10">
+        <Check size={9} strokeWidth={2.5} className="text-emerald-600 dark:text-emerald-400" />
+      </span>
+    );
   }
-  if (event.status === "done" || event.level === "success") {
-    return "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-300/70 dark:bg-emerald-400/15 dark:text-emerald-200";
-  }
-  return "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-300/60 dark:bg-sky-400/15 dark:text-sky-200";
-}
-
-function rowClass(event: RuntimeActivityEvent) {
-  if (event.level === "action" || event.level === "error" || event.level === "warning") {
-    return "text-foreground";
-  }
-  return "text-muted-foreground";
+  // running — breathing dot
+  return (
+    <span className="relative flex h-[18px] w-[18px] items-center justify-center">
+      <motion.span
+        className="absolute h-2 w-2 rounded-full bg-[#6d5cff]/20 dark:bg-[var(--accent)]/20"
+        animate={{ scale: [1, 1.8, 1], opacity: [0.4, 0, 0.4] }}
+        transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+      />
+      <motion.span
+        className="relative h-[5px] w-[5px] rounded-full bg-[#6d5cff] dark:bg-[var(--accent)]"
+        animate={{ opacity: [0.6, 1, 0.6] }}
+        transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
+      />
+    </span>
+  );
 }
 
 function statusText(event: RuntimeActivityEvent) {
@@ -47,13 +81,13 @@ function statusText(event: RuntimeActivityEvent) {
     case "waiting":
       return "等待";
     case "running":
-      return "进行中";
+      return null;
     case "done":
-      return "完成";
+      return null;
     case "failed":
       return "失败";
     case "cancelled":
-      return "取消";
+      return "已取消";
     default:
       return null;
   }
@@ -68,31 +102,40 @@ export const AssistantActivityTimeline = memo<{
     maxVisible: 5,
   });
 
-  if (!viewModel.visible) return null;
+  const shouldShow = useMinDisplayTime(viewModel.visible && !viewModel.collapsed);
 
-  if (viewModel.collapsed) {
+  if (!viewModel.visible && !shouldShow) return null;
+
+  if (viewModel.collapsed && !shouldShow) {
     return (
       <motion.div
-        initial={{ opacity: 0, y: 3 }}
+        initial={{ opacity: 0, y: 2 }}
         animate={{ opacity: 1, y: 0 }}
-        className="mb-2 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground/75"
+        transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
+        className="mb-2 flex min-w-0 items-center gap-2.5 text-[11px] text-muted-foreground/70"
       >
-        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-emerald-300/70 bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200">
-          <Check size={10} strokeWidth={2} />
+        <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-emerald-500/10 dark:bg-emerald-400/10">
+          <Check size={9} strokeWidth={2.5} className="text-emerald-600 dark:text-emerald-400" />
         </span>
-        <span className="min-w-0 truncate">{viewModel.summary}</span>
+        <span className="min-w-0 truncate font-medium">{viewModel.summary}</span>
       </motion.div>
     );
   }
 
   return (
-    <div className="mb-3 ml-0.5 max-w-full overflow-hidden">
-      <div className="relative space-y-1.5 pl-4">
-        <div className="absolute bottom-2 left-[7px] top-2 w-px bg-border/70" />
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -2, transition: { duration: 0.35, ease: [0.25, 0.1, 0.25, 1] } }}
+      transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
+      className="mb-3 max-w-full overflow-hidden"
+    >
+      <div className="relative space-y-0.5 pl-6">
+        <div className="absolute bottom-1 left-[8px] top-1 w-px bg-border/40 dark:bg-border/30" />
         {viewModel.hiddenCount > 0 ? (
-          <div className="relative flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground/55">
-            <span className="absolute -left-[13px] flex h-4 w-4 items-center justify-center rounded-full border border-border bg-background">
-              <MoreHorizontal size={10} />
+          <div className="relative flex min-w-0 items-center gap-2.5 py-1 text-[11px] text-muted-foreground/50">
+            <span className="absolute -left-[14.5px] flex h-[18px] w-[18px] items-center justify-center rounded-full bg-muted/50 dark:bg-muted/30">
+              <MoreHorizontal size={10} className="text-muted-foreground/50" />
             </span>
             <span>已收起 {viewModel.hiddenCount} 个较早步骤</span>
           </div>
@@ -103,43 +146,48 @@ export const AssistantActivityTimeline = memo<{
           ))}
         </AnimatePresence>
       </div>
-    </div>
+    </motion.div>
   );
 });
 
 const ActivityTimelineItem = memo<{ event: RuntimeActivityEvent }>(
   function ActivityTimelineItem({ event }) {
     const state = statusText(event);
+    const isRunning = event.status === "running";
 
     return (
       <motion.div
         layout
-        initial={{ opacity: 0, y: 4 }}
+        initial={{ opacity: 0, y: 3 }}
         animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -2 }}
-        transition={{ duration: 0.18, ease: "easeOut" }}
-        className={cn("relative min-w-0 pr-1", rowClass(event))}
+        exit={{ opacity: 0, y: -2, transition: { duration: 0.3, ease: [0.25, 0.1, 0.25, 1] } }}
+        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+        className="relative min-w-0 py-[3px]"
       >
-        <span
-          className={cn(
-            "absolute -left-[15px] top-0.5 flex h-4 w-4 items-center justify-center rounded-full border",
-            dotClass(event),
-          )}
-        >
-          <StatusIcon event={event} />
+        <span className="absolute -left-[14.5px] top-[5px]">
+          <StatusDot event={event} />
         </span>
-        <div className="flex min-w-0 items-baseline gap-2">
-          <div className="min-w-0 truncate text-[12px] font-medium leading-5">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className={cn(
+              "min-w-0 truncate text-[12px] leading-5",
+              isRunning
+                ? "font-medium text-foreground/90 dark:text-foreground/85"
+                : event.status === "done"
+                  ? "text-muted-foreground/70"
+                  : "font-medium text-foreground/80",
+            )}
+          >
             {event.title}
-          </div>
+          </span>
           {state ? (
-            <div className="shrink-0 text-[10px] text-muted-foreground/55">
+            <span className="shrink-0 text-[10px] font-medium text-amber-600/80 dark:text-amber-300/70">
               {state}
-            </div>
+            </span>
           ) : null}
         </div>
         {event.detail ? (
-          <div className="min-w-0 truncate text-[11px] leading-4 text-muted-foreground/65">
+          <div className="min-w-0 truncate text-[11px] leading-4 text-muted-foreground/50">
             {event.detail}
           </div>
         ) : null}
@@ -150,10 +198,21 @@ const ActivityTimelineItem = memo<{ event: RuntimeActivityEvent }>(
 
 export const ActivityTimelinePlaceholder = memo(function ActivityTimelinePlaceholder() {
   return (
-    <div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground/70">
-      <Clock size={12} />
-      <span>准备执行</span>
-    </div>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
+      className="mb-2 flex items-center gap-2.5 text-[11px] text-muted-foreground/60"
+    >
+      <span className="relative flex h-[18px] w-[18px] items-center justify-center">
+        <motion.span
+          className="h-[5px] w-[5px] rounded-full bg-muted-foreground/30"
+          animate={{ opacity: [0.3, 0.7, 0.3] }}
+          transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
+        />
+      </span>
+      <span className="font-medium">准备中</span>
+    </motion.div>
   );
 });
 
