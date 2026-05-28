@@ -119,6 +119,47 @@ describe("useChatStore session state", () => {
     expect(message?.blocks?.some((block) => block.type === "tool_result")).toBe(true)
   })
 
+  it("appendMessageBlocks should place late thought before existing tool chain and answer text", () => {
+    useChatStore.setState({
+      messages: [
+        {
+          id: "assistant-late-thought-1",
+          role: "assistant",
+          content: "",
+          createdAt: 1,
+          blocks: [
+            {
+              type: "tool_call",
+              callId: "call-1",
+              toolName: "browser_get_page_snapshot",
+              status: "success",
+            } as MessageBlock,
+            {
+              type: "tool_result",
+              callId: "call-1",
+              toolName: "browser_get_page_snapshot",
+              status: "success",
+              result: { ok: true },
+            } as MessageBlock,
+            { type: "text", content: "final answer" } as MessageBlock,
+          ],
+        },
+      ],
+    })
+
+    useChatStore.getState().appendMessageBlocks("assistant-late-thought-1", [
+      { type: "thought", content: "provider reasoning" } as MessageBlock,
+    ])
+
+    const message = useChatStore.getState().messages[0]
+    expect(message?.blocks?.map((block) => block.type)).toEqual([
+      "thought",
+      "tool_call",
+      "tool_result",
+      "text",
+    ])
+  })
+
   it("appendMessageBlocks should replace the matching tool call by callId", () => {
     useChatStore.setState({
       messages: [

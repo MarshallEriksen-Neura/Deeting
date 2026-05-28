@@ -129,13 +129,29 @@ function findNarrativeInsertionIndex(blocks: MessageBlock[]): number {
   return insertionIndex
 }
 
+function findThoughtInsertionIndex(blocks: InternalMessageBlock[], fallbackIndex: number): number {
+  const existingThoughtIndex = blocks.findIndex((block) => block.type === "thought")
+  if (existingThoughtIndex >= 0) {
+    return existingThoughtIndex + 1
+  }
+
+  const firstAnswerBlockIndex = blocks.findIndex(
+    (block) => block.type !== "activity_timeline" && block.type !== "diting_think_frame"
+  )
+  return firstAnswerBlockIndex >= 0 ? firstAnswerBlockIndex : fallbackIndex
+}
+
 function insertOrMergeNarrativeBlock(
   next: InternalMessageBlock[],
   block: Extract<InternalMessageBlock, { type: "text" | "thought" }>,
 ): void {
-  const insertionIndex = findNarrativeInsertionIndex(next)
+  const defaultInsertionIndex = findNarrativeInsertionIndex(next)
+  const insertionIndex =
+    block.type === "thought"
+      ? findThoughtInsertionIndex(next, defaultInsertionIndex)
+      : defaultInsertionIndex
   const previous = next[insertionIndex - 1]
-  const insertedBeforeActiveToolChain = insertionIndex < next.length
+  const insertedBeforeActiveToolChain = block.type !== "thought" && insertionIndex < next.length
 
   if (previous?.type === block.type) {
     next[insertionIndex - 1] = {

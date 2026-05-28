@@ -561,17 +561,10 @@ export function filterFinalResponseBlocks({
   const currentText = extractAssistantTextFromBlocks(currentBlocks).trim()
   const responseText = extractAssistantTextFromBlocks(responseBlocks).trim()
   if (responseText && currentText === responseText) {
-    if (responseBlocks.every((block) => block.type === "text" || block.type === "thought")) {
-      return []
-    }
-    nextBlocks = nextBlocks.filter((block) => block.type !== "text")
-  }
-
-  if (nextBlocks.length === 0) return []
-
-  const hasCurrentText = hasRenderableTextBlock(currentBlocks)
-  if (hasCurrentText) {
-    nextBlocks = nextBlocks.filter((block) => block.type !== "thought")
+    const currentBlockKeys = new Set(currentBlocks.map(finalResponseBlockKey))
+    nextBlocks = nextBlocks.filter(
+      (block) => block.type !== "text" && !currentBlockKeys.has(finalResponseBlockKey(block))
+    )
   }
 
   if (nextBlocks.length === 0) return []

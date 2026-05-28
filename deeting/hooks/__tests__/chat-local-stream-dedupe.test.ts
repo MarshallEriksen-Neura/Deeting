@@ -76,7 +76,7 @@ describe("local chat stream dedupe helpers", () => {
     ).toBe(true)
   })
 
-  it("drops terminal thought and duplicate text after streamed local text", () => {
+  it("keeps terminal thought while dropping duplicate text after streamed local text", () => {
     expect(
       filterFinalResponseBlocks({
         currentBlocks: [{ type: "text", content: "final answer" } as MessageBlock],
@@ -86,10 +86,12 @@ describe("local chat stream dedupe helpers", () => {
         ],
         receivedStructuredBlocks: true,
       })
-    ).toEqual([])
+    ).toEqual([
+      { type: "thought", content: "provider reasoning" },
+    ])
   })
 
-  it("drops late terminal thought after a streamed final answer", () => {
+  it("keeps late terminal thought after a streamed final answer", () => {
     expect(
       filterFinalResponseBlocks({
         currentBlocks: [{ type: "text", content: "final answer" } as MessageBlock],
@@ -98,7 +100,9 @@ describe("local chat stream dedupe helpers", () => {
         ],
         receivedStructuredBlocks: true,
       })
-    ).toEqual([])
+    ).toEqual([
+      { type: "thought", content: "provider reasoning" },
+    ])
   })
 
   it("orders terminal meta narrative before final content", () => {
