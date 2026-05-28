@@ -1,5 +1,4 @@
 use super::super::runtime_state::LocalChatToolRuntimeState;
-use super::super::runtime_state::resolve_runtime_phase_step_type_for_graph;
 use super::super::tool_meta::build_state_effective_tool_call_meta;
 use super::{
     persisted_chat_runtime_context_from_state, serialize_inflight_runtime_context,
@@ -35,7 +34,6 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) async fn per
 
     let execution_graph = project_execution_graph_snapshot(GraphProjectionInput {
         session_id: state.session_id.clone(),
-        phase_step_type: resolve_runtime_phase_step_type_for_graph(state),
         trace_id: Some(state.trace_id.clone()),
         request_id: state.request_id.clone(),
         root_execution_id: None,

@@ -14,7 +14,6 @@ use super::super::tool_meta::attach_graph_metadata_to_pending_tool_meta;
 pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) async fn persist_delegate_task_execution_graph_snapshot(
     store: &McpStore,
     session_id: &str,
-    phase_step_type: &str,
     trace_id: &str,
     request_id: Option<&str>,
     execution_id: &str,
@@ -23,7 +22,6 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) async fn per
 ) {
     let execution_graph = project_execution_graph_snapshot(GraphProjectionInput {
         session_id: session_id.to_string(),
-        phase_step_type: phase_step_type.to_string(),
         trace_id: Some(trace_id.to_string()),
         request_id: request_id.map(str::to_string),
         root_execution_id: Some(execution_id.to_string()),

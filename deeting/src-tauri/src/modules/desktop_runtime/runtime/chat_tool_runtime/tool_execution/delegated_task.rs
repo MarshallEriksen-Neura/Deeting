@@ -1,6 +1,6 @@
 use super::super::audit;
 use super::super::lifecycle::now_unix_ms_i64;
-use super::super::runtime_state::{resolve_child_agent_max_rounds, resolve_runtime_phase_step_type_for_graph, LocalChatToolRuntimeState};
+use super::super::runtime_state::{resolve_child_agent_max_rounds, LocalChatToolRuntimeState};
 use crate::modules::custom_task_agents::runtime::preview_custom_task_agent_with_parent_model;
 use crate::modules::custom_task_agents::types::CustomTaskAgentPreviewRequest;
 use crate::modules::desktop_runtime::runtime::execution_plane::{
@@ -355,7 +355,6 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) async fn exe
     audit::persist_delegate_task_execution_graph_snapshot(
         app_state.mcp.store.as_ref(),
         session_id,
-        &resolve_runtime_phase_step_type_for_graph(state),
         state.trace_id.as_str(),
         state.request_id.as_deref(),
         execution_id.as_str(),

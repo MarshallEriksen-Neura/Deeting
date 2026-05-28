@@ -14,9 +14,6 @@ pub(crate) use delegation::{
     DelegatedExecutionStatus, DelegatedExecutionTarget, DELEGATED_RESULT_SCHEMA_VERSION,
     EXECUTION_TREE_SCHEMA_VERSION,
 };
-pub(crate) use composition::phase_step::{
-    phase_step_for_observable_frame_strategy, phase_step_type_name,
-};
 pub(crate) use dispatch::run_local_runtime_composition_entrypoint;
 pub(crate) use request::{LocalExecutionOutcome, LocalExecutionRequest};
 

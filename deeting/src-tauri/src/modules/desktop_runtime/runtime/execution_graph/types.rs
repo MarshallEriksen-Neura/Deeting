@@ -91,8 +91,8 @@ pub(crate) struct LocalExecutionGraphSnapshot {
     pub(crate) schema_version: i64,
     pub(crate) execution_id: String,
     pub(crate) session_id: String,
-    #[serde(alias = "plane")]
-    pub(crate) phase_step_type: String,
+    #[serde(default, alias = "plane", skip_serializing_if = "Option::is_none")]
+    pub(crate) phase_step_type: Option<String>,
     pub(crate) request_id: Option<String>,
     pub(crate) root_execution_id: Option<String>,
     pub(crate) nodes: Vec<LocalExecutionGraphNode>,

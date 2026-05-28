@@ -53,18 +53,8 @@ pub(crate) struct LocalExecutionOutcome {
 
 impl LocalExecutionRequest {
     pub(super) fn graph_context(&self) -> ExecutionGraphContext {
-        use super::phase_step_for_observable_frame_strategy;
-        use super::phase_step_type_name;
-        let phase_step_type = self
-            .world_model_frame
-            .as_ref()
-            .and_then(|frame| phase_step_for_observable_frame_strategy(frame.execution_strategy))
-            .map(phase_step_type_name)
-            .unwrap_or_else(|| self.execution_policy.initial_phase_step_name())
-            .to_string();
         ExecutionGraphContext {
             session_id: self.session_id.clone(),
-            phase_step_type,
             trace_id: self.trace_id.clone(),
             request_id: self.request_id.clone(),
             root_execution_id: self.root_execution_id.clone(),
