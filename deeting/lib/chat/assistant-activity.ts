@@ -80,10 +80,7 @@ function hasUnresolvedApprovalEvidence(
     if (!isToolApprovalResultBlock(block)) return false
     const callId = typeof block.callId === "string" ? block.callId.trim() : ""
     if (!callId || !resolvedCallIds.has(callId)) return true
-
-    const blockStatus =
-      typeof block.status === "string" ? block.status.trim().toLowerCase() : ""
-    return blockStatus === "requires_approval"
+    return false
   })
 }
 
@@ -175,9 +172,7 @@ export function deriveAssistantActivityState(
     if (!isToolApprovalResultBlock(block)) continue
     const toolName = typeof block.toolName === "string" ? block.toolName.trim() : ""
     const callId = typeof block.callId === "string" ? block.callId.trim() : ""
-    const blockStatus =
-      typeof block.status === "string" ? block.status.trim().toLowerCase() : ""
-    if (callId && resolvedCallIds.has(callId) && blockStatus !== "requires_approval") continue
+    if (callId && resolvedCallIds.has(callId)) continue
     return {
       isActive: true,
       statusStage: "render",

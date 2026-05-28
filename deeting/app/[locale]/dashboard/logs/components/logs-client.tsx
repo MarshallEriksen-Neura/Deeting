@@ -5,16 +5,16 @@ import { useLocale, useTranslations } from "next-intl"
 import { GitCompareArrows, ShieldCheck, Terminal } from "lucide-react"
 
 import { Button } from "@/components/ui/shadcn/button"
-import type { LocalFrameRouteOverlapReadiness } from "@/lib/api/admin-dashboard"
+import type { LocalFramePhaseAlignmentReadiness } from "@/lib/api/admin-dashboard"
 import {
   useGatewayLogs,
   useGatewayLogStats,
   type GatewayLogQuery,
 } from "@/lib/swr/use-gateway-logs"
 import {
-  getFrameRouteOverlapReadinessWindow,
-  isFrameRouteOverlapReadinessRuntime,
-  useFrameRouteOverlapReadiness,
+  getFramePhaseAlignmentReadinessWindow,
+  isFramePhaseAlignmentReadinessRuntime,
+  useFramePhaseAlignmentReadiness,
 } from "@/lib/swr/use-runtime-readiness"
 
 import { shortId } from "./logs-shared"
@@ -41,14 +41,14 @@ export function LogsClient() {
   const locale = useLocale()
   const [filters, setFilters] = useState<LogsFilters>(INITIAL_FILTERS)
   const [readinessWindow, setReadinessWindow] = useState(() =>
-    getFrameRouteOverlapReadinessWindow()
+    getFramePhaseAlignmentReadinessWindow()
   )
   const [desktopRuntime, setDesktopRuntime] = useState(false)
   const [cursor, setCursor] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   useEffect(() => {
-    setDesktopRuntime(isFrameRouteOverlapReadinessRuntime())
+    setDesktopRuntime(isFramePhaseAlignmentReadinessRuntime())
   }, [])
 
   const query = useMemo<GatewayLogQuery>(() => {
@@ -80,7 +80,7 @@ export function LogsClient() {
     error: readinessError,
     isLoading: readinessLoading,
     isValidating: readinessValidating,
-  } = useFrameRouteOverlapReadiness(readinessWindow, { enabled: desktopRuntime })
+  } = useFramePhaseAlignmentReadiness(readinessWindow, { enabled: desktopRuntime })
 
   const items = useMemo(() => data?.items ?? [], [data?.items])
   const effectiveSelectedId = selectedId && items.some((item) => item.id === selectedId)
@@ -129,7 +129,7 @@ export function LogsClient() {
             setCursor(null)
           }}
           onRefresh={() => {
-            setReadinessWindow(getFrameRouteOverlapReadinessWindow())
+            setReadinessWindow(getFramePhaseAlignmentReadinessWindow())
             void Promise.all([mutate(), mutateStats()])
           }}
           onReset={() => {
@@ -141,7 +141,7 @@ export function LogsClient() {
         />
 
         {desktopRuntime ? (
-          <FrameRouteOverlapReadinessBar
+          <FramePhaseAlignmentReadinessBar
             data={readinessData}
             errorMessage={readinessError?.message}
             loading={readinessLoading || readinessValidating}
@@ -224,13 +224,13 @@ export function LogsClient() {
   )
 }
 
-function FrameRouteOverlapReadinessBar({
+function FramePhaseAlignmentReadinessBar({
   data,
   errorMessage,
   loading,
   locale,
 }: {
-  data?: LocalFrameRouteOverlapReadiness
+  data?: LocalFramePhaseAlignmentReadiness
   errorMessage?: string
   loading: boolean
   locale: string
@@ -328,7 +328,7 @@ function ReadinessMetric({
 }
 
 function getReadinessStatus(
-  data: LocalFrameRouteOverlapReadiness | undefined,
+  data: LocalFramePhaseAlignmentReadiness | undefined,
   loading: boolean,
   errorMessage?: string
 ): ReadinessStatus {
@@ -350,7 +350,7 @@ function formatRatio(value: number | null | undefined, locale: string) {
 }
 
 function formatSamples(
-  data: LocalFrameRouteOverlapReadiness | undefined,
+  data: LocalFramePhaseAlignmentReadiness | undefined,
   locale: string
 ) {
   if (!data) return "--"
@@ -362,7 +362,7 @@ function formatSamples(
 }
 
 function formatMalformedPayloads(
-  data: LocalFrameRouteOverlapReadiness | undefined,
+  data: LocalFramePhaseAlignmentReadiness | undefined,
   locale: string
 ) {
   if (!data) return "--"

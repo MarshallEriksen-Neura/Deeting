@@ -9,7 +9,6 @@ import {
   ArrowRight,
   ArrowUpRight,
   Bot,
-  BrainCircuit,
   ChevronRight,
   Database,
   Orbit,
@@ -50,7 +49,7 @@ type SceneTone = "accent" | "ok" | "warn" | "muted"
 const SCENE_META: Record<
   KnownBanditScene,
   {
-    key: "routerLlm" | "taskRoute" | "workerSelection" | "memoryRecall"
+    key: "routerLlm" | "workerSelection" | "memoryRecall"
     icon: LucideIcon
     tileClassName: string
     iconClassName: string
@@ -61,12 +60,6 @@ const SCENE_META: Record<
     icon: Route,
     tileClassName: "border-[var(--accent-border)] bg-[var(--accent-soft)]/30",
     iconClassName: "bg-[var(--accent-soft)] text-[var(--accent-strong)]",
-  },
-  "task_learning:route": {
-    key: "taskRoute",
-    icon: BrainCircuit,
-    tileClassName: "border-[var(--info-border)] bg-[var(--info-soft)]/24",
-    iconClassName: "bg-[var(--info-soft)] text-[var(--info)]",
   },
   "task_learning:worker_selection": {
     key: "workerSelection",
@@ -332,7 +325,7 @@ export function BanditPageClient({ title }: { title: string }) {
           <BanditLoadingState />
         ) : (
           <>
-            <div className="grid gap-4 xl:grid-cols-4">
+            <div className="grid gap-4 xl:grid-cols-3">
               {sceneSummaries.map((summary) => (
                 <SceneCard
                   key={summary.scene}
@@ -369,8 +362,8 @@ export function BanditPageClient({ title }: { title: string }) {
 function BanditLoadingState() {
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 xl:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, index) => (
+      <div className="grid gap-4 xl:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, index) => (
           <GlassCard
             key={`bandit-scene-skel-${index}`}
             theme="surface"

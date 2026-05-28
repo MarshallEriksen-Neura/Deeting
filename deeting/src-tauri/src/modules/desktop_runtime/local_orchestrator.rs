@@ -29,17 +29,11 @@ use crate::modules::desktop_runtime::runtime::{
     should_apply_posterior_signal, LocalExecutionRequest,
 };
 #[cfg(test)]
-use crate::modules::desktop_runtime::runtime::{
-    build_local_control_plane_status_meta, build_local_execution_policy,
-};
-#[cfg(test)]
 use crate::modules::memory::types::LocalMemoryItem;
 use crate::modules::providers::model_guard::ensure_required_local_models_configured;
 use crate::modules::render_runtime::resolve_response_rendering;
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
-#[cfg(test)]
-use mcp_runtime::route::{select_local_route, LocalRouteKind};
 use mcp_session::conversation::{
     CreateConversationMessageRequest, LocalConversationHistoryMessage,
 };
@@ -952,7 +946,6 @@ pub async fn execute_local_orchestrated_chat(
         if let Some(task_fingerprint) = ctx.task_fingerprint.as_ref() {
             let evaluation = evaluate_task_learning_with_runtime(
                 task_fingerprint,
-                ctx.route_decision.as_ref(),
                 &execution_policy,
                 &response_text,
                 response_text_was_synthesized_from_error,
@@ -965,10 +958,6 @@ pub async fn execute_local_orchestrated_chat(
             let fingerprint_key = task_fingerprint.key();
             let task_fingerprint_json =
                 serde_json::to_string(task_fingerprint).unwrap_or_else(|_| "{}".to_string());
-            let route_decision_json = ctx
-                .route_decision
-                .as_ref()
-                .and_then(|value| serde_json::to_string(value).ok());
             let execution_policy_json =
                 serde_json::to_string(&execution_policy).unwrap_or_else(|_| "{}".to_string());
             let outcome_json =
@@ -987,7 +976,6 @@ pub async fn execute_local_orchestrated_chat(
                     &fingerprint_key,
                     ctx.latest_user_query(),
                     &task_fingerprint_json,
-                    route_decision_json.as_deref(),
                     &execution_policy_json,
                     &outcome_json,
                     &attribution_json,
@@ -1027,7 +1015,6 @@ pub async fn execute_local_orchestrated_chat(
             }
             record_task_learning_bandit_feedback(
                 app_state,
-                ctx.route_decision.as_ref(),
                 &evaluation.outcome,
                 total_latency_ms,
                 &session_id,
@@ -1125,46 +1112,17 @@ fn bandit_arm_allows_pinned_reuse(
 
 async fn record_task_learning_bandit_feedback(
     app_state: &AppState,
-    route_decision: Option<&crate::modules::desktop_runtime::runtime::LocalRouteDecision>,
     outcome: &crate::modules::desktop_runtime::runtime::task_learning::EvaluatedOutcome,
     total_latency_ms: i64,
     session_id: &str,
     memory_explore_arm_id: Option<&str>,
 ) {
     use crate::modules::providers::store::{
-        BANDIT_SCENE_MEMORY_RECALL, BANDIT_SCENE_TASK_ROUTE, BANDIT_SCENE_WORKER_SELECTION,
+        BANDIT_SCENE_MEMORY_RECALL, BANDIT_SCENE_WORKER_SELECTION,
     };
     use crate::modules::providers::types::BanditFeedbackRequest;
 
     let latency_ms_f64 = Some(total_latency_ms as f64);
-
-    if let Some(decision) = route_decision {
-        let judgment = outcome.route_judgment.as_str();
-        if let Some(success) = route_judgment_to_success(judgment) {
-            let feedback = BanditFeedbackRequest {
-                scene: Some(BANDIT_SCENE_TASK_ROUTE.to_string()),
-                arm_id: decision.route.as_str().to_string(),
-                success,
-                latency_ms: latency_ms_f64,
-                cost: None,
-                reward: Some(if success { 1.0 } else { 0.0 }),
-                routing_config: None,
-                reward_metric_type: None,
-            };
-            if let Err(err) = app_state
-                .providers
-                .store
-                .record_bandit_feedback(feedback)
-                .await
-            {
-                log::warn!(
-                    "task learning route bandit feedback failed session={} err={}",
-                    session_id,
-                    err
-                );
-            }
-        }
-    }
 
     if let (Some(delegated), Some(judgment)) = (
         outcome.delegated_execution.as_ref(),
@@ -1231,14 +1189,6 @@ async fn record_task_learning_bandit_feedback(
                 );
             }
         }
-    }
-}
-
-fn route_judgment_to_success(judgment: &str) -> Option<bool> {
-    match judgment {
-        "good" | "acceptable" => Some(true),
-        "wasteful" | "wrong" => Some(false),
-        _ => None,
     }
 }
 

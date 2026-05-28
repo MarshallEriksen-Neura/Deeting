@@ -434,7 +434,7 @@ mod tests {
         let packet = ColdStartPacket {
             fingerprint_key: "fp-x".to_string(),
             priors_summary: Some(
-                "Prior direction (from prior task runs):\n- route:direct (favor, weight +0.42, confidence 0.71)"
+                "Prior direction (from prior task runs):\n- verification:stronger_checks (favor, weight +0.42, confidence 0.71)"
                     .to_string(),
             ),
             reference_cases: vec![entry("succeeded by trimming the answer", 0.85, 0)],
@@ -442,7 +442,7 @@ mod tests {
         };
         let rendered = render_cold_start_packet_prompt(&packet).expect("prompt");
         assert!(rendered.contains("Prior direction"));
-        assert!(rendered.contains("route:direct"));
+        assert!(rendered.contains("verification:stronger_checks"));
         assert!(rendered.contains("Reference cases"));
         assert!(rendered.contains("trimming the answer"));
         assert!(rendered.contains("Negative cases"));
@@ -454,7 +454,7 @@ mod tests {
         let packet = ColdStartPacket {
             fingerprint_key: "fp-x".to_string(),
             priors_summary: Some(
-                "Prior direction (from prior task runs):\n- route:direct (favor, weight +0.30, confidence 0.60)"
+                "Prior direction (from prior task runs):\n- execution:execute_code_plan (favor, weight +0.30, confidence 0.60)"
                     .to_string(),
             ),
             reference_cases: Vec::new(),

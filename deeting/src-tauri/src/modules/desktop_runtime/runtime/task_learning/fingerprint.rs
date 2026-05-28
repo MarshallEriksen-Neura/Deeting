@@ -223,12 +223,16 @@ pub(crate) fn build_task_fingerprint(query: &str) -> TaskFingerprint {
             "create",
             "install",
             "change",
+            "delete",
+            "remove",
             "ship",
             "修复",
             "实现",
             "创建",
             "安装",
             "修改",
+            "删除",
+            "移除",
             "落地",
         ],
     ) {
@@ -340,7 +344,7 @@ mod tests {
     #[test]
     fn build_task_fingerprint_classifies_investigation_shape() {
         let fingerprint =
-            build_task_fingerprint("Investigate the desktop runtime route boundary for this task");
+            build_task_fingerprint("Investigate the desktop runtime phase boundary for this task");
 
         assert_eq!(fingerprint.goal_shape, "investigate");
         assert_eq!(fingerprint.environment_dependency, "high");

@@ -2,12 +2,12 @@ use super::types::{
     EvaluatedOutcome, PolicyDelta, TaskAttribution, TaskFingerprint,
     TaskLearningDelegatedExecution, TaskLearningEvaluation, TaskLearningSignals,
     ACTION_CAPABILITY_ATTACH, ACTION_DISCOVERY_SEARCH_EARLY, ACTION_EXECUTE_CODE_PLAN,
-    ACTION_ROUTE_DIRECT, ACTION_ROUTE_WORKER, ACTION_VERIFICATION_STRONGER_CHECKS,
-    DECISION_POINT_CAPABILITY_ATTACH, DECISION_POINT_DISCOVERY, DECISION_POINT_EXECUTION,
-    DECISION_POINT_ROUTE, DECISION_POINT_VERIFICATION, DECISION_POINT_WORKER_SELECTION,
+    ACTION_VERIFICATION_STRONGER_CHECKS, DECISION_POINT_CAPABILITY_ATTACH,
+    DECISION_POINT_DISCOVERY, DECISION_POINT_EXECUTION, DECISION_POINT_VERIFICATION,
+    DECISION_POINT_WORKER_SELECTION,
 };
 use crate::modules::desktop_runtime::runtime::sovereign::TaskExecutionIngress;
-use crate::modules::desktop_runtime::runtime::{LocalExecutionPolicy, LocalRouteDecision};
+use crate::modules::desktop_runtime::runtime::LocalExecutionPolicy;
 use serde_json::Value;
 
 const USER_RESPONSE_SIGNALS: &[&str] = &["accepted", "silent", "corrected", "rejected", "unknown"];
@@ -122,33 +122,6 @@ fn derive_verification_result(
     } else {
         "unverified".to_string()
     }
-}
-
-fn derive_route_judgment(
-    route_decision: Option<&LocalRouteDecision>,
-    final_status: &str,
-    signals: &TaskLearningSignals,
-) -> String {
-    let Some(route_decision) = route_decision else {
-        return "acceptable".to_string();
-    };
-    if route_decision.route.as_str() == "worker"
-        && final_status == "success"
-        && signals.tool_call_count == 0
-        && !signals.delegated_execution
-    {
-        return "wasteful".to_string();
-    }
-    if final_status == "failed"
-        && route_decision.route.as_str() == "direct"
-        && signals.tool_call_count == 0
-    {
-        return "wrong".to_string();
-    }
-    if final_status == "partial" {
-        return "acceptable".to_string();
-    }
-    "good".to_string()
 }
 
 fn delegated_profile_id(
@@ -318,27 +291,17 @@ fn derive_confidence(
 }
 
 fn build_secondary_evidence(
-    route_decision: Option<&LocalRouteDecision>,
     execution_policy: &LocalExecutionPolicy,
     delegated_execution: Option<&TaskLearningDelegatedExecution>,
     signals: &TaskLearningSignals,
     finish_reason: &str,
 ) -> Vec<String> {
     let mut evidence = Vec::new();
-    evidence.push(format!("route:{}", execution_policy.route.as_str()));
     evidence.push(format!(
         "phase_step_type:{}",
         execution_policy.initial_phase_step_name()
     ));
     evidence.push(format!("finish_reason:{finish_reason}"));
-    if let Some(route_decision) = route_decision {
-        evidence.extend(
-            route_decision
-                .reasons
-                .iter()
-                .map(|reason| format!("route_reason:{reason}")),
-        );
-    }
     if signals.search_sdk_calls > 0 {
         evidence.push(format!("search_sdk_calls:{}", signals.search_sdk_calls));
     }
@@ -374,7 +337,6 @@ fn build_secondary_evidence(
 
 fn compute_policy_delta(
     fingerprint: &TaskFingerprint,
-    route_decision: Option<&LocalRouteDecision>,
     outcome: &EvaluatedOutcome,
     attribution: &TaskAttribution,
     signals: &TaskLearningSignals,
@@ -389,41 +351,6 @@ fn compute_policy_delta(
     .to_string();
 
     match primary_stage {
-        DECISION_POINT_ROUTE => {
-            let chosen_route = route_decision
-                .map(|decision| decision.route.as_str())
-                .unwrap_or(ACTION_ROUTE_WORKER);
-            let other_route = if chosen_route == ACTION_ROUTE_WORKER {
-                ACTION_ROUTE_DIRECT
-            } else {
-                ACTION_ROUTE_WORKER
-            };
-            if matches!(outcome.route_judgment.as_str(), "wrong" | "wasteful") {
-                Some(PolicyDelta {
-                    decision_point: DECISION_POINT_ROUTE.to_string(),
-                    action_key: other_route.to_string(),
-                    direction: "strengthen".to_string(),
-                    magnitude,
-                    state,
-                    rationale: format!(
-                        "Route '{}' looked {} for this fingerprint, so the competing route is strengthened.",
-                        chosen_route, outcome.route_judgment
-                    ),
-                })
-            } else {
-                Some(PolicyDelta {
-                    decision_point: DECISION_POINT_ROUTE.to_string(),
-                    action_key: chosen_route.to_string(),
-                    direction: "strengthen".to_string(),
-                    magnitude: (magnitude * 0.8).clamp(0.05, 0.35),
-                    state,
-                    rationale: format!(
-                        "Route '{}' completed successfully for this fingerprint.",
-                        chosen_route
-                    ),
-                })
-            }
-        }
         DECISION_POINT_WORKER_SELECTION => {
             let action_key = delegated_profile_id(outcome.delegated_execution.as_ref())?;
             let delegated_execution = outcome.delegated_execution.as_ref();
@@ -541,7 +468,11 @@ fn learning_eligible_from_outcome(outcome: &EvaluatedOutcome) -> bool {
         outcome.user_response_signal.as_str(),
         "accepted" | "corrected" | "rejected"
     );
-    (outcome.confidence >= 0.45 || has_posterior_signal)
+    let has_structural_signal = matches!(
+        outcome.discovery_judgment.as_str(),
+        "skipped_when_needed" | "excessive"
+    );
+    (outcome.confidence >= 0.45 || has_posterior_signal || has_structural_signal)
         && outcome.final_status != "blocked"
         && outcome.error_profile != "environment_blocked"
 }
@@ -563,9 +494,6 @@ fn primary_stage_from_outcome(
     ) {
         return Some(DECISION_POINT_VERIFICATION.to_string());
     }
-    if matches!(outcome.route_judgment.as_str(), "wrong" | "wasteful") {
-        return Some(DECISION_POINT_ROUTE.to_string());
-    }
     if matches!(
         outcome.discovery_judgment.as_str(),
         "skipped_when_needed" | "excessive"
@@ -585,12 +513,11 @@ fn primary_stage_from_outcome(
     {
         return Some(DECISION_POINT_VERIFICATION.to_string());
     }
-    Some(DECISION_POINT_ROUTE.to_string())
+    Some(DECISION_POINT_VERIFICATION.to_string())
 }
 
 pub(crate) fn rebuild_task_learning_evaluation_from_outcome(
     fingerprint: &TaskFingerprint,
-    route_decision: Option<&LocalRouteDecision>,
     execution_policy: &LocalExecutionPolicy,
     finish_reason: &str,
     signals: &TaskLearningSignals,
@@ -608,7 +535,6 @@ pub(crate) fn rebuild_task_learning_evaluation_from_outcome(
     let attribution = TaskAttribution {
         primary_stage: primary_stage_from_outcome(fingerprint, &outcome, signals),
         secondary_evidence: build_secondary_evidence(
-            route_decision,
             execution_policy,
             outcome.delegated_execution.as_ref(),
             signals,
@@ -616,7 +542,7 @@ pub(crate) fn rebuild_task_learning_evaluation_from_outcome(
         ),
     };
     let policy_delta = if learning_eligible {
-        compute_policy_delta(fingerprint, route_decision, &outcome, &attribution, signals)
+        compute_policy_delta(fingerprint, &outcome, &attribution, signals)
     } else {
         None
     };
@@ -649,7 +575,6 @@ pub(crate) fn normalize_task_learning_user_response_signal(value: Option<&str>) 
 
 pub(crate) fn evaluate_task_learning_with_runtime(
     fingerprint: &TaskFingerprint,
-    route_decision: Option<&LocalRouteDecision>,
     execution_policy: &LocalExecutionPolicy,
     response_text: &str,
     response_text_was_synthesized_from_error: bool,
@@ -663,7 +588,6 @@ pub(crate) fn evaluate_task_learning_with_runtime(
     let signals = collect_task_learning_signals(tool_trace_blocks, had_delegated_execution);
     let mut outcome = evaluate_task_learning(
         fingerprint,
-        route_decision,
         execution_policy,
         response_text,
         response_text_was_synthesized_from_error,
@@ -680,7 +604,6 @@ pub(crate) fn evaluate_task_learning_with_runtime(
 
     rebuild_task_learning_evaluation_from_outcome(
         task_execution_ingress.fingerprint(),
-        route_decision,
         execution_policy,
         finish_reason,
         &signals,
@@ -690,7 +613,6 @@ pub(crate) fn evaluate_task_learning_with_runtime(
 
 pub(crate) fn evaluate_task_learning(
     fingerprint: &TaskFingerprint,
-    route_decision: Option<&LocalRouteDecision>,
     execution_policy: &LocalExecutionPolicy,
     response_text: &str,
     response_text_was_synthesized_from_error: bool,
@@ -709,7 +631,6 @@ pub(crate) fn evaluate_task_learning(
     );
     let verification_result =
         derive_verification_result(&final_status, finish_reason, response_text, &signals);
-    let route_judgment = derive_route_judgment(route_decision, &final_status, &signals);
     let discovery_judgment = derive_discovery_judgment(fingerprint, &final_status, &signals);
     let execution_judgment = derive_execution_judgment(&final_status, &signals);
     let error_profile = derive_error_profile(&signals);
@@ -721,7 +642,6 @@ pub(crate) fn evaluate_task_learning(
         verification_result: verification_result.clone(),
         user_response_signal: "silent".to_string(),
         judgment_mode: "heuristic".to_string(),
-        route_judgment: route_judgment.clone(),
         worker_selection_judgment: None,
         discovery_judgment: discovery_judgment.clone(),
         execution_judgment: execution_judgment.clone(),
@@ -740,7 +660,6 @@ pub(crate) fn evaluate_task_learning(
     };
     rebuild_task_learning_evaluation_from_outcome(
         fingerprint,
-        route_decision,
         execution_policy,
         finish_reason,
         &signals,
@@ -752,48 +671,19 @@ pub(crate) fn evaluate_task_learning(
 mod tests {
     use super::evaluate_task_learning;
     use crate::modules::desktop_runtime::runtime::task_learning::fingerprint::build_task_fingerprint;
+    use crate::modules::desktop_runtime::runtime::LocalExecutionPolicy;
     use crate::modules::desktop_runtime::runtime::TaskLearningDelegatedExecution;
-    use crate::modules::desktop_runtime::runtime::{
-        LocalExecutionPolicy, LocalRouteDecision, LocalRouteKind,
-    };
     use desktop_runtime_core::PhaseStepType;
-    use mcp_runtime::route::{RouteEvidence, TaskProfile};
 
-    fn policy(route: LocalRouteKind, initial_phase_step: PhaseStepType) -> LocalExecutionPolicy {
+    fn policy(initial_phase_step: PhaseStepType, worker: bool) -> LocalExecutionPolicy {
         LocalExecutionPolicy {
-            route,
             initial_phase_step,
             allowed_tool_names: vec![],
-            inject_execution_protocol: false,
-            allow_worker_delegation: false,
+            inject_execution_protocol: worker,
+            allow_worker_delegation: worker,
             prefer_workflow_runtime: false,
             require_diting_think_preflight: false,
             capability_snapshot: None,
-        }
-    }
-
-    fn route_decision(route: LocalRouteKind) -> LocalRouteDecision {
-        LocalRouteDecision {
-            route,
-            reasons: vec!["fallback_worker".to_string()],
-            profile: TaskProfile {
-                explicit_route: None,
-                has_batch_scope: false,
-                wants_programmatic_logic: false,
-                wants_analysis: false,
-                wants_single_action: true,
-                destructive_intent: false,
-                approval_sensitive: false,
-                wants_artifact_generation: false,
-            },
-            evidence: RouteEvidence {
-                direct_callable_capability_count: 1,
-                has_programmatic_executor: true,
-                any_mutating_capability: false,
-                any_high_risk_capability: false,
-                direct_capability_names: vec!["shell_execute".to_string()],
-                callable_direct_capability_names: vec!["shell_execute".to_string()],
-            },
         }
     }
 
@@ -816,8 +706,7 @@ mod tests {
     fn evaluate_task_learning_marks_discovery_skip_as_learning_signal() {
         let evaluation = evaluate_task_learning(
             &build_task_fingerprint("Investigate the current local runtime capabilities"),
-            Some(&route_decision(LocalRouteKind::Direct)),
-            &policy(LocalRouteKind::Direct, PhaseStepType::DirectChat),
+            &policy(PhaseStepType::DirectChat, false),
             "The runtime failed.",
             true,
             "error",
@@ -838,8 +727,7 @@ mod tests {
     fn evaluate_task_learning_strengthens_execute_code_plan_after_success() {
         let evaluation = evaluate_task_learning(
             &build_task_fingerprint("Create a local JSON artifact"),
-            Some(&route_decision(LocalRouteKind::Worker)),
-            &policy(LocalRouteKind::Worker, PhaseStepType::DelegatedWorker),
+            &policy(PhaseStepType::DelegatedWorker, true),
             "Finished and wrote the artifact.",
             false,
             "stop",
@@ -870,11 +758,40 @@ mod tests {
     }
 
     #[test]
+    fn evaluate_task_learning_records_phase_policy_without_entry_delta() {
+        let evaluation = evaluate_task_learning(
+            &build_task_fingerprint("Summarize the latest local context"),
+            &policy(PhaseStepType::DelegatedWorker, true),
+            "Summary complete.",
+            false,
+            "stop",
+            1_500,
+            &[],
+            None,
+        );
+
+        assert!(evaluation
+            .attribution
+            .secondary_evidence
+            .iter()
+            .any(|item| item == "phase_step_type:delegated_worker"));
+        assert!(evaluation.policy_delta.as_ref().is_none_or(|delta| {
+            matches!(
+                delta.decision_point.as_str(),
+                "worker_selection"
+                    | "discovery"
+                    | "capability_attach"
+                    | "execution"
+                    | "verification"
+            )
+        }));
+    }
+
+    #[test]
     fn evaluate_task_learning_strengthens_selected_worker_after_delegated_success() {
         let evaluation = evaluate_task_learning(
-            &build_task_fingerprint("analyze the desktop worker route"),
-            Some(&route_decision(LocalRouteKind::Worker)),
-            &policy(LocalRouteKind::Worker, PhaseStepType::DelegatedWorker),
+            &build_task_fingerprint("analyze the desktop delegated worker phase"),
+            &policy(PhaseStepType::DelegatedWorker, true),
             "Research worker completed the analysis.",
             false,
             "stop",
@@ -909,8 +826,7 @@ mod tests {
     fn evaluate_task_learning_weakens_selected_worker_after_delegated_failure() {
         let evaluation = evaluate_task_learning(
             &build_task_fingerprint("diagnose the workflow delegation path"),
-            Some(&route_decision(LocalRouteKind::Worker)),
-            &policy(LocalRouteKind::Worker, PhaseStepType::DelegatedWorker),
+            &policy(PhaseStepType::DelegatedWorker, true),
             "",
             true,
             "error",

@@ -1,41 +1,14 @@
 use super::fingerprint::build_task_fingerprint;
 use super::types::{
-    TaskPolicyHint, TaskPolicyHintItem, ACTION_ROUTE_DIRECT, ACTION_ROUTE_WORKER,
+    is_legacy_route_control_delta, TaskPolicyHint, TaskPolicyHintItem,
     DECISION_POINT_CAPABILITY_ATTACH, DECISION_POINT_DISCOVERY, DECISION_POINT_EXECUTION,
-    DECISION_POINT_ROUTE, DECISION_POINT_VERIFICATION, DECISION_POINT_WORKER_SELECTION,
+    DECISION_POINT_VERIFICATION, DECISION_POINT_WORKER_SELECTION,
 };
-use crate::modules::desktop_runtime::runtime::LocalRouteDecision;
-use crate::modules::providers::store::ProviderStore;
 
 const PRIOR_HALF_LIFE_MS: f64 = 21.0 * 24.0 * 60.0 * 60.0 * 1000.0;
-const ROUTE_OVERRIDE_THRESHOLD: f64 = 0.35;
-/// Weight applied to the bandit-derived route scores when nudging the
-/// `direct` vs `worker` decision. Kept small so the bandit acts as a
-/// tie-breaker and cannot override `apply_route_prior` on its own.
-const ROUTE_BANDIT_COEFF: f64 = 0.25;
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct RoutePriorApplication {
-    pub(crate) decision: LocalRouteDecision,
-    pub(crate) hint: TaskPolicyHint,
-    pub(crate) direct_score: f64,
-    pub(crate) worker_score: f64,
-    pub(crate) override_applied: bool,
-    pub(crate) bandit_direct_score: Option<f64>,
-    pub(crate) bandit_worker_score: Option<f64>,
-}
-
-/// Pre-computed bandit scores for the `direct` / `worker` route arms,
-/// folded into [`apply_route_prior`] as a tie-breaker.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub(crate) struct RouteBanditScores {
-    pub(crate) direct: f64,
-    pub(crate) worker: f64,
-}
 
 pub(crate) fn normalize_decision_point(value: &str) -> String {
     match value.trim().to_ascii_lowercase().as_str() {
-        "route" => DECISION_POINT_ROUTE.to_string(),
         "worker_selection" | "worker_profile" | "delegated_worker" => {
             DECISION_POINT_WORKER_SELECTION.to_string()
         }
@@ -53,9 +26,6 @@ pub(crate) fn normalize_decision_point(value: &str) -> String {
 
 fn guidance_for_decision_point(decision_point: &str) -> Option<String> {
     match decision_point {
-        DECISION_POINT_ROUTE => Some(
-            "Route priors are infrastructure-owned. Prefer them only as a tie-breaker over the base direct/worker router, never as a safety override.".to_string(),
-        ),
         DECISION_POINT_WORKER_SELECTION => Some(
             "Worker-selection priors should bias ranking between candidate custom task agent profiles for the same task family, but never override explicit profile selection.".to_string(),
         ),
@@ -129,139 +99,15 @@ pub(crate) async fn query_task_policy_hint(
     }
 }
 
-fn decision_has_safety_lock(decision: &LocalRouteDecision) -> bool {
-    decision.reasons.iter().any(|reason| {
-        matches!(
-            reason.as_str(),
-            "explicit_route"
-                | "explicit_task_agent"
-                | "destructive_intent"
-                | "approval_sensitive"
-                | "mutating_capability"
-                | "high_risk_capability"
-        )
-    })
-}
-
-pub(crate) fn apply_route_prior(
-    base_decision: LocalRouteDecision,
-    hint: TaskPolicyHint,
-    bandit_scores: Option<RouteBanditScores>,
-) -> RoutePriorApplication {
-    let direct_weight = hint
-        .priors
-        .iter()
-        .find(|item| item.action_key == ACTION_ROUTE_DIRECT)
-        .map(|item| item.effective_weight)
-        .unwrap_or(0.0);
-    let worker_weight = hint
-        .priors
-        .iter()
-        .find(|item| item.action_key == ACTION_ROUTE_WORKER)
-        .map(|item| item.effective_weight)
-        .unwrap_or(0.0);
-
-    let mut direct_score = if base_decision.route.as_str() == ACTION_ROUTE_DIRECT {
-        1.0
-    } else {
-        0.0
-    };
-    let mut worker_score = if base_decision.route.as_str() == ACTION_ROUTE_WORKER {
-        1.0
-    } else {
-        0.0
-    };
-    direct_score += direct_weight;
-    worker_score += worker_weight;
-
-    let (bandit_direct_score, bandit_worker_score) = match bandit_scores {
-        Some(scores) => {
-            direct_score += ROUTE_BANDIT_COEFF * scores.direct;
-            worker_score += ROUTE_BANDIT_COEFF * scores.worker;
-            (Some(scores.direct), Some(scores.worker))
-        }
-        None => (None, None),
-    };
-
-    let preferred_route = if direct_score > worker_score {
-        ACTION_ROUTE_DIRECT
-    } else {
-        ACTION_ROUTE_WORKER
-    };
-    let has_signal = !hint.priors.is_empty() || bandit_scores.is_some();
-    let override_applied = !decision_has_safety_lock(&base_decision)
-        && has_signal
-        && preferred_route != base_decision.route.as_str()
-        && (direct_score - worker_score).abs() >= ROUTE_OVERRIDE_THRESHOLD;
-
-    let mut decision = base_decision;
-    if override_applied {
-        decision.route = if preferred_route == ACTION_ROUTE_DIRECT {
-            crate::modules::desktop_runtime::runtime::LocalRouteKind::Direct
-        } else {
-            crate::modules::desktop_runtime::runtime::LocalRouteKind::Worker
-        };
-        decision
-            .reasons
-            .push(format!("task_learning_route_prior:{preferred_route}"));
-    } else if !hint.priors.is_empty() {
-        decision
-            .reasons
-            .push("task_learning_route_prior_observed".to_string());
-    }
-
-    RoutePriorApplication {
-        decision,
-        hint,
-        direct_score,
-        worker_score,
-        override_applied,
-        bandit_direct_score,
-        bandit_worker_score,
-    }
-}
-
-/// Pull the two `direct` / `worker` arm states for the
-/// `task_learning:route` scene and score them via the shared bandit
-/// selector so [`apply_route_prior`] can use them as a tie-breaker.
-pub(crate) async fn compute_route_bandit_scores(
-    provider_store: &ProviderStore,
-) -> Option<RouteBanditScores> {
-    use crate::modules::providers::bandit_selector::{score_arm, BanditConfig, BanditStrategy};
-    use crate::modules::providers::store::{BANDIT_DEFAULT_STRATEGY, BANDIT_SCENE_TASK_ROUTE};
-
-    let arms = provider_store
-        .list_bandit_arm_states(Some(BANDIT_SCENE_TASK_ROUTE.to_string()))
-        .await
-        .ok()?;
-    if arms.is_empty() {
-        return None;
-    }
-
-    let default_strategy =
-        BanditStrategy::parse(BANDIT_DEFAULT_STRATEGY).unwrap_or(BanditStrategy::Thompson);
-    let strategy = arms
-        .first()
-        .map(|arm| BanditStrategy::parse_or(&arm.strategy, default_strategy))
-        .unwrap_or(default_strategy);
-    let cfg = BanditConfig {
-        epsilon: arms.first().map(|arm| arm.epsilon).unwrap_or(0.1),
-        ..BanditConfig::default()
-    };
-
-    let mut rng = rand::thread_rng();
-    let find_state = |key: &str| arms.iter().find(|arm| arm.arm_id.as_deref() == Some(key));
-    let direct = score_arm(find_state(ACTION_ROUTE_DIRECT), strategy, &cfg, &mut rng);
-    let worker = score_arm(find_state(ACTION_ROUTE_WORKER), strategy, &cfg, &mut rng);
-    Some(RouteBanditScores { direct, worker })
-}
-
 pub(crate) async fn apply_policy_delta(
     store: &crate::modules::mcp::store::McpStore,
     fingerprint_key: &str,
     delta: &super::types::PolicyDelta,
     run_id: Option<&str>,
 ) -> Result<(), crate::modules::mcp::error::McpError> {
+    if is_legacy_route_control_delta(delta.decision_point.as_str(), delta.action_key.as_str()) {
+        return Ok(());
+    }
     let signed_delta = match delta.direction.as_str() {
         "strengthen" | "positive" => delta.magnitude.abs(),
         "weaken" | "negative" => -delta.magnitude.abs(),
@@ -280,53 +126,9 @@ pub(crate) async fn apply_policy_delta(
         .await
 }
 
-pub(crate) fn route_hint_status_meta(application: &RoutePriorApplication) -> serde_json::Value {
-    serde_json::json!({
-        "fingerprint_key": application.hint.fingerprint_key,
-        "recommended_action": application.hint.recommended_action,
-        "prior_count": application.hint.priors.len(),
-        "direct_score": application.direct_score,
-        "worker_score": application.worker_score,
-        "override_applied": application.override_applied,
-        "bandit_direct_score": application.bandit_direct_score,
-        "bandit_worker_score": application.bandit_worker_score,
-        "priors": application.hint.priors,
-    })
-}
-
 #[cfg(test)]
 mod tests {
-    use super::apply_route_prior;
     use super::normalize_decision_point;
-    use super::TaskPolicyHint;
-    use crate::modules::desktop_runtime::runtime::task_learning::build_task_fingerprint;
-    use crate::modules::desktop_runtime::runtime::{LocalRouteDecision, LocalRouteKind};
-    use mcp_runtime::route::{RouteEvidence, TaskProfile};
-
-    fn test_decision(route: LocalRouteKind) -> LocalRouteDecision {
-        LocalRouteDecision {
-            route,
-            reasons: vec!["fallback_worker".to_string()],
-            profile: TaskProfile {
-                explicit_route: None,
-                has_batch_scope: false,
-                wants_programmatic_logic: false,
-                wants_analysis: false,
-                wants_single_action: true,
-                destructive_intent: false,
-                approval_sensitive: false,
-                wants_artifact_generation: false,
-            },
-            evidence: RouteEvidence {
-                direct_callable_capability_count: 1,
-                has_programmatic_executor: true,
-                any_mutating_capability: false,
-                any_high_risk_capability: false,
-                direct_capability_names: vec!["shell_execute".to_string()],
-                callable_direct_capability_names: vec!["shell_execute".to_string()],
-            },
-        }
-    }
 
     #[test]
     fn normalize_decision_point_maps_aliases() {
@@ -337,126 +139,5 @@ mod tests {
             normalize_decision_point("worker_profile"),
             "worker_selection"
         );
-    }
-
-    #[test]
-    fn apply_route_prior_can_override_non_safety_worker_route() {
-        let fingerprint = build_task_fingerprint("fix this local config");
-        let application = apply_route_prior(
-            test_decision(LocalRouteKind::Worker),
-            TaskPolicyHint {
-                query: "fix this local config".to_string(),
-                decision_point: "route".to_string(),
-                fingerprint_key: fingerprint.key(),
-                task_fingerprint: fingerprint,
-                recommended_action: Some("direct".to_string()),
-                priors: vec![super::TaskPolicyHintItem {
-                    action_key: "direct".to_string(),
-                    raw_weight: 0.9,
-                    effective_weight: 0.9,
-                    confidence: 0.8,
-                    evidence_count: 3,
-                    maturity: "confirmed".to_string(),
-                    updated_at_unix_ms: 0,
-                }],
-                guidance: None,
-            },
-            None,
-        );
-
-        assert_eq!(application.decision.route, LocalRouteKind::Direct);
-        assert!(application.override_applied);
-    }
-
-    #[test]
-    fn apply_route_prior_does_not_override_safety_locked_direct_route() {
-        let mut decision = test_decision(LocalRouteKind::Direct);
-        decision.reasons = vec!["approval_sensitive".to_string()];
-        let fingerprint = build_task_fingerprint("provider token rotation");
-        let application = apply_route_prior(
-            decision,
-            TaskPolicyHint {
-                query: "provider token rotation".to_string(),
-                decision_point: "route".to_string(),
-                fingerprint_key: fingerprint.key(),
-                task_fingerprint: fingerprint,
-                recommended_action: Some("worker".to_string()),
-                priors: vec![super::TaskPolicyHintItem {
-                    action_key: "worker".to_string(),
-                    raw_weight: 1.2,
-                    effective_weight: 1.2,
-                    confidence: 0.9,
-                    evidence_count: 5,
-                    maturity: "confirmed".to_string(),
-                    updated_at_unix_ms: 0,
-                }],
-                guidance: None,
-            },
-            None,
-        );
-
-        assert_eq!(application.decision.route, LocalRouteKind::Direct);
-        assert!(!application.override_applied);
-    }
-
-    #[test]
-    fn apply_route_prior_does_not_override_explicit_task_agent_worker_route() {
-        let mut decision = test_decision(LocalRouteKind::Worker);
-        decision.reasons = vec![
-            "explicit_task_agent".to_string(),
-            "image_generation".to_string(),
-        ];
-        let fingerprint = build_task_fingerprint("@达芬奇 画一只猫");
-        let application = apply_route_prior(
-            decision,
-            TaskPolicyHint {
-                query: "画一只猫".to_string(),
-                decision_point: "route".to_string(),
-                fingerprint_key: fingerprint.key(),
-                task_fingerprint: fingerprint,
-                recommended_action: Some("direct".to_string()),
-                priors: vec![super::TaskPolicyHintItem {
-                    action_key: "direct".to_string(),
-                    raw_weight: 1.2,
-                    effective_weight: 1.2,
-                    confidence: 0.9,
-                    evidence_count: 5,
-                    maturity: "confirmed".to_string(),
-                    updated_at_unix_ms: 0,
-                }],
-                guidance: None,
-            },
-            None,
-        );
-
-        assert_eq!(application.decision.route, LocalRouteKind::Worker);
-        assert!(!application.override_applied);
-    }
-
-    #[test]
-    fn apply_route_prior_bandit_scores_surface_on_application() {
-        let fingerprint = build_task_fingerprint("quick shell check");
-        let application = apply_route_prior(
-            test_decision(LocalRouteKind::Direct),
-            TaskPolicyHint {
-                query: "quick shell check".to_string(),
-                decision_point: "route".to_string(),
-                fingerprint_key: fingerprint.key(),
-                task_fingerprint: fingerprint,
-                recommended_action: None,
-                priors: vec![],
-                guidance: None,
-            },
-            Some(super::RouteBanditScores {
-                direct: 0.8,
-                worker: 0.2,
-            }),
-        );
-
-        assert_eq!(application.bandit_direct_score, Some(0.8));
-        assert_eq!(application.bandit_worker_score, Some(0.2));
-        // 0.25 * 0.6 = 0.15 < ROUTE_OVERRIDE_THRESHOLD so bandit alone cannot flip.
-        assert_eq!(application.decision.route, LocalRouteKind::Direct);
-        assert!(!application.override_applied);
     }
 }

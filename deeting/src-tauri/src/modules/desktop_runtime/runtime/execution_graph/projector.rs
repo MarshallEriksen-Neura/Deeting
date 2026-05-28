@@ -15,7 +15,6 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Default)]
 pub(crate) struct GraphProjectionInput {
     pub(crate) session_id: String,
-    pub(crate) route: String,
     pub(crate) phase_step_type: String,
     pub(crate) trace_id: Option<String>,
     pub(crate) request_id: Option<String>,
@@ -40,7 +39,6 @@ pub(crate) fn project_execution_graph_snapshot(
         dependency_ids: Vec::new(),
         metadata: json!({
             "round": 1,
-            "route": input.route,
             "phase_step_type": input.phase_step_type,
         }),
         input_payload: None,
@@ -241,7 +239,6 @@ pub(crate) fn project_execution_graph_snapshot(
         schema_version: EXECUTION_GRAPH_SCHEMA_VERSION,
         execution_id,
         session_id: input.session_id,
-        route: input.route,
         phase_step_type: input.phase_step_type,
         request_id: input.request_id,
         root_execution_id: input.root_execution_id,
@@ -544,7 +541,6 @@ mod tests {
     fn project_execution_graph_snapshot_keeps_tool_call_order_and_finalize_dependency() {
         let snapshot = project_execution_graph_snapshot(GraphProjectionInput {
             session_id: "session-1".to_string(),
-            route: "direct".to_string(),
             phase_step_type: "direct_chat".to_string(),
             trace_id: Some("trace-1".to_string()),
             request_id: Some("req-1".to_string()),
@@ -587,7 +583,6 @@ mod tests {
     fn project_execution_graph_snapshot_creates_waiting_approval_gate() {
         let snapshot = project_execution_graph_snapshot(GraphProjectionInput {
             session_id: "session-1".to_string(),
-            route: "direct".to_string(),
             phase_step_type: "direct_chat".to_string(),
             trace_id: Some("trace-approval".to_string()),
             request_id: None,
@@ -625,7 +620,6 @@ mod tests {
     fn project_execution_graph_snapshot_records_runtime_transition_decision() {
         let snapshot = project_execution_graph_snapshot(GraphProjectionInput {
             session_id: "session-1".to_string(),
-            route: "direct".to_string(),
             phase_step_type: "direct_chat".to_string(),
             trace_id: Some("trace-transition".to_string()),
             request_id: Some("request-transition".to_string()),
@@ -676,7 +670,6 @@ mod tests {
     fn project_execution_graph_snapshot_records_runtime_transition_correlation() {
         let snapshot = project_execution_graph_snapshot(GraphProjectionInput {
             session_id: "session-1".to_string(),
-            route: "direct".to_string(),
             phase_step_type: "direct_chat".to_string(),
             trace_id: Some("trace-transition".to_string()),
             request_id: Some("request-transition".to_string()),
@@ -723,7 +716,6 @@ mod tests {
         });
         let snapshot = project_execution_graph_snapshot(GraphProjectionInput {
             session_id: "session-1".to_string(),
-            route: "direct".to_string(),
             phase_step_type: "direct_chat".to_string(),
             trace_id: Some("trace-frame".to_string()),
             request_id: Some("request-frame".to_string()),
@@ -779,7 +771,6 @@ mod tests {
         });
         let snapshot = project_execution_graph_snapshot(GraphProjectionInput {
             session_id: "session-1".to_string(),
-            route: "direct".to_string(),
             phase_step_type: "cron_monitor".to_string(),
             trace_id: Some("trace-cron-frame".to_string()),
             request_id: Some("request-cron-frame".to_string()),
@@ -824,7 +815,6 @@ mod tests {
     fn project_execution_graph_blocks_from_value_emits_tool_blocks() {
         let snapshot = project_execution_graph_snapshot(GraphProjectionInput {
             session_id: "session-1".to_string(),
-            route: "direct".to_string(),
             phase_step_type: "direct_chat".to_string(),
             trace_id: Some("trace-blocks".to_string()),
             request_id: None,

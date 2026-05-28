@@ -7,7 +7,7 @@ use tauri::{AppHandle, State};
 
 use crate::modules::desktop_runtime::runtime::e3_readiness;
 use crate::modules::desktop_runtime::runtime::execution_graph_store::{
-    summarize_frame_route_overlap_readiness, FrameRouteOverlapReadiness,
+    summarize_frame_phase_alignment_readiness, FramePhaseAlignmentReadiness,
 };
 use crate::state::AppState;
 use mcp_registry::types::{
@@ -35,7 +35,7 @@ fn to_string(error: impl std::fmt::Display) -> String {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct LocalFrameRouteOverlapReadinessResponse {
+pub struct LocalFramePhaseAlignmentReadinessResponse {
     pub metric: &'static str,
     pub contract_schema_version: i64,
     pub observation_window: &'static str,
@@ -71,8 +71,8 @@ pub struct LocalFrameRouteOverlapReadinessResponse {
     pub threshold_met: bool,
 }
 
-impl From<FrameRouteOverlapReadiness> for LocalFrameRouteOverlapReadinessResponse {
-    fn from(readiness: FrameRouteOverlapReadiness) -> Self {
+impl From<FramePhaseAlignmentReadiness> for LocalFramePhaseAlignmentReadinessResponse {
+    fn from(readiness: FramePhaseAlignmentReadiness) -> Self {
         Self {
             metric: readiness.metric,
             contract_schema_version: readiness.contract_schema_version,
@@ -479,23 +479,23 @@ pub async fn get_local_gateway_log_stats(
 }
 
 #[tauri::command]
-pub async fn get_local_frame_route_overlap_readiness(
+pub async fn get_local_frame_phase_alignment_readiness(
     state: State<'_, AppState>,
     window_start_unix_ms: Option<i64>,
     window_end_unix_ms: Option<i64>,
-) -> Result<LocalFrameRouteOverlapReadinessResponse, String> {
-    e3_readiness::validate_frame_route_overlap_readiness_window(
+) -> Result<LocalFramePhaseAlignmentReadinessResponse, String> {
+    e3_readiness::validate_frame_phase_alignment_readiness_window(
         window_start_unix_ms,
         window_end_unix_ms,
     )
     .map_err(str::to_string)?;
-    summarize_frame_route_overlap_readiness(
+    summarize_frame_phase_alignment_readiness(
         state.mcp.store.as_ref(),
         window_start_unix_ms,
         window_end_unix_ms,
     )
     .await
-    .map(LocalFrameRouteOverlapReadinessResponse::from)
+    .map(LocalFramePhaseAlignmentReadinessResponse::from)
     .map_err(to_string)
 }
 
@@ -936,35 +936,35 @@ async fn persist_action_log(
 #[cfg(test)]
 mod tests {
     use crate::modules::desktop_runtime::runtime::e3_readiness::{
-        validate_frame_route_overlap_readiness_window, WINDOW_END_NEGATIVE_ERROR,
+        validate_frame_phase_alignment_readiness_window, WINDOW_END_NEGATIVE_ERROR,
         WINDOW_REVERSED_ERROR, WINDOW_START_NEGATIVE_ERROR,
     };
 
     #[test]
-    fn frame_route_overlap_readiness_window_accepts_open_and_ordered_bounds() {
-        assert!(validate_frame_route_overlap_readiness_window(None, None).is_ok());
-        assert!(validate_frame_route_overlap_readiness_window(Some(0), None).is_ok());
-        assert!(validate_frame_route_overlap_readiness_window(None, Some(100)).is_ok());
-        assert!(validate_frame_route_overlap_readiness_window(Some(0), Some(100)).is_ok());
-        assert!(validate_frame_route_overlap_readiness_window(Some(100), Some(100)).is_ok());
+    fn frame_phase_alignment_readiness_window_accepts_open_and_ordered_bounds() {
+        assert!(validate_frame_phase_alignment_readiness_window(None, None).is_ok());
+        assert!(validate_frame_phase_alignment_readiness_window(Some(0), None).is_ok());
+        assert!(validate_frame_phase_alignment_readiness_window(None, Some(100)).is_ok());
+        assert!(validate_frame_phase_alignment_readiness_window(Some(0), Some(100)).is_ok());
+        assert!(validate_frame_phase_alignment_readiness_window(Some(100), Some(100)).is_ok());
     }
 
     #[test]
-    fn frame_route_overlap_readiness_window_rejects_negative_bounds() {
+    fn frame_phase_alignment_readiness_window_rejects_negative_bounds() {
         assert_eq!(
-            validate_frame_route_overlap_readiness_window(Some(-1), Some(100)),
+            validate_frame_phase_alignment_readiness_window(Some(-1), Some(100)),
             Err(WINDOW_START_NEGATIVE_ERROR)
         );
         assert_eq!(
-            validate_frame_route_overlap_readiness_window(Some(0), Some(-1)),
+            validate_frame_phase_alignment_readiness_window(Some(0), Some(-1)),
             Err(WINDOW_END_NEGATIVE_ERROR)
         );
     }
 
     #[test]
-    fn frame_route_overlap_readiness_window_rejects_reversed_bounds() {
+    fn frame_phase_alignment_readiness_window_rejects_reversed_bounds() {
         assert_eq!(
-            validate_frame_route_overlap_readiness_window(Some(101), Some(100)),
+            validate_frame_phase_alignment_readiness_window(Some(101), Some(100)),
             Err(WINDOW_REVERSED_ERROR)
         );
     }

@@ -35,7 +35,6 @@ where
         "runtime.phase_executor.selected",
         Some(json!({
             "phase_step_source": "world_model_frame",
-            "route": request.execution_policy.route.as_str(),
             "composition": "deeting_runtime_phase_composition",
         })),
     );
@@ -108,7 +107,7 @@ fn frame_resolved_status_payload(
     let legacy_policy_step_name = phase_step_type_name(legacy_policy_step);
     let effective_policy_step_name = phase_step_type_name(effective_policy_step);
     let alignment_payload =
-        frame_route_policy_alignment_payload(legacy_policy_step, effective_policy_step, frame_step);
+        frame_phase_policy_alignment_payload(legacy_policy_step, effective_policy_step, frame_step);
     let sample_eligible = frame_step.is_some();
     let sample_exclusion_reason = frame_step_sample_exclusion_reason(frame_step);
 
@@ -118,8 +117,11 @@ fn frame_resolved_status_payload(
         "phase_committed_count": result.plan.committed_phases.len(),
         "committed_phase_step_type": committed_step_name,
         "final_answer_present": result.final_answer.is_some(),
-        "route_policy": {
-            "route": execution_policy.route.as_str(),
+        "phase_policy": {
+            "runtime_owner": "world_model_runtime_owner",
+            "policy_observation_role": "legacy_phase_shadow",
+            "policy_live_control_signal": false,
+            "evidence_label": "historical_runtime_evidence",
             "initial_phase_step": legacy_policy_step_name,
             "effective_phase_step": effective_policy_step_name,
             "prefer_workflow_runtime": execution_policy.prefer_workflow_runtime,
@@ -132,9 +134,9 @@ fn frame_resolved_status_payload(
         "execution_phase": {
             "first_committed_phase_step_type": committed_step_name,
         },
-        "route_policy_alignment": alignment_payload,
+        "phase_policy_alignment": alignment_payload,
         "e3_readiness": {
-            "metric": e3_readiness::FRAME_ROUTE_OVERLAP_METRIC,
+            "metric": e3_readiness::FRAME_PHASE_ALIGNMENT_METRIC,
             "contract_schema_version": e3_readiness::CONTRACT_SCHEMA_VERSION,
             "sample_eligible": sample_eligible,
             "sample_exclusion_reason": sample_exclusion_reason,
@@ -156,7 +158,7 @@ fn frame_step_sample_exclusion_reason(frame_step: Option<PhaseStepType>) -> Opti
     }
 }
 
-fn frame_route_policy_alignment_payload(
+fn frame_phase_policy_alignment_payload(
     legacy_policy_step: PhaseStepType,
     effective_policy_step: PhaseStepType,
     frame_step: Option<PhaseStepType>,
@@ -168,8 +170,8 @@ fn frame_route_policy_alignment_payload(
         .map(|step| step == effective_policy_step)
         .unwrap_or(false);
     let alignment_status = match frame_step {
-        Some(step) if step == effective_policy_step => e3_readiness::ROUTE_ALIGNMENT_MATCHED,
-        Some(_) => e3_readiness::ROUTE_ALIGNMENT_MISMATCHED,
+        Some(step) if step == effective_policy_step => e3_readiness::PHASE_ALIGNMENT_MATCHED,
+        Some(_) => e3_readiness::PHASE_ALIGNMENT_MISMATCHED,
         None => e3_readiness::FRAME_STRATEGY_STEP_MISSING,
     };
     let sample_eligible = frame_step.is_some();
@@ -181,6 +183,8 @@ fn frame_route_policy_alignment_payload(
         "sample_eligible": sample_eligible,
         "sample_exclusion_reason": sample_exclusion_reason,
         "comparison_basis": e3_readiness::LEGACY_EFFECTIVE_PHASE_STEP_BASIS,
+        "comparison_role": "legacy_phase_shadow",
+        "policy_live_control_signal": false,
         "legacy_initial_phase_step": legacy_policy_step_name,
         "legacy_effective_phase_step": effective_policy_step_name,
         "frame_derived_phase_step": frame_step_name,
@@ -572,20 +576,17 @@ mod tests {
         ExecutionStrategy, FrameProvenance, FrameValidation, HookDecision, HookEnforcementMode,
         Phase, PhaseStatus, PhaseStepType, PlanArtifact, RequiredArtifact,
     };
-    use mcp_runtime::route::LocalRouteKind;
     use serde_json::json;
 
     fn test_execution_policy(
-        route: LocalRouteKind,
         initial_phase_step: PhaseStepType,
+        worker_delegation: bool,
     ) -> LocalExecutionPolicy {
-        let worker_route = route == LocalRouteKind::Worker;
         LocalExecutionPolicy {
-            route,
             initial_phase_step,
             allowed_tool_names: Vec::new(),
-            inject_execution_protocol: worker_route,
-            allow_worker_delegation: worker_route,
+            inject_execution_protocol: worker_delegation,
+            allow_worker_delegation: worker_delegation,
             prefer_workflow_runtime: false,
             require_diting_think_preflight: false,
             capability_snapshot: None,
@@ -595,7 +596,7 @@ mod tests {
     fn test_frame(
         goal: &str,
         strategy: ExecutionStrategy,
-        route_evidence: &str,
+        runtime_evidence: &str,
     ) -> WorldModelFrame {
         WorldModelFrame::new(
             "frame-session-task",
@@ -606,7 +607,7 @@ mod tests {
             FrameProvenance {
                 produced_by: "deeting_runtime_composition".to_string(),
                 reason: "bootstrap frame from local execution request".to_string(),
-                evidence_refs: vec![route_evidence.to_string()],
+                evidence_refs: vec![runtime_evidence.to_string()],
             },
         )
     }
@@ -638,9 +639,9 @@ mod tests {
     }
 
     #[test]
-    fn frame_route_policy_alignment_payload_marks_overlap_status() {
+    fn frame_phase_policy_alignment_payload_marks_overlap_status() {
         assert_eq!(
-            frame_route_policy_alignment_payload(
+            frame_phase_policy_alignment_payload(
                 PhaseStepType::DirectChat,
                 PhaseStepType::DirectChat,
                 Some(PhaseStepType::DirectChat),
@@ -651,13 +652,15 @@ mod tests {
                 "sample_eligible": true,
                 "sample_exclusion_reason": null,
                 "comparison_basis": "legacy_effective_phase_step",
+                "comparison_role": "legacy_phase_shadow",
+                "policy_live_control_signal": false,
                 "legacy_initial_phase_step": "direct_chat",
                 "legacy_effective_phase_step": "direct_chat",
                 "frame_derived_phase_step": "direct_chat",
             })
         );
         assert_eq!(
-            frame_route_policy_alignment_payload(
+            frame_phase_policy_alignment_payload(
                 PhaseStepType::DirectChat,
                 PhaseStepType::DirectChat,
                 Some(PhaseStepType::DelegatedWorker),
@@ -668,13 +671,15 @@ mod tests {
                 "sample_eligible": true,
                 "sample_exclusion_reason": null,
                 "comparison_basis": "legacy_effective_phase_step",
+                "comparison_role": "legacy_phase_shadow",
+                "policy_live_control_signal": false,
                 "legacy_initial_phase_step": "direct_chat",
                 "legacy_effective_phase_step": "direct_chat",
                 "frame_derived_phase_step": "delegated_worker",
             })
         );
         assert_eq!(
-            frame_route_policy_alignment_payload(
+            frame_phase_policy_alignment_payload(
                 PhaseStepType::DelegatedWorker,
                 PhaseStepType::DelegatedWorker,
                 None,
@@ -685,13 +690,15 @@ mod tests {
                 "sample_eligible": false,
                 "sample_exclusion_reason": "missing_frame_strategy_step",
                 "comparison_basis": "legacy_effective_phase_step",
+                "comparison_role": "legacy_phase_shadow",
+                "policy_live_control_signal": false,
                 "legacy_initial_phase_step": "delegated_worker",
                 "legacy_effective_phase_step": "delegated_worker",
                 "frame_derived_phase_step": null,
             })
         );
         assert_eq!(
-            frame_route_policy_alignment_payload(
+            frame_phase_policy_alignment_payload(
                 PhaseStepType::DelegatedWorker,
                 PhaseStepType::DelegatedWorkflow,
                 Some(PhaseStepType::DelegatedWorkflow),
@@ -702,6 +709,8 @@ mod tests {
                 "sample_eligible": true,
                 "sample_exclusion_reason": null,
                 "comparison_basis": "legacy_effective_phase_step",
+                "comparison_role": "legacy_phase_shadow",
+                "policy_live_control_signal": false,
                 "legacy_initial_phase_step": "delegated_worker",
                 "legacy_effective_phase_step": "delegated_workflow",
                 "frame_derived_phase_step": "delegated_workflow",
@@ -714,12 +723,11 @@ mod tests {
         let frame = test_frame(
             "answer directly",
             ExecutionStrategy::DirectIteration,
-            "route:direct",
+            "phase:direct_chat",
         );
         let plan = PlanArtifact::new("plan-1", frame.frame_version_id.clone());
         let result = test_tick_result(frame, plan);
-        let execution_policy =
-            test_execution_policy(LocalRouteKind::Direct, PhaseStepType::DirectChat);
+        let execution_policy = test_execution_policy(PhaseStepType::DirectChat, false);
 
         let payload = frame_resolved_status_payload(&execution_policy, &result);
 
@@ -732,11 +740,11 @@ mod tests {
             Some(&Value::Null)
         );
         assert_eq!(
-            payload.pointer("/route_policy_alignment/status"),
+            payload.pointer("/phase_policy_alignment/status"),
             Some(&json!("matched"))
         );
         assert_eq!(
-            payload.pointer("/route_policy_alignment/frame_derived_phase_step"),
+            payload.pointer("/phase_policy_alignment/frame_derived_phase_step"),
             Some(&json!("direct_chat"))
         );
         assert_eq!(
@@ -762,7 +770,7 @@ mod tests {
         let frame = test_frame(
             "run the workflow",
             ExecutionStrategy::DelegatedWorkflow,
-            "route:worker",
+            "phase:delegated_worker",
         );
         let mut plan = PlanArtifact::new("plan-1", frame.frame_version_id.clone());
         plan.committed_phases.push(test_committed_phase(
@@ -770,26 +778,25 @@ mod tests {
             PhaseStepType::DelegatedWorkflow,
         ));
         let result = test_tick_result(frame, plan);
-        let mut execution_policy =
-            test_execution_policy(LocalRouteKind::Worker, PhaseStepType::DelegatedWorker);
+        let mut execution_policy = test_execution_policy(PhaseStepType::DelegatedWorker, true);
         execution_policy.prefer_workflow_runtime = true;
 
         let payload = frame_resolved_status_payload(&execution_policy, &result);
 
         assert_eq!(
-            payload.pointer("/route_policy/initial_phase_step"),
+            payload.pointer("/phase_policy/initial_phase_step"),
             Some(&json!("delegated_worker"))
         );
         assert_eq!(
-            payload.pointer("/route_policy/effective_phase_step"),
+            payload.pointer("/phase_policy/effective_phase_step"),
             Some(&json!("delegated_workflow"))
         );
         assert_eq!(
-            payload.pointer("/route_policy_alignment/status"),
+            payload.pointer("/phase_policy_alignment/status"),
             Some(&json!("matched"))
         );
         assert_eq!(
-            payload.pointer("/route_policy_alignment/legacy_effective_phase_step"),
+            payload.pointer("/phase_policy_alignment/legacy_effective_phase_step"),
             Some(&json!("delegated_workflow"))
         );
         assert_eq!(
@@ -803,12 +810,11 @@ mod tests {
         let frame = test_frame(
             "mix direct and workflow handling",
             ExecutionStrategy::Hybrid,
-            "route:worker",
+            "phase:delegated_worker",
         );
         let plan = PlanArtifact::new("plan-1", frame.frame_version_id.clone());
         let result = test_tick_result(frame, plan);
-        let execution_policy =
-            test_execution_policy(LocalRouteKind::Worker, PhaseStepType::DelegatedWorker);
+        let execution_policy = test_execution_policy(PhaseStepType::DelegatedWorker, true);
 
         let payload = frame_resolved_status_payload(&execution_policy, &result);
 
@@ -817,15 +823,15 @@ mod tests {
             Some(&Value::Null)
         );
         assert_eq!(
-            payload.pointer("/route_policy_alignment/status"),
+            payload.pointer("/phase_policy_alignment/status"),
             Some(&json!("missing_frame_strategy_step"))
         );
         assert_eq!(
-            payload.pointer("/route_policy_alignment/sample_eligible"),
+            payload.pointer("/phase_policy_alignment/sample_eligible"),
             Some(&json!(false))
         );
         assert_eq!(
-            payload.pointer("/route_policy_alignment/sample_exclusion_reason"),
+            payload.pointer("/phase_policy_alignment/sample_exclusion_reason"),
             Some(&json!("missing_frame_strategy_step"))
         );
         assert_eq!(
@@ -843,7 +849,7 @@ mod tests {
         let mut frame = test_frame(
             "answer the user",
             ExecutionStrategy::DirectIteration,
-            "route:direct",
+            "phase:direct_chat",
         );
         frame.fingerprint_key = Some("fingerprint-1".to_string());
 
@@ -881,8 +887,7 @@ mod tests {
                 phase_id: "phase-1".to_string(),
             },
         ];
-        let execution_policy =
-            test_execution_policy(LocalRouteKind::Direct, PhaseStepType::DirectChat);
+        let execution_policy = test_execution_policy(PhaseStepType::DirectChat, false);
         let frame_resolved_payload = frame_resolved_status_payload(&execution_policy, &result);
         attach_runtime_result_to_outcome(
             &mut outcome,
@@ -905,12 +910,12 @@ mod tests {
             Some(&json!("frame-session-task"))
         );
         assert_eq!(
-            graph.pointer("/metadata/runtime_phase_resolution/route_policy_alignment/status"),
+            graph.pointer("/metadata/runtime_phase_resolution/phase_policy_alignment/status"),
             Some(&json!("matched"))
         );
         assert_eq!(
             graph.pointer("/metadata/runtime_phase_resolution/e3_readiness/metric"),
-            Some(&json!("frame_route_phase_step_overlap"))
+            Some(&json!("frame_phase_step_alignment"))
         );
         assert_eq!(
             graph.pointer("/metadata/runtime_phase_resolution/e3_readiness/sample_eligible"),

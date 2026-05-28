@@ -236,7 +236,6 @@ mod tests {
             "verification_result": "verified",
             "user_response_signal": "accepted",
             "judgment_mode": "automatic",
-            "route_judgment": "direct",
             "discovery_judgment": "not_needed",
             "execution_judgment": "not_needed",
             "cost_class": "low",

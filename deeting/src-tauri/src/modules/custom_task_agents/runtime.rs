@@ -991,7 +991,7 @@ fn build_initial_messages(
         "Callable MCP tools and callable skill actions are separate execution lanes.".to_string(),
         "Use only the callable MCP tools and callable skill actions explicitly bound to this custom task agent.".to_string(),
         "Follow the parent runtime's Agent Skills Progressive Disclosure contract; this delegated agent receives already-selected guidance context and bound executable lanes only.".to_string(),
-        "Do not perform extra search, search_sdk, route planning, or orchestration on your own.".to_string(),
+        "Do not perform extra search, search_sdk, delegated-phase planning, or orchestration on your own.".to_string(),
         "If you are blocked, explain the blocker briefly and stop.".to_string(),
         String::new(),
         "## Agent Task Prompt".to_string(),
@@ -1358,13 +1358,13 @@ mod tests {
 
         let packet = json!({
             "schema_version": 1,
-            "goal": "Analyze the worker route",
+            "goal": "Analyze the delegated worker phase",
             "packet_hash": "hash-123",
         });
 
         let messages = build_initial_messages(
             &profile,
-            "Analyze the worker route",
+            "Analyze the delegated worker phase",
             "",
             None,
             Some(&packet),

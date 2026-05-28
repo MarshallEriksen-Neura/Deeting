@@ -87,7 +87,6 @@ export const TaskLearningRunDetailSchema = z.object({
   fingerprint_key: z.string(),
   task_preview: z.string().nullable().optional(),
   task_fingerprint: JsonValueSchema,
-  route_decision: JsonValueSchema.nullable().optional(),
   execution_policy: JsonValueSchema,
   outcome: JsonValueSchema,
   attribution: JsonValueSchema,

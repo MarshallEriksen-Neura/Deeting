@@ -27,7 +27,6 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn attach_ex
     let request_id = runtime_transition_response_field(response, &tool_trace_blocks, "request_id");
     let execution_graph = project_execution_graph_snapshot(GraphProjectionInput {
         session_id: session_id.to_string(),
-        route: execution_policy.route.as_str().to_string(),
         phase_step_type: execution_policy.initial_phase_step_name().to_string(),
         trace_id,
         request_id,

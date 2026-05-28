@@ -241,3 +241,18 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn classify_
         "LOCAL_TOOL_EXECUTION_FAILED"
     }
 }
+
+pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn resolve_runtime_phase_step_type_for_graph(
+    state: &LocalChatToolRuntimeState,
+) -> String {
+    use crate::modules::desktop_runtime::runtime::execution_plane::{
+        phase_step_for_observable_frame_strategy, phase_step_type_name,
+    };
+    state
+        .world_model_frame
+        .as_ref()
+        .and_then(|frame| phase_step_for_observable_frame_strategy(frame.execution_strategy))
+        .map(phase_step_type_name)
+        .unwrap_or_else(|| state.execution_policy.initial_phase_step_name())
+        .to_string()
+}

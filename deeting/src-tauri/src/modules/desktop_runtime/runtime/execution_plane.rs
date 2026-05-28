@@ -14,6 +14,9 @@ pub(crate) use delegation::{
     DelegatedExecutionStatus, DelegatedExecutionTarget, DELEGATED_RESULT_SCHEMA_VERSION,
     EXECUTION_TREE_SCHEMA_VERSION,
 };
+pub(crate) use composition::phase_step::{
+    phase_step_for_observable_frame_strategy, phase_step_type_name,
+};
 pub(crate) use dispatch::run_local_runtime_composition_entrypoint;
 pub(crate) use request::{LocalExecutionOutcome, LocalExecutionRequest};
 
@@ -26,12 +29,9 @@ use delegation::should_return_delegated_result_directly;
 mod tests {
     use super::user_input::latest_user_message;
     use super::*;
-    use crate::modules::desktop_runtime::runtime::{
-        build_default_local_execution_policy, build_local_execution_policy,
-    };
+    use crate::modules::desktop_runtime::runtime::build_default_local_execution_policy;
     use desktop_runtime_core::PhaseStepType;
     use mcp_core::types::LocalChatInputMessage;
-    use mcp_runtime::route::select_local_route;
     use serde_json::json;
     use serde_json::Value;
 
@@ -45,16 +45,11 @@ mod tests {
     }
 
     #[test]
-    fn runtime_composition_maps_worker_policy_to_worker_phase() {
-        let decision = select_local_route(
-            "请先分析这个方案的风险和取舍，再给建议",
-            &json!({
-                "orchestration_primitives": [],
-                "capabilities": [],
-                "routing_hint": {}
-            }),
-        );
-        let policy = build_local_execution_policy(&decision);
+    fn runtime_composition_uses_policy_phase_for_delegated_worker() {
+        let mut policy = build_default_local_execution_policy();
+        policy.initial_phase_step = PhaseStepType::DelegatedWorker;
+        policy.inject_execution_protocol = true;
+        policy.allow_worker_delegation = true;
 
         assert_eq!(
             initial_phase_step_for_policy(&policy),
@@ -63,20 +58,16 @@ mod tests {
     }
 
     #[test]
-    fn runtime_composition_maps_programmatic_worker_policy_to_worker_phase() {
-        let decision = select_local_route(
-            "遍历所有 markdown files，抽标题、分类、去重后输出 JSON",
-            &json!({
-                "orchestration_primitives": [{ "name": "execute_code_plan" }],
-                "capabilities": [],
-                "routing_hint": { "programmatic_path": "execute_code_plan" }
-            }),
-        );
-        let policy = build_local_execution_policy(&decision);
+    fn runtime_composition_maps_worker_policy_preference_to_workflow_phase() {
+        let mut policy = build_default_local_execution_policy();
+        policy.initial_phase_step = PhaseStepType::DelegatedWorker;
+        policy.inject_execution_protocol = true;
+        policy.allow_worker_delegation = true;
+        policy.prefer_workflow_runtime = true;
 
         assert_eq!(
             initial_phase_step_for_policy(&policy),
-            PhaseStepType::DelegatedWorker
+            PhaseStepType::DelegatedWorkflow
         );
     }
 

@@ -108,7 +108,6 @@ pub struct TaskLearningRunRow {
     pub fingerprint_key: String,
     pub task_preview_text: Option<String>,
     pub task_fingerprint_json: String,
-    pub route_decision_json: Option<String>,
     pub execution_policy_json: String,
     pub outcome_json: String,
     pub attribution_json: String,
@@ -617,7 +616,6 @@ impl McpStore {
               fingerprint_key TEXT NOT NULL,
               task_preview_text TEXT,
               task_fingerprint_json TEXT NOT NULL,
-              route_decision_json TEXT,
               execution_policy_json TEXT NOT NULL,
               outcome_json TEXT NOT NULL,
               attribution_json TEXT NOT NULL,
@@ -634,6 +632,8 @@ impl McpStore {
         .execute(&self.write_pool)
         .await
         .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        self.drop_task_learning_route_decision_column().await?;
 
         sqlx::query(
             r#"
@@ -925,6 +925,112 @@ impl McpStore {
 
         self.purge_legacy_skill_mcp_rows().await?;
         Ok(())
+    }
+
+    async fn drop_task_learning_route_decision_column(&self) -> Result<(), McpError> {
+        let rows = sqlx::query("PRAGMA table_info(task_learning_runs)")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        let has_route_decision_json = rows.iter().any(|row| {
+            matches!(
+                row.try_get::<String, _>("name"),
+                Ok(name) if name == "route_decision_json"
+            )
+        });
+        if !has_route_decision_json {
+            return Ok(());
+        }
+
+        let mut tx = self.begin_write().await?;
+        sqlx::query("DROP TABLE IF EXISTS task_learning_runs_without_route_decision;")
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        sqlx::query(
+            r#"
+            CREATE TABLE task_learning_runs_without_route_decision (
+              run_id TEXT PRIMARY KEY,
+              session_id TEXT NOT NULL,
+              request_id TEXT,
+              trace_id TEXT,
+              fingerprint_key TEXT NOT NULL,
+              task_preview_text TEXT,
+              task_fingerprint_json TEXT NOT NULL,
+              execution_policy_json TEXT NOT NULL,
+              outcome_json TEXT NOT NULL,
+              attribution_json TEXT NOT NULL,
+              policy_delta_json TEXT,
+              learning_eligible INTEGER NOT NULL DEFAULT 0,
+              delta_state TEXT NOT NULL DEFAULT 'none',
+              last_signal TEXT,
+              revision_count INTEGER NOT NULL DEFAULT 0,
+              last_revision_at_unix_ms INTEGER,
+              created_at_unix_ms INTEGER NOT NULL
+            );
+            "#,
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        sqlx::query(
+            r#"
+            INSERT INTO task_learning_runs_without_route_decision (
+              run_id,
+              session_id,
+              request_id,
+              trace_id,
+              fingerprint_key,
+              task_preview_text,
+              task_fingerprint_json,
+              execution_policy_json,
+              outcome_json,
+              attribution_json,
+              policy_delta_json,
+              learning_eligible,
+              delta_state,
+              last_signal,
+              revision_count,
+              last_revision_at_unix_ms,
+              created_at_unix_ms
+            )
+            SELECT
+              run_id,
+              session_id,
+              request_id,
+              trace_id,
+              fingerprint_key,
+              task_preview_text,
+              task_fingerprint_json,
+              execution_policy_json,
+              outcome_json,
+              attribution_json,
+              policy_delta_json,
+              learning_eligible,
+              delta_state,
+              last_signal,
+              revision_count,
+              last_revision_at_unix_ms,
+              created_at_unix_ms
+            FROM task_learning_runs;
+            "#,
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        sqlx::query("DROP TABLE task_learning_runs;")
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))?;
+        sqlx::query(
+            "ALTER TABLE task_learning_runs_without_route_decision RENAME TO task_learning_runs;",
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+        tx.commit()
+            .await
+            .map_err(|err| McpError::Storage(err.to_string()))
     }
 
     pub async fn record_tool_execution(
@@ -1784,7 +1890,6 @@ impl McpStore {
         fingerprint_key: &str,
         task_preview_text: Option<&str>,
         task_fingerprint_json: &str,
-        route_decision_json: Option<&str>,
         execution_policy_json: &str,
         outcome_json: &str,
         attribution_json: &str,
@@ -1832,7 +1937,6 @@ impl McpStore {
               fingerprint_key,
               task_preview_text,
               task_fingerprint_json,
-              route_decision_json,
               execution_policy_json,
               outcome_json,
               attribution_json,
@@ -1843,7 +1947,7 @@ impl McpStore {
               revision_count,
               last_revision_at_unix_ms,
               created_at_unix_ms
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
             "#,
         )
         .bind(run_id.as_str())
@@ -1857,11 +1961,6 @@ impl McpStore {
                 .filter(|value| !value.is_empty()),
         )
         .bind(normalized_task_fingerprint_json)
-        .bind(
-            route_decision_json
-                .map(str::trim)
-                .filter(|value| !value.is_empty()),
-        )
         .bind(normalized_execution_policy_json)
         .bind(normalized_outcome_json)
         .bind(normalized_attribution_json)
@@ -1967,7 +2066,6 @@ impl McpStore {
               tlr.fingerprint_key,
               {},
               tlr.task_fingerprint_json,
-              tlr.route_decision_json,
               tlr.execution_policy_json,
               tlr.outcome_json,
               tlr.attribution_json,
@@ -2037,9 +2135,6 @@ impl McpStore {
                     task_fingerprint_json: row
                         .try_get::<String, _>("task_fingerprint_json")
                         .map_err(|err| McpError::Storage(err.to_string()))?,
-                    route_decision_json: row
-                        .try_get::<Option<String>, _>("route_decision_json")
-                        .map_err(|err| McpError::Storage(err.to_string()))?,
                     execution_policy_json: row
                         .try_get::<String, _>("execution_policy_json")
                         .map_err(|err| McpError::Storage(err.to_string()))?,
@@ -2094,7 +2189,6 @@ impl McpStore {
               tlr.fingerprint_key,
               {},
               tlr.task_fingerprint_json,
-              tlr.route_decision_json,
               tlr.execution_policy_json,
               tlr.outcome_json,
               tlr.attribution_json,
@@ -2139,9 +2233,6 @@ impl McpStore {
                     .map_err(|err| McpError::Storage(err.to_string()))?,
                 task_fingerprint_json: row
                     .try_get::<String, _>("task_fingerprint_json")
-                    .map_err(|err| McpError::Storage(err.to_string()))?,
-                route_decision_json: row
-                    .try_get::<Option<String>, _>("route_decision_json")
                     .map_err(|err| McpError::Storage(err.to_string()))?,
                 execution_policy_json: row
                     .try_get::<String, _>("execution_policy_json")
@@ -2197,7 +2288,6 @@ impl McpStore {
               tlr.fingerprint_key,
               {},
               tlr.task_fingerprint_json,
-              tlr.route_decision_json,
               tlr.execution_policy_json,
               tlr.outcome_json,
               tlr.attribution_json,
@@ -2243,9 +2333,6 @@ impl McpStore {
                     .map_err(|err| McpError::Storage(err.to_string()))?,
                 task_fingerprint_json: row
                     .try_get::<String, _>("task_fingerprint_json")
-                    .map_err(|err| McpError::Storage(err.to_string()))?,
-                route_decision_json: row
-                    .try_get::<Option<String>, _>("route_decision_json")
                     .map_err(|err| McpError::Storage(err.to_string()))?,
                 execution_policy_json: row
                     .try_get::<String, _>("execution_policy_json")

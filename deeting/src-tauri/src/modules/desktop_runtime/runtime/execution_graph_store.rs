@@ -28,7 +28,7 @@ pub(crate) struct ExecutionGraphRuntimeContextRow {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct FrameRouteOverlapReadiness {
+pub(crate) struct FramePhaseAlignmentReadiness {
     pub(crate) metric: &'static str,
     pub(crate) contract_schema_version: i64,
     pub(crate) observation_window: &'static str,
@@ -516,12 +516,12 @@ pub(crate) async fn list_execution_graph_snapshots_for_session(
         .collect()
 }
 
-pub(crate) async fn summarize_frame_route_overlap_readiness(
+pub(crate) async fn summarize_frame_phase_alignment_readiness(
     store: &McpStore,
     window_start_unix_ms: Option<i64>,
     window_end_unix_ms: Option<i64>,
-) -> Result<FrameRouteOverlapReadiness, McpError> {
-    e3_readiness::validate_frame_route_overlap_readiness_window(
+) -> Result<FramePhaseAlignmentReadiness, McpError> {
+    e3_readiness::validate_frame_phase_alignment_readiness_window(
         window_start_unix_ms,
         window_end_unix_ms,
     )
@@ -588,7 +588,7 @@ pub(crate) async fn summarize_frame_route_overlap_readiness(
             &mut last_observed_payload_unix_ms,
             updated_at_unix_ms,
         );
-        if metric != Some(e3_readiness::FRAME_ROUTE_OVERLAP_METRIC) {
+        if metric != Some(e3_readiness::FRAME_PHASE_ALIGNMENT_METRIC) {
             malformed_e3_payload_count += 1;
             continue;
         }
@@ -601,7 +601,7 @@ pub(crate) async fn summarize_frame_route_overlap_readiness(
             continue;
         };
         let alignment_status = resolution
-            .pointer("/route_policy_alignment/status")
+            .pointer("/phase_policy_alignment/status")
             .and_then(serde_json::Value::as_str);
 
         if !sample_eligible {
@@ -614,8 +614,8 @@ pub(crate) async fn summarize_frame_route_overlap_readiness(
         }
 
         let matched = match alignment_status {
-            Some(status) if status == e3_readiness::ROUTE_ALIGNMENT_MATCHED => true,
-            Some(status) if status == e3_readiness::ROUTE_ALIGNMENT_MISMATCHED => false,
+            Some(status) if status == e3_readiness::PHASE_ALIGNMENT_MATCHED => true,
+            Some(status) if status == e3_readiness::PHASE_ALIGNMENT_MISMATCHED => false,
             _ => {
                 malformed_e3_payload_count += 1;
                 continue;
@@ -679,8 +679,8 @@ pub(crate) async fn summarize_frame_route_overlap_readiness(
         && e3_payload_coverage_met
         && e3_payload_health_met;
 
-    Ok(FrameRouteOverlapReadiness {
-        metric: e3_readiness::FRAME_ROUTE_OVERLAP_METRIC,
+    Ok(FramePhaseAlignmentReadiness {
+        metric: e3_readiness::FRAME_PHASE_ALIGNMENT_METRIC,
         contract_schema_version: e3_readiness::CONTRACT_SCHEMA_VERSION,
         observation_window: e3_readiness::OBSERVATION_WINDOW_LABEL,
         window_start_unix_ms,
@@ -748,7 +748,7 @@ fn e3_readiness_contract_matches(resolution: &serde_json::Value) -> bool {
         .pointer("/e3_readiness/minimum_non_direct_strategy_ratio")
         .and_then(serde_json::Value::as_f64);
     let comparison_basis = resolution
-        .pointer("/route_policy_alignment/comparison_basis")
+        .pointer("/phase_policy_alignment/comparison_basis")
         .and_then(serde_json::Value::as_str);
 
     let overlap_ratio_matches = minimum_overlap_ratio
@@ -778,7 +778,7 @@ fn e3_excluded_sample_contract_matches(
     alignment_status: Option<&str>,
 ) -> bool {
     let alignment_exclusion_reason = resolution
-        .pointer("/route_policy_alignment/sample_exclusion_reason")
+        .pointer("/phase_policy_alignment/sample_exclusion_reason")
         .and_then(serde_json::Value::as_str);
     let readiness_exclusion_reason = resolution
         .pointer("/e3_readiness/sample_exclusion_reason")
@@ -791,7 +791,7 @@ fn e3_excluded_sample_contract_matches(
 
 fn read_e3_sample_eligibility(resolution: &serde_json::Value) -> Option<bool> {
     let alignment_eligible = resolution
-        .pointer("/route_policy_alignment/sample_eligible")
+        .pointer("/phase_policy_alignment/sample_eligible")
         .and_then(serde_json::Value::as_bool);
     let readiness_eligible = resolution
         .pointer("/e3_readiness/sample_eligible")
@@ -973,7 +973,7 @@ mod tests {
         delete_execution_graph_runtime_context, list_execution_graph_snapshots_for_session,
         load_execution_graph_snapshot, migrate_execution_graph_runtime_bootstrap,
         persist_execution_graph_runtime_context, persist_execution_graph_snapshot,
-        summarize_frame_route_overlap_readiness,
+        summarize_frame_phase_alignment_readiness,
     };
     use crate::modules::desktop_runtime::runtime::e3_readiness;
     use crate::modules::mcp::store::McpStore;
@@ -1072,13 +1072,13 @@ mod tests {
 
         e3_resolution_from_parts(json!({
             "frame_strategy": frame_strategy,
-            "route_policy_alignment": {
+            "phase_policy_alignment": {
                 "status": status,
                 "sample_eligible": sample_eligible,
                 "sample_exclusion_reason": sample_exclusion_reason
             },
             "e3_readiness": {
-                "metric": "frame_route_phase_step_overlap",
+                "metric": "frame_phase_step_alignment",
                 "sample_eligible": sample_eligible,
                 "sample_exclusion_reason": sample_exclusion_reason
             }
@@ -1102,13 +1102,13 @@ mod tests {
         };
 
         e3_resolution_from_parts(json!({
-            "route_policy_alignment": {
+            "phase_policy_alignment": {
                 "status": status,
                 "sample_eligible": alignment_sample_eligible,
                 "sample_exclusion_reason": alignment_exclusion_reason
             },
             "e3_readiness": {
-                "metric": "frame_route_phase_step_overlap",
+                "metric": "frame_phase_step_alignment",
                 "sample_eligible": readiness_sample_eligible,
                 "sample_exclusion_reason": readiness_exclusion_reason
             }
@@ -1117,12 +1117,12 @@ mod tests {
 
     fn e3_resolution_missing_alignment_exclusion_reason(status: &str) -> serde_json::Value {
         e3_resolution_from_parts(json!({
-            "route_policy_alignment": {
+            "phase_policy_alignment": {
                 "status": status,
                 "sample_eligible": false
             },
             "e3_readiness": {
-                "metric": "frame_route_phase_step_overlap",
+                "metric": "frame_phase_step_alignment",
                 "sample_eligible": false,
                 "sample_exclusion_reason": "missing_frame_strategy_step"
             }
@@ -1131,11 +1131,11 @@ mod tests {
 
     fn e3_resolution_missing_sample_eligibility(status: &str) -> serde_json::Value {
         e3_resolution_from_parts(json!({
-            "route_policy_alignment": {
+            "phase_policy_alignment": {
                 "status": status
             },
             "e3_readiness": {
-                "metric": "frame_route_phase_step_overlap",
+                "metric": "frame_phase_step_alignment",
                 "sample_exclusion_reason": Value::Null
             }
         }))
@@ -1160,10 +1160,7 @@ mod tests {
             .get_mut("e3_readiness")
             .and_then(serde_json::Value::as_object_mut)
         {
-            readiness.insert(
-                "metric".to_string(),
-                json!("frame_route_phase_step_overlap_v2"),
-            );
+            readiness.insert("metric".to_string(), json!("frame_phase_step_alignment_v2"));
         }
         resolution
     }
@@ -1180,7 +1177,7 @@ mod tests {
 
     fn e3_resolution_from_parts(mut resolution: serde_json::Value) -> serde_json::Value {
         if let Some(alignment) = resolution
-            .get_mut("route_policy_alignment")
+            .get_mut("phase_policy_alignment")
             .and_then(serde_json::Value::as_object_mut)
         {
             alignment.insert(
@@ -1346,7 +1343,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn summarize_frame_route_overlap_readiness_counts_persisted_e3_samples() {
+    async fn summarize_frame_phase_alignment_readiness_counts_persisted_e3_samples() {
         let store = create_test_store("execution-graph-e3-readiness").await;
         store.init().await.expect("init store");
 
@@ -1419,13 +1416,13 @@ mod tests {
         }
         insert_raw_execution_graph_payload(&store, "graph-e3-malformed", 45, "{").await;
 
-        let readiness = summarize_frame_route_overlap_readiness(&store, Some(10), Some(60))
+        let readiness = summarize_frame_phase_alignment_readiness(&store, Some(10), Some(60))
             .await
             .expect("summarize e3 readiness");
 
         assert_eq!(readiness.window_start_unix_ms, Some(10));
         assert_eq!(readiness.window_end_unix_ms, Some(60));
-        assert_eq!(readiness.metric, e3_readiness::FRAME_ROUTE_OVERLAP_METRIC);
+        assert_eq!(readiness.metric, e3_readiness::FRAME_PHASE_ALIGNMENT_METRIC);
         assert_eq!(
             readiness.contract_schema_version,
             e3_readiness::CONTRACT_SCHEMA_VERSION
@@ -1468,7 +1465,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn summarize_frame_route_overlap_readiness_rejects_invalid_windows() {
+    async fn summarize_frame_phase_alignment_readiness_rejects_invalid_windows() {
         let store = create_test_store("execution-graph-e3-readiness-window-validation").await;
         store.init().await.expect("init store");
 
@@ -1489,7 +1486,7 @@ mod tests {
                 e3_readiness::WINDOW_REVERSED_ERROR,
             ),
         ] {
-            let error = summarize_frame_route_overlap_readiness(
+            let error = summarize_frame_phase_alignment_readiness(
                 &store,
                 window_start_unix_ms,
                 window_end_unix_ms,
@@ -1505,7 +1502,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn summarize_frame_route_overlap_readiness_requires_eligible_window_and_overlap() {
+    async fn summarize_frame_phase_alignment_readiness_requires_eligible_window_and_overlap() {
         let store = create_test_store("execution-graph-e3-readiness-threshold").await;
         store.init().await.expect("init store");
 
@@ -1524,7 +1521,7 @@ mod tests {
         )
         .await;
 
-        let short_eligible_window = summarize_frame_route_overlap_readiness(
+        let short_eligible_window = summarize_frame_phase_alignment_readiness(
             &store,
             Some(0),
             Some(e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS + 1),
@@ -1546,7 +1543,7 @@ mod tests {
         )
         .await;
 
-        let readiness = summarize_frame_route_overlap_readiness(
+        let readiness = summarize_frame_phase_alignment_readiness(
             &store,
             Some(0),
             Some(e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS + 1),
@@ -1599,7 +1596,7 @@ mod tests {
         )
         .await;
 
-        let multi_strategy_ready = summarize_frame_route_overlap_readiness(
+        let multi_strategy_ready = summarize_frame_phase_alignment_readiness(
             &store,
             Some(0),
             Some(e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS + 1),
@@ -1624,7 +1621,7 @@ mod tests {
         )
         .await;
 
-        let missing_payload = summarize_frame_route_overlap_readiness(
+        let missing_payload = summarize_frame_phase_alignment_readiness(
             &store,
             Some(0),
             Some(e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS + 1),
@@ -1649,7 +1646,7 @@ mod tests {
         )
         .await;
 
-        let unhealthy = summarize_frame_route_overlap_readiness(
+        let unhealthy = summarize_frame_phase_alignment_readiness(
             &store,
             Some(0),
             Some(e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS + 1),
@@ -1684,7 +1681,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn summarize_frame_route_overlap_readiness_rejects_mismatched_contract_payloads() {
+    async fn summarize_frame_phase_alignment_readiness_rejects_mismatched_contract_payloads() {
         let store = create_test_store("execution-graph-e3-readiness-contract").await;
         store.init().await.expect("init store");
 
@@ -1728,7 +1725,7 @@ mod tests {
         )
         .await;
 
-        let readiness = summarize_frame_route_overlap_readiness(
+        let readiness = summarize_frame_phase_alignment_readiness(
             &store,
             Some(0),
             Some(e3_readiness::MINIMUM_OBSERVATION_WINDOW_MS + 3),
@@ -1751,7 +1748,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn summarize_frame_route_overlap_readiness_stays_unready_without_eligible_samples() {
+    async fn summarize_frame_phase_alignment_readiness_stays_unready_without_eligible_samples() {
         let store = create_test_store("execution-graph-e3-readiness-empty").await;
         store.init().await.expect("init store");
 
@@ -1764,7 +1761,7 @@ mod tests {
         )
         .await;
 
-        let readiness = summarize_frame_route_overlap_readiness(&store, Some(0), Some(30))
+        let readiness = summarize_frame_phase_alignment_readiness(&store, Some(0), Some(30))
             .await
             .expect("summarize e3 readiness");
 

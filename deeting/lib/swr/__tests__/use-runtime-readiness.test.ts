@@ -1,9 +1,9 @@
 import {
-  FRAME_ROUTE_OVERLAP_READINESS_WINDOW_MS,
-  getFrameRouteOverlapReadinessKey,
-  getFrameRouteOverlapReadinessWindow,
-  isFrameRouteOverlapReadinessQueryValid,
-  isFrameRouteOverlapReadinessRuntime,
+  FRAME_PHASE_ALIGNMENT_READINESS_WINDOW_MS,
+  getFramePhaseAlignmentReadinessKey,
+  getFramePhaseAlignmentReadinessWindow,
+  isFramePhaseAlignmentReadinessQueryValid,
+  isFramePhaseAlignmentReadinessRuntime,
 } from "@/lib/swr/use-runtime-readiness"
 
 const windowWithTauri = window as Window & {
@@ -27,37 +27,37 @@ describe("runtime readiness swr helpers", () => {
   it("builds the default 14 day readiness window", () => {
     const nowUnixMs = 1_800_000_000_000
 
-    expect(getFrameRouteOverlapReadinessWindow(nowUnixMs)).toEqual({
-      windowStartUnixMs: nowUnixMs - FRAME_ROUTE_OVERLAP_READINESS_WINDOW_MS,
+    expect(getFramePhaseAlignmentReadinessWindow(nowUnixMs)).toEqual({
+      windowStartUnixMs: nowUnixMs - FRAME_PHASE_ALIGNMENT_READINESS_WINDOW_MS,
       windowEndUnixMs: nowUnixMs,
     })
   })
 
   it("clamps the default readiness window to non-negative unix ms bounds", () => {
-    expect(getFrameRouteOverlapReadinessWindow(1000)).toEqual({
+    expect(getFramePhaseAlignmentReadinessWindow(1000)).toEqual({
       windowStartUnixMs: 0,
       windowEndUnixMs: 1000,
     })
-    expect(getFrameRouteOverlapReadinessWindow(-1000)).toEqual({
+    expect(getFramePhaseAlignmentReadinessWindow(-1000)).toEqual({
       windowStartUnixMs: 0,
       windowEndUnixMs: 0,
     })
   })
 
   it("normalizes the default readiness window to safe integer bounds", () => {
-    expect(getFrameRouteOverlapReadinessWindow(1000.75)).toEqual({
+    expect(getFramePhaseAlignmentReadinessWindow(1000.75)).toEqual({
       windowStartUnixMs: 0,
       windowEndUnixMs: 1000,
     })
-    expect(getFrameRouteOverlapReadinessWindow(Number.POSITIVE_INFINITY)).toEqual({
+    expect(getFramePhaseAlignmentReadinessWindow(Number.POSITIVE_INFINITY)).toEqual({
       windowStartUnixMs: 0,
       windowEndUnixMs: 0,
     })
     expect(
-      getFrameRouteOverlapReadinessWindow(Number.MAX_SAFE_INTEGER + 1000)
+      getFramePhaseAlignmentReadinessWindow(Number.MAX_SAFE_INTEGER + 1000)
     ).toEqual({
       windowStartUnixMs:
-        Number.MAX_SAFE_INTEGER - FRAME_ROUTE_OVERLAP_READINESS_WINDOW_MS,
+        Number.MAX_SAFE_INTEGER - FRAME_PHASE_ALIGNMENT_READINESS_WINDOW_MS,
       windowEndUnixMs: Number.MAX_SAFE_INTEGER,
     })
   })
@@ -66,7 +66,7 @@ describe("runtime readiness swr helpers", () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "false"
 
     expect(
-      getFrameRouteOverlapReadinessKey({
+      getFramePhaseAlignmentReadinessKey({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 2000,
       })
@@ -76,7 +76,7 @@ describe("runtime readiness swr helpers", () => {
     windowWithTauri.__TAURI__ = {}
 
     expect(
-      getFrameRouteOverlapReadinessKey(
+      getFramePhaseAlignmentReadinessKey(
         {
           windowStartUnixMs: 1000,
           windowEndUnixMs: 2000,
@@ -89,9 +89,9 @@ describe("runtime readiness swr helpers", () => {
   it("requires actual tauri command globals, not only the desktop env flag", () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
 
-    expect(isFrameRouteOverlapReadinessRuntime()).toBe(false)
+    expect(isFramePhaseAlignmentReadinessRuntime()).toBe(false)
     expect(
-      getFrameRouteOverlapReadinessKey({
+      getFramePhaseAlignmentReadinessKey({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 2000,
       })
@@ -103,32 +103,32 @@ describe("runtime readiness swr helpers", () => {
     windowWithTauri.__TAURI__ = {}
 
     expect(
-      getFrameRouteOverlapReadinessKey({
+      getFramePhaseAlignmentReadinessKey({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 2000,
       })
-    ).toEqual(["local-frame-route-overlap-readiness", 1000, 2000])
+    ).toEqual(["local-frame-phase-alignment-readiness", 1000, 2000])
   })
 
   it("builds stable tauri swr keys for unbounded readiness windows", () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
 
-    expect(getFrameRouteOverlapReadinessKey(undefined)).toEqual([
-      "local-frame-route-overlap-readiness",
+    expect(getFramePhaseAlignmentReadinessKey(undefined)).toEqual([
+      "local-frame-phase-alignment-readiness",
       undefined,
       undefined,
     ])
     expect(
-      getFrameRouteOverlapReadinessKey({
+      getFramePhaseAlignmentReadinessKey({
         windowStartUnixMs: 1000,
       })
-    ).toEqual(["local-frame-route-overlap-readiness", 1000, undefined])
+    ).toEqual(["local-frame-phase-alignment-readiness", 1000, undefined])
     expect(
-      getFrameRouteOverlapReadinessKey({
+      getFramePhaseAlignmentReadinessKey({
         windowEndUnixMs: 2000,
       })
-    ).toEqual(["local-frame-route-overlap-readiness", undefined, 2000])
+    ).toEqual(["local-frame-phase-alignment-readiness", undefined, 2000])
   })
 
   it("rejects invalid readiness windows before building a swr key", () => {
@@ -141,8 +141,8 @@ describe("runtime readiness swr helpers", () => {
       { windowStartUnixMs: 2000, windowEndUnixMs: 1000 },
       { windowStartUnixMs: 1000.5, windowEndUnixMs: 2000 },
     ]) {
-      expect(isFrameRouteOverlapReadinessQueryValid(query)).toBe(false)
-      expect(getFrameRouteOverlapReadinessKey(query)).toBeNull()
+      expect(isFramePhaseAlignmentReadinessQueryValid(query)).toBe(false)
+      expect(getFramePhaseAlignmentReadinessKey(query)).toBeNull()
     }
   })
 
@@ -150,12 +150,12 @@ describe("runtime readiness swr helpers", () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI_INTERNALS__ = {}
 
-    expect(isFrameRouteOverlapReadinessRuntime()).toBe(true)
+    expect(isFramePhaseAlignmentReadinessRuntime()).toBe(true)
     expect(
-      getFrameRouteOverlapReadinessKey({
+      getFramePhaseAlignmentReadinessKey({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 2000,
       })
-    ).toEqual(["local-frame-route-overlap-readiness", 1000, 2000])
+    ).toEqual(["local-frame-phase-alignment-readiness", 1000, 2000])
   })
 })

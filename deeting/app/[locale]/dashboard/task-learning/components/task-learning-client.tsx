@@ -291,13 +291,22 @@ function buildTaskFingerprintSummary(detail: TaskLearningRunDetail) {
     .join(" / ")
 }
 
-function buildRouteSummary(detail: TaskLearningRunDetail) {
-  const routeDecision = asRecord(detail.route_decision)
+function buildPhaseSummary(detail: TaskLearningRunDetail) {
   const executionPolicy = asRecord(detail.execution_policy)
-  const route = getString(routeDecision, "route") ?? getString(executionPolicy, "route")
+  const phaseStepType = getString(executionPolicy, "initial_phase_step")
   const plane = getString(executionPolicy, "plane")
-  const reasons = getStringArray(routeDecision, "reasons").map((item) => humanizeToken(item))
-  return [humanizeToken(route), humanizeToken(plane), ...reasons].filter((item) => item !== "-").join(" · ")
+  const allowWorkerDelegation = executionPolicy.allow_worker_delegation === true
+    ? "delegated_phase_enabled"
+    : null
+  const preferWorkflowRuntime = executionPolicy.prefer_workflow_runtime === true
+    ? "workflow_runtime_preferred"
+    : null
+  return [
+    humanizeToken(phaseStepType),
+    humanizeToken(plane),
+    humanizeToken(allowWorkerDelegation),
+    humanizeToken(preferWorkflowRuntime),
+  ].filter((item) => item !== "-").join(" · ")
 }
 
 function buildExecutionSummary(detail: TaskLearningRunDetail, t: ReturnType<typeof useTranslations>) {
@@ -345,9 +354,9 @@ function buildTimeline(
       tone: "accent",
     },
     {
-      key: "route",
-      title: t("timeline.route"),
-      description: `${t("timeline.routeDesc")} ${buildRouteSummary(detail) || t("timeline.fallback")}`,
+      key: "phase",
+      title: t("timeline.phase"),
+      description: `${t("timeline.phaseDesc")} ${buildPhaseSummary(detail) || t("timeline.fallback")}`,
       time: createdTime,
       tone: "info",
     },
@@ -377,18 +386,15 @@ function buildDetailMetrics(detail: TaskLearningRunDetail, t: ReturnType<typeof 
   const outcome = asRecord(detail.outcome)
   const executionPolicy = asRecord(detail.execution_policy)
   const policyDelta = asRecord(detail.policy_delta)
-  const routeDecision = asRecord(detail.route_decision)
 
   const confidence = getNumber(outcome, "confidence")
   const toolCalls = getNumber(outcome, "tool_call_count")
-  const route = getString(routeDecision, "route") ?? getString(executionPolicy, "route")
-  const plane = getString(executionPolicy, "plane")
+  const phaseStepType = getString(executionPolicy, "initial_phase_step") ?? getString(executionPolicy, "plane")
   const verification = getString(outcome, "verification_result")
   const decisionPoint = getString(policyDelta, "decision_point") ?? detail.revisions[0]?.trigger_source ?? null
 
   return [
-    { label: t("detail.metrics.route"), value: humanizeToken(route) },
-    { label: t("detail.metrics.plane"), value: humanizeToken(plane) },
+    { label: t("detail.metrics.phase"), value: humanizeToken(phaseStepType) },
     { label: t("detail.metrics.verification"), value: humanizeToken(verification) },
     {
       label: t("detail.metrics.confidence"),
@@ -1169,7 +1175,6 @@ export function TaskLearningClient() {
                       <pre className="max-h-[300px] overflow-auto rounded-[var(--r-12)] bg-[#111827] p-4 text-xs leading-6 text-white/85">
                         {prettyJson({
                           task_fingerprint: detail.task_fingerprint,
-                          route_decision: detail.route_decision,
                           execution_policy: detail.execution_policy,
                           outcome: detail.outcome,
                           attribution: detail.attribution,

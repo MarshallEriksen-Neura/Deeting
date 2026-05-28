@@ -326,24 +326,28 @@ fn should_inject_diting_think_tool(
 fn messages_with_world_model_snapshot(
     messages: &[LocalChatInputMessage],
     frame: Option<&desktop_runtime_core::WorldModelFrame>,
+    execution_policy: &LocalExecutionPolicy,
 ) -> Vec<LocalChatInputMessage> {
     let Some(frame) = frame else {
         return messages.to_vec();
     };
     let config = desktop_runtime_core::frame::snapshot_render::SnapshotRenderConfig::default();
-    let snapshot = desktop_runtime_core::frame::snapshot_render::render_world_model_snapshot(frame, &config);
+    let snapshot =
+        desktop_runtime_core::frame::snapshot_render::render_world_model_snapshot(frame, &config);
+    let runtime_context = render_world_model_runtime_context(frame, execution_policy);
+    let prefix = format!("{snapshot}\n\n{runtime_context}");
     let mut output = messages.to_vec();
     if let Some(message) = output
         .iter_mut()
         .find(|message| message.role.eq_ignore_ascii_case("user"))
     {
-        message.content = format!("{snapshot}\n\n{}", message.content);
+        message.content = format!("{prefix}\n\n{}", message.content);
     } else {
         output.insert(
             0,
             LocalChatInputMessage {
                 role: "user".to_string(),
-                content: snapshot,
+                content: prefix,
                 reasoning_content: None,
                 tool_calls: vec![],
                 tool_call_id: None,
@@ -352,6 +356,35 @@ fn messages_with_world_model_snapshot(
         );
     }
     output
+}
+
+fn render_world_model_runtime_context(
+    frame: &desktop_runtime_core::WorldModelFrame,
+    execution_policy: &LocalExecutionPolicy,
+) -> String {
+    let mut obligations = vec![
+        "runtime_owner: world_model_runtime_owner".to_string(),
+        "historical_runtime_evidence: observation_only".to_string(),
+        "phase_dispatch_owner: committed_or_proposed_phase_step".to_string(),
+    ];
+    if execution_policy.require_diting_think_preflight {
+        obligations.push(
+            "diting_think: preflight obligation is active; call diting_think if you need to restate beliefs, assumptions, strategy, or verification targets before committing."
+                .to_string(),
+        );
+    } else if frame.max_sequence() > frame.last_seen_by_model {
+        obligations.push(
+            "diting_think: new frame delta is visible; call diting_think only when the delta changes beliefs, assumptions, strategy, or verification targets."
+                .to_string(),
+        );
+    } else {
+        obligations.push(
+            "diting_think: available for metacognition; no separate bootstrap request is required."
+                .to_string(),
+        );
+    }
+
+    format!("[RUNTIME CONTEXT]\n{}", obligations.join("\n"))
 }
 
 pub(crate) async fn run_local_chat_complete_with_tools(
@@ -512,6 +545,7 @@ async fn continue_local_chat_complete_with_tools(
             messages_with_world_model_snapshot(
                 &state.orchestrated_messages,
                 state.world_model_frame.as_ref(),
+                &state.execution_policy,
             ),
             tools,
             state.temperature,

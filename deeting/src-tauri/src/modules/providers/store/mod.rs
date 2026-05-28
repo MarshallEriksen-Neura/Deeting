@@ -42,7 +42,6 @@ pub const LOCAL_DESKTOP_USER_ID: &str = "00000000-0000-0000-0000-000000000000";
 pub const BANDIT_DEFAULT_SCENE: &str = "router:llm";
 pub const BANDIT_DEFAULT_STRATEGY: &str = "epsilon_greedy";
 pub const BANDIT_SCENE_WORKER_SELECTION: &str = "task_learning:worker_selection";
-pub const BANDIT_SCENE_TASK_ROUTE: &str = "task_learning:route";
 pub const BANDIT_SCENE_MEMORY_RECALL: &str = "memory:recall";
 pub const CHAT_CAPABILITY: &str = "chat";
 pub const IMAGE_GENERATION_CAPABILITY: &str = "image_generation";

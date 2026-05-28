@@ -10,7 +10,7 @@ import {
   fetchAdminGatewayLogStats,
   fetchAdminPendingReviewCounts,
   fetchAdminPluginMarketReviews,
-  fetchLocalFrameRouteOverlapReadiness,
+  fetchLocalFramePhaseAlignmentReadiness,
   fetchLocalConversationSummaryIdleTasks,
   fetchLocalConversationSummaryJobs,
   fetchLocalConversationSummaryQueueStats,
@@ -38,11 +38,11 @@ const windowWithTauri = window as Window & {
   __TAURI_INTERNALS__?: unknown
 }
 
-function frameRouteOverlapReadinessPayload(
+function framePhaseAlignmentReadinessPayload(
   overrides: Record<string, unknown> = {}
 ): Record<string, unknown> {
   return {
-    metric: "frame_route_phase_step_overlap",
+    metric: "frame_phase_step_alignment",
     contract_schema_version: 2,
     observation_window: "1-2w",
     window_start_unix_ms: 1000,
@@ -752,18 +752,18 @@ describe("admin dashboard api", () => {
     expect(mockInvoke).not.toHaveBeenCalled()
   })
 
-  it("gets local frame-route overlap readiness via tauri command", async () => {
+  it("gets local frame-phase alignment readiness via tauri command", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
-    mockInvoke.mockResolvedValue(frameRouteOverlapReadinessPayload())
+    mockInvoke.mockResolvedValue(framePhaseAlignmentReadinessPayload())
 
-    const result = await fetchLocalFrameRouteOverlapReadiness({
+    const result = await fetchLocalFramePhaseAlignmentReadiness({
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
 
     expect(result.threshold_met).toBe(true)
-    expect(result.metric).toBe("frame_route_phase_step_overlap")
+    expect(result.metric).toBe("frame_phase_step_alignment")
     expect(result.contract_schema_version).toBe(2)
     expect(result.observation_window).toBe("1-2w")
     expect(result.observation_window_met).toBe(true)
@@ -775,78 +775,78 @@ describe("admin dashboard api", () => {
     expect(result.malformed_graph_payload_count).toBe(0)
     expect(result.malformed_e3_payload_count).toBe(0)
     expect(result.missing_e3_payload_count).toBe(0)
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("gets local frame-route overlap readiness without a bounded request window", async () => {
+  it("gets local frame-phase alignment readiness without a bounded request window", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         window_start_unix_ms: null,
         window_end_unix_ms: null,
       })
     )
 
-    const result = await fetchLocalFrameRouteOverlapReadiness()
+    const result = await fetchLocalFramePhaseAlignmentReadiness()
 
     expect(result.window_start_unix_ms).toBeNull()
     expect(result.window_end_unix_ms).toBeNull()
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: undefined,
       windowEndUnixMs: undefined,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("gets local frame-route overlap readiness with open-ended request windows", async () => {
+  it("gets local frame-phase alignment readiness with open-ended request windows", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValueOnce(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         window_end_unix_ms: null,
       })
     )
 
-    const fromStart = await fetchLocalFrameRouteOverlapReadiness({
+    const fromStart = await fetchLocalFramePhaseAlignmentReadiness({
       windowStartUnixMs: 1000,
     })
 
     expect(fromStart.window_start_unix_ms).toBe(1000)
     expect(fromStart.window_end_unix_ms).toBeNull()
-    expect(mockInvoke).toHaveBeenNthCalledWith(1, "get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, "get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: 1000,
       windowEndUnixMs: undefined,
     })
 
     mockInvoke.mockResolvedValueOnce(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         window_start_unix_ms: null,
       })
     )
 
-    const untilEnd = await fetchLocalFrameRouteOverlapReadiness({
+    const untilEnd = await fetchLocalFramePhaseAlignmentReadiness({
       windowEndUnixMs: 604801000,
     })
 
     expect(untilEnd.window_start_unix_ms).toBeNull()
     expect(untilEnd.window_end_unix_ms).toBe(604801000)
-    expect(mockInvoke).toHaveBeenNthCalledWith(2, "get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, "get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: undefined,
       windowEndUnixMs: 604801000,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("accepts collecting frame-route overlap readiness with nullable ranges", async () => {
+  it("accepts collecting frame-phase alignment readiness with nullable ranges", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         window_start_unix_ms: 1000,
         window_end_unix_ms: 2000,
         observed_payload_start_unix_ms: null,
@@ -880,7 +880,7 @@ describe("admin dashboard api", () => {
       })
     )
 
-    const result = await fetchLocalFrameRouteOverlapReadiness({
+    const result = await fetchLocalFramePhaseAlignmentReadiness({
       windowStartUnixMs: 1000,
       windowEndUnixMs: 2000,
     })
@@ -889,18 +889,18 @@ describe("admin dashboard api", () => {
     expect(result.overlap_ratio).toBeNull()
     expect(result.observation_window_ms).toBeNull()
     expect(result.eligible_sample_start_unix_ms).toBeNull()
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: 1000,
       windowEndUnixMs: 2000,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("accepts unhealthy frame-route overlap readiness when e3 payload health fails", async () => {
+  it("accepts unhealthy frame-phase alignment readiness when e3 payload health fails", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         graph_count: 11,
         malformed_payload_count: 2,
         malformed_graph_payload_count: 1,
@@ -911,7 +911,7 @@ describe("admin dashboard api", () => {
       })
     )
 
-    const result = await fetchLocalFrameRouteOverlapReadiness({
+    const result = await fetchLocalFramePhaseAlignmentReadiness({
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
@@ -925,18 +925,18 @@ describe("admin dashboard api", () => {
     expect(result.malformed_graph_payload_count).toBe(1)
     expect(result.malformed_e3_payload_count).toBe(1)
     expect(result.missing_e3_payload_count).toBe(0)
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("accepts unhealthy frame-route overlap readiness when E3 payload coverage fails", async () => {
+  it("accepts unhealthy frame-phase alignment readiness when E3 payload coverage fails", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         graph_count: 11,
         missing_e3_payload_count: 1,
         e3_payload_coverage_met: false,
@@ -944,7 +944,7 @@ describe("admin dashboard api", () => {
       })
     )
 
-    const result = await fetchLocalFrameRouteOverlapReadiness({
+    const result = await fetchLocalFramePhaseAlignmentReadiness({
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
@@ -955,18 +955,18 @@ describe("admin dashboard api", () => {
     expect(result.e3_payload_health_met).toBe(true)
     expect(result.threshold_met).toBe(false)
     expect(result.missing_e3_payload_count).toBe(1)
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("rejects frame-route overlap readiness responses with inconsistent derived counts", async () => {
+  it("rejects frame-phase alignment readiness responses with inconsistent derived counts", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         graph_count: 11,
         malformed_payload_count: 0,
         malformed_graph_payload_count: 1,
@@ -976,45 +976,45 @@ describe("admin dashboard api", () => {
     )
 
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 604801000,
       })
     ).rejects.toThrow("malformed_payload_count")
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("rejects frame-route overlap readiness responses with inconsistent observed payload breakdown", async () => {
+  it("rejects frame-phase alignment readiness responses with inconsistent observed payload breakdown", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         observed_payload_count: 9,
       })
     )
 
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 604801000,
       })
     ).rejects.toThrow("observed_payload_count")
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("rejects frame-route overlap readiness responses that mark unhealthy payloads ready", async () => {
+  it("rejects frame-phase alignment readiness responses that mark unhealthy payloads ready", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         malformed_payload_count: 1,
         malformed_e3_payload_count: 1,
         excluded_sample_count: 1,
@@ -1024,23 +1024,23 @@ describe("admin dashboard api", () => {
     )
 
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 604801000,
       })
     ).rejects.toThrow("threshold_met")
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("rejects frame-route overlap readiness responses with inconsistent E3 payload coverage", async () => {
+  it("rejects frame-phase alignment readiness responses with inconsistent E3 payload coverage", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         graph_count: 11,
         missing_e3_payload_count: 1,
         e3_payload_coverage_met: true,
@@ -1049,23 +1049,23 @@ describe("admin dashboard api", () => {
     )
 
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 604801000,
       })
     ).rejects.toThrow("e3_payload_coverage_met")
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("rejects frame-route overlap readiness responses that mark missing E3 payloads ready", async () => {
+  it("rejects frame-phase alignment readiness responses that mark missing E3 payloads ready", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         graph_count: 11,
         missing_e3_payload_count: 1,
         e3_payload_coverage_met: false,
@@ -1074,23 +1074,23 @@ describe("admin dashboard api", () => {
     )
 
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 604801000,
       })
     ).rejects.toThrow("threshold_met")
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("rejects frame-route overlap readiness responses that undercount graph rows", async () => {
+  it("rejects frame-phase alignment readiness responses that undercount graph rows", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         graph_count: 10,
         malformed_payload_count: 1,
         malformed_graph_payload_count: 1,
@@ -1098,45 +1098,45 @@ describe("admin dashboard api", () => {
     )
 
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 604801000,
       })
     ).rejects.toThrow("graph_count")
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("rejects frame-route overlap readiness responses with unsafe integer counters", async () => {
+  it("rejects frame-phase alignment readiness responses with unsafe integer counters", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         graph_count: Number.MAX_SAFE_INTEGER + 1,
       })
     )
 
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 604801000,
       })
     ).rejects.toThrow("graph_count")
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("rejects frame-route overlap readiness responses with inconsistent overlap ratio", async () => {
+  it("rejects frame-phase alignment readiness responses with inconsistent overlap ratio", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         matched_sample_count: 7,
         mismatched_sample_count: 1,
         overlap_ratio: 1,
@@ -1144,87 +1144,87 @@ describe("admin dashboard api", () => {
     )
 
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 604801000,
       })
     ).rejects.toThrow("overlap_ratio")
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("rejects frame-route overlap readiness responses with inconsistent eligible window", async () => {
+  it("rejects frame-phase alignment readiness responses with inconsistent eligible window", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         eligible_sample_end_unix_ms: null,
         observation_window_ms: 604800000,
       })
     )
 
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 604801000,
       })
     ).rejects.toThrow("eligible sample range")
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("rejects frame-route overlap readiness responses outside the requested window", async () => {
+  it("rejects frame-phase alignment readiness responses outside the requested window", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         observed_payload_start_unix_ms: 999,
       })
     )
 
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 604801000,
       })
     ).rejects.toThrow("observed payload range")
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("rejects frame-route overlap readiness responses for a different requested window", async () => {
+  it("rejects frame-phase alignment readiness responses for a different requested window", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValueOnce(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         window_start_unix_ms: 0,
       })
     )
 
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 604801000,
       })
     ).rejects.toThrow("window_start_unix_ms")
 
     mockInvoke.mockResolvedValueOnce(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         window_end_unix_ms: 604802000,
       })
     )
 
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 604801000,
       })
@@ -1233,173 +1233,173 @@ describe("admin dashboard api", () => {
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("rejects frame-route overlap readiness responses with eligible samples outside observed range", async () => {
+  it("rejects frame-phase alignment readiness responses with eligible samples outside observed range", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         eligible_sample_end_unix_ms: 604801001,
         observation_window_ms: 604800001,
       })
     )
 
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 604801000,
       })
     ).rejects.toThrow("eligible sample range")
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("rejects frame-route overlap readiness responses with drifted overlap gate constant", async () => {
+  it("rejects frame-phase alignment readiness responses with drifted overlap gate constant", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         minimum_overlap_ratio: 0.9,
       })
     )
 
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 604801000,
       })
     ).rejects.toThrow("minimum_overlap_ratio")
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("rejects frame-route overlap readiness responses with drifted contract identity", async () => {
+  it("rejects frame-phase alignment readiness responses with drifted contract identity", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         metric: "other_metric",
       })
     )
 
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 604801000,
       })
     ).rejects.toThrow("metric")
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("rejects frame-route overlap readiness responses with drifted contract schema version", async () => {
+  it("rejects frame-phase alignment readiness responses with drifted contract schema version", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         contract_schema_version: 1,
       })
     )
 
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 604801000,
       })
     ).rejects.toThrow("contract_schema_version")
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("rejects frame-route overlap readiness responses with drifted observation window label", async () => {
+  it("rejects frame-phase alignment readiness responses with drifted observation window label", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         observation_window: "7d",
       })
     )
 
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 604801000,
       })
     ).rejects.toThrow("observation_window")
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("rejects frame-route overlap readiness responses with drifted observation window constant", async () => {
+  it("rejects frame-phase alignment readiness responses with drifted observation window constant", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
     mockInvoke.mockResolvedValue(
-      frameRouteOverlapReadinessPayload({
+      framePhaseAlignmentReadinessPayload({
         minimum_observation_window_ms: 86400000,
       })
     )
 
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: 1000,
         windowEndUnixMs: 604801000,
       })
     ).rejects.toThrow("minimum_observation_window_ms")
-    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_route_overlap_readiness", {
+    expect(mockInvoke).toHaveBeenCalledWith("get_local_frame_phase_alignment_readiness", {
       windowStartUnixMs: 1000,
       windowEndUnixMs: 604801000,
     })
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("throws for local frame-route overlap readiness outside tauri runtime", async () => {
+  it("throws for local frame-phase alignment readiness outside tauri runtime", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "false"
 
-    await expect(fetchLocalFrameRouteOverlapReadiness()).rejects.toThrow(
-      "fetchLocalFrameRouteOverlapReadiness is only supported in Tauri runtime"
+    await expect(fetchLocalFramePhaseAlignmentReadiness()).rejects.toThrow(
+      "fetchLocalFramePhaseAlignmentReadiness is only supported in Tauri runtime"
     )
     expect(mockInvoke).not.toHaveBeenCalled()
     expect(mockRequest).not.toHaveBeenCalled()
   })
 
-  it("rejects invalid local frame-route overlap readiness windows before invoking tauri", async () => {
+  it("rejects invalid local frame-phase alignment readiness windows before invoking tauri", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
     windowWithTauri.__TAURI__ = {}
 
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: -1,
         windowEndUnixMs: 604801000,
       })
     ).rejects.toThrow("windowStartUnixMs")
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: 1000,
         windowEndUnixMs: -1,
       })
     ).rejects.toThrow("windowEndUnixMs")
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: 2000,
         windowEndUnixMs: 1000,
       })
     ).rejects.toThrow("windowStartUnixMs must be less than or equal to windowEndUnixMs")
     await expect(
-      fetchLocalFrameRouteOverlapReadiness({
+      fetchLocalFramePhaseAlignmentReadiness({
         windowStartUnixMs: 1000.5,
         windowEndUnixMs: 604801000,
       })

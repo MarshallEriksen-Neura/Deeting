@@ -1,4 +1,5 @@
 import type { MessageBlock, ToolCallBlock, ToolResultBlock } from "@/lib/chat/message-protocol"
+import { mergeActivityTimelineBlock } from "@/lib/chat/runtime-activity"
 import { isToolApprovalResultBlock } from "@/lib/chat/assistant-activity"
 import { extractRootExecutionIdFromBlock } from "@/lib/chat/execution-tree"
 
@@ -229,6 +230,21 @@ function upsertUiBlock(next: InternalMessageBlock[], block: InternalMessageBlock
     ...block,
     id: existing.id || block.id,
   }
+  return true
+}
+
+function upsertActivityTimelineBlock(
+  next: InternalMessageBlock[],
+  block: InternalMessageBlock,
+): boolean {
+  if (block.type !== "activity_timeline") return false
+  const existingIndex = next.findIndex(
+    (candidate) => candidate.type === "activity_timeline",
+  )
+  if (existingIndex < 0) return false
+  const existing = next[existingIndex]
+  if (!existing || existing.type !== "activity_timeline") return false
+  next[existingIndex] = mergeActivityTimelineBlock(existing, block)
   return true
 }
 
@@ -463,6 +479,10 @@ export function appendMessageBlocks(
     }
 
     if (upsertUiBlock(next, block)) {
+      continue
+    }
+
+    if (upsertActivityTimelineBlock(next, block)) {
       continue
     }
 

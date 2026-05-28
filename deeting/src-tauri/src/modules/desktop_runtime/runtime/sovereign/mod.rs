@@ -122,7 +122,6 @@ impl Observation {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum DecisionLocus {
-    Route,
     WorkerSelection,
     Discovery,
     CapabilityAttach,
@@ -133,7 +132,6 @@ pub(crate) enum DecisionLocus {
 impl DecisionLocus {
     pub(crate) fn as_canonical_str(&self) -> &'static str {
         match self {
-            Self::Route => "route",
             Self::WorkerSelection => "worker_selection",
             Self::Discovery => "discovery",
             Self::CapabilityAttach => "capability_attach",
@@ -144,7 +142,6 @@ impl DecisionLocus {
 
     pub(crate) fn from_canonical_str(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
-            "route" => Some(Self::Route),
             "worker_selection" => Some(Self::WorkerSelection),
             "discovery" => Some(Self::Discovery),
             "capability_attach" => Some(Self::CapabilityAttach),
@@ -332,7 +329,6 @@ mod tests {
     /// forces a concurrent update here.
     #[test]
     fn decision_locus_strings_match_canonical_constants() {
-        assert_eq!(DecisionLocus::Route.as_canonical_str(), "route");
         assert_eq!(
             DecisionLocus::WorkerSelection.as_canonical_str(),
             "worker_selection"
@@ -427,7 +423,7 @@ mod tests {
     fn policy_guidance_weight_for_missing_action_is_zero() {
         let hint = hint_from_json(serde_json::json!({
             "query": "q",
-            "decision_point": "route",
+            "decision_point": "verification",
             "fingerprint_key": "fp",
             "task_fingerprint": empty_task_fingerprint_json(),
             "recommended_action": null,
@@ -435,7 +431,7 @@ mod tests {
             "guidance": null,
         }));
         let guidance = PolicyGuidance::from_hint(hint);
-        assert_eq!(guidance.weight_for("direct"), 0.0);
+        assert_eq!(guidance.weight_for("stronger_checks"), 0.0);
         assert!(guidance.recommended_action().is_none());
     }
 
@@ -443,12 +439,12 @@ mod tests {
     fn policy_guidance_weight_for_present_action_returns_effective_weight() {
         let hint = hint_from_json(serde_json::json!({
             "query": "q",
-            "decision_point": "route",
+            "decision_point": "verification",
             "fingerprint_key": "fp",
             "task_fingerprint": empty_task_fingerprint_json(),
-            "recommended_action": "direct",
+            "recommended_action": "stronger_checks",
             "priors": [{
-                "action_key": "direct",
+                "action_key": "stronger_checks",
                 "raw_weight": 0.9,
                 "effective_weight": 0.7,
                 "confidence": 0.8,
@@ -459,9 +455,9 @@ mod tests {
             "guidance": null,
         }));
         let guidance = PolicyGuidance::from_hint(hint);
-        assert_eq!(guidance.weight_for("direct"), 0.7);
-        assert_eq!(guidance.weight_for("worker"), 0.0);
-        assert_eq!(guidance.recommended_action(), Some("direct"));
+        assert_eq!(guidance.weight_for("stronger_checks"), 0.7);
+        assert_eq!(guidance.weight_for("execute_code_plan"), 0.0);
+        assert_eq!(guidance.recommended_action(), Some("stronger_checks"));
     }
 
     /// The ±0.15 thresholds must match `task_policy_gate_meta` exactly so
@@ -500,7 +496,7 @@ mod tests {
     fn policy_guidance_gate_meta_boundary_thresholds_are_inclusive() {
         let hint = hint_from_json(serde_json::json!({
             "query": "q",
-            "decision_point": "route",
+            "decision_point": "verification",
             "fingerprint_key": "fp",
             "task_fingerprint": empty_task_fingerprint_json(),
             "recommended_action": null,

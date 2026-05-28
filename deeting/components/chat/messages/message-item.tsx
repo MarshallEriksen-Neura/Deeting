@@ -404,7 +404,8 @@ export const MessageItem = React.memo<MessageItemProps>(
     const statusUnchanged =
       !nextProps.isActive ||
       (prevProps.statusStage === nextProps.statusStage &&
-        prevProps.statusCode === nextProps.statusCode)
+        prevProps.statusCode === nextProps.statusCode &&
+        JSON.stringify(prevProps.statusMeta) === JSON.stringify(nextProps.statusMeta))
 
     // 流式配置未变化
     const streamUnchanged = prevProps.streamEnabled === nextProps.streamEnabled

@@ -1,33 +1,33 @@
 import useSWR from "swr"
 
 import {
-  fetchLocalFrameRouteOverlapReadiness,
-  isLocalFrameRouteOverlapReadinessWindowValid,
-  type LocalFrameRouteOverlapReadiness,
-  type LocalFrameRouteOverlapReadinessParams,
+  fetchLocalFramePhaseAlignmentReadiness,
+  isLocalFramePhaseAlignmentReadinessWindowValid,
+  type LocalFramePhaseAlignmentReadiness,
+  type LocalFramePhaseAlignmentReadinessParams,
 } from "@/lib/api/admin-dashboard"
 import { isTauriCommandRuntime } from "@/lib/runtime/tauri"
 
 import type { SWRResult } from "./fetcher"
 
 const DAY_MS = 24 * 60 * 60 * 1000
-export const FRAME_ROUTE_OVERLAP_READINESS_WINDOW_MS = 14 * DAY_MS
+export const FRAME_PHASE_ALIGNMENT_READINESS_WINDOW_MS = 14 * DAY_MS
 
-export type FrameRouteOverlapReadinessQuery = LocalFrameRouteOverlapReadinessParams
+export type FramePhaseAlignmentReadinessQuery = LocalFramePhaseAlignmentReadinessParams
 
-export type FrameRouteOverlapReadinessOptions = {
+export type FramePhaseAlignmentReadinessOptions = {
   enabled?: boolean
 }
 
-type FrameRouteOverlapReadinessKey = [
-  "local-frame-route-overlap-readiness",
+type FramePhaseAlignmentReadinessKey = [
+  "local-frame-phase-alignment-readiness",
   number | undefined,
   number | undefined,
 ]
 
-export const getFrameRouteOverlapReadinessWindow = (
+export const getFramePhaseAlignmentReadinessWindow = (
   nowUnixMs = Date.now()
-): Required<FrameRouteOverlapReadinessQuery> => {
+): Required<FramePhaseAlignmentReadinessQuery> => {
   const windowEndUnixMs = Number.isFinite(nowUnixMs)
     ? Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.floor(nowUnixMs)))
     : 0
@@ -35,50 +35,50 @@ export const getFrameRouteOverlapReadinessWindow = (
   return {
     windowStartUnixMs: Math.max(
       0,
-      windowEndUnixMs - FRAME_ROUTE_OVERLAP_READINESS_WINDOW_MS
+      windowEndUnixMs - FRAME_PHASE_ALIGNMENT_READINESS_WINDOW_MS
     ),
     windowEndUnixMs,
   }
 }
 
-export function isFrameRouteOverlapReadinessQueryValid(
-  query: FrameRouteOverlapReadinessQuery | undefined
+export function isFramePhaseAlignmentReadinessQueryValid(
+  query: FramePhaseAlignmentReadinessQuery | undefined
 ) {
-  return isLocalFrameRouteOverlapReadinessWindowValid(query)
+  return isLocalFramePhaseAlignmentReadinessWindowValid(query)
 }
 
-export const getFrameRouteOverlapReadinessKey = (
-  query: FrameRouteOverlapReadinessQuery | undefined,
-  options?: FrameRouteOverlapReadinessOptions
-): FrameRouteOverlapReadinessKey | null => {
+export const getFramePhaseAlignmentReadinessKey = (
+  query: FramePhaseAlignmentReadinessQuery | undefined,
+  options?: FramePhaseAlignmentReadinessOptions
+): FramePhaseAlignmentReadinessKey | null => {
   if (options?.enabled === false) return null
-  if (!isFrameRouteOverlapReadinessRuntime()) return null
-  if (!isFrameRouteOverlapReadinessQueryValid(query)) return null
+  if (!isFramePhaseAlignmentReadinessRuntime()) return null
+  if (!isFramePhaseAlignmentReadinessQueryValid(query)) return null
 
   return [
-    "local-frame-route-overlap-readiness",
+    "local-frame-phase-alignment-readiness",
     query?.windowStartUnixMs,
     query?.windowEndUnixMs,
   ]
 }
 
-export function isFrameRouteOverlapReadinessRuntime() {
+export function isFramePhaseAlignmentReadinessRuntime() {
   return isTauriCommandRuntime()
 }
 
-export function useFrameRouteOverlapReadiness(
-  query: FrameRouteOverlapReadinessQuery | undefined,
-  options?: FrameRouteOverlapReadinessOptions
-): SWRResult<LocalFrameRouteOverlapReadiness, Error> {
-  const key = getFrameRouteOverlapReadinessKey(query, options)
+export function useFramePhaseAlignmentReadiness(
+  query: FramePhaseAlignmentReadinessQuery | undefined,
+  options?: FramePhaseAlignmentReadinessOptions
+): SWRResult<LocalFramePhaseAlignmentReadiness, Error> {
+  const key = getFramePhaseAlignmentReadinessKey(query, options)
 
   return useSWR<
-    LocalFrameRouteOverlapReadiness,
+    LocalFramePhaseAlignmentReadiness,
     Error,
-    FrameRouteOverlapReadinessKey | null
+    FramePhaseAlignmentReadinessKey | null
   >(
     key,
-    ([, windowStartUnixMs, windowEndUnixMs]: FrameRouteOverlapReadinessKey) =>
-      fetchLocalFrameRouteOverlapReadiness({ windowStartUnixMs, windowEndUnixMs })
+    ([, windowStartUnixMs, windowEndUnixMs]: FramePhaseAlignmentReadinessKey) =>
+      fetchLocalFramePhaseAlignmentReadiness({ windowStartUnixMs, windowEndUnixMs })
   )
 }

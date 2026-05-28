@@ -1,4 +1,5 @@
 use super::super::runtime_state::LocalChatToolRuntimeState;
+use super::super::runtime_state::resolve_runtime_phase_step_type_for_graph;
 use super::super::tool_execution::LocalCapabilityTransition;
 use super::SuspendedChatToolExecution;
 use crate::modules::desktop_runtime::runtime::{
@@ -18,8 +19,7 @@ impl SuspendedChatToolExecution {
         tool_trace_blocks.extend(state.runtime_transition_blocks.clone());
         let execution_graph = project_execution_graph_snapshot(GraphProjectionInput {
             session_id: state.session_id.clone(),
-            route: state.execution_policy.route.as_str().to_string(),
-            phase_step_type: state.execution_policy.initial_phase_step_name().to_string(),
+            phase_step_type: resolve_runtime_phase_step_type_for_graph(state),
             trace_id: Some(state.trace_id.clone()),
             request_id: state.request_id.clone(),
             root_execution_id: None,

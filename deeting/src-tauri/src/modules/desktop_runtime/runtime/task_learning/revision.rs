@@ -1,8 +1,11 @@
 use super::evaluator::{
     normalize_task_learning_user_response_signal, rebuild_task_learning_evaluation_from_outcome,
 };
-use super::types::{EvaluatedOutcome, PolicyDelta, TaskFingerprint, TaskLearningSignals};
-use crate::modules::desktop_runtime::runtime::{LocalExecutionPolicy, LocalRouteDecision};
+use super::types::{
+    is_legacy_route_control_delta, EvaluatedOutcome, PolicyDelta, TaskFingerprint,
+    TaskLearningSignals,
+};
+use crate::modules::desktop_runtime::runtime::LocalExecutionPolicy;
 use crate::modules::mcp::error::McpError;
 use crate::modules::mcp::store::{McpStore, TaskLearningRevisionRow, TaskLearningRunRow};
 use mcp_session::admin::{
@@ -48,6 +51,9 @@ async fn apply_signed_delta(
     evidence_delta: i64,
 ) -> Result<(), McpError> {
     if signed_weight.abs() < f64::EPSILON {
+        return Ok(());
+    }
+    if is_legacy_route_control_delta(delta.decision_point.as_str(), delta.action_key.as_str()) {
         return Ok(());
     }
     store
@@ -401,7 +407,6 @@ pub(crate) async fn load_task_learning_run_detail(
         fingerprint_key: row.fingerprint_key,
         task_preview: row.task_preview_text,
         task_fingerprint: parse_json_value(row.task_fingerprint_json.as_str()),
-        route_decision: row.route_decision_json.as_deref().map(parse_json_value),
         execution_policy: parse_json_value(row.execution_policy_json.as_str()),
         outcome: parse_json_value(row.outcome_json.as_str()),
         attribution: parse_json_value(row.attribution_json.as_str()),
@@ -428,8 +433,6 @@ pub(crate) async fn apply_task_learning_revision(
         return Ok(None);
     };
     let fingerprint: TaskFingerprint = parse_json(row.task_fingerprint_json.as_str())?;
-    let route_decision: Option<LocalRouteDecision> =
-        parse_optional_json(row.route_decision_json.as_deref())?;
     let execution_policy: LocalExecutionPolicy = parse_json(row.execution_policy_json.as_str())?;
     let previous_outcome: EvaluatedOutcome = parse_json(row.outcome_json.as_str())?;
     let previous_delta: Option<PolicyDelta> =
@@ -439,7 +442,6 @@ pub(crate) async fn apply_task_learning_revision(
     let signals = signals_from_outcome(&revised_outcome);
     let evaluation = rebuild_task_learning_evaluation_from_outcome(
         &fingerprint,
-        route_decision.as_ref(),
         &execution_policy,
         finish_reason.as_str(),
         &signals,
@@ -500,8 +502,6 @@ pub(crate) async fn replay_task_learning_run(
         return Ok(None);
     };
     let fingerprint: TaskFingerprint = parse_json(row.task_fingerprint_json.as_str())?;
-    let route_decision: Option<LocalRouteDecision> =
-        parse_optional_json(row.route_decision_json.as_deref())?;
     let execution_policy: LocalExecutionPolicy = parse_json(row.execution_policy_json.as_str())?;
     let current_outcome: EvaluatedOutcome = parse_json(row.outcome_json.as_str())?;
     let previous_delta: Option<PolicyDelta> =
@@ -510,7 +510,6 @@ pub(crate) async fn replay_task_learning_run(
     let signals = signals_from_outcome(&current_outcome);
     let evaluation = rebuild_task_learning_evaluation_from_outcome(
         &fingerprint,
-        route_decision.as_ref(),
         &execution_policy,
         finish_reason.as_str(),
         &signals,

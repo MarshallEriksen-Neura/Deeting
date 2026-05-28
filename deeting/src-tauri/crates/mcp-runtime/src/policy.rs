@@ -5,9 +5,7 @@ use serde_json::{json, Value};
 
 use crate::capability_snapshot::merge_allowed_tool_names;
 use crate::prompt::{PromptAssets, PromptPlan};
-use crate::route::{
-    build_local_route_status_meta, LocalRouteDecision, LocalRouteKind, RouteEvidence,
-};
+use crate::runtime_evidence::RuntimeCapabilityEvidence;
 
 pub const SEARCH_SDK_TOOL_NAME: &str = "search_sdk";
 pub const QUERY_TASK_POLICY_TOOL_NAME: &str = "query_task_policy";
@@ -33,7 +31,7 @@ pub struct RuntimeDiscoveryBundle {
     pub capabilities: Vec<Value>,
     pub recipes: Vec<Value>,
     pub orchestration_primitives: Vec<Value>,
-    pub route_evidence: RouteEvidence,
+    pub runtime_evidence: RuntimeCapabilityEvidence,
 }
 
 impl RuntimeDiscoveryBundle {
@@ -45,7 +43,7 @@ impl RuntimeDiscoveryBundle {
                 &search_result,
                 "orchestration_primitives",
             ),
-            route_evidence: RouteEvidence::from_search_result(&search_result),
+            runtime_evidence: RuntimeCapabilityEvidence::from_search_result(&search_result),
             execution_snapshot: search_result,
         }
     }
@@ -63,7 +61,6 @@ impl RuntimeDiscoveryBundle {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct LocalExecutionPolicy {
-    pub route: LocalRouteKind,
     pub initial_phase_step: PhaseStepType,
     pub allowed_tool_names: Vec<String>,
     pub inject_execution_protocol: bool,
@@ -82,13 +79,6 @@ impl<'de> Deserialize<'de> for LocalExecutionPolicy {
         let object = value
             .as_object()
             .ok_or_else(|| de::Error::custom("LocalExecutionPolicy must be an object"))?;
-        let route = object
-            .get("route")
-            .cloned()
-            .map(serde_json::from_value)
-            .transpose()
-            .map_err(de::Error::custom)?
-            .unwrap_or(LocalRouteKind::Direct);
         let initial_phase_step = object
             .get("initial_phase_step")
             .cloned()
@@ -96,7 +86,7 @@ impl<'de> Deserialize<'de> for LocalExecutionPolicy {
             .transpose()
             .map_err(de::Error::custom)?
             .or_else(|| legacy_plane_phase_step(object.get("plane")))
-            .unwrap_or_else(|| default_phase_step_for_route(&route));
+            .unwrap_or(PhaseStepType::DirectChat);
         let allowed_tool_names = object
             .get("allowed_tool_names")
             .cloned()
@@ -126,7 +116,6 @@ impl<'de> Deserialize<'de> for LocalExecutionPolicy {
             .cloned();
 
         Ok(Self {
-            route,
             initial_phase_step,
             allowed_tool_names,
             inject_execution_protocol,
@@ -146,13 +135,6 @@ fn legacy_plane_phase_step(value: Option<&Value>) -> Option<PhaseStepType> {
     }
 }
 
-fn default_phase_step_for_route(route: &LocalRouteKind) -> PhaseStepType {
-    match route {
-        LocalRouteKind::Direct => PhaseStepType::DirectChat,
-        LocalRouteKind::Worker => PhaseStepType::DelegatedWorker,
-    }
-}
-
 pub fn phase_step_type_name(step_type: PhaseStepType) -> &'static str {
     match step_type {
         PhaseStepType::DirectChat => "direct_chat",
@@ -168,7 +150,6 @@ pub fn phase_step_type_name(step_type: PhaseStepType) -> &'static str {
 #[derive(Debug, Clone)]
 pub struct LocalControlPlaneResult {
     pub runtime_discovery: Option<RuntimeDiscoveryBundle>,
-    pub route_decision: Option<LocalRouteDecision>,
     pub execution_policy: LocalExecutionPolicy,
     pub prompt_assets: PromptAssets,
     pub prompt_plan: PromptPlan,
@@ -209,7 +190,6 @@ impl LocalExecutionPolicy {
 
 pub fn build_default_local_execution_policy() -> LocalExecutionPolicy {
     LocalExecutionPolicy {
-        route: LocalRouteKind::Direct,
         initial_phase_step: PhaseStepType::DirectChat,
         allowed_tool_names: Vec::new(),
         inject_execution_protocol: false,
@@ -251,34 +231,8 @@ fn ensure_resident_capability_control_tools(allowed: &mut Vec<String>) {
     }
 }
 
-pub fn build_local_execution_policy(decision: &LocalRouteDecision) -> LocalExecutionPolicy {
-    match decision.route {
-        LocalRouteKind::Direct => LocalExecutionPolicy {
-            route: LocalRouteKind::Direct,
-            initial_phase_step: PhaseStepType::DirectChat,
-            allowed_tool_names: resident_capability_control_tool_names(),
-            inject_execution_protocol: false,
-            allow_worker_delegation: false,
-            prefer_workflow_runtime: false,
-            require_diting_think_preflight: false,
-            capability_snapshot: None,
-        },
-        LocalRouteKind::Worker => LocalExecutionPolicy {
-            route: LocalRouteKind::Worker,
-            initial_phase_step: PhaseStepType::DelegatedWorker,
-            allowed_tool_names: full_execution_tool_names(),
-            inject_execution_protocol: true,
-            allow_worker_delegation: true,
-            prefer_workflow_runtime: false,
-            require_diting_think_preflight: false,
-            capability_snapshot: None,
-        },
-    }
-}
-
 pub fn build_local_execution_policy_status_meta(policy: &LocalExecutionPolicy) -> Value {
     json!({
-        "route": policy.route.as_str(),
         "initial_phase_step": phase_step_type_name(policy.initial_phase_step),
         "allowed_tool_names": policy.allowed_tool_names,
         "inject_execution_protocol": policy.inject_execution_protocol,
@@ -287,20 +241,6 @@ pub fn build_local_execution_policy_status_meta(policy: &LocalExecutionPolicy) -
         "require_diting_think_preflight": policy.require_diting_think_preflight,
         "has_capability_snapshot": policy.capability_snapshot.is_some(),
     })
-}
-
-pub fn build_local_control_plane_status_meta(
-    decision: &LocalRouteDecision,
-    policy: &LocalExecutionPolicy,
-) -> Value {
-    let mut meta = build_local_route_status_meta(decision);
-    if let Some(object) = meta.as_object_mut() {
-        object.insert(
-            "execution_policy".to_string(),
-            build_local_execution_policy_status_meta(policy),
-        );
-    }
-    meta
 }
 
 pub fn enrich_execution_policy_with_runtime_discovery(
@@ -365,49 +305,11 @@ fn extract_array_items(search_result: &Value, field: &str) -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::route::TaskProfile;
     use serde_json::json;
-
-    #[test]
-    fn worker_execution_policy_defaults_to_legacy_worker_path() {
-        let decision = LocalRouteDecision {
-            route: LocalRouteKind::Worker,
-            reasons: vec!["programmatic_logic".to_string()],
-            profile: TaskProfile {
-                explicit_route: None,
-                has_batch_scope: false,
-                wants_programmatic_logic: true,
-                wants_analysis: false,
-                wants_single_action: false,
-                destructive_intent: false,
-                approval_sensitive: false,
-                wants_artifact_generation: false,
-            },
-            evidence: RouteEvidence {
-                direct_callable_capability_count: 0,
-                has_programmatic_executor: true,
-                any_mutating_capability: false,
-                any_high_risk_capability: false,
-                direct_capability_names: Vec::new(),
-                callable_direct_capability_names: Vec::new(),
-            },
-        };
-
-        let policy = build_local_execution_policy(&decision);
-
-        assert!(policy.allow_worker_delegation);
-        assert!(!policy.prefer_workflow_runtime);
-        assert!(policy.inject_execution_protocol);
-        assert!(policy
-            .allowed_tool_names
-            .iter()
-            .any(|name| name == EXECUTE_CODE_PLAN_TOOL_NAME));
-    }
 
     #[test]
     fn local_execution_policy_deserializes_legacy_plane_as_phase_step() {
         let policy: LocalExecutionPolicy = serde_json::from_value(json!({
-            "route": "worker",
             "plane": "worker_reasoning",
             "allowed_tool_names": [],
             "inject_execution_protocol": true,
@@ -416,8 +318,21 @@ mod tests {
         }))
         .expect("legacy plane policy should deserialize");
 
-        assert_eq!(policy.route, LocalRouteKind::Worker);
         assert_eq!(policy.initial_phase_step, PhaseStepType::DelegatedWorker);
+    }
+
+    #[test]
+    fn local_execution_policy_ignores_legacy_route_field() {
+        let policy: LocalExecutionPolicy = serde_json::from_value(json!({
+            "route": "worker",
+            "allowed_tool_names": [],
+            "inject_execution_protocol": true,
+            "allow_worker_delegation": true,
+            "prefer_workflow_runtime": false,
+        }))
+        .expect("legacy route-only policy should deserialize");
+
+        assert_eq!(policy.initial_phase_step, PhaseStepType::DirectChat);
     }
 
     #[test]
@@ -470,7 +385,7 @@ mod tests {
         }));
 
         assert_eq!(
-            discovery.route_evidence.direct_capability_names,
+            discovery.runtime_evidence.direct_capability_names,
             vec![
                 "exa".to_string(),
                 "tavily-search".to_string(),
@@ -527,7 +442,6 @@ mod tests {
     #[test]
     fn effective_allowed_tool_names_merges_snapshot_direct_capabilities_without_legacy_field() {
         let policy = LocalExecutionPolicy {
-            route: LocalRouteKind::Worker,
             initial_phase_step: PhaseStepType::DelegatedWorker,
             allowed_tool_names: vec!["search_sdk".to_string()],
             inject_execution_protocol: true,
@@ -548,55 +462,6 @@ mod tests {
                 "browser_get_page_snapshot".to_string(),
                 "browser_open_tab".to_string(),
                 "search_sdk".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn direct_execution_policy_keeps_skill_control_tools_resident() {
-        let decision = LocalRouteDecision {
-            route: LocalRouteKind::Direct,
-            reasons: vec!["single_action".to_string()],
-            profile: TaskProfile {
-                explicit_route: None,
-                has_batch_scope: false,
-                wants_programmatic_logic: false,
-                wants_analysis: false,
-                wants_single_action: true,
-                destructive_intent: false,
-                approval_sensitive: false,
-                wants_artifact_generation: false,
-            },
-            evidence: RouteEvidence {
-                direct_callable_capability_count: 0,
-                has_programmatic_executor: false,
-                any_mutating_capability: false,
-                any_high_risk_capability: false,
-                direct_capability_names: Vec::new(),
-                callable_direct_capability_names: Vec::new(),
-            },
-        };
-
-        let policy = build_local_execution_policy(&decision);
-
-        assert_eq!(
-            policy.allowed_tool_names,
-            vec![
-                SEARCH_SDK_TOOL_NAME.to_string(),
-                ACTIVATE_SKILL_TOOL_NAME.to_string(),
-                READ_SKILL_RESOURCE_TOOL_NAME.to_string(),
-                "terminal_context_peek".to_string(),
-                "terminal_context_read".to_string(),
-                "terminal_context_pack".to_string(),
-                "terminal_write_input".to_string(),
-                "workflow_plan_peek".to_string(),
-                "workflow_plan_read".to_string(),
-                "workflow_plan_update".to_string(),
-                "workflow_plan_compile".to_string(),
-                CONTEXT_SEARCH_TOOL_NAME.to_string(),
-                CONTEXT_OPEN_TOOL_NAME.to_string(),
-                CONTEXT_EXPAND_TOOL_NAME.to_string(),
-                CONTEXT_SUMMARIZE_EVIDENCE_TOOL_NAME.to_string(),
             ]
         );
     }

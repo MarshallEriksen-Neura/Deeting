@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 
 use mcp_core::types::LocalChatInputMessage;
-use mcp_runtime::route::LocalRouteKind;
 use serde_json::{json, Value};
 use tauri::AppHandle;
 
@@ -376,7 +375,6 @@ pub(crate) async fn execute_monitor_task_agent(
 
 fn build_monitor_runtime_execution_policy(allowed_tool_names: Vec<String>) -> LocalExecutionPolicy {
     LocalExecutionPolicy {
-        route: LocalRouteKind::Worker,
         initial_phase_step: PhaseStepType::DelegatedWorker,
         allowed_tool_names,
         inject_execution_protocol: true,
@@ -649,7 +647,6 @@ mod tests {
     fn monitor_runtime_policy_uses_delegated_worker_without_workflow_runtime() {
         let policy = build_monitor_runtime_execution_policy(vec!["search_sdk".to_string()]);
 
-        assert_eq!(policy.route, LocalRouteKind::Worker);
         assert_eq!(policy.initial_phase_step, PhaseStepType::DelegatedWorker);
         assert!(policy.allow_worker_delegation);
         assert!(policy.inject_execution_protocol);

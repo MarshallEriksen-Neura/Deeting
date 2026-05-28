@@ -128,11 +128,6 @@
       "chip": "模型路由",
       "description": "这个 scene 追踪日常请求里哪个 provider-model arm 更容易赢。这里若出现明显领先，说明桌面运行时正在对相似请求逐渐收敛到某个模型目标。"
     },
-    "taskRoute": {
-      "name": "任务路由",
-      "chip": "任务路径",
-      "description": "这个 scene 决定任务级执行路径。它帮助桌面运行时学习直接执行、先规划再执行，或其他 route 选择哪种更有效。"
-    },
     "workerSelection": {
       "name": "Worker 选择",
       "chip": "选择 worker",

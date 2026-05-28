@@ -6,13 +6,9 @@ use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
 use crate::modules::desktop_runtime::runtime::{
-    apply_desktop_execution_policy_overrides, build_local_control_plane_result,
-    build_local_control_plane_status_meta, build_local_execution_policy,
-    build_runtime_discovery_bundle_with_runtime_query_vector, build_task_fingerprint,
-    maybe_override_route_with_custom_task_agent_query_vector, render_local_route_prompt,
-    route_hint_status_meta, select_local_route_with_evidence,
-    sovereign::{DecisionLocus, Self_},
-    LocalControlPlaneResult, LocalExecutionPolicy, LocalRouteDecision, RuntimeDiscoveryBundle,
+    apply_desktop_execution_policy_overrides, build_default_local_execution_policy,
+    build_local_control_plane_result, build_runtime_discovery_bundle_with_runtime_query_vector,
+    build_task_fingerprint, LocalControlPlaneResult, LocalExecutionPolicy, RuntimeDiscoveryBundle,
     TaskFingerprint,
 };
 use crate::modules::mcp::store::LocalSkillInstallDetail;
@@ -462,7 +458,6 @@ pub(super) struct StatusPatch {
 pub(crate) enum ContextPatch {
     PrependMessages(Vec<LocalChatInputMessage>),
     SetRuntimeDiscovery(Option<RuntimeDiscoveryBundle>),
-    SetRouteDecision(Option<LocalRouteDecision>),
     SetExecutionPolicy(Option<LocalExecutionPolicy>),
     SetControlPlaneResult(Option<LocalControlPlaneResult>),
     SetSelectedPromptVariant(Option<String>),
@@ -746,7 +741,7 @@ pub(super) fn build_desktop_local_chat_engine(
         Box::new(PersonaPromptInjectionStep),
         Box::new(ContextManifestStep),
         Box::new(GeneratedArtifactContextInjectionStep),
-        Box::new(RouteSelectionStep),
+        Box::new(RuntimePreparationStep),
         Box::new(EvolutionPacketInjectionStep),
         Box::new(SkillRecipeInjectionStep),
         Box::new(PromptVariantSelectionStep),
@@ -766,12 +761,10 @@ pub(super) struct LocalWorkflowContext {
     pub(super) status_stream: bool,
     pub(super) started_at: Instant,
     pub(super) event_tx: Option<UnboundedSender<String>>,
-    pub(super) explicit_task_agent_id: Option<String>,
     pub(super) summary_text: Option<String>,
     pub(super) messages: Vec<LocalChatInputMessage>,
     pub(super) system_messages: Vec<LocalChatInputMessage>,
     pub(super) runtime_discovery: Option<RuntimeDiscoveryBundle>,
-    pub(super) route_decision: Option<LocalRouteDecision>,
     pub(super) execution_policy: Option<LocalExecutionPolicy>,
     pub(super) control_plane_result: Option<LocalControlPlaneResult>,
     // Bandit-selected prompt variant for `router:prompt` scene
@@ -812,12 +805,10 @@ impl LocalWorkflowContext {
             status_stream: input.status_stream,
             started_at: Instant::now(),
             event_tx,
-            explicit_task_agent_id: input.explicit_task_agent_id.clone(),
             summary_text,
             messages,
             system_messages: Vec::new(),
             runtime_discovery: None,
-            route_decision: None,
             execution_policy: None,
             control_plane_result: None,
             selected_prompt_variant: None,
@@ -1033,9 +1024,6 @@ impl LocalWorkflowContext {
             ContextPatch::SetRuntimeDiscovery(runtime_discovery) => {
                 self.runtime_discovery = runtime_discovery;
             }
-            ContextPatch::SetRouteDecision(route_decision) => {
-                self.route_decision = route_decision;
-            }
             ContextPatch::SetExecutionPolicy(execution_policy) => {
                 self.execution_policy = execution_policy;
             }
@@ -1197,7 +1185,6 @@ impl StepResultContext for LocalWorkflowContext {
 fn context_patch_conflict_key(patch: &ContextPatch) -> Option<&'static str> {
     match patch {
         ContextPatch::SetRuntimeDiscovery(_) => Some("set_runtime_discovery"),
-        ContextPatch::SetRouteDecision(_) => Some("set_route_decision"),
         ContextPatch::SetExecutionPolicy(_) => Some("set_execution_policy"),
         ContextPatch::SetControlPlaneResult(_) => Some("set_control_plane_result"),
         ContextPatch::SetSelectedPromptVariant(_) => Some("set_selected_prompt_variant"),
@@ -1448,11 +1435,11 @@ fn render_generated_artifact_context_prompt(context: &GeneratedArtifactContext) 
     lines.join("\n")
 }
 
-struct RouteSelectionStep;
+struct RuntimePreparationStep;
 
-impl LocalWorkflowStep<LocalWorkflowContext> for RouteSelectionStep {
+impl LocalWorkflowStep<LocalWorkflowContext> for RuntimePreparationStep {
     fn name(&self) -> &'static str {
-        "route_selection"
+        "runtime_preparation"
     }
 
     fn depends_on(&self) -> &'static [&'static str] {
@@ -1470,65 +1457,30 @@ impl LocalWorkflowStep<LocalWorkflowContext> for RouteSelectionStep {
             let task_fingerprint = build_task_fingerprint(&query);
             let discovery_query = query_with_explicit_skill_mentions(&query);
 
-            let (discovery_bundle, runtime_discovery_patch) =
+            let (_, runtime_discovery_patch) =
                 resolve_runtime_discovery_bundle(ctx, &discovery_query).await;
-            let base_decision = maybe_override_route_with_custom_task_agent_query_vector(
-                &ctx.app_state,
-                ctx.explicit_task_agent_id.as_deref(),
-                &query,
-                ctx.request_query_embedding.clone(),
-                select_local_route_with_evidence(&query, discovery_bundle.route_evidence.clone()),
-            )
-            .await?;
-            let route_hint = Self_::consult(
-                ctx.app_state.mcp.store.as_ref(),
-                DecisionLocus::Route,
-                &query,
-                4,
-            )
-            .await
-            .as_raw()
-            .clone();
-            let route_bandit_scores =
-                crate::modules::desktop_runtime::runtime::compute_route_bandit_scores(
-                    ctx.app_state.providers.store.as_ref(),
-                )
-                .await;
-            let route_prior_application =
-                crate::modules::desktop_runtime::runtime::apply_route_prior(
-                    base_decision,
-                    route_hint,
-                    route_bandit_scores,
-                );
-            let decision = route_prior_application.decision.clone();
             let execution_policy = apply_desktop_execution_policy_overrides(
                 ctx.app_state.mcp.store.as_ref(),
-                build_local_execution_policy(&decision),
+                build_default_local_execution_policy(),
             )
             .await;
 
-            let mut result =
-                StepResult::success().with_system_message(render_local_route_prompt(&decision));
+            let mut result = StepResult::success();
             if let Some(patch) = runtime_discovery_patch {
                 result = result.with_patch(patch);
             }
             Ok(result
                 .with_patch(ContextPatch::SetTaskFingerprint(Some(task_fingerprint)))
-                .with_patch(ContextPatch::SetRouteDecision(Some(decision.clone())))
                 .with_patch(ContextPatch::SetExecutionPolicy(Some(
                     execution_policy.clone(),
                 )))
                 .with_patch(status_patch(
                     "remember",
-                    Some("route_selection"),
+                    Some("runtime_preparation"),
                     "success",
-                    "runtime.route.selected",
+                    "runtime.prepared",
                     Some(serde_json::json!({
-                        "route_status": build_local_control_plane_status_meta(
-                            &decision,
-                            &execution_policy,
-                        ),
-                        "task_learning": route_hint_status_meta(&route_prior_application),
+                        "runtime_owner": "world_model_runtime_owner",
                     })),
                 )))
         })
@@ -1543,7 +1495,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for EvolutionPacketInjectionStep {
     }
 
     fn depends_on(&self) -> &'static [&'static str] {
-        &["route_selection"]
+        &["runtime_preparation"]
     }
 
     fn execute<'a>(
@@ -1586,7 +1538,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for SkillRecipeInjectionStep {
     }
 
     fn depends_on(&self) -> &'static [&'static str] {
-        &["route_selection"]
+        &["runtime_preparation"]
     }
 
     fn execute<'a>(
@@ -1648,7 +1600,7 @@ impl LocalWorkflowStep<LocalWorkflowContext> for TemplateRenderStep {
             "summary_injection",
             "persona_prompt_injection",
             "context_manifest",
-            "route_selection",
+            "runtime_preparation",
             "skill_recipe_injection",
             "prompt_variant_selection",
         ]
@@ -1662,7 +1614,6 @@ impl LocalWorkflowStep<LocalWorkflowContext> for TemplateRenderStep {
             let control_plane_result = build_local_control_plane_result(
                 &ctx.system_messages,
                 ctx.runtime_discovery.clone(),
-                ctx.route_decision.clone(),
                 ctx.execution_policy.clone(),
                 ctx.locale.as_deref(),
             );

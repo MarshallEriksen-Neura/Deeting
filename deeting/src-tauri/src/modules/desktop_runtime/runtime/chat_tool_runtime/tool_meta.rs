@@ -355,7 +355,6 @@ pub(super) fn canonicalize_tool_call_meta_via_graph(
     let tool_trace_blocks = build_local_tool_trace_blocks(tool_call_meta);
     let graph = project_execution_graph_snapshot(GraphProjectionInput {
         session_id: session_id.to_string(),
-        route: execution_policy.route.as_str().to_string(),
         phase_step_type: execution_policy.initial_phase_step_name().to_string(),
         trace_id: None,
         request_id: None,

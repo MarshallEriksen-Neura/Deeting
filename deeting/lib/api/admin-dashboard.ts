@@ -5,20 +5,20 @@ import { isTauriCommandRuntime } from "@/lib/runtime/tauri"
 
 const ADMIN_BASE = "/api/v1/admin"
 const isTauriRuntime = isTauriCommandRuntime
-const FRAME_ROUTE_OVERLAP_METRIC = "frame_route_phase_step_overlap"
-const FRAME_ROUTE_OVERLAP_CONTRACT_SCHEMA_VERSION = 2
-const FRAME_ROUTE_OVERLAP_OBSERVATION_WINDOW = "1-2w"
-const FRAME_ROUTE_OVERLAP_RATIO_TOLERANCE = 0.000_000_001
-const FRAME_ROUTE_OVERLAP_MINIMUM_RATIO = 0.95
-const FRAME_ROUTE_OVERLAP_MINIMUM_NON_DIRECT_STRATEGY_RATIO = 0.01
-const FRAME_ROUTE_OVERLAP_MINIMUM_OBSERVATION_WINDOW_MS = 604800000
+const FRAME_PHASE_ALIGNMENT_METRIC = "frame_phase_step_alignment"
+const FRAME_PHASE_ALIGNMENT_CONTRACT_SCHEMA_VERSION = 2
+const FRAME_PHASE_ALIGNMENT_OBSERVATION_WINDOW = "1-2w"
+const FRAME_PHASE_ALIGNMENT_RATIO_TOLERANCE = 0.000_000_001
+const FRAME_PHASE_ALIGNMENT_MINIMUM_RATIO = 0.95
+const FRAME_PHASE_ALIGNMENT_MINIMUM_NON_DIRECT_STRATEGY_RATIO = 0.01
+const FRAME_PHASE_ALIGNMENT_MINIMUM_OBSERVATION_WINDOW_MS = 604800000
 const NonNegativeSafeIntegerSchema = z
   .number()
   .int()
   .nonnegative()
   .max(Number.MAX_SAFE_INTEGER)
 
-export type LocalFrameRouteOverlapReadinessParams = {
+export type LocalFramePhaseAlignmentReadinessParams = {
   windowStartUnixMs?: number
   windowEndUnixMs?: number
 }
@@ -27,8 +27,8 @@ function isValidUnixMsBound(value: number | undefined) {
   return value === undefined || (Number.isSafeInteger(value) && value >= 0)
 }
 
-export function isLocalFrameRouteOverlapReadinessWindowValid(
-  params?: LocalFrameRouteOverlapReadinessParams
+export function isLocalFramePhaseAlignmentReadinessWindowValid(
+  params?: LocalFramePhaseAlignmentReadinessParams
 ) {
   const { windowStartUnixMs, windowEndUnixMs } = params ?? {}
   if (!isValidUnixMsBound(windowStartUnixMs)) return false
@@ -44,8 +44,8 @@ export function isLocalFrameRouteOverlapReadinessWindowValid(
   return true
 }
 
-function assertLocalFrameRouteOverlapReadinessWindow(
-  params?: LocalFrameRouteOverlapReadinessParams
+function assertLocalFramePhaseAlignmentReadinessWindow(
+  params?: LocalFramePhaseAlignmentReadinessParams
 ) {
   const { windowStartUnixMs, windowEndUnixMs } = params ?? {}
   if (!isValidUnixMsBound(windowStartUnixMs)) {
@@ -968,7 +968,7 @@ export async function fetchAdminGatewayLogStats(
   return GatewayLogStatsSchema.parse(data)
 }
 
-export const LocalFrameRouteOverlapReadinessSchema = z.object({
+export const LocalFramePhaseAlignmentReadinessSchema = z.object({
   metric: z.string(),
   contract_schema_version: NonNegativeSafeIntegerSchema,
   observation_window: z.string(),
@@ -1134,18 +1134,18 @@ export const LocalFrameRouteOverlapReadinessSchema = z.object({
     )
   }
 
-  if (readiness.metric !== FRAME_ROUTE_OVERLAP_METRIC) {
+  if (readiness.metric !== FRAME_PHASE_ALIGNMENT_METRIC) {
     addIssue("metric", "metric must match the E3 readiness contract")
   }
 
-  if (readiness.contract_schema_version !== FRAME_ROUTE_OVERLAP_CONTRACT_SCHEMA_VERSION) {
+  if (readiness.contract_schema_version !== FRAME_PHASE_ALIGNMENT_CONTRACT_SCHEMA_VERSION) {
     addIssue(
       "contract_schema_version",
       "contract_schema_version must match the E3 readiness contract"
     )
   }
 
-  if (readiness.observation_window !== FRAME_ROUTE_OVERLAP_OBSERVATION_WINDOW) {
+  if (readiness.observation_window !== FRAME_PHASE_ALIGNMENT_OBSERVATION_WINDOW) {
     addIssue(
       "observation_window",
       "observation_window must match the E3 readiness contract"
@@ -1153,8 +1153,8 @@ export const LocalFrameRouteOverlapReadinessSchema = z.object({
   }
 
   if (
-    Math.abs(readiness.minimum_overlap_ratio - FRAME_ROUTE_OVERLAP_MINIMUM_RATIO) >
-    FRAME_ROUTE_OVERLAP_RATIO_TOLERANCE
+    Math.abs(readiness.minimum_overlap_ratio - FRAME_PHASE_ALIGNMENT_MINIMUM_RATIO) >
+    FRAME_PHASE_ALIGNMENT_RATIO_TOLERANCE
   ) {
     addIssue(
       "minimum_overlap_ratio",
@@ -1165,8 +1165,8 @@ export const LocalFrameRouteOverlapReadinessSchema = z.object({
   if (
     Math.abs(
       readiness.minimum_non_direct_strategy_ratio -
-        FRAME_ROUTE_OVERLAP_MINIMUM_NON_DIRECT_STRATEGY_RATIO
-    ) > FRAME_ROUTE_OVERLAP_RATIO_TOLERANCE
+        FRAME_PHASE_ALIGNMENT_MINIMUM_NON_DIRECT_STRATEGY_RATIO
+    ) > FRAME_PHASE_ALIGNMENT_RATIO_TOLERANCE
   ) {
     addIssue(
       "minimum_non_direct_strategy_ratio",
@@ -1176,7 +1176,7 @@ export const LocalFrameRouteOverlapReadinessSchema = z.object({
 
   if (
     readiness.minimum_observation_window_ms !==
-    FRAME_ROUTE_OVERLAP_MINIMUM_OBSERVATION_WINDOW_MS
+    FRAME_PHASE_ALIGNMENT_MINIMUM_OBSERVATION_WINDOW_MS
   ) {
     addIssue(
       "minimum_observation_window_ms",
@@ -1240,7 +1240,7 @@ export const LocalFrameRouteOverlapReadinessSchema = z.object({
   } else if (
     readiness.overlap_ratio === null ||
     Math.abs(readiness.overlap_ratio - expectedOverlapRatio) >
-      FRAME_ROUTE_OVERLAP_RATIO_TOLERANCE
+      FRAME_PHASE_ALIGNMENT_RATIO_TOLERANCE
   ) {
     addIssue(
       "overlap_ratio",
@@ -1272,7 +1272,7 @@ export const LocalFrameRouteOverlapReadinessSchema = z.object({
   } else if (
     readiness.non_direct_strategy_ratio === null ||
     Math.abs(readiness.non_direct_strategy_ratio - expectedNonDirectStrategyRatio) >
-      FRAME_ROUTE_OVERLAP_RATIO_TOLERANCE
+      FRAME_PHASE_ALIGNMENT_RATIO_TOLERANCE
   ) {
     addIssue(
       "non_direct_strategy_ratio",
@@ -1344,13 +1344,13 @@ export const LocalFrameRouteOverlapReadinessSchema = z.object({
   }
 })
 
-export type LocalFrameRouteOverlapReadiness = z.infer<
-  typeof LocalFrameRouteOverlapReadinessSchema
+export type LocalFramePhaseAlignmentReadiness = z.infer<
+  typeof LocalFramePhaseAlignmentReadinessSchema
 >
 
-function assertLocalFrameRouteOverlapReadinessResponseWindow(
-  readiness: LocalFrameRouteOverlapReadiness,
-  params?: LocalFrameRouteOverlapReadinessParams
+function assertLocalFramePhaseAlignmentReadinessResponseWindow(
+  readiness: LocalFramePhaseAlignmentReadiness,
+  params?: LocalFramePhaseAlignmentReadinessParams
 ) {
   const expectedWindowStartUnixMs = params?.windowStartUnixMs ?? null
   const expectedWindowEndUnixMs = params?.windowEndUnixMs ?? null
@@ -1363,20 +1363,20 @@ function assertLocalFrameRouteOverlapReadinessResponseWindow(
   }
 }
 
-export async function fetchLocalFrameRouteOverlapReadiness(
-  params?: LocalFrameRouteOverlapReadinessParams
-): Promise<LocalFrameRouteOverlapReadiness> {
+export async function fetchLocalFramePhaseAlignmentReadiness(
+  params?: LocalFramePhaseAlignmentReadinessParams
+): Promise<LocalFramePhaseAlignmentReadiness> {
   if (!isTauriCommandRuntime()) {
-    throw new Error("fetchLocalFrameRouteOverlapReadiness is only supported in Tauri runtime")
+    throw new Error("fetchLocalFramePhaseAlignmentReadiness is only supported in Tauri runtime")
   }
-  assertLocalFrameRouteOverlapReadinessWindow(params)
+  assertLocalFramePhaseAlignmentReadinessWindow(params)
 
-  const data = await invokeTauri<unknown>("get_local_frame_route_overlap_readiness", {
+  const data = await invokeTauri<unknown>("get_local_frame_phase_alignment_readiness", {
     windowStartUnixMs: params?.windowStartUnixMs,
     windowEndUnixMs: params?.windowEndUnixMs,
   })
-  const readiness = LocalFrameRouteOverlapReadinessSchema.parse(data)
-  assertLocalFrameRouteOverlapReadinessResponseWindow(readiness, params)
+  const readiness = LocalFramePhaseAlignmentReadinessSchema.parse(data)
+  assertLocalFramePhaseAlignmentReadinessResponseWindow(readiness, params)
   return readiness
 }
 

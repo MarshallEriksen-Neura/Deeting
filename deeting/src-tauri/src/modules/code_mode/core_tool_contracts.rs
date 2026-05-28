@@ -602,7 +602,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
         },
         CoreToolContract {
             name: "query_task_policy",
-            description: "Read bounded task-learning priors for one decision point under the current task fingerprint. Use this at explicit decision gates such as route choice, whether to call search_sdk early, whether to attach a capability, whether execute_code_plan is justified, or whether a user-requested verification needs stronger evidence. This is read-only policy retrieval and must not create a new user goal or replace the requested deliverable.",
+            description: "Read bounded task-learning priors for one decision point under the current task fingerprint. Use this at explicit decision gates such as whether to call search_sdk early, whether to attach a capability, whether execute_code_plan is justified, or whether a user-requested verification needs stronger evidence. This is read-only policy retrieval and must not create a new user goal or replace the requested deliverable.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -610,7 +610,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
                     "decision_point": {
                         "type": "string",
                         "description": "Decision layer to inspect.",
-                        "enum": ["route", "discovery", "capability_attach", "execution", "verification"]
+                        "enum": ["worker_selection", "discovery", "capability_attach", "execution", "verification"]
                     },
                     "limit": { "type": "integer", "description": "Maximum priors to return (1-8).", "default": 4 }
                 },
@@ -634,7 +634,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
             mutating: false,
             risk_level: "LOW",
             example_arguments: json!({
-                "query": "Investigate the current desktop runtime route boundary",
+                "query": "Investigate the current desktop runtime phase boundary",
                 "decision_point": "discovery",
                 "limit": 4
             }),

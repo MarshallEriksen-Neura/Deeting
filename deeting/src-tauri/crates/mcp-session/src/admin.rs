@@ -85,7 +85,6 @@ pub struct LocalTaskLearningRunDetail {
     pub fingerprint_key: String,
     pub task_preview: Option<String>,
     pub task_fingerprint: Value,
-    pub route_decision: Option<Value>,
     pub execution_policy: Value,
     pub outcome: Value,
     pub attribution: Value,

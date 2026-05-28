@@ -49,7 +49,6 @@ pub(crate) struct WorkerTargetSelection {
 #[derive(Debug, Clone)]
 pub(crate) struct WorkerTaskPacketInput {
     pub(crate) task_id: String,
-    pub(crate) route: String,
     pub(crate) goal: String,
     pub(crate) user_query: String,
     pub(crate) raw_user_text: Option<String>,
@@ -64,7 +63,6 @@ pub(crate) struct WorkerTaskPacketInput {
 pub(crate) struct WorkerTaskPacket {
     pub(crate) schema_version: i64,
     pub(crate) task_id: String,
-    pub(crate) route: String,
     pub(crate) goal: String,
     pub(crate) user_query: String,
     pub(crate) task_kind: String,
@@ -380,7 +378,6 @@ pub(crate) fn build_worker_task_packet(
     let mut packet = WorkerTaskPacket {
         schema_version: WORKER_TASK_PACKET_SCHEMA_VERSION,
         task_id: input.task_id,
-        route: input.route,
         goal: input.goal.trim().to_string(),
         user_query,
         task_kind,
@@ -408,13 +405,13 @@ pub(crate) fn build_worker_task_packet(
                 .to_string(),
         ],
         non_goals: vec![
-            "Do not re-evaluate whether this task should route to Direct.".to_string(),
+            "Do not re-evaluate the top-level runtime entry for this delegated task.".to_string(),
             "Do not widen scope into a broader workflow redesign.".to_string(),
             "Do not invent missing success criteria beyond this packet.".to_string(),
         ],
         allowed_actions,
         forbidden_actions: vec![
-            "Do not perform extra search_sdk or route planning on your own.".to_string(),
+            "Do not perform extra search_sdk or delegated-phase planning on your own.".to_string(),
             "Do not self-orchestrate additional workers or workflows.".to_string(),
             "Do not claim capabilities outside the bound callable lanes.".to_string(),
         ],
@@ -755,8 +752,7 @@ fn build_context_summary(
         "disabled"
     };
     let base = format!(
-        "The desktop runtime already selected route '{}' and chose worker '{}' from {} candidate(s). Workflow handoff preference is {}. Treat this as a bounded delegated subtask, not a fresh routing problem.",
-        input.route,
+        "The unified world-model runtime is delegating a bounded phase to worker '{}'. Candidate count: {}. Workflow handoff preference is {}. Treat this as a bounded delegated subtask, not a fresh routing problem.",
         selection.profile.name,
         selection.candidate_count,
         workflow_mode
@@ -1079,7 +1075,7 @@ mod tests {
     #[test]
     fn worker_task_packet_receipt_and_hash_are_stable() {
         let selection = select_custom_task_agent_candidate(
-            "analyze the worker route",
+            "analyze the delegated worker phase",
             &[build_profile(
                 "research.worker",
                 "Research Worker",
@@ -1097,10 +1093,9 @@ mod tests {
             &selection,
             WorkerTaskPacketInput {
                 task_id: "exec-1".to_string(),
-                route: "worker".to_string(),
-                goal: "Analyze the current worker route".to_string(),
-                user_query: "Analyze the current worker route".to_string(),
-                raw_user_text: Some("Analyze the current worker route".to_string()),
+                goal: "Analyze the current delegated worker phase".to_string(),
+                user_query: "Analyze the current delegated worker phase".to_string(),
+                raw_user_text: Some("Analyze the current delegated worker phase".to_string()),
                 image_urls: Vec::new(),
                 parent_allowed_tool_names: vec!["search_sdk".to_string()],
                 prefer_workflow_runtime: true,
@@ -1140,7 +1135,6 @@ mod tests {
             &selection,
             WorkerTaskPacketInput {
                 task_id: "exec-2".to_string(),
-                route: "worker".to_string(),
                 goal: "Summarize release updates".to_string(),
                 user_query: "Summarize release updates".to_string(),
                 raw_user_text: Some("Summarize release updates".to_string()),
@@ -1171,7 +1165,7 @@ mod tests {
     #[test]
     fn delegated_agent_task_input_source_carries_child_frame_contract() {
         let mut selection = select_custom_task_agent_candidate(
-            "analyze the worker route",
+            "analyze the delegated worker phase",
             &[build_profile(
                 "research.worker",
                 "Research Worker",
@@ -1192,10 +1186,9 @@ mod tests {
             &selection,
             WorkerTaskPacketInput {
                 task_id: "parent-exec-1".to_string(),
-                route: "worker".to_string(),
-                goal: "Analyze the current worker route".to_string(),
-                user_query: "Analyze the current worker route".to_string(),
-                raw_user_text: Some("Analyze the current worker route".to_string()),
+                goal: "Analyze the current delegated worker phase".to_string(),
+                user_query: "Analyze the current delegated worker phase".to_string(),
+                raw_user_text: Some("Analyze the current delegated worker phase".to_string()),
                 image_urls: Vec::new(),
                 parent_allowed_tool_names: vec!["search_sdk".to_string()],
                 prefer_workflow_runtime: true,
@@ -1235,7 +1228,7 @@ mod tests {
                 );
                 assert_eq!(agent_id, "research.worker");
                 assert_eq!(invocation_kind, DelegatedInvocationKind::Chat);
-                assert_eq!(delegated_goal, "Analyze the current worker route");
+                assert_eq!(delegated_goal, "Analyze the current delegated worker phase");
                 assert_eq!(
                     return_channel,
                     DelegationReturnChannel::ParentFrameObservation

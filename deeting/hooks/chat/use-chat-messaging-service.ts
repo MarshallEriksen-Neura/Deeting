@@ -61,6 +61,11 @@ import { resolveLeadingTaskAgentMention } from "./task-agent-mention"
 import {
   deriveAssistantActivityState,
 } from "@/lib/chat/assistant-activity"
+import {
+  activityEventFromStatus,
+  activityEventsFromBlocks,
+  createActivityTimelineBlock,
+} from "@/lib/chat/runtime-activity"
 import { deriveChatStatusUpdateForMessage } from "@/lib/chat/live-status"
 import {
   buildPendingTakeoverDispatchDraft,
@@ -357,7 +362,14 @@ function hasRenderableTextBlock(blocks: MessageBlock[]): boolean {
 }
 
 function hasRenderableNonToolBlocks(blocks: MessageBlock[]): boolean {
-  return blocks.some((block) => block.type !== "tool_call" && block.type !== "tool_result")
+  return blocks.some((block) => block.type !== "tool_call" && block.type !== "tool_result" && block.type !== "activity_timeline")
+}
+
+function appendActivityTimelineEvents(messageId: string, events: ReturnType<typeof activityEventsFromBlocks>) {
+  if (events.length === 0) return
+  const timelineBlock = createActivityTimelineBlock(messageId, events)
+  if (!timelineBlock) return
+  useChatStore.getState().appendMessageBlocks(messageId, [timelineBlock])
 }
 
 function parseStreamResponseBody(data: unknown): Record<string, unknown> | null {
@@ -1334,6 +1346,7 @@ export function useChatMessagingService() {
         trackActiveRequest: true,
         errorBlockIdBase: assistantMessageId,
         onBlocks: (blocks) => {
+          appendActivityTimelineEvents(assistantMessageId, activityEventsFromBlocks(assistantMessageId, blocks))
           appendMessageBlocks(assistantMessageId, blocks)
           const latestMessage = useChatStore
             .getState()
@@ -1348,6 +1361,10 @@ export function useChatMessagingService() {
         onTraceId: (traceId) => mergeMessageMeta(assistantMessageId, { trace_id: traceId }),
         onSessionResolved: (nextSessionId) => setSessionId(nextSessionId),
         onStatusEvent: (status) => {
+          const activityEvent = activityEventFromStatus({ ...status, messageId: assistantMessageId })
+          if (activityEvent) {
+            appendActivityTimelineEvents(assistantMessageId, [activityEvent])
+          }
           setStatus({ ...status, messageId: assistantMessageId })
           if (status.code === "knowledge.context.loaded" && status.meta) {
             mergeMessageMeta(assistantMessageId, {
@@ -1636,6 +1653,7 @@ export function useChatMessagingService() {
         trackActiveRequest: true,
         errorBlockIdBase: assistantMessageId,
         onBlocks: (blocks) => {
+          appendActivityTimelineEvents(assistantMessageId, activityEventsFromBlocks(assistantMessageId, blocks))
           appendMessageBlocks(assistantMessageId, blocks)
           const latestMessage = useChatStore
             .getState()
@@ -1650,6 +1668,10 @@ export function useChatMessagingService() {
         onTraceId: (traceId) => mergeMessageMeta(assistantMessageId, { trace_id: traceId }),
         onSessionResolved: (nextSessionId) => setSessionId(nextSessionId),
         onStatusEvent: (status) => {
+          const activityEvent = activityEventFromStatus({ ...status, messageId: assistantMessageId })
+          if (activityEvent) {
+            appendActivityTimelineEvents(assistantMessageId, [activityEvent])
+          }
           setStatus({ ...status, messageId: assistantMessageId })
           if (status.code === "knowledge.context.loaded" && status.meta) {
             mergeMessageMeta(assistantMessageId, {

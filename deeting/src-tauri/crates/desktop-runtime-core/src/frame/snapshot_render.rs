@@ -1,7 +1,4 @@
-use crate::frame::{
-    CommittedAction, Observation, SequenceNumber, UserDirective,
-    WorldModelFrame,
-};
+use crate::frame::{CommittedAction, Observation, SequenceNumber, UserDirective, WorldModelFrame};
 
 #[derive(Debug, Clone)]
 pub struct SnapshotRenderConfig {
@@ -22,7 +19,10 @@ impl Default for SnapshotRenderConfig {
     }
 }
 
-pub fn render_world_model_snapshot(frame: &WorldModelFrame, config: &SnapshotRenderConfig) -> String {
+pub fn render_world_model_snapshot(
+    frame: &WorldModelFrame,
+    config: &SnapshotRenderConfig,
+) -> String {
     let directives = render_user_directives(frame, config);
     let observations = render_observations(frame, config);
     let committed = render_committed_actions(frame, config);
@@ -105,7 +105,8 @@ struct GroupedObservation<'a> {
 
 fn group_observations_by_entity(observations: &[Observation]) -> Vec<GroupedObservation<'_>> {
     let mut groups: Vec<GroupedObservation<'_>> = Vec::new();
-    let mut entity_index: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut entity_index: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
 
     for obs in observations {
         if let Some(key) = observation_entity_key(obs) {
@@ -115,10 +116,16 @@ fn group_observations_by_entity(observations: &[Observation]) -> Vec<GroupedObse
             } else {
                 let idx = groups.len();
                 entity_index.insert(key, idx);
-                groups.push(GroupedObservation { latest: obs, count: 1 });
+                groups.push(GroupedObservation {
+                    latest: obs,
+                    count: 1,
+                });
             }
         } else {
-            groups.push(GroupedObservation { latest: obs, count: 1 });
+            groups.push(GroupedObservation {
+                latest: obs,
+                count: 1,
+            });
         }
     }
     groups
@@ -217,7 +224,14 @@ fn render_observations(frame: &WorldModelFrame, config: &SnapshotRenderConfig) -
 
     if seen_items.len() > max_recent {
         let omitted = seen_items.len() - max_recent;
-        let recent: Vec<String> = seen_items.into_iter().rev().take(max_recent).collect::<Vec<_>>().into_iter().rev().collect();
+        let recent: Vec<String> = seen_items
+            .into_iter()
+            .rev()
+            .take(max_recent)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
         lines.extend(recent);
         lines.push(format!("  ({omitted} earlier observation(s) omitted)"));
     } else {
@@ -245,14 +259,26 @@ fn render_committed_actions(frame: &WorldModelFrame, config: &SnapshotRenderConf
             let action = group.actions[0];
             let text = truncate_text(&action.action_text, config.max_text_len_per_entry);
             let line = format!("- {marker}{text} (seq={})", action.committed_at);
-            if is_new { new_lines.push(line); } else { old_lines.push(line); }
+            if is_new {
+                new_lines.push(line);
+            } else {
+                old_lines.push(line);
+            }
         } else {
-            let args: Vec<&str> = group.actions.iter().map(|a| {
-                a.action_text
-                    .find('(')
-                    .and_then(|start| a.action_text.find(')').map(|end| &a.action_text[start + 1..end]))
-                    .unwrap_or(&a.action_text)
-            }).collect();
+            let args: Vec<&str> = group
+                .actions
+                .iter()
+                .map(|a| {
+                    a.action_text
+                        .find('(')
+                        .and_then(|start| {
+                            a.action_text
+                                .find(')')
+                                .map(|end| &a.action_text[start + 1..end])
+                        })
+                        .unwrap_or(&a.action_text)
+                })
+                .collect();
             let summary = if args.len() <= 4 {
                 format!("[{}]", args.join(", "))
             } else {
@@ -260,9 +286,16 @@ fn render_committed_actions(frame: &WorldModelFrame, config: &SnapshotRenderConf
             };
             let line = format!(
                 "- {marker}{} × {} → {summary} (seq={}-{})",
-                group.tool_name, group.actions.len(), group.first_seq, group.last_seq
+                group.tool_name,
+                group.actions.len(),
+                group.first_seq,
+                group.last_seq
             );
-            if is_new { new_lines.push(line); } else { old_lines.push(line); }
+            if is_new {
+                new_lines.push(line);
+            } else {
+                old_lines.push(line);
+            }
         }
     }
 
@@ -270,7 +303,15 @@ fn render_committed_actions(frame: &WorldModelFrame, config: &SnapshotRenderConf
     let max_old = 3;
     if old_lines.len() > max_old {
         let omitted = old_lines.len() - max_old;
-        lines.extend(old_lines.into_iter().rev().take(max_old).collect::<Vec<_>>().into_iter().rev());
+        lines.extend(
+            old_lines
+                .into_iter()
+                .rev()
+                .take(max_old)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev(),
+        );
         lines.push(format!("  ({omitted} earlier committed group(s) omitted)"));
     } else {
         lines.extend(old_lines);
@@ -282,16 +323,28 @@ fn render_committed_actions(frame: &WorldModelFrame, config: &SnapshotRenderConf
 fn render_model_declared(frame: &WorldModelFrame) -> String {
     let mut lines = Vec::new();
     lines.extend(
-        frame.known_facts.iter().map(|f| format!("- fact: {}", f.statement.trim())),
+        frame
+            .known_facts
+            .iter()
+            .map(|f| format!("- fact: {}", f.statement.trim())),
     );
     lines.extend(
-        frame.assumptions.iter().map(|a| format!("- assumption: {}", a.statement.trim())),
+        frame
+            .assumptions
+            .iter()
+            .map(|a| format!("- assumption: {}", a.statement.trim())),
     );
     lines.extend(
-        frame.verification_targets.iter().map(|t| format!("- verification_target: {}", t.description.trim())),
+        frame
+            .verification_targets
+            .iter()
+            .map(|t| format!("- verification_target: {}", t.description.trim())),
     );
     lines.extend(
-        frame.adaptation_rules.iter().map(|r| format!("- rule: {}", r.instruction.trim())),
+        frame
+            .adaptation_rules
+            .iter()
+            .map(|r| format!("- rule: {}", r.instruction.trim())),
     );
     if lines.is_empty() {
         "- (no model declarations yet)".to_string()
@@ -303,7 +356,11 @@ fn render_model_declared(frame: &WorldModelFrame) -> String {
 // --- Helpers ---
 
 fn new_marker(sequence: SequenceNumber, highwater: SequenceNumber) -> &'static str {
-    if sequence > highwater { "[NEW] " } else { "" }
+    if sequence > highwater {
+        "[NEW] "
+    } else {
+        ""
+    }
 }
 
 fn truncate_text(text: &str, max_len: usize) -> String {
@@ -353,9 +410,13 @@ mod tests {
         let mut frame = test_frame();
         frame.append_user_directive("do X", None).unwrap();
         let first_id = frame.user_directed[0].id.clone();
-        frame.append_user_directive("change to Y", Some(first_id.clone())).unwrap();
+        frame
+            .append_user_directive("change to Y", Some(first_id.clone()))
+            .unwrap();
         let second_id = frame.user_directed[1].id.clone();
-        frame.append_user_directive("back to X", Some(second_id.clone())).unwrap();
+        frame
+            .append_user_directive("back to X", Some(second_id.clone()))
+            .unwrap();
 
         let config = SnapshotRenderConfig::default();
         let output = render_user_directives(&frame, &config);
@@ -370,12 +431,17 @@ mod tests {
     fn observation_entity_grouping_shows_latest() {
         let mut frame = test_frame();
         for i in 0..4 {
-            frame.append_observation(
-                format!("read config.toml v{i}"),
-                Some(serde_json::json!({"path": "/etc/config.toml", "size": 100 + i})),
-                ObservationSource { tool_call_id: format!("c-{i}"), tool_name: "read_file".to_string() },
-                None,
-            ).unwrap();
+            frame
+                .append_observation(
+                    format!("read config.toml v{i}"),
+                    Some(serde_json::json!({"path": "/etc/config.toml", "size": 100 + i})),
+                    ObservationSource {
+                        tool_call_id: format!("c-{i}"),
+                        tool_name: "read_file".to_string(),
+                    },
+                    None,
+                )
+                .unwrap();
         }
 
         let config = SnapshotRenderConfig::default();
@@ -405,20 +471,30 @@ mod tests {
     fn layer2_window_limits_old_observations() {
         let mut frame = test_frame();
         for i in 0..12 {
-            frame.append_observation(
-                format!("obs-{i}"),
-                None,
-                ObservationSource { tool_call_id: format!("c-{i}"), tool_name: format!("tool_{i}") },
-                None,
-            ).unwrap();
+            frame
+                .append_observation(
+                    format!("obs-{i}"),
+                    None,
+                    ObservationSource {
+                        tool_call_id: format!("c-{i}"),
+                        tool_name: format!("tool_{i}"),
+                    },
+                    None,
+                )
+                .unwrap();
         }
         frame.mark_seen();
-        frame.append_observation(
-            "obs-new".to_string(),
-            None,
-            ObservationSource { tool_call_id: "c-new".to_string(), tool_name: "tool_new".to_string() },
-            None,
-        ).unwrap();
+        frame
+            .append_observation(
+                "obs-new".to_string(),
+                None,
+                ObservationSource {
+                    tool_call_id: "c-new".to_string(),
+                    tool_name: "tool_new".to_string(),
+                },
+                None,
+            )
+            .unwrap();
 
         let config = SnapshotRenderConfig::default();
         let output = render_observations(&frame, &config);
@@ -430,12 +506,17 @@ mod tests {
     fn compaction_header_appears_when_entries_omitted() {
         let mut frame = test_frame();
         for i in 0..12 {
-            frame.append_observation(
-                format!("obs-{i}"),
-                None,
-                ObservationSource { tool_call_id: format!("c-{i}"), tool_name: format!("tool_{i}") },
-                None,
-            ).unwrap();
+            frame
+                .append_observation(
+                    format!("obs-{i}"),
+                    None,
+                    ObservationSource {
+                        tool_call_id: format!("c-{i}"),
+                        tool_name: format!("tool_{i}"),
+                    },
+                    None,
+                )
+                .unwrap();
         }
         frame.mark_seen();
 

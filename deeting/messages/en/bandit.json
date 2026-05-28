@@ -128,11 +128,6 @@
       "chip": "Route model",
       "description": "This scene tracks which provider-model arm is winning in everyday routing. A strong leader here means the runtime is converging on one model target for similar desktop requests."
     },
-    "taskRoute": {
-      "name": "Task Route",
-      "chip": "Route task",
-      "description": "This scene governs task-level execution shape. It helps the desktop runtime learn whether direct execution, planner-first, or other route choices are paying off."
-    },
     "workerSelection": {
       "name": "Worker Selection",
       "chip": "Pick worker",

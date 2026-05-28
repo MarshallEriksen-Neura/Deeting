@@ -135,6 +135,40 @@ fn world_model_snapshot_drops_new_marker_after_model_seen() {
 }
 
 #[test]
+fn world_model_snapshot_prefix_includes_runtime_context_before_user_text() {
+    let mut frame = desktop_runtime_core::WorldModelFrame::new(
+        "frame-1",
+        "session-1",
+        "task-1",
+        "do the thing",
+        desktop_runtime_core::ExecutionStrategy::DirectIteration,
+        desktop_runtime_core::FrameProvenance::bootstrap("test"),
+    );
+    frame.append_user_directive("do the thing", None).unwrap();
+    let mut policy = build_default_local_execution_policy();
+    policy.require_diting_think_preflight = true;
+    let messages = vec![LocalChatInputMessage {
+        role: "user".to_string(),
+        content: "latest user text".to_string(),
+        reasoning_content: None,
+        tool_calls: vec![],
+        tool_call_id: None,
+        name: None,
+    }];
+
+    let rendered = messages_with_world_model_snapshot(&messages, Some(&frame), &policy);
+    let content = &rendered[0].content;
+
+    assert!(content.contains("=== World Model Snapshot"));
+    assert!(content.contains("[RUNTIME CONTEXT]"));
+    assert!(content.contains("runtime_owner: world_model_runtime_owner"));
+    assert!(content.contains("historical_runtime_evidence: observation_only"));
+    assert!(content.contains("diting_think: preflight obligation is active"));
+    assert!(content.contains("latest user text"));
+    assert!(content.find("[RUNTIME CONTEXT]") < content.find("latest user text"));
+}
+
+#[test]
 fn observation_patch_appends_world_observed_records() {
     let mut frame = desktop_runtime_core::WorldModelFrame::new(
         "frame-1",

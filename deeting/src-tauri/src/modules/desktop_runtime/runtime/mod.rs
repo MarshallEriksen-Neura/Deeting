@@ -52,10 +52,8 @@ pub(crate) use chat_tool_runtime::{serialize_inflight_runtime_context, InFlightE
 pub(crate) use consult::LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION;
 pub(crate) use control_plane::{
     apply_desktop_execution_policy_overrides, build_default_local_execution_policy,
-    build_local_control_plane_result, build_local_control_plane_status_meta,
-    build_local_execution_policy, build_runtime_discovery_bundle_with_runtime_query_vector,
-    maybe_override_route_with_custom_task_agent_query_vector, LocalControlPlaneResult,
-    LocalExecutionPolicy, RuntimeDiscoveryBundle,
+    build_local_control_plane_result, build_runtime_discovery_bundle_with_runtime_query_vector,
+    LocalControlPlaneResult, LocalExecutionPolicy, RuntimeDiscoveryBundle,
 };
 pub(crate) use execution_graph::{
     project_execution_graph_blocks_from_value, project_execution_graph_snapshot,
@@ -73,9 +71,6 @@ pub(crate) use execution_plane::{
     DelegatedExecutionSelection, DelegatedExecutionStatus, DelegatedExecutionTarget,
     LocalExecutionRequest, EXECUTION_TREE_SCHEMA_VERSION,
 };
-pub(crate) use mcp_runtime::route::{
-    render_local_route_prompt, select_local_route_with_evidence, LocalRouteDecision, LocalRouteKind,
-};
 pub(crate) use posterior_signal::{
     resolve_posterior_signal, resolve_posterior_signal_ingress, should_apply_posterior_signal,
     PosteriorSignalInput,
@@ -85,11 +80,10 @@ pub(crate) use skill_context::{
     activate_skill_from_args, read_skill_resource_from_args, ActiveSkillContextState,
 };
 pub(crate) use task_learning::{
-    apply_policy_delta, apply_route_prior, apply_task_learning_revision, build_task_fingerprint,
-    compute_route_bandit_scores, evaluate_task_learning_with_runtime,
-    list_task_learning_runs_for_query, list_task_policy_priors_for_query,
-    load_task_learning_run_detail, query_task_policy_hint, replay_task_learning_run,
-    route_hint_status_meta, TaskFingerprint, TaskLearningDelegatedExecution,
+    apply_policy_delta, apply_task_learning_revision, build_task_fingerprint,
+    evaluate_task_learning_with_runtime, list_task_learning_runs_for_query,
+    list_task_policy_priors_for_query, load_task_learning_run_detail, query_task_policy_hint,
+    replay_task_learning_run, TaskFingerprint, TaskLearningDelegatedExecution,
 };
 #[cfg(test)]
 pub(crate) use tool_catalog::{

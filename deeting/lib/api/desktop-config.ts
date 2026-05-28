@@ -16,7 +16,7 @@ export const DESKTOP_CONFIG_KEYS = {
   personaPrompt: "chat.persona_prompt",
   chatHistoryRetentionDays: "chat.history_retention_days",
   approvalPolicyLevel: "chat.approval_policy_level",
-  workerWorkflowRouting: "workflow.route_worker_through_workflow",
+  delegatedPhaseWorkflowRouting: "workflow.delegated_phase_through_workflow",
   desktopWindowCloseAction: "desktop.window.close_action",
   islandToggleShortcut: "island.toggle_shortcut",
   selectionAssistantWakeShortcut: "selection_assistant.wake_shortcut",

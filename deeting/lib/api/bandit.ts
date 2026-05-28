@@ -12,7 +12,6 @@ async function invokeTauri<T>(command: string, args?: Record<string, unknown>): 
 
 export const KNOWN_BANDIT_SCENES = [
   "router:llm",
-  "task_learning:route",
   "task_learning:worker_selection",
   "memory:recall",
 ] as const

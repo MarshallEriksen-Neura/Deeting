@@ -94,8 +94,7 @@
       "toolCalls": "次工具调用"
     },
     "metrics": {
-      "route": "处理路径",
-      "plane": "执行平面",
+      "phase": "阶段",
       "verification": "验证结果",
       "confidence": "置信度",
       "toolCalls": "工具调用",
@@ -127,8 +126,8 @@
   "timeline": {
     "profile": "解析任务画像",
     "profileDesc": "识别任务目标、输出形态和风险等级。",
-    "route": "选择执行路径",
-    "routeDesc": "根据任务特征决定使用哪条处理路径。",
+    "phase": "解析阶段状态",
+    "phaseDesc": "查看本次运行最终落入的阶段和执行偏好。",
     "execution": "执行与验证",
     "executionDesc": "结合处理结果、验证强度和工具调用给出判断。",
     "learning": "沉淀经验更新",
@@ -141,9 +140,6 @@
     "goal": "目标类型",
     "output": "输出形式",
     "risk": "风险等级",
-    "routeDecision": "处理方式",
-    "route": "选择的路径",
-    "reasons": "选择原因",
     "toolsUsed": "使用的工具",
     "noTools": "没有使用额外工具",
     "goals": {

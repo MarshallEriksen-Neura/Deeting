@@ -10,6 +10,7 @@ export type BlockType =
   | 'file_preview'
   | 'error'
   | 'ui'
+  | 'activity_timeline'
   | 'diting_think_frame'
 
 export type BlockStreamState = 'streaming' | 'completed'
@@ -99,6 +100,35 @@ export interface UIBlock extends BaseBlock {
   metadata?: Record<string, unknown>
 }
 
+export interface RuntimeActivityEvent {
+  id: string
+  messageId: string
+  stage: 'listen' | 'remember' | 'evolve' | 'render' | 'tool' | 'approval' | 'recovery'
+  level: 'info' | 'success' | 'warning' | 'error' | 'action'
+  title: string
+  detail?: string
+  status: 'running' | 'done' | 'failed' | 'cancelled' | 'waiting'
+  timestamp: number
+  source:
+    | 'status'
+    | 'tool_call'
+    | 'tool_result'
+    | 'runtime_transition'
+    | 'execution_lifecycle'
+    | 'world_model'
+    | 'context_pressure'
+  critical?: boolean
+  collapsible?: boolean
+  debug?: unknown
+}
+
+export interface ActivityTimelineBlock extends BaseBlock {
+  type: 'activity_timeline'
+  events: RuntimeActivityEvent[]
+  collapsed?: boolean
+  summary?: string
+}
+
 export interface DitingThinkFrameBlock extends BaseBlock {
   type: 'diting_think_frame'
   intent: string | null
@@ -158,6 +188,7 @@ export type MessageBlock =
   | FilePreviewBlock
   | ErrorBlock
   | UIBlock
+  | ActivityTimelineBlock
   | DitingThinkFrameBlock
 
 export interface PersistedMessage {

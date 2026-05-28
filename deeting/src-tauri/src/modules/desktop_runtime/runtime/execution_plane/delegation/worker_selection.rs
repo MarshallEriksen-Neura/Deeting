@@ -18,7 +18,6 @@ struct WorkerDelegationInput<'a> {
     app_state: &'a AppState,
     explicit_task_agent_id: Option<&'a str>,
     root_execution_id: Option<&'a str>,
-    route: &'a str,
     allowed_tool_names: &'a [String],
     prefer_workflow_runtime: bool,
     explicit_selection_override: Option<WorkerTargetSelection>,
@@ -42,7 +41,6 @@ impl<'a> From<&'a LocalExecutionRequest> for WorkerDelegationInput<'a> {
             app_state: &request.app_state,
             explicit_task_agent_id: request.explicit_task_agent_id.as_deref(),
             root_execution_id: request.root_execution_id.as_deref(),
-            route: request.execution_policy.route.as_str(),
             allowed_tool_names: &request.execution_policy.allowed_tool_names,
             prefer_workflow_runtime: request.execution_policy.prefer_workflow_runtime,
             explicit_selection_override: request.explicit_task_agent_profile_override.as_ref().map(
@@ -113,7 +111,6 @@ where
         &selection,
         WorkerTaskPacketInput {
             task_id: execution_id.clone(),
-            route: input.route.to_string(),
             goal: query.clone(),
             user_query: if !latest_input.raw_text.trim().is_empty() {
                 latest_input.raw_text.clone()

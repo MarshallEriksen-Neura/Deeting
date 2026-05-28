@@ -1424,8 +1424,7 @@ mod tests {
 }"#,
         )
         .expect("write monitor manifest");
-        std::fs::write(crawler_dir.join("SKILL.md"), "# Monitor\n")
-            .expect("write monitor doc");
+        std::fs::write(crawler_dir.join("SKILL.md"), "# Monitor\n").expect("write monitor doc");
 
         let interpreter_dir = root.join("code_interpreter");
         std::fs::create_dir_all(&interpreter_dir).expect("create interpreter dir");

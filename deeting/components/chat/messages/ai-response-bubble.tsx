@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import { GhostCursor } from "@/components/chat/visuals/status-visuals";
 import type {
+  ActivityTimelineBlock,
   MessageBlock,
   UIBlock as MessageUIBlock,
   ToolCallBlock as MessageToolCallBlock,
@@ -28,6 +29,7 @@ import {
   ToolResultBlock,
 } from "@/components/chat/messages/ai-response-bubble/tool-blocks";
 import { DitingThinkPanel } from "@/components/chat/messages/ai-response-bubble/diting-think-panel";
+import { AssistantActivityTimeline } from "@/components/chat/messages/ai-response-bubble/assistant-activity-timeline";
 
 const ViewBlock = dynamic(() => import("@/components/views/view-block"), {
   ssr: false,
@@ -94,6 +96,13 @@ function serializeComparableBlock(block: MessageBlock) {
       return { type: block.type, data: block.data };
     case "error":
       return { type: block.type, message: block.message };
+    case "activity_timeline":
+      return {
+        type: block.type,
+        events: block.events,
+        collapsed: block.collapsed,
+        summary: block.summary,
+      };
     case "diting_think_frame":
       return {
         type: block.type,
@@ -140,7 +149,10 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
     statusCode = null,
     statusMeta = null,
   }) {
-    const hasContent = useMemo(() => parts.length > 0, [parts.length]);
+    const hasContent = useMemo(
+      () => parts.some((part) => part.type !== "activity_timeline"),
+      [parts],
+    );
 
     // For the status rail we only care about user-visible *answer* content
     // (text / thoughts / errors / inline UI). Tool calls and intermediate
@@ -173,6 +185,15 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
         }
       });
       return { resultMap: map, pairedResultIndices: paired };
+    }, [parts]);
+
+    const activityTimelineBlock = useMemo<ActivityTimelineBlock | null>(() => {
+      for (const part of parts) {
+        if (part.type === "activity_timeline") {
+          return part;
+        }
+      }
+      return null;
     }, [parts]);
 
     const dittingFrameBlock = useMemo(() => {
@@ -315,7 +336,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       >
         <div className="pl-4 pr-1 py-2 min-w-0 overflow-hidden">
           <AIResponseStatusRail
-            isActive={isActive}
+            isActive={isActive && !activityTimelineBlock}
             hasContent={hasAnswerContent}
             hasToolActivity={hasToolActivity}
             statusStage={statusStage}
@@ -324,6 +345,13 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
             streamEnabled={streamEnabled}
             shouldRevealCallChain={shouldRevealCallChain}
           />
+
+          {activityTimelineBlock ? (
+            <AssistantActivityTimeline
+              block={activityTimelineBlock}
+              isActive={isActive}
+            />
+          ) : null}
 
           {dittingFrameBlock ? (
             <DitingThinkPanel
@@ -340,7 +368,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
               className="space-y-3"
             >
               {parts.map((part, index) => {
-                if (part.type === "diting_think_frame") {
+                if (part.type === "activity_timeline" || part.type === "diting_think_frame") {
                   return null;
                 }
                 if (part.type === "thought") {

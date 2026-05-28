@@ -451,16 +451,10 @@ fn build_local_prompt_plan_omits_execution_tool_protocol_without_policy() {
 }
 
 #[test]
-fn build_local_prompt_plan_includes_runtime_capability_contract_for_direct_policy() {
-    let policy = build_local_execution_policy(&select_local_route(
-        "检查当前目录",
-        &json!({
-            "capabilities": [
-                { "name": "shell_execute", "status": { "callable": true }, "invocation_mode": "direct" }
-            ],
-            "routing_hint": { "direct_callable_capability_count": 1 }
-        }),
-    ));
+fn build_local_prompt_plan_includes_runtime_capability_contract_for_unified_policy() {
+    let mut policy = build_default_local_execution_policy();
+    policy.allowed_tool_names = vec!["search_sdk".to_string(), "shell_execute".to_string()];
+
     let rendered = build_local_prelude_messages(&PromptAssets::default(), Some(&policy))
         .first()
         .map(|message| message.content.clone())
@@ -472,16 +466,12 @@ fn build_local_prompt_plan_includes_runtime_capability_contract_for_direct_polic
 }
 
 #[test]
-fn build_local_prompt_plan_includes_code_orchestration_protocol_from_worker_policy() {
-    let policy = build_local_execution_policy(&select_local_route(
-        "遍历所有 markdown files，抽标题、分类、去重后输出 JSON",
-        &json!({
-            "orchestration_primitives": [{ "name": "execute_code_plan" }],
-            "capabilities": [],
-            "routing_hint": { "programmatic_path": "execute_code_plan" }
-        }),
-    ));
-    assert_eq!(policy.route, LocalRouteKind::Worker);
+fn build_local_prompt_plan_includes_code_orchestration_protocol_from_phase_policy() {
+    let mut policy = build_default_local_execution_policy();
+    policy.allowed_tool_names = vec!["search_sdk".to_string(), "execute_code_plan".to_string()];
+    policy.inject_execution_protocol = true;
+    policy.allow_worker_delegation = true;
+
     let rendered = build_local_prelude_messages(&PromptAssets::default(), Some(&policy))
         .first()
         .map(|message| message.content.clone())
@@ -495,24 +485,26 @@ fn build_local_prompt_plan_includes_code_orchestration_protocol_from_worker_poli
 }
 
 #[test]
-fn build_route_selection_status_meta_embeds_execution_policy() {
-    let decision = select_local_route(
-        "遍历所有 markdown files，抽标题、分类、去重后输出 JSON",
-        &json!({
-            "orchestration_primitives": [{ "name": "execute_code_plan" }],
-            "capabilities": [],
-            "routing_hint": { "programmatic_path": "execute_code_plan" }
-        }),
-    );
-    let policy = build_local_execution_policy(&decision);
-    let meta = build_local_control_plane_status_meta(&decision, &policy);
+fn control_plane_status_meta_marks_world_model_runtime_owner() {
+    let mut policy = build_default_local_execution_policy();
+    policy.allowed_tool_names = vec!["search_sdk".to_string()];
+    let meta = crate::modules::desktop_runtime::runtime::build_local_control_plane_result(
+        &[],
+        None,
+        Some(policy),
+        None,
+    )
+    .status_meta;
 
-    assert_eq!(meta.get("route").and_then(Value::as_str), Some("worker"));
+    assert_eq!(
+        meta.get("runtime_owner").and_then(Value::as_str),
+        Some("world_model_runtime_owner")
+    );
     assert_eq!(
         meta.get("execution_policy")
             .and_then(|value| value.get("initial_phase_step"))
             .and_then(Value::as_str),
-        Some("delegated_worker")
+        Some("direct_chat")
     );
 }
 
@@ -590,14 +582,14 @@ fn render_skill_recipe_prompt_prioritizes_explicit_skill_mentions() {
 }
 
 #[test]
-fn desktop_local_chat_engine_includes_route_selection_before_recipe_and_template() {
+fn desktop_local_chat_engine_includes_runtime_preparation_before_recipe_and_template() {
     let engine = build_desktop_local_chat_engine().expect("engine should build");
     let layers = engine.debug_layers();
 
-    let route_index = layers
+    let runtime_preparation_index = layers
         .iter()
-        .position(|layer| layer.iter().any(|name| name == "route_selection"))
-        .expect("route_selection layer");
+        .position(|layer| layer.iter().any(|name| name == "runtime_preparation"))
+        .expect("runtime_preparation layer");
     let recipe_index = layers
         .iter()
         .position(|layer| layer.iter().any(|name| name == "skill_recipe_injection"))
@@ -607,8 +599,8 @@ fn desktop_local_chat_engine_includes_route_selection_before_recipe_and_template
         .position(|layer| layer.iter().any(|name| name == "template_render"))
         .expect("template_render layer");
 
-    assert!(route_index < recipe_index);
-    assert!(route_index < template_index);
+    assert!(runtime_preparation_index < recipe_index);
+    assert!(runtime_preparation_index < template_index);
 }
 
 #[test]

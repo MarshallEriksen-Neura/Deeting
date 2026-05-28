@@ -1,19 +1,20 @@
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 
-pub(crate) const DECISION_POINT_ROUTE: &str = "route";
 pub(crate) const DECISION_POINT_WORKER_SELECTION: &str = "worker_selection";
 pub(crate) const DECISION_POINT_DISCOVERY: &str = "discovery";
 pub(crate) const DECISION_POINT_CAPABILITY_ATTACH: &str = "capability_attach";
 pub(crate) const DECISION_POINT_EXECUTION: &str = "execution";
 pub(crate) const DECISION_POINT_VERIFICATION: &str = "verification";
 
-pub(crate) const ACTION_ROUTE_DIRECT: &str = "direct";
-pub(crate) const ACTION_ROUTE_WORKER: &str = "worker";
 pub(crate) const ACTION_DISCOVERY_SEARCH_EARLY: &str = "search_sdk_early";
 pub(crate) const ACTION_CAPABILITY_ATTACH: &str = "attach_capability";
 pub(crate) const ACTION_EXECUTE_CODE_PLAN: &str = "execute_code_plan";
 pub(crate) const ACTION_VERIFICATION_STRONGER_CHECKS: &str = "stronger_checks";
+
+pub(crate) fn is_legacy_route_control_delta(decision_point: &str, action_key: &str) -> bool {
+    decision_point == "route" && matches!(action_key, "direct" | "worker")
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct TaskFingerprint {
@@ -85,7 +86,6 @@ pub(crate) struct EvaluatedOutcome {
     pub(crate) verification_result: String,
     pub(crate) user_response_signal: String,
     pub(crate) judgment_mode: String,
-    pub(crate) route_judgment: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) worker_selection_judgment: Option<String>,
     pub(crate) discovery_judgment: String,
