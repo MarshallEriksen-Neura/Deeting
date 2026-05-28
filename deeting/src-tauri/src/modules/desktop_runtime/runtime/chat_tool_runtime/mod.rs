@@ -33,7 +33,7 @@ pub(crate) use approval_commands::{
 };
 pub(crate) use frame_tools::{
     inject_diting_think_tool, parse_diting_think_arguments, DitingThinkExtract,
-    DITING_THINK_TOOL_NAME,
+    ProposedPhase, DITING_THINK_TOOL_NAME,
 };
 use lifecycle::finalize_tool_round;
 #[cfg(test)]

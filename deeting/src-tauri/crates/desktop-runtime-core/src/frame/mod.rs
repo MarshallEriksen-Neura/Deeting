@@ -168,6 +168,8 @@ pub struct WorldModelFrame {
     pub model_turn_count: ModelTurnCount,
     #[serde(default)]
     pub last_diting_think_turn: Option<ModelTurnCount>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proposed_next_phase: Option<serde_json::Value>,
 }
 
 impl WorldModelFrame {
@@ -202,6 +204,7 @@ impl WorldModelFrame {
             last_seen_by_model: 0,
             model_turn_count: 0,
             last_diting_think_turn: None,
+            proposed_next_phase: None,
         }
     }
 

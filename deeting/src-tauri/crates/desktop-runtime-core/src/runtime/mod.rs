@@ -83,6 +83,7 @@ where
             frame.mark_stale();
             frame = self.components.frame_generator.refresh_frame(
                 &frame,
+                Some(&plan),
                 &FrameRefreshRequest {
                     reason: validation.reason.clone(),
                     interruption: None,
@@ -116,6 +117,7 @@ where
                 })?;
             frame = self.components.frame_generator.refresh_frame(
                 &frame,
+                Some(&plan),
                 &FrameRefreshRequest {
                     reason: "user interruption arrived before commit boundary".to_string(),
                     interruption: Some(interruption),
@@ -152,6 +154,7 @@ where
                     .unwrap_or(FrameRefreshArtifact::WorldModelFrameRefresh);
                 frame = self.components.frame_generator.refresh_frame(
                     &frame,
+                    Some(&plan),
                     &FrameRefreshRequest {
                         reason: "hook requested frame artifact before next phase".to_string(),
                         interruption: None,
@@ -562,6 +565,7 @@ mod tests {
         fn refresh_frame(
             &mut self,
             current_frame: &WorldModelFrame,
+            _current_plan: Option<&PlanArtifact>,
             request: &FrameRefreshRequest,
         ) -> RuntimeCoreResult<WorldModelFrame> {
             let mut refreshed = current_frame.clone();

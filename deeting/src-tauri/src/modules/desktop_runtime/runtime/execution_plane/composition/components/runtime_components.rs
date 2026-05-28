@@ -6,7 +6,7 @@ use crate::modules::ai_upstream::ReasoningRequestConfig;
 use crate::modules::desktop_runtime::runtime::chat_completion::request_provider_chat_completion;
 use crate::modules::desktop_runtime::runtime::chat_tool_runtime::{
     inject_diting_think_tool, parse_diting_think_arguments, DitingThinkExtract,
-    DITING_THINK_TOOL_NAME,
+    ProposedPhase, DITING_THINK_TOOL_NAME,
 };
 use crate::modules::desktop_runtime::runtime::extract_chat_tool_calls;
 use crate::modules::desktop_runtime::runtime::task_learning::ACTION_VERIFICATION_STRONGER_CHECKS;
@@ -624,6 +624,7 @@ impl DeetingFrameArtifactGenerator {
     fn resolve_diting_think_extract(
         &self,
         current_frame: &WorldModelFrame,
+        current_plan: Option<&PlanArtifact>,
         request: &FrameRefreshRequest,
     ) -> Option<DitingThinkExtract> {
         #[cfg(test)]
@@ -636,6 +637,7 @@ impl DeetingFrameArtifactGenerator {
             tokio::runtime::Handle::current().block_on(request_diting_think_frame_extract(
                 runtime_request,
                 current_frame,
+                current_plan,
                 request,
             ))
         });
@@ -647,6 +649,7 @@ impl FrameArtifactGenerator for DeetingFrameArtifactGenerator {
     fn refresh_frame(
         &mut self,
         current_frame: &WorldModelFrame,
+        current_plan: Option<&PlanArtifact>,
         request: &FrameRefreshRequest,
     ) -> RuntimeCoreResult<WorldModelFrame> {
         let mut refreshed = Self::refreshed_frame_base(current_frame, request);
@@ -655,7 +658,7 @@ impl FrameArtifactGenerator for DeetingFrameArtifactGenerator {
             Some(FrameRefreshArtifact::DitingThinkPreflight)
         ) {
             let extract = self
-                .resolve_diting_think_extract(current_frame, request)
+                .resolve_diting_think_extract(current_frame, current_plan, request)
                 .ok_or_else(|| {
                     RuntimeCoreError::RequiredArtifactMissing("diting_think_preflight".to_string())
                 })?;
@@ -692,9 +695,10 @@ fn frame_refresh_artifact_name(artifact: Option<FrameRefreshArtifact>) -> &'stat
 async fn request_diting_think_frame_extract(
     runtime_request: &LocalExecutionRequest,
     current_frame: &WorldModelFrame,
+    current_plan: Option<&PlanArtifact>,
     refresh_request: &FrameRefreshRequest,
 ) -> Result<Option<DitingThinkExtract>, String> {
-    let prompt = build_diting_think_frame_refresh_prompt(current_frame, refresh_request);
+    let prompt = build_diting_think_frame_refresh_prompt(current_frame, current_plan, refresh_request);
     let response = request_provider_chat_completion(
         &runtime_request.app_state,
         &runtime_request.model_connection.provider_model_id,
@@ -732,6 +736,7 @@ async fn request_diting_think_frame_extract(
 
 fn build_diting_think_frame_refresh_prompt(
     current_frame: &WorldModelFrame,
+    current_plan: Option<&PlanArtifact>,
     refresh_request: &FrameRefreshRequest,
 ) -> String {
     let frame_json =
@@ -741,19 +746,69 @@ fn build_diting_think_frame_refresh_prompt(
         .as_ref()
         .map(|interruption| interruption.content.as_str())
         .unwrap_or("");
+
+    let plan_summary = current_plan.map(render_plan_summary).unwrap_or_else(|| "(no plan yet)".to_string());
+
     format!(
         concat!(
             "Call the `diting_think` tool exactly once to refresh the world-model frame metadata.\n",
+            "Based on the current frame and plan state, also propose the next execution phase if appropriate.\n\n",
             "Do not answer in normal text. Use the tool call arguments to summarize intent, choose execution_strategy, facts, assumptions, verification targets, and constraints.\n\n",
             "Choose execution_strategy from direct_iteration, delegated_workflow, delegated_agent, or hybrid.\n",
             "Use delegated_workflow for non-trivial multi-step work that should not stay on DirectIteration.\n\n",
+            "If you have a clear next step to recommend, provide it in the `proposed_next_phase` field.\n\n",
             "Refresh reason:\n{reason}\n\n",
             "User interruption, if any:\n{interruption}\n\n",
+            "Current plan summary:\n{plan_summary}\n\n",
             "Current frame JSON:\n{frame_json}\n"
         ),
         reason = refresh_request.reason.as_str(),
         interruption = interruption,
+        plan_summary = plan_summary,
         frame_json = frame_json
+    )
+}
+
+fn render_plan_summary(plan: &PlanArtifact) -> String {
+    use desktop_runtime_core::plan::PhaseStatus;
+
+    let committed = if plan.committed_phases.is_empty() {
+        "(none)".to_string()
+    } else {
+        plan.committed_phases
+            .iter()
+            .map(|p| {
+                let status_icon = match p.status {
+                    PhaseStatus::Done => "✓",
+                    PhaseStatus::Failed => "✗",
+                    PhaseStatus::Running => "→",
+                    PhaseStatus::WaitingForExternal { .. } => "⏸",
+                    PhaseStatus::Cancelled => "⊗",
+                };
+                format!(
+                    "  {} [{:?}] {}",
+                    status_icon,
+                    p.step_type,
+                    p.observation_ref.as_deref().unwrap_or("(no observation)")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let proposed = if plan.proposed_phases.is_empty() {
+        "(none)".to_string()
+    } else {
+        plan.proposed_phases
+            .iter()
+            .map(|p| format!("  - [{:?}] {}", p.step_type, p.rationale))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    format!(
+        "### Committed Phases\n{}\n\n### Proposed Phases\n{}\n\n### Plan Status\n{:?}",
+        committed, proposed, plan.plan_status
     )
 }
 
@@ -841,6 +896,12 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) f
             instruction: instruction.clone(),
         });
     }
+
+    // Store proposed_next_phase in frame for PhaseProposalGenerator to read
+    if let Some(proposed) = &extract.proposed_next_phase {
+        frame.proposed_next_phase = Some(serde_json::to_value(proposed).unwrap_or(json!({})));
+    }
+
     frame
 }
 
@@ -889,23 +950,165 @@ impl PhaseProposalGenerator for DeetingPhaseProposalGenerator {
     fn propose_next_phase(
         &mut self,
         frame: &WorldModelFrame,
-        _plan: &PlanArtifact,
+        plan: &PlanArtifact,
         _input: &UserInput,
     ) -> RuntimeCoreResult<Option<PhaseProposal>> {
+        // 0. Check if all verification targets are met
+        if all_verification_targets_met(frame, plan) {
+            return Ok(Some(PhaseProposal {
+                proposal_id: "proposal:verify_final".to_string(),
+                step_type: PhaseStepType::VerifyFinal,
+                payload: json!({
+                    "source": "verification_targets_met",
+                    "targets_count": frame.verification_targets.len(),
+                }),
+                rationale: "All verification targets have been satisfied".to_string(),
+                proposed_at_frame_version: frame.frame_version_id.clone(),
+            }));
+        }
+
+        // Protection: Check for repeated phase pattern
+        if detect_repeated_phase_pattern(plan) {
+            return Ok(Some(PhaseProposal {
+                proposal_id: "proposal:terminate:repeated_pattern".to_string(),
+                step_type: PhaseStepType::VerifyFinal,
+                payload: json!({
+                    "source": "protection:repeated_pattern",
+                    "reason": "Detected repeated phase pattern, terminating to prevent infinite loop",
+                }),
+                rationale: "Repeated phase pattern detected - terminating execution".to_string(),
+                proposed_at_frame_version: frame.frame_version_id.clone(),
+            }));
+        }
+
+        // Protection: Check for lack of progress
+        if !has_made_progress(plan) {
+            return Ok(Some(PhaseProposal {
+                proposal_id: "proposal:terminate:no_progress".to_string(),
+                step_type: PhaseStepType::VerifyFinal,
+                payload: json!({
+                    "source": "protection:no_progress",
+                    "reason": "No successful phases in recent history",
+                }),
+                rationale: "No progress detected - terminating execution".to_string(),
+                proposed_at_frame_version: frame.frame_version_id.clone(),
+            }));
+        }
+
+        // 1. Check if frame contains a proposed_next_phase from diting_think
+        if let Some(proposed_value) = &frame.proposed_next_phase {
+            if let Ok(proposed) = serde_json::from_value::<ProposedPhase>(proposed_value.clone()) {
+                let step_type = parse_phase_step_type(&proposed.step_type)
+                    .unwrap_or(PhaseStepType::ToolCall);
+                return Ok(Some(PhaseProposal {
+                    proposal_id: format!("proposal:diting:{}", proposed.step_type),
+                    step_type,
+                    payload: json!({
+                        "source": "diting_think_proposal",
+                        "verification_target_refs": proposed.verification_target_refs,
+                        "frame_version": frame.frame_version_id.clone(),
+                    }),
+                    rationale: proposed.rationale.clone(),
+                    proposed_at_frame_version: frame.frame_version_id.clone(),
+                }));
+            }
+        }
+
+        // 2. Fallback: deterministic mapping from execution_strategy
         let step_type = phase_step_for_strategy(frame.execution_strategy, PhaseStepType::ToolCall);
         Ok(Some(PhaseProposal {
-            proposal_id: format!("proposal:{}", phase_step_type_name(step_type)),
+            proposal_id: format!("proposal:fallback:{}", phase_step_type_name(step_type)),
             step_type,
             payload: json!({
-                "source": "deeting_runtime_composition",
+                "source": "deterministic_fallback",
                 "phase_step_type": phase_step_type_name(step_type),
                 "frame_strategy": frame.execution_strategy,
                 "goal": frame.goal.clone(),
             }),
-            rationale: "phase derived from world model frame execution strategy".to_string(),
+            rationale: "phase derived from world model frame execution strategy (fallback)".to_string(),
             proposed_at_frame_version: frame.frame_version_id.clone(),
         }))
     }
+}
+
+fn parse_phase_step_type(value: &str) -> Option<PhaseStepType> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "direct_chat" | "directchat" => Some(PhaseStepType::DirectChat),
+        "tool_call" | "toolcall" => Some(PhaseStepType::ToolCall),
+        "delegated_worker" | "delegatedworker" | "worker" => Some(PhaseStepType::DelegatedWorker),
+        "delegated_workflow" | "delegatedworkflow" | "workflow" => Some(PhaseStepType::DelegatedWorkflow),
+        "capability_admit" | "capabilityadmit" => Some(PhaseStepType::CapabilityAdmit),
+        "verify_final" | "verifyfinal" | "final" => Some(PhaseStepType::VerifyFinal),
+        _ => None,
+    }
+}
+
+fn all_verification_targets_met(frame: &WorldModelFrame, plan: &PlanArtifact) -> bool {
+    if frame.verification_targets.is_empty() {
+        // No verification targets means nothing to verify
+        return false;
+    }
+
+    // Check if all verification targets have been addressed by committed phases
+    for target in &frame.verification_targets {
+        let target_met = plan.committed_phases.iter().any(|phase| {
+            // Check if phase observation mentions this target
+            if let Some(obs_ref) = &phase.observation_ref {
+                obs_ref.contains(&target.id) || obs_ref.contains(&target.description)
+            } else {
+                false
+            }
+        }) || frame.world_observed.iter().any(|obs| {
+            // Check if any observation in frame mentions this target
+            obs.content.contains(&target.description)
+        });
+
+        if !target_met {
+            return false;
+        }
+    }
+
+    true
+}
+
+fn detect_repeated_phase_pattern(plan: &PlanArtifact) -> bool {
+    const MAX_REPETITIONS: usize = 3;
+
+    if plan.committed_phases.len() < MAX_REPETITIONS {
+        return false;
+    }
+
+    // Check last N phases for identical step_type + rationale pattern
+    let recent_phases: Vec<_> = plan.committed_phases
+        .iter()
+        .rev()
+        .take(MAX_REPETITIONS)
+        .collect();
+
+    if recent_phases.len() < MAX_REPETITIONS {
+        return false;
+    }
+
+    // Check if all recent phases have the same step_type
+    let first_step_type = recent_phases[0].step_type;
+    let all_same_type = recent_phases.iter().all(|p| p.step_type == first_step_type);
+
+    all_same_type
+}
+
+fn has_made_progress(plan: &PlanArtifact) -> bool {
+    const MIN_PHASES_FOR_CHECK: usize = 5;
+
+    if plan.committed_phases.len() < MIN_PHASES_FOR_CHECK {
+        return true; // Too early to judge
+    }
+
+    // Check if at least one phase in the last 3 completed successfully
+    plan.committed_phases
+        .iter()
+        .rev()
+        .take(3)
+        .any(|p| matches!(p.status, desktop_runtime_core::plan::PhaseStatus::Done))
 }
 
 #[derive(Default)]
@@ -1237,6 +1440,7 @@ mod tests {
         let refreshed = generator
             .refresh_frame(
                 &frame,
+                None,
                 &FrameRefreshRequest {
                     reason: "hook requested diting_think".to_string(),
                     interruption: None,
@@ -1296,6 +1500,7 @@ mod tests {
         let refreshed = generator
             .refresh_frame(
                 &frame,
+                None,
                 &FrameRefreshRequest {
                     reason: "tier2 invalid".to_string(),
                     interruption: None,

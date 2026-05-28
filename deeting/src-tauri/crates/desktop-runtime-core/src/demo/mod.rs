@@ -56,6 +56,7 @@ impl FrameArtifactGenerator for DemoFrameArtifactGenerator {
     fn refresh_frame(
         &mut self,
         current_frame: &WorldModelFrame,
+        _current_plan: Option<&PlanArtifact>,
         request: &FrameRefreshRequest,
     ) -> RuntimeCoreResult<WorldModelFrame> {
         let mut refreshed = current_frame.clone();

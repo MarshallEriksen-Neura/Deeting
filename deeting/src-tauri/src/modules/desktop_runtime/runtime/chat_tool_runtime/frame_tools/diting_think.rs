@@ -14,6 +14,16 @@ pub(crate) struct DitingThinkExtract {
     pub assumptions: Vec<String>,
     pub verification_targets: Vec<String>,
     pub rules: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proposed_next_phase: Option<ProposedPhase>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct ProposedPhase {
+    pub step_type: String,
+    pub rationale: String,
+    #[serde(default)]
+    pub verification_target_refs: Vec<String>,
 }
 
 pub(crate) fn parse_diting_think_arguments(args: &Value) -> DitingThinkExtract {
@@ -47,6 +57,10 @@ pub(crate) fn parse_diting_think_arguments(args: &Value) -> DitingThinkExtract {
         .and_then(Value::as_str)
         .map(split_step_entries)
         .unwrap_or_default();
+    let proposed_next_phase = args
+        .get("proposed_next_phase")
+        .and_then(Value::as_object)
+        .and_then(parse_proposed_phase);
 
     DitingThinkExtract {
         intent,
@@ -55,7 +69,40 @@ pub(crate) fn parse_diting_think_arguments(args: &Value) -> DitingThinkExtract {
         assumptions,
         verification_targets,
         rules,
+        proposed_next_phase,
     }
+}
+
+fn parse_proposed_phase(obj: &serde_json::Map<String, Value>) -> Option<ProposedPhase> {
+    let step_type = obj
+        .get("step_type")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|v| !v.is_empty())?
+        .to_string();
+    let rationale = obj
+        .get("rationale")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|v| !v.is_empty())?
+        .to_string();
+    let verification_target_refs = obj
+        .get("verification_target_refs")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(Value::as_str)
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Some(ProposedPhase {
+        step_type,
+        rationale,
+        verification_target_refs,
+    })
 }
 
 fn parse_execution_strategy(value: &str) -> Option<ExecutionStrategy> {
@@ -142,6 +189,27 @@ pub(crate) fn inject_diting_think_tool(
                     "constraints": {
                         "type": "string",
                         "description": "Key risks, edge cases, permission boundaries, or scope limits that could derail execution."
+                    },
+                    "proposed_next_phase": {
+                        "type": "object",
+                        "description": "The next execution phase you propose based on current frame and plan state. Only provide this when you have a clear next step to recommend.",
+                        "properties": {
+                            "step_type": {
+                                "type": "string",
+                                "enum": ["direct_chat", "tool_call", "delegated_worker", "delegated_workflow", "capability_admit", "verify_final"],
+                                "description": "Type of phase to execute next"
+                            },
+                            "rationale": {
+                                "type": "string",
+                                "description": "Why this phase is needed. Reference specific verification targets or observations from the frame."
+                            },
+                            "verification_target_refs": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Which verification targets this phase addresses (optional)"
+                            }
+                        },
+                        "required": ["step_type", "rationale"]
                     }
                 },
                 "required": ["intent", "tool_plan"]
@@ -196,6 +264,13 @@ pub(crate) fn format_diting_think_reasoning(arguments: &serde_json::Value) -> St
     {
         parts.push(format!("[约束] {}", constraints.trim()));
     }
+    if let Some(proposed_phase) = arguments.get("proposed_next_phase").and_then(Value::as_object) {
+        if let Some(step_type) = proposed_phase.get("step_type").and_then(Value::as_str) {
+            if let Some(rationale) = proposed_phase.get("rationale").and_then(Value::as_str) {
+                parts.push(format!("[提议阶段] {} - {}", step_type.trim(), rationale.trim()));
+            }
+        }
+    }
     parts.join("\n")
 }
 
@@ -229,5 +304,37 @@ mod tests {
         }));
 
         assert_eq!(extract.execution_strategy, None);
+    }
+
+    #[test]
+    fn parse_diting_think_arguments_accepts_proposed_next_phase() {
+        let extract = parse_diting_think_arguments(&serde_json::json!({
+            "intent": "implement feature",
+            "execution_strategy": "delegated_workflow",
+            "context_assessment": "Need to verify implementation.",
+            "tool_plan": "1. read code\n2. write tests\n3. verify",
+            "constraints": "Keep changes minimal",
+            "proposed_next_phase": {
+                "step_type": "tool_call",
+                "rationale": "Need to read existing code first",
+                "verification_target_refs": ["verify implementation works"]
+            }
+        }));
+
+        assert!(extract.proposed_next_phase.is_some());
+        let phase = extract.proposed_next_phase.unwrap();
+        assert_eq!(phase.step_type, "tool_call");
+        assert_eq!(phase.rationale, "Need to read existing code first");
+        assert_eq!(phase.verification_target_refs.len(), 1);
+    }
+
+    #[test]
+    fn parse_diting_think_arguments_handles_missing_proposed_phase() {
+        let extract = parse_diting_think_arguments(&serde_json::json!({
+            "intent": "answer question",
+            "tool_plan": "answer directly",
+        }));
+
+        assert!(extract.proposed_next_phase.is_none());
     }
 }

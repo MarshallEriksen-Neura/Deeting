@@ -22,6 +22,7 @@ pub trait FrameArtifactGenerator {
     fn refresh_frame(
         &mut self,
         current_frame: &WorldModelFrame,
+        current_plan: Option<&PlanArtifact>,
         request: &FrameRefreshRequest,
     ) -> RuntimeCoreResult<WorldModelFrame>;
 }
