@@ -3,7 +3,10 @@ use super::super::super::LocalExecutionRequest;
 use super::super::phase_step::{phase_step_for_strategy, phase_step_type_name};
 use super::frame_bootstrap;
 use crate::modules::ai_upstream::ReasoningRequestConfig;
-use crate::modules::desktop_runtime::runtime::chat_completion::request_provider_structured_tool_arguments;
+use crate::modules::desktop_runtime::runtime::chat_completion::{
+    request_provider_structured_tool_arguments,
+    request_provider_structured_tool_arguments_with_choice,
+};
 use crate::modules::desktop_runtime::runtime::chat_tool_runtime::{
     apply_world_model_update_to_frame, ProposedPhase, WorldModelUpdate,
 };
@@ -29,7 +32,6 @@ const TIER2_VALIDATION_CACHE_MAX_ENTRIES: usize = 256;
 const TIER2_VALIDATION_AUXILIARY_TEMPERATURE: f32 = 0.1;
 const TIER2_VALIDATION_MAX_TOKENS: u32 = 240;
 const WORLD_MODEL_REFRESH_TEMPERATURE: f32 = 0.1;
-const WORLD_MODEL_REFRESH_MAX_TOKENS: u32 = 520;
 const TIER2_VALIDATION_TOOL_NAME: &str = "submit_frame_validation";
 const WORLD_MODEL_REFRESH_TOOL_NAME: &str = "submit_world_model_update";
 const TIER2_VALIDATION_PROMPT_TEMPLATE_ZH: &str = r#"
@@ -582,7 +584,13 @@ impl DeetingFrameArtifactGenerator {
                 request,
             ))
         });
-        output.ok().flatten()
+        match output {
+            Ok(update) => update,
+            Err(err) => {
+                log::warn!("world_model_update refresh request failed: {err}");
+                None
+            }
+        }
     }
 }
 
@@ -642,7 +650,7 @@ async fn request_world_model_update(
         build_world_model_update_refresh_prompt(current_frame, current_plan, refresh_request);
     let model_connection =
         resolve_local_secretary_model_connection(&runtime_request.app_state).await?;
-    let response = request_provider_structured_tool_arguments(
+    let response = request_provider_structured_tool_arguments_with_choice(
         &runtime_request.app_state,
         &model_connection.provider_model_id,
         &model_connection.model_id,
@@ -658,13 +666,17 @@ async fn request_world_model_update(
         "Submit a world-model frame update for the runtime refresh.",
         world_model_update_tool_schema(),
         Some(WORLD_MODEL_REFRESH_TEMPERATURE),
-        Some(WORLD_MODEL_REFRESH_MAX_TOKENS),
+        None,
         ReasoningRequestConfig {
             enabled: runtime_request.reasoning_enabled,
             effort: runtime_request.reasoning_effort.clone(),
         },
         runtime_request.trace_id.as_deref(),
         Some(&runtime_request.session_id),
+        Some(json!({
+            "type": "function",
+            "function": { "name": WORLD_MODEL_REFRESH_TOOL_NAME }
+        })),
     )
     .await
     .map_err(|err| err.to_string())?;

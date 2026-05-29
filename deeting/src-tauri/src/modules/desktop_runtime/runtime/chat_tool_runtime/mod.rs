@@ -306,7 +306,11 @@ fn messages_with_world_model_snapshot(
     let Some(frame) = frame else {
         return messages.to_vec();
     };
-    let config = desktop_runtime_core::frame::snapshot_render::SnapshotRenderConfig::default();
+    let config = if execution_policy.require_world_model_update {
+        desktop_runtime_core::frame::snapshot_render::SnapshotRenderConfig::full()
+    } else {
+        desktop_runtime_core::frame::snapshot_render::SnapshotRenderConfig::default()
+    };
     let snapshot =
         desktop_runtime_core::frame::snapshot_render::render_world_model_snapshot(frame, &config);
     let runtime_context = render_world_model_runtime_context(frame, execution_policy);

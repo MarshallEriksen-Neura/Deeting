@@ -1,25 +1,55 @@
 use crate::frame::{CommittedAction, Observation, SequenceNumber, UserDirective, WorldModelFrame};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnapshotRenderMode {
+    Delta,
+    Full,
+}
+
 #[derive(Debug, Clone)]
 pub struct SnapshotRenderConfig {
+    pub mode: SnapshotRenderMode,
     pub max_visible_per_side: usize,
     pub recent_seen_window: usize,
     pub max_text_len_per_entry: usize,
+    pub max_control_items: usize,
     pub total_snapshot_budget_chars: usize,
 }
 
 impl Default for SnapshotRenderConfig {
     fn default() -> Self {
         Self {
+            mode: SnapshotRenderMode::Delta,
             max_visible_per_side: 15,
             recent_seen_window: 5,
             max_text_len_per_entry: 200,
+            max_control_items: 5,
             total_snapshot_budget_chars: 4000,
         }
     }
 }
 
+impl SnapshotRenderConfig {
+    pub fn full() -> Self {
+        Self {
+            mode: SnapshotRenderMode::Full,
+            ..Self::default()
+        }
+    }
+}
+
 pub fn render_world_model_snapshot(
+    frame: &WorldModelFrame,
+    config: &SnapshotRenderConfig,
+) -> String {
+    let rendered = match config.mode {
+        SnapshotRenderMode::Delta => render_delta_world_model_snapshot(frame, config),
+        SnapshotRenderMode::Full => render_full_world_model_snapshot(frame, config),
+    };
+    apply_total_snapshot_budget(rendered, config.total_snapshot_budget_chars)
+}
+
+fn render_full_world_model_snapshot(
     frame: &WorldModelFrame,
     config: &SnapshotRenderConfig,
 ) -> String {
@@ -57,6 +87,67 @@ pub fn render_world_model_snapshot(
          [WORLD OBSERVATIONS]\n{observations}\n\n\
          [AGENT COMMITTED ACTIONS]\n{committed}\n\n\
          [MODEL DECLARED]\n{declared}\n\n\
+         === End World Model Snapshot ===",
+        turn = frame.model_turn_count.saturating_add(1),
+    )
+}
+
+fn render_delta_world_model_snapshot(
+    frame: &WorldModelFrame,
+    config: &SnapshotRenderConfig,
+) -> String {
+    let directives = render_new_user_directives(frame, config);
+    let observations = render_new_observations(frame, config);
+    let committed = render_new_committed_actions(frame, config);
+    let active_control = render_active_control(frame, config);
+    let retained = render_retained_world_summary(frame, config);
+
+    let mut compaction_notes = Vec::new();
+    let old_directives = frame
+        .user_directed
+        .iter()
+        .filter(|item| item.appended_at <= frame.last_seen_by_model)
+        .count();
+    if old_directives > 0 {
+        compaction_notes.push(format!(
+            "[compaction] user_directed: {old_directives} seen directive(s) retained outside prompt"
+        ));
+    }
+    let old_observations = frame
+        .world_observed
+        .iter()
+        .filter(|item| item.appended_at <= frame.last_seen_by_model)
+        .count();
+    if old_observations > 0 {
+        compaction_notes.push(format!(
+            "[compaction] world_observed: {old_observations} seen observation(s) retained outside prompt"
+        ));
+    }
+    let old_commits = frame
+        .agent_committed
+        .iter()
+        .filter(|item| item.committed_at <= frame.last_seen_by_model)
+        .count();
+    if old_commits > 0 {
+        compaction_notes.push(format!(
+            "[compaction] agent_committed: {old_commits} seen action(s) retained outside prompt"
+        ));
+    }
+
+    let compaction_header = if compaction_notes.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n\n", compaction_notes.join("\n"))
+    };
+
+    format!(
+        "=== World Model Snapshot (turn {turn}, delta projection) ===\n\n\
+         {compaction_header}\
+         [FRAME STATE]\n{active_control}\n\n\
+         [USER DIRECTIVES]\n{directives}\n\n\
+         [WORLD OBSERVATIONS]\n{observations}\n\n\
+         [AGENT COMMITTED ACTIONS]\n{committed}\n\n\
+         [MODEL DECLARED]\n{retained}\n\n\
          === End World Model Snapshot ===",
         turn = frame.model_turn_count.saturating_add(1),
     )
@@ -181,6 +272,31 @@ fn render_user_directives(frame: &WorldModelFrame, config: &SnapshotRenderConfig
     lines.join("\n")
 }
 
+fn render_new_user_directives(frame: &WorldModelFrame, config: &SnapshotRenderConfig) -> String {
+    if frame.user_directed.is_empty() {
+        return "- (no directives yet)".to_string();
+    }
+    let heads = supersede_chain_heads(&frame.user_directed);
+    let mut lines: Vec<String> = heads
+        .iter()
+        .filter(|directive| directive.appended_at > frame.last_seen_by_model)
+        .map(|directive| {
+            let chain = supersede_chain_label(directive, &frame.user_directed)
+                .map(|c| format!(" {c}"))
+                .unwrap_or_default();
+            let text = truncate_text(&directive.text, config.max_text_len_per_entry);
+            format!("- [NEW] {text}{chain}")
+        })
+        .collect();
+    if lines.is_empty() {
+        lines.push(format!(
+            "- (no new directives; {} retained outside prompt)",
+            frame.user_directed.len()
+        ));
+    }
+    lines.join("\n")
+}
+
 fn render_observations(frame: &WorldModelFrame, config: &SnapshotRenderConfig) -> String {
     if frame.world_observed.is_empty() {
         return "- (no observations yet)".to_string();
@@ -238,6 +354,45 @@ fn render_observations(frame: &WorldModelFrame, config: &SnapshotRenderConfig) -
         lines.extend(seen_items);
     }
 
+    lines.join("\n")
+}
+
+fn render_new_observations(frame: &WorldModelFrame, config: &SnapshotRenderConfig) -> String {
+    if frame.world_observed.is_empty() {
+        return "- (no observations yet)".to_string();
+    }
+    let grouped = group_observations_by_entity(&frame.world_observed);
+    let mut lines: Vec<String> = grouped
+        .iter()
+        .filter(|group| group.latest.appended_at > frame.last_seen_by_model)
+        .take(config.max_visible_per_side)
+        .map(|group| {
+            let obs = group.latest;
+            let count_suffix = if group.count > 1 {
+                format!(" (latest of {}, seq={})", group.count, obs.appended_at)
+            } else {
+                format!(" (seq={})", obs.appended_at)
+            };
+            let text = truncate_text(&obs.text, config.max_text_len_per_entry);
+            format!("- [NEW] {text}{count_suffix}")
+        })
+        .collect();
+    let new_total = grouped
+        .iter()
+        .filter(|group| group.latest.appended_at > frame.last_seen_by_model)
+        .count();
+    if new_total > lines.len() {
+        lines.push(format!(
+            "  ({} more new observation(s) omitted)",
+            new_total - lines.len()
+        ));
+    }
+    if lines.is_empty() {
+        lines.push(format!(
+            "- (no new observations; {} retained outside prompt)",
+            frame.world_observed.len()
+        ));
+    }
     lines.join("\n")
 }
 
@@ -320,6 +475,70 @@ fn render_committed_actions(frame: &WorldModelFrame, config: &SnapshotRenderConf
     lines.join("\n")
 }
 
+fn render_new_committed_actions(frame: &WorldModelFrame, config: &SnapshotRenderConfig) -> String {
+    if frame.agent_committed.is_empty() {
+        return "- (no committed actions yet)".to_string();
+    }
+    let groups = group_consecutive_commits(&frame.agent_committed);
+    let mut lines = Vec::new();
+    let mut new_total = 0usize;
+
+    for group in groups
+        .iter()
+        .filter(|group| group.last_seq > frame.last_seen_by_model)
+    {
+        new_total += 1;
+        if lines.len() >= config.max_visible_per_side {
+            continue;
+        }
+        if group.actions.len() == 1 {
+            let action = group.actions[0];
+            let text = truncate_text(&action.action_text, config.max_text_len_per_entry);
+            lines.push(format!("- [NEW] {text} (seq={})", action.committed_at));
+        } else {
+            let args: Vec<&str> = group
+                .actions
+                .iter()
+                .map(|a| {
+                    a.action_text
+                        .find('(')
+                        .and_then(|start| {
+                            a.action_text
+                                .find(')')
+                                .map(|end| &a.action_text[start + 1..end])
+                        })
+                        .unwrap_or(&a.action_text)
+                })
+                .collect();
+            let summary = if args.len() <= 4 {
+                format!("[{}]", args.join(", "))
+            } else {
+                format!("[{}, ... +{}]", args[..3].join(", "), args.len() - 3)
+            };
+            lines.push(format!(
+                "- [NEW] {} x {} -> {summary} (seq={}-{})",
+                group.tool_name,
+                group.actions.len(),
+                group.first_seq,
+                group.last_seq
+            ));
+        }
+    }
+    if new_total > lines.len() {
+        lines.push(format!(
+            "  ({} more new committed group(s) omitted)",
+            new_total - lines.len()
+        ));
+    }
+    if lines.is_empty() {
+        lines.push(format!(
+            "- (no new committed actions; {} retained outside prompt)",
+            frame.agent_committed.len()
+        ));
+    }
+    lines.join("\n")
+}
+
 fn render_model_declared(frame: &WorldModelFrame) -> String {
     let mut lines = Vec::new();
     lines.extend(
@@ -353,6 +572,90 @@ fn render_model_declared(frame: &WorldModelFrame) -> String {
     }
 }
 
+fn render_active_control(frame: &WorldModelFrame, config: &SnapshotRenderConfig) -> String {
+    let mut lines = vec![
+        format!("- frame_id: {}", frame.frame_version_id),
+        format!("- status: {:?}", frame.status),
+        format!("- execution_strategy: {:?}", frame.execution_strategy),
+        format!(
+            "- sequence_highwater: seen={}, max={}",
+            frame.last_seen_by_model,
+            frame.max_sequence()
+        ),
+        format!(
+            "- goal: {}",
+            truncate_text(&frame.goal, config.max_text_len_per_entry)
+        ),
+    ];
+    if let Some(fingerprint) = frame.fingerprint_key.as_deref() {
+        lines.push(format!("- fingerprint_key: {fingerprint}"));
+    }
+    if let Some(proposed) = frame.proposed_next_phase.as_ref() {
+        let proposed_text = serde_json::to_string(proposed).unwrap_or_else(|_| "{}".to_string());
+        lines.push(format!(
+            "- proposed_next_phase: {}",
+            truncate_text(&proposed_text, config.max_text_len_per_entry)
+        ));
+    }
+    lines.join("\n")
+}
+
+fn render_retained_world_summary(frame: &WorldModelFrame, config: &SnapshotRenderConfig) -> String {
+    let mut lines = vec![
+        format!(
+            "- retained_counts: facts={}, assumptions={}, unknowns={}, rules={}, verification_targets={}",
+            frame.known_facts.len(),
+            frame.assumptions.len(),
+            frame.unknowns.len(),
+            frame.adaptation_rules.len(),
+            frame.verification_targets.len()
+        ),
+        "- retained_state: full world model remains in runtime state; delta prompt omits seen entries"
+            .to_string(),
+    ];
+    lines.extend(render_capped_control_items(
+        "verification_target",
+        frame
+            .verification_targets
+            .iter()
+            .map(|target| target.description.as_str()),
+        config.max_control_items,
+    ));
+    lines.extend(render_capped_control_items(
+        "rule",
+        frame
+            .adaptation_rules
+            .iter()
+            .map(|rule| rule.instruction.as_str()),
+        config.max_control_items,
+    ));
+    lines
+        .into_iter()
+        .filter(|line| !line.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn render_capped_control_items<'a>(
+    label: &str,
+    items: impl Iterator<Item = &'a str>,
+    max_items: usize,
+) -> Vec<String> {
+    let values: Vec<&str> = items.collect();
+    let mut lines: Vec<String> = values
+        .iter()
+        .take(max_items)
+        .map(|value| format!("- {label}: {}", value.trim()))
+        .collect();
+    if values.len() > max_items {
+        lines.push(format!(
+            "  ({} more {label}(s) retained outside prompt)",
+            values.len() - max_items
+        ));
+    }
+    lines
+}
+
 // --- Helpers ---
 
 fn new_marker(sequence: SequenceNumber, highwater: SequenceNumber) -> &'static str {
@@ -375,6 +678,22 @@ fn truncate_text(text: &str, max_len: usize) -> String {
 
 fn count_rendered_lines(rendered: &str) -> usize {
     rendered.lines().filter(|l| l.starts_with("- ")).count()
+}
+
+fn apply_total_snapshot_budget(snapshot: String, budget_chars: usize) -> String {
+    if budget_chars == 0 || snapshot.chars().count() <= budget_chars {
+        return snapshot;
+    }
+    let suffix = format!(
+        "\n[compaction] snapshot truncated to {budget_chars} chars; full runtime state retained outside prompt.\n=== End World Model Snapshot ==="
+    );
+    let suffix_len = suffix.chars().count();
+    if suffix_len >= budget_chars {
+        return suffix.chars().take(budget_chars).collect();
+    }
+    let prefix_len = budget_chars - suffix_len;
+    let prefix: String = snapshot.chars().take(prefix_len).collect();
+    format!("{prefix}{suffix}")
 }
 
 #[cfg(test)]
@@ -401,7 +720,7 @@ mod tests {
         assert!(output.contains("(no directives yet)"));
         assert!(output.contains("(no observations yet)"));
         assert!(output.contains("(no committed actions yet)"));
-        assert!(output.contains("(no model declarations yet)"));
+        assert!(output.contains("retained_counts: facts=0"));
         assert!(!output.contains("[compaction]"));
     }
 
@@ -523,6 +842,85 @@ mod tests {
         let config = SnapshotRenderConfig::default();
         let output = render_world_model_snapshot(&frame, &config);
         assert!(output.contains("[compaction] world_observed:"));
+    }
+
+    #[test]
+    fn delta_snapshot_omits_seen_entries_but_keeps_control_summary() {
+        let mut frame = test_frame();
+        frame.append_user_directive("old directive", None).unwrap();
+        frame
+            .append_observation(
+                "old observation",
+                None,
+                ObservationSource {
+                    tool_call_id: "c-old".to_string(),
+                    tool_name: "read_file".to_string(),
+                },
+                None,
+            )
+            .unwrap();
+        frame.append_committed_action("write_file(old) -> ok", "c-write", "write_file");
+        frame
+            .verification_targets
+            .push(crate::frame::VerificationTarget {
+                id: "vt-1".to_string(),
+                description: "target remains active".to_string(),
+            });
+        frame.mark_seen();
+        frame.append_user_directive("new directive", None).unwrap();
+
+        let output = render_world_model_snapshot(&frame, &SnapshotRenderConfig::default());
+
+        assert!(output.contains("delta projection"));
+        assert!(output.contains("[NEW] new directive"));
+        assert!(!output.contains("old directive"));
+        assert!(!output.contains("old observation"));
+        assert!(!output.contains("write_file(old)"));
+        assert!(output.contains("retained_counts:"));
+        assert!(output.contains("verification_target: target remains active"));
+    }
+
+    #[test]
+    fn full_snapshot_preserves_seen_world_projection() {
+        let mut frame = test_frame();
+        frame.append_user_directive("old directive", None).unwrap();
+        frame
+            .append_observation(
+                "old observation",
+                None,
+                ObservationSource {
+                    tool_call_id: "c-old".to_string(),
+                    tool_name: "read_file".to_string(),
+                },
+                None,
+            )
+            .unwrap();
+        frame.mark_seen();
+
+        let output = render_world_model_snapshot(&frame, &SnapshotRenderConfig::full());
+
+        assert!(!output.contains("delta projection"));
+        assert!(output.contains("old directive"));
+        assert!(output.contains("old observation"));
+    }
+
+    #[test]
+    fn total_snapshot_budget_is_enforced() {
+        let mut frame = test_frame();
+        for i in 0..20 {
+            frame
+                .append_user_directive(format!("directive-{i}-{}", "x".repeat(80)), None)
+                .unwrap();
+        }
+        let config = SnapshotRenderConfig {
+            total_snapshot_budget_chars: 600,
+            ..SnapshotRenderConfig::default()
+        };
+
+        let output = render_world_model_snapshot(&frame, &config);
+
+        assert!(output.chars().count() <= 600);
+        assert!(output.contains("snapshot truncated to 600 chars"));
     }
 
     #[test]

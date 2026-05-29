@@ -121,7 +121,7 @@ fn world_model_snapshot_renders_four_sections_and_new_directive() {
 }
 
 #[test]
-fn world_model_snapshot_drops_new_marker_after_model_seen() {
+fn world_model_snapshot_omits_seen_directive_after_model_seen() {
     let mut frame = desktop_runtime_core::WorldModelFrame::new(
         "frame-1",
         "session-1",
@@ -137,7 +137,8 @@ fn world_model_snapshot_drops_new_marker_after_model_seen() {
     frame.mark_seen();
     let snapshot = render_world_model_snapshot(&frame, &config);
 
-    assert!(snapshot.contains("- do the thing"));
+    assert!(snapshot.contains("no new directives"));
+    assert!(!snapshot.contains("- do the thing"));
     assert!(!snapshot.contains("[NEW] do the thing"));
 }
 
@@ -169,6 +170,7 @@ fn world_model_snapshot_prefix_includes_runtime_context_before_user_text() {
     assert_eq!(rendered[0].role, "system");
     let system_content = &rendered[0].content;
     assert!(system_content.contains("=== World Model Snapshot"));
+    assert!(!system_content.contains("delta projection"));
     assert!(system_content.contains("[WORLD MODEL UPDATE PROTOCOL]"));
     assert!(system_content.contains("every response, append"));
     assert!(system_content.contains("facts"));

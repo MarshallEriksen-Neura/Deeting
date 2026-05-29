@@ -364,18 +364,55 @@ pub(crate) async fn request_provider_structured_tool_arguments(
     trace_id: Option<&str>,
     session_id: Option<&str>,
 ) -> Result<serde_json::Value, String> {
+    request_provider_structured_tool_arguments_with_choice(
+        app_state,
+        provider_model_id,
+        model_id,
+        messages,
+        tool_name,
+        tool_description,
+        input_schema,
+        temperature,
+        max_tokens,
+        reasoning,
+        trace_id,
+        session_id,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn request_provider_structured_tool_arguments_with_choice(
+    app_state: &AppState,
+    provider_model_id: &str,
+    model_id: &str,
+    messages: Vec<LocalChatInputMessage>,
+    tool_name: &str,
+    tool_description: &str,
+    input_schema: serde_json::Value,
+    temperature: Option<f32>,
+    max_tokens: Option<u32>,
+    reasoning: ReasoningRequestConfig,
+    trace_id: Option<&str>,
+    session_id: Option<&str>,
+    tool_choice: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    let mut tools_payload = serde_json::json!({
+        "tools": [{
+            "name": tool_name,
+            "description": tool_description,
+            "input_schema": input_schema,
+        }]
+    });
+    if let Some(tool_choice) = tool_choice {
+        tools_payload["tool_choice"] = tool_choice;
+    }
     let response = request_provider_chat_completion(
         app_state,
         provider_model_id,
         model_id,
         messages,
-        Some(serde_json::json!({
-            "tools": [{
-                "name": tool_name,
-                "description": tool_description,
-                "input_schema": input_schema,
-            }]
-        })),
+        Some(tools_payload),
         temperature,
         max_tokens,
         reasoning,

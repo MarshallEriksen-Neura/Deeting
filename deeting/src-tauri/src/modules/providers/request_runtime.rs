@@ -808,6 +808,7 @@ fn inject_tools(body: &mut Value, tools: Option<&Value>, engine: &str, protocol_
     if raw_tools.is_empty() {
         return;
     }
+    let requested_tool_choice = tools_value.get("tool_choice").cloned();
 
     if protocol_family == "openai_responses" {
         if body_object.contains_key("tools") {
@@ -820,7 +821,11 @@ fn inject_tools(body: &mut Value, tools: Option<&Value>, engine: &str, protocol_
         body_object.insert("tools".to_string(), Value::Array(items));
         body_object
             .entry("tool_choice".to_string())
-            .or_insert_with(|| Value::String("auto".to_string()));
+            .or_insert_with(|| {
+                requested_tool_choice
+                    .clone()
+                    .unwrap_or_else(|| Value::String("auto".to_string()))
+            });
         return;
     }
 
@@ -899,7 +904,11 @@ fn inject_tools(body: &mut Value, tools: Option<&Value>, engine: &str, protocol_
             body_object.insert("tools".to_string(), Value::Array(items));
             body_object
                 .entry("tool_choice".to_string())
-                .or_insert_with(|| Value::String("auto".to_string()));
+                .or_insert_with(|| {
+                    requested_tool_choice
+                        .clone()
+                        .unwrap_or_else(|| Value::String("auto".to_string()))
+                });
         }
     }
 }
@@ -3116,6 +3125,59 @@ mod tests {
             json!("search_sdk")
         );
         assert_eq!(prepared.body["tool_choice"], json!("auto"));
+    }
+
+    #[test]
+    fn prepare_provider_request_preserves_requested_tool_choice() {
+        let preset = mock_preset();
+        let instance = mock_instance(json!({ "protocol": "openai", "auto_append_v1": true }));
+        let model = mock_model(&["chat"]);
+
+        let canonical = build_canonical_chat_request_from_local_messages(
+            "gpt-4o-mini",
+            &[LocalChatInputMessage {
+                role: "user".to_string(),
+                content: "refresh".to_string(),
+                reasoning_content: None,
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
+            }],
+            false,
+            None,
+            None,
+        );
+        let request_data = build_chat_request_data_from_canonical_request(&canonical);
+        let prepared = prepare_provider_request_from_canonical_request(
+            Some(&preset),
+            &instance,
+            &model,
+            Some("sk-test"),
+            "chat",
+            request_data,
+            canonical,
+            Some(&json!({
+                "tools": [{
+                    "name": "submit_world_model_update",
+                    "description": "Submit a world-model frame update.",
+                    "input_schema": { "type": "object", "properties": {} }
+                }],
+                "tool_choice": {
+                    "type": "function",
+                    "function": { "name": "submit_world_model_update" }
+                }
+            })),
+            None,
+        )
+        .expect("prepare request with forced tool choice");
+
+        assert_eq!(
+            prepared.body["tool_choice"],
+            json!({
+                "type": "function",
+                "function": { "name": "submit_world_model_update" }
+            })
+        );
     }
 
     #[test]
