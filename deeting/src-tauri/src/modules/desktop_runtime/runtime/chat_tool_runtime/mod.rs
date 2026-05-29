@@ -310,26 +310,21 @@ fn messages_with_world_model_snapshot(
     let snapshot =
         desktop_runtime_core::frame::snapshot_render::render_world_model_snapshot(frame, &config);
     let runtime_context = render_world_model_runtime_context(frame, execution_policy);
-    let prefix = format!("{snapshot}\n\n{runtime_context}");
+    let system_content = format!(
+        "[System runtime context — not user input]\n{snapshot}\n\n{runtime_context}\n[/System runtime context]"
+    );
     let mut output = messages.to_vec();
-    if let Some(message) = output
-        .iter_mut()
-        .find(|message| message.role.eq_ignore_ascii_case("user"))
-    {
-        message.content = format!("{prefix}\n\n{}", message.content);
-    } else {
-        output.insert(
-            0,
-            LocalChatInputMessage {
-                role: "user".to_string(),
-                content: prefix,
-                reasoning_content: None,
-                tool_calls: vec![],
-                tool_call_id: None,
-                name: None,
-            },
-        );
-    }
+    output.insert(
+        0,
+        LocalChatInputMessage {
+            role: "system".to_string(),
+            content: system_content,
+            reasoning_content: None,
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
+        },
+    );
     output
 }
 
@@ -337,25 +332,35 @@ fn render_world_model_runtime_context(
     frame: &desktop_runtime_core::WorldModelFrame,
     execution_policy: &LocalExecutionPolicy,
 ) -> String {
-    let mut obligations = vec![
-        "runtime_owner: world_model_runtime_owner".to_string(),
-        "historical_runtime_evidence: observation_only".to_string(),
-        "phase_dispatch_owner: committed_or_proposed_phase_step".to_string(),
-    ];
     let mode_hint = if execution_policy.require_world_model_update {
         "full"
-    } else if frame.max_sequence() > frame.last_seen_by_model {
-        "delta"
     } else {
         "delta"
     };
-    obligations.push(format!(
-        "world_model_update: every assistant response must end with {start} JSON {end}; mode={mode_hint}; include facts, assumptions, resolved_unknowns, new_unknowns, verification_targets, rules, execution_strategy only when revised, and proposed_next_phase only when ready.",
+    let mode_instruction = if mode_hint == "full" {
+        "Provide a complete assessment: all known facts, assumptions, unknowns, verification targets, rules, and execution_strategy."
+    } else {
+        "Only include NEW or CHANGED items since the last snapshot. Leave arrays empty if nothing changed."
+    };
+
+    format!(
+        "[WORLD MODEL UPDATE PROTOCOL]\n\
+         At the end of every response, append a {start} JSON {end} block.\n\
+         Mode: {mode}\n\
+         {mode_instruction}\n\n\
+         Schema:\n\
+         {start}\n\
+         {{\n  \"facts\": [\"confirmed facts about the task/project\"],\n  \"assumptions\": [\"unverified beliefs\"],\n  \"resolved_unknowns\": [\"questions now answered\"],\n  \"new_unknowns\": [\"new questions discovered\"],\n  \"verification_targets\": [\"conditions that must be true when done\"],\n  \"rules\": [\"constraints to follow\"],\n  \"execution_strategy\": \"direct_iteration | delegated_workflow | delegated_agent | hybrid\",\n  \"proposed_next_phase\": {{ \"step_type\": \"...\", \"rationale\": \"...\" }}\n}}\n\
+         {end}\n\n\
+         Rules:\n\
+         - execution_strategy: only include when you believe the current strategy should change.\n\
+         - proposed_next_phase: only include when you have a clear next step.\n\
+         - Keep entries concise. Each item should be one sentence.",
         start = WORLD_MODEL_UPDATE_START_TAG,
         end = WORLD_MODEL_UPDATE_END_TAG,
-    ));
-
-    format!("[RUNTIME CONTEXT]\n{}", obligations.join("\n"))
+        mode = mode_hint,
+        mode_instruction = mode_instruction,
+    )
 }
 
 pub(crate) async fn run_local_chat_complete_with_tools(

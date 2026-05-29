@@ -3,9 +3,7 @@ use super::super::super::LocalExecutionRequest;
 use super::super::phase_step::{phase_step_for_strategy, phase_step_type_name};
 use super::frame_bootstrap;
 use crate::modules::ai_upstream::ReasoningRequestConfig;
-use crate::modules::desktop_runtime::runtime::chat_completion::{
-    request_provider_chat_completion, request_provider_chat_json_object,
-};
+use crate::modules::desktop_runtime::runtime::chat_completion::request_provider_structured_tool_arguments;
 use crate::modules::desktop_runtime::runtime::chat_tool_runtime::{
     apply_world_model_update_to_frame, ProposedPhase, WorldModelUpdate,
 };
@@ -16,7 +14,7 @@ use crate::state::AppState;
 use desktop_runtime_core::{
     ConfidenceLevel, EventStore, FrameArtifactGenerator, FrameBootstrapOutput,
     FrameProvenance, FrameRefreshArtifact, FrameRefreshRequest, FrameValidation,
-    InterruptionChannel, PhaseProposal, PhaseProposalGenerator, PhaseStepType, PlanArtifact, Rule,
+    InterruptionChannel, PhaseProposal, PhaseProposalGenerator, PhaseStepType, PlanArtifact,
     RuntimeCoreError, RuntimeCoreResult, RuntimeEvent, Tier2Validator, UserInput, UserInterruption,
     WorldModelFrame, WorldModelFrameStatus,
 };
@@ -32,12 +30,15 @@ const TIER2_VALIDATION_AUXILIARY_TEMPERATURE: f32 = 0.1;
 const TIER2_VALIDATION_MAX_TOKENS: u32 = 240;
 const WORLD_MODEL_REFRESH_TEMPERATURE: f32 = 0.1;
 const WORLD_MODEL_REFRESH_MAX_TOKENS: u32 = 520;
+const TIER2_VALIDATION_TOOL_NAME: &str = "submit_frame_validation";
+const WORLD_MODEL_REFRESH_TOOL_NAME: &str = "submit_world_model_update";
 const TIER2_VALIDATION_PROMPT_TEMPLATE_ZH: &str = r#"
 你是一个廉价的 frame 新鲜度判定器。
 
 请判断这个 frame 是否仍然新鲜、与目标和已观察一致。
 
-输出必须是严格 JSON，不要加解释，不要加代码块：
+必须调用 submit_frame_validation 工具一次。不要用正文回答。
+工具参数必须符合：
 {
   "is_valid": true | false,
   "reason": "...",
@@ -74,7 +75,8 @@ You are a cheap frame freshness judge.
 
 Decide whether this frame is still fresh and consistent with the goal and observed state.
 
-Return STRICT JSON only, no explanation, no code fences:
+Call the submit_frame_validation tool exactly once. Do not answer in text.
+The tool arguments must use this shape:
 {
   "is_valid": true | false,
   "reason": "...",
@@ -357,12 +359,7 @@ impl DeetingTier2Validator {
     fn parse_secretary_validation_response(
         response: &serde_json::Value,
     ) -> Option<SecretaryValidationDecision> {
-        serde_json::from_value::<SecretaryValidationDecision>(response.clone()).ok().or_else(|| {
-            crate::modules::conversations::text_utils::extract_text_from_chat_completion_response(
-                response,
-            )
-            .and_then(|text| parse_secretary_validation_text(&text))
-        })
+        serde_json::from_value::<SecretaryValidationDecision>(response.clone()).ok()
     }
 
     async fn validate_frame_async(
@@ -428,7 +425,7 @@ impl DeetingTier2Validator {
         };
 
         let prompt = Self::build_prompt(frame, plan);
-        let response = request_provider_chat_completion(
+        let response = request_provider_structured_tool_arguments(
             app_state,
             &model_connection.provider_model_id,
             &model_connection.model_id,
@@ -440,7 +437,9 @@ impl DeetingTier2Validator {
                 tool_call_id: None,
                 name: None,
             }],
-            None,
+            TIER2_VALIDATION_TOOL_NAME,
+            "Submit whether the world-model frame is still fresh and usable.",
+            tier2_validation_tool_schema(),
             Some(TIER2_VALIDATION_AUXILIARY_TEMPERATURE),
             Some(TIER2_VALIDATION_MAX_TOKENS),
             crate::modules::ai_upstream::ReasoningRequestConfig::default(),
@@ -467,77 +466,19 @@ impl DeetingTier2Validator {
     }
 }
 
-fn parse_secretary_validation_text(raw: &str) -> Option<SecretaryValidationDecision> {
-    let text = raw.trim();
-    if text.is_empty() {
-        return None;
-    }
-
-    serde_json::from_str::<SecretaryValidationDecision>(text)
-        .ok()
-        .or_else(|| {
-            strip_markdown_json_block(text).and_then(|stripped| {
-                serde_json::from_str::<SecretaryValidationDecision>(stripped).ok()
-            })
-        })
-        .or_else(|| {
-            extract_json_object_substring(text)
-                .and_then(|json| serde_json::from_str::<SecretaryValidationDecision>(json).ok())
-        })
-}
-
-fn strip_markdown_json_block(raw: &str) -> Option<&str> {
-    let text = raw.trim();
-    if !text.starts_with("```") || !text.ends_with("```") {
-        return None;
-    }
-    Some(
-        text.trim_start_matches("```json")
-            .trim_start_matches("```")
-            .trim_end_matches("```")
-            .trim(),
-    )
-    .filter(|value| !value.is_empty())
-}
-
-fn extract_json_object_substring(raw: &str) -> Option<&str> {
-    let start = raw.find('{')?;
-    let mut depth = 0usize;
-    let mut in_string = false;
-    let mut escaped = false;
-
-    for (index, ch) in raw[start..].char_indices() {
-        if in_string {
-            if escaped {
-                escaped = false;
-                continue;
+fn tier2_validation_tool_schema() -> serde_json::Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "is_valid": { "type": "boolean" },
+            "reason": { "type": "string" },
+            "contradiction_signal": {
+                "type": "string",
+                "enum": ["none", "stale_facts", "goal_drift", "missing_assumption"]
             }
-            match ch {
-                '\\' => escaped = true,
-                '"' => in_string = false,
-                _ => {}
-            }
-            continue;
-        }
-
-        match ch {
-            '"' => in_string = true,
-            '{' => depth = depth.saturating_add(1),
-            '}' => {
-                if depth == 0 {
-                    return None;
-                }
-                depth -= 1;
-                if depth == 0 {
-                    let end = start + index + ch.len_utf8();
-                    return Some(&raw[start..end]);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    None
+        },
+        "required": ["is_valid", "reason", "contradiction_signal"]
+    })
 }
 
 #[cfg(test)]
@@ -699,7 +640,7 @@ async fn request_world_model_update(
 ) -> Result<Option<WorldModelUpdate>, String> {
     let prompt = build_world_model_update_refresh_prompt(current_frame, current_plan, refresh_request);
     let model_connection = resolve_local_secretary_model_connection(&runtime_request.app_state).await?;
-    let response = request_provider_chat_json_object(
+    let response = request_provider_structured_tool_arguments(
         &runtime_request.app_state,
         &model_connection.provider_model_id,
         &model_connection.model_id,
@@ -711,6 +652,9 @@ async fn request_world_model_update(
             tool_call_id: None,
             name: None,
         }],
+        WORLD_MODEL_REFRESH_TOOL_NAME,
+        "Submit a world-model frame update for the runtime refresh.",
+        world_model_update_tool_schema(),
         Some(WORLD_MODEL_REFRESH_TEMPERATURE),
         Some(WORLD_MODEL_REFRESH_MAX_TOKENS),
         ReasoningRequestConfig {
@@ -737,6 +681,51 @@ fn parse_secretary_world_model_update_response(
     serde_json::from_value::<WorldModelUpdate>(update.clone()).map_err(|err| err.to_string())
 }
 
+fn world_model_update_tool_schema() -> serde_json::Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "world_model_update": {
+                "type": "object",
+                "properties": {
+                    "intent": { "type": "string" },
+                    "facts": { "type": "array", "items": { "type": "string" } },
+                    "assumptions": { "type": "array", "items": { "type": "string" } },
+                    "resolved_unknowns": { "type": "array", "items": { "type": "string" } },
+                    "new_unknowns": { "type": "array", "items": { "type": "string" } },
+                    "verification_targets": { "type": "array", "items": { "type": "string" } },
+                    "rules": { "type": "array", "items": { "type": "string" } },
+                    "execution_strategy": {
+                        "type": "string",
+                        "enum": ["direct_iteration", "delegated_workflow", "delegated_agent", "hybrid"]
+                    },
+                    "proposed_next_phase": {
+                        "type": "object",
+                        "properties": {
+                            "step_type": { "type": "string" },
+                            "rationale": { "type": "string" },
+                            "verification_target_refs": {
+                                "type": "array",
+                                "items": { "type": "string" }
+                            }
+                        },
+                        "required": ["step_type", "rationale"]
+                    }
+                },
+                "required": [
+                    "facts",
+                    "assumptions",
+                    "resolved_unknowns",
+                    "new_unknowns",
+                    "verification_targets",
+                    "rules"
+                ]
+            }
+        },
+        "required": ["world_model_update"]
+    })
+}
+
 fn build_world_model_update_refresh_prompt(
     current_frame: &WorldModelFrame,
     current_plan: Option<&PlanArtifact>,
@@ -754,17 +743,35 @@ fn build_world_model_update_refresh_prompt(
 
     format!(
         concat!(
-            "Refresh the world-model frame metadata.\n",
-            "Return strict JSON only. Do not return markdown, prose, HTML comments, or fenced code.\n",
-            "The entire response content must be one JSON object with this shape:\n",
-            "{{\"world_model_update\":{{\"intent\":null,\"facts\":[],\"assumptions\":[],\"resolved_unknowns\":[],\"new_unknowns\":[],\"verification_targets\":[],\"rules\":[],\"execution_strategy\":null,\"proposed_next_phase\":null}}}}\n\n",
-            "Based on the current frame and plan state, include intent, facts, assumptions, resolved_unknowns, new_unknowns, verification_targets, rules, execution_strategy when revised, and proposed_next_phase when appropriate.\n\n",
-            "Choose execution_strategy from direct_iteration, delegated_workflow, delegated_agent, or hybrid.\n",
-            "Use delegated_workflow for non-trivial multi-step work that should not stay on DirectIteration.\n\n",
+            "You are refreshing a world-model frame — a structured record of what the system ",
+            "knows, assumes, and still needs to verify about the current task.\n\n",
+            "Output a single JSON object matching this shape:\n",
+            "{{\"world_model_update\":{{\n",
+            "  \"intent\": \"one-sentence summary of the current goal\",\n",
+            "  \"facts\": [\"confirmed facts\"],\n",
+            "  \"assumptions\": [\"unverified beliefs\"],\n",
+            "  \"resolved_unknowns\": [\"questions now answered\"],\n",
+            "  \"new_unknowns\": [\"new questions discovered\"],\n",
+            "  \"verification_targets\": [\"conditions that must be true when done\"],\n",
+            "  \"rules\": [\"constraints to follow\"],\n",
+            "  \"execution_strategy\": \"direct_iteration | delegated_workflow | delegated_agent | hybrid\",\n",
+            "  \"proposed_next_phase\": {{ \"step_type\": \"...\", \"rationale\": \"...\" }}\n",
+            "}}}}\n\n",
+            "Field semantics:\n",
+            "- facts: things confirmed through observation or tool results. Not guesses.\n",
+            "- assumptions: things believed but not yet verified.\n",
+            "- resolved_unknowns: previously open questions that are now answered.\n",
+            "- new_unknowns: new questions that emerged from recent observations.\n",
+            "- verification_targets: what must be true for the task to be considered complete.\n",
+            "- rules: constraints or adaptation rules discovered during execution.\n",
+            "- execution_strategy: choose delegated_workflow for multi-step work, ",
+            "delegated_agent for single-worker tasks, direct_iteration for simple chat, ",
+            "hybrid when both tool use and coordination are needed.\n",
+            "- proposed_next_phase: the next concrete step to take, with step_type and rationale.\n\n",
             "Refresh reason:\n{reason}\n\n",
             "User interruption, if any:\n{interruption}\n\n",
-            "Current plan summary:\n{plan_summary}\n\n",
-            "Current frame JSON:\n{frame_json}\n"
+            "Current plan:\n{plan_summary}\n\n",
+            "Current frame:\n{frame_json}\n"
         ),
         reason = refresh_request.reason.as_str(),
         interruption = interruption,
@@ -1159,7 +1166,9 @@ mod tests {
         clear_test_validation_state();
         set_test_secretary_validation_hook(Some(Arc::new(|_, _| {
             Ok(json!({
-                "content": "{\"is_valid\":true,\"reason\":\"frame still matches the goal\",\"contradiction_signal\":\"none\"}"
+                "is_valid": true,
+                "reason": "frame still matches the goal",
+                "contradiction_signal": "none"
             }))
         })));
 
@@ -1180,7 +1189,9 @@ mod tests {
         clear_test_validation_state();
         set_test_secretary_validation_hook(Some(Arc::new(|_, _| {
             Ok(json!({
-                "content": "{\"is_valid\":false,\"reason\":\"goal changed after observation\",\"contradiction_signal\":\"goal_drift\"}"
+                "is_valid": false,
+                "reason": "goal changed after observation",
+                "contradiction_signal": "goal_drift"
             }))
         })));
 
@@ -1226,7 +1237,9 @@ mod tests {
         set_test_secretary_validation_hook(Some(Arc::new(move |_, _| {
             calls_for_hook.fetch_add(1, Ordering::SeqCst);
             Ok(json!({
-                "content": "{\"is_valid\":true,\"reason\":\"cached after first call\",\"contradiction_signal\":\"none\"}"
+                "is_valid": true,
+                "reason": "cached after first call",
+                "contradiction_signal": "none"
             }))
         })));
 

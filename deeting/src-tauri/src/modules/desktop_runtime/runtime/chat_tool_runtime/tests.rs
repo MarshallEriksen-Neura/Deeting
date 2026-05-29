@@ -164,15 +164,21 @@ fn world_model_snapshot_prefix_includes_runtime_context_before_user_text() {
     }];
 
     let rendered = messages_with_world_model_snapshot(&messages, Some(&frame), &policy);
-    let content = &rendered[0].content;
 
-    assert!(content.contains("=== World Model Snapshot"));
-    assert!(content.contains("[RUNTIME CONTEXT]"));
-    assert!(content.contains("runtime_owner: world_model_runtime_owner"));
-    assert!(content.contains("historical_runtime_evidence: observation_only"));
-    assert!(content.contains("world_model_update: every assistant response must end"));
-    assert!(content.contains("latest user text"));
-    assert!(content.find("[RUNTIME CONTEXT]") < content.find("latest user text"));
+    // System message injected at index 0
+    assert_eq!(rendered[0].role, "system");
+    let system_content = &rendered[0].content;
+    assert!(system_content.contains("=== World Model Snapshot"));
+    assert!(system_content.contains("[WORLD MODEL UPDATE PROTOCOL]"));
+    assert!(system_content.contains("every response, append"));
+    assert!(system_content.contains("facts"));
+    assert!(system_content.contains("assumptions"));
+    assert!(system_content.contains("resolved_unknowns"));
+    assert!(system_content.contains("new_unknowns"));
+
+    // User message preserved at index 1
+    assert_eq!(rendered[1].role, "user");
+    assert_eq!(rendered[1].content, "latest user text");
 }
 
 #[test]

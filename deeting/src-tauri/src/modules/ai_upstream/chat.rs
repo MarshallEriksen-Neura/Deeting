@@ -346,38 +346,68 @@ pub(crate) async fn request_provider_chat_completion(
         max_tokens,
         reasoning,
         trace_id,
-        None,
     )
     .await
 }
 
-pub(crate) async fn request_provider_chat_json_object(
+pub(crate) async fn request_provider_structured_tool_arguments(
     app_state: &AppState,
     provider_model_id: &str,
     model_id: &str,
     messages: Vec<LocalChatInputMessage>,
+    tool_name: &str,
+    tool_description: &str,
+    input_schema: serde_json::Value,
     temperature: Option<f32>,
     max_tokens: Option<u32>,
     reasoning: ReasoningRequestConfig,
     trace_id: Option<&str>,
-    _session_id: Option<&str>,
+    session_id: Option<&str>,
 ) -> Result<serde_json::Value, String> {
-    let response = request_provider_chat_completion_inner(
+    let response = request_provider_chat_completion(
         app_state,
         provider_model_id,
         model_id,
         messages,
-        None,
+        Some(serde_json::json!({
+            "tools": [{
+                "name": tool_name,
+                "description": tool_description,
+                "input_schema": input_schema,
+            }]
+        })),
         temperature,
         max_tokens,
         reasoning,
         trace_id,
-        Some(serde_json::json!({ "type": "json_object" })),
+        session_id,
     )
     .await?;
-    parse_normalized_json_object_response(&response).ok_or_else(|| {
-        "provider did not return a structured JSON object response".to_string()
-    })
+    parse_structured_tool_arguments(&response, tool_name)
+}
+
+pub(crate) fn parse_structured_tool_arguments(
+    response: &serde_json::Value,
+    tool_name: &str,
+) -> Result<serde_json::Value, String> {
+    let expected = tool_name.trim();
+    if expected.is_empty() {
+        return Err("structured tool name is required".to_string());
+    }
+
+    let calls = response
+        .get("tool_calls")
+        .and_then(|value| value.as_array())
+        .ok_or_else(|| format!("missing structured tool call: {expected}"))?;
+    let call = calls
+        .iter()
+        .find(|call| call.get("name").and_then(|value| value.as_str()) == Some(expected))
+        .ok_or_else(|| format!("missing structured tool call: {expected}"))?;
+
+    call.get("arguments")
+        .cloned()
+        .filter(serde_json::Value::is_object)
+        .ok_or_else(|| format!("structured tool call has no object arguments: {expected}"))
 }
 
 async fn request_provider_chat_completion_inner(
@@ -390,7 +420,6 @@ async fn request_provider_chat_completion_inner(
     max_tokens: Option<u32>,
     reasoning: ReasoningRequestConfig,
     trace_id: Option<&str>,
-    response_format: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, String> {
     let provider_model_uuid = Uuid::parse_str(provider_model_id).map_err(to_string)?;
     let model = app_state
@@ -451,7 +480,7 @@ async fn request_provider_chat_completion_inner(
         reasoning.effort,
     );
     let body = build_chat_request_data_from_canonical_request(&canonical_request);
-    let mut prepared = prepare_provider_request_from_canonical_request(
+    let prepared = prepare_provider_request_from_canonical_request(
         preset.as_ref(),
         &instance,
         &model,
@@ -462,11 +491,6 @@ async fn request_provider_chat_completion_inner(
         tools.as_ref(),
         trace_id,
     )?;
-    if let Some(response_format) = response_format {
-        if let Some(body) = prepared.body.as_object_mut() {
-            body.insert("response_format".to_string(), response_format);
-        }
-    }
     let upstream_request_meta = serde_json::json!({
         "method": prepared.method,
         "url": prepared.display_url(),
@@ -628,22 +652,6 @@ async fn request_provider_chat_completion_inner(
     let mut normalized = normalize_chat_completion_response(transformed);
     inject_runtime_metrics(&mut normalized, latency_ms as i64, ttft_ms, retry_count + 1);
     Ok(normalized)
-}
-
-fn parse_normalized_json_object_response(response: &serde_json::Value) -> Option<serde_json::Value> {
-    if response.is_object()
-        && response.get("content").is_none()
-        && response.get("tool_calls").is_none()
-    {
-        return Some(response.clone());
-    }
-    let content = response.get("content")?.as_str()?.trim();
-    if content.is_empty() {
-        return None;
-    }
-    serde_json::from_str::<serde_json::Value>(content)
-        .ok()
-        .filter(serde_json::Value::is_object)
 }
 
 pub(crate) fn normalize_chat_completion_response(raw: serde_json::Value) -> serde_json::Value {
@@ -1051,6 +1059,34 @@ mod tests {
             json!("Need to call the tool.")
         );
         assert_eq!(normalized["tool_calls"][0]["name"], json!("search_sdk"));
+    }
+
+    #[test]
+    fn parse_structured_tool_arguments_requires_matching_tool_call() {
+        let arguments = super::parse_structured_tool_arguments(
+            &json!({
+                "content": "",
+                "tool_calls": [{
+                    "id": "call_1",
+                    "name": "submit_conversation_title",
+                    "arguments": {"title": "Runtime Frame Refresh"}
+                }]
+            }),
+            "submit_conversation_title",
+        )
+        .expect("structured tool arguments");
+
+        assert_eq!(arguments["title"], json!("Runtime Frame Refresh"));
+
+        let content_json = super::parse_structured_tool_arguments(
+            &json!({
+                "content": "{\"title\":\"Do not parse text\"}",
+                "tool_calls": []
+            }),
+            "submit_conversation_title",
+        );
+
+        assert!(content_json.is_err());
     }
 
     #[test]
