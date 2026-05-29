@@ -60,24 +60,6 @@ export function appendIslandStageHistory(
   return [...withoutDuplicate, nextStage].slice(-ISLAND_STATUS_STEPS.length);
 }
 
-export function resolveVisibleIslandStatusSteps(
-  history: IslandStatusStep[],
-  stage: string | null | undefined,
-): IslandStatusStep[] {
-  const activeStage = toKnownStage(stage);
-  const highestReachedIndex = [activeStage, ...history].reduce(
-    (maxIndex, currentStage) => {
-      if (!currentStage) return maxIndex;
-      return Math.max(maxIndex, ISLAND_STATUS_STEPS.indexOf(currentStage));
-    },
-    -1,
-  );
-
-  return highestReachedIndex >= 0
-    ? ISLAND_STATUS_STEPS.slice(0, highestReachedIndex + 1)
-    : [];
-}
-
 export function resolveIslandRuntimeStatus(
   snapshot: IslandChatSnapshotLike,
   pendingApproval: IslandApproval | null,

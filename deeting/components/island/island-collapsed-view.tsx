@@ -82,7 +82,6 @@ export function IslandCollapsedView({
     statusStage,
     statusCode,
     statusMeta,
-    stageHistory,
     collapsedHighlight,
     expand,
   } = useIslandContext();
@@ -194,12 +193,10 @@ export function IslandCollapsedView({
             </span>
           ) : (
             <IslandStatusTimeline
-              compact
               statusLabel={statusLabel}
               statusStage={statusStage}
               statusCode={statusCode}
               statusMeta={statusMeta}
-              stageHistory={stageHistory}
               isBusy={isBusy}
             />
           )}

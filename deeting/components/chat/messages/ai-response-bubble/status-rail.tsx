@@ -12,6 +12,18 @@ import {
 } from "@/components/chat/visuals/status-visuals";
 
 const MIN_RAIL_DISPLAY_MS = 800;
+const STATUS_FLOW_STEP_KEYS = ["listen", "remember", "evolve", "render"] as const;
+
+type StatusFlowStepKey = (typeof STATUS_FLOW_STEP_KEYS)[number];
+type StatusFlowStep = { key: StatusFlowStepKey; label: string };
+type Translator = ReturnType<typeof useI18n>;
+
+function buildStatusFlowSteps(t: Translator): StatusFlowStep[] {
+  return STATUS_FLOW_STEP_KEYS.map((key) => ({
+    key,
+    label: t(`status.flow.${key}`),
+  }));
+}
 
 function useMinRailDisplay(active: boolean): boolean {
   const [held, setHeld] = useState(false);
@@ -157,12 +169,7 @@ export function AIResponseStatusRail({
 }) {
   const t = useI18n("chat");
   const steps = useMemo(
-    () => [
-      { key: "listen", label: t("status.flow.listen") },
-      { key: "remember", label: t("status.flow.remember") },
-      { key: "evolve", label: t("status.flow.evolve") },
-      { key: "render", label: t("status.flow.render") },
-    ],
+    () => buildStatusFlowSteps(t),
     [t],
   );
   const timerStep = useStepProgress(isActive && !statusStage, steps.length);
@@ -268,12 +275,7 @@ export function AIResponseStreamingTail({
 }) {
   const t = useI18n("chat");
   const steps = useMemo(
-    () => [
-      { key: "listen", label: t("status.flow.listen") },
-      { key: "remember", label: t("status.flow.remember") },
-      { key: "evolve", label: t("status.flow.evolve") },
-      { key: "render", label: t("status.flow.render") },
-    ],
+    () => buildStatusFlowSteps(t),
     [t],
   );
   const timerStep = useStepProgress(isActive && !statusStage, steps.length);
