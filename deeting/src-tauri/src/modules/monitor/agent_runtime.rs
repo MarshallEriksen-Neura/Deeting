@@ -328,6 +328,7 @@ pub(crate) async fn execute_monitor_task_agent(
                 "max_rounds": max_rounds,
             })),
             event_tx: None,
+            status_stream: false,
             trace_id: Some(format!("monitor:{}", execution_id)),
             request_id: Some(format!("monitor:{}", execution_id)),
             selected_knowledge_file_ids: Vec::new(),

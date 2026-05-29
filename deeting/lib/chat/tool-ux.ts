@@ -11,8 +11,6 @@ const INTERNAL_TOOL_NAMES = new Set([
   "execute_code_plan",
   "run_local_code_snippet",
   "consult_expert_network",
-  "attach_capability",
-  "detach_capability",
   "sys_submit_onboarding_request",
   "shell_execute",
 ]);
@@ -22,8 +20,6 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   execute_code_plan: "Code Execution",
   run_local_code_snippet: "Local Code Run",
   consult_expert_network: "Expert Consult",
-  attach_capability: "Activate Skill",
-  detach_capability: "Deactivate Skill",
   sys_submit_onboarding_request: "Onboarding",
   shell_execute: "Shell Execute",
   "shell.exec": "Shell Execute",

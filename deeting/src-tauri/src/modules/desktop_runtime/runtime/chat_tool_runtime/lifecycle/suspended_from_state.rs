@@ -1,5 +1,4 @@
 use super::super::runtime_state::LocalChatToolRuntimeState;
-use super::super::tool_execution::LocalCapabilityTransition;
 use super::SuspendedChatToolExecution;
 use crate::modules::desktop_runtime::runtime::{
     build_local_tool_trace_blocks, project_execution_graph_snapshot, GraphProjectionInput,
@@ -10,7 +9,6 @@ impl SuspendedChatToolExecution {
         state: &LocalChatToolRuntimeState,
         pending_tool_call_meta: &[serde_json::Value],
         _pending_results: &[String],
-        _pending_capability_update: Option<LocalCapabilityTransition>,
         _pending_call_id: String,
         _pending_tool_name: String,
     ) -> Self {

@@ -37,19 +37,6 @@ pub(crate) fn build_local_runtime_tools_with_allowlist(
             alias_tool_definition_for_provider(tool, &mut used_provider_tool_names)
         })
         .collect::<Vec<_>>();
-    tools.extend(
-        build_local_execution_lane_aux_tools()
-            .into_iter()
-            .filter_map(|tool| {
-                let canonical_name = function_tool_name(&tool)
-                    .map(|name| name.trim().to_lowercase())
-                    .filter(|name| !name.is_empty())?;
-                if !allowlist.contains(&canonical_name) {
-                    return None;
-                }
-                alias_tool_definition_for_provider(tool, &mut used_provider_tool_names)
-            }),
-    );
     let reserved_names = reserved_local_execution_tool_names();
     let existing_tool_names = used_provider_tool_names;
     tools.extend(build_dynamic_direct_capability_tools(
@@ -123,34 +110,6 @@ pub(crate) async fn build_local_sdk_search_result_bundle_with_feedback_runtime(
     .await
 }
 
-fn build_local_execution_lane_aux_tools() -> Vec<serde_json::Value> {
-    vec![
-        serde_json::json!({
-            "type": "function",
-            "function": {
-                "name": "attach_capability",
-                "description": "Attach an expert capability explicitly for the current request-scoped agent loop. This augments domain capability without changing reply personality.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "capability_id": { "type": "string", "description": "Capability id discovered from search_sdk or other capability lookup surfaces." },
-                        "reason": { "type": "string", "description": "Optional reason for the capability attachment decision." }
-                    },
-                    "required": ["capability_id"]
-                }
-            }
-        }),
-        serde_json::json!({
-            "type": "function",
-            "function": {
-                "name": "detach_capability",
-                "description": "Detach the current request-scoped expert capability and return to the default capability-neutral context.",
-                "parameters": { "type": "object", "properties": { "reason": { "type": "string", "description": "Optional reason for the capability detachment." } } }
-            }
-        }),
-    ]
-}
-
 fn function_tool_name(tool: &serde_json::Value) -> Option<&str> {
     tool.get("function")?.get("name")?.as_str()
 }
@@ -197,12 +156,6 @@ fn reserved_local_execution_tool_names() -> HashSet<String> {
         .filter_map(|tool| function_tool_name(&tool).map(|name| name.trim().to_lowercase()))
         .filter(|name| !name.is_empty())
         .collect::<HashSet<_>>();
-    reserved.extend(
-        build_local_execution_lane_aux_tools()
-            .into_iter()
-            .filter_map(|tool| function_tool_name(&tool).map(|name| name.trim().to_lowercase()))
-            .filter(|name| !name.is_empty()),
-    );
     reserved
 }
 
@@ -252,7 +205,7 @@ mod tests {
     #[test]
     fn build_local_runtime_tools_with_allowlist_filters_tools() {
         let payload = build_local_runtime_tools_with_allowlist(
-            &["search_sdk".to_string(), "attach_capability".to_string()],
+            &["search_sdk".to_string()],
             None,
         )
         .expect("tool payload");
@@ -266,7 +219,7 @@ mod tests {
             .filter_map(function_tool_name)
             .collect::<Vec<_>>();
 
-        assert_eq!(names, vec!["search_sdk", "attach_capability"]);
+        assert_eq!(names, vec!["search_sdk"]);
     }
 
     #[test]

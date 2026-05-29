@@ -26,7 +26,6 @@ pub(super) fn prepare_runtime_state_for_approval_resume(
     let protocol_family = state.model_connection.protocol_family.clone();
     finalize_tool_round(
         &mut state.orchestrated_messages,
-        &mut state.active_capability,
         protocol_family.as_str(),
         state.round,
         &pending_response,

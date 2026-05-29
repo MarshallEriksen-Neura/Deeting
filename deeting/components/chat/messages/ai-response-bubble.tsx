@@ -18,7 +18,6 @@ import {
 } from "@/components/chat/messages/ai-response-bubble/status-rail";
 import { ExecutionConsole } from "@/components/chat/messages/ai-response-bubble/execution-console";
 import {
-  CapabilityTransitionCard,
   ErrorMessageBlock,
   ThoughtBlock,
   TypingTextBlock,
@@ -57,14 +56,6 @@ function serializeComparableBlock(block: MessageBlock) {
         type: block.type,
         content: block.content,
         cost: "cost" in block ? block.cost : undefined,
-      };
-    case "capability_transition":
-      return {
-        type: block.type,
-        action: block.action,
-        capabilityId: block.capabilityId,
-        capabilityName: block.capabilityName,
-        reason: block.reason,
       };
     case "tool_call":
       return {
@@ -111,6 +102,8 @@ function serializeComparableBlock(block: MessageBlock) {
         assumptions: block.assumptions,
         verificationTargets: block.verificationTargets,
         rules: block.rules,
+        executionStrategy: block.executionStrategy,
+        proposedNextPhase: block.proposedNextPhase,
       };
     case "ui":
       return {
@@ -375,18 +368,6 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                   return (
                     <AnimatedBlock key={`thought-${index}`}>
                       <ThoughtBlock content={part.content} cost={part.cost} />
-                    </AnimatedBlock>
-                  );
-                }
-
-                if (part.type === "capability_transition") {
-                  return (
-                    <AnimatedBlock key={`capability-transition-${index}`}>
-                      <CapabilityTransitionCard
-                        action={part.action}
-                        capabilityName={part.capabilityName}
-                        reason={part.reason}
-                      />
                     </AnimatedBlock>
                   );
                 }

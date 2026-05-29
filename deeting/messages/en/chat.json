@@ -67,6 +67,11 @@
         "upstreamStreaming": "Streaming output",
         "upstreamResponse": "Upstream response {latency}ms",
         "upstreamResponseWithBreakdown": "Total {total}ms · upstream {upstream}ms · local {local}ms",
+        "worldModelFrameBootstrap": "Building the task frame",
+        "worldModelFrameRefreshRequest": "Secretary model is updating the world model",
+        "worldModelFrameRefreshUpdated": "World model updated",
+        "worldModelFrameRefreshFailed": "World model update failed",
+        "worldModelFrameResolved": "World model aligned with the execution path",
         "toolCall": "Tool call {name}",
         "assistantSelected": "Now handled by {name}",
         "approvalRequired": "Waiting for approval to run {name}",
@@ -917,7 +922,18 @@
         "constraints": "No explicit constraints",
         "assumptions": "No explicit assumptions"
       },
-      "hint": "Structured reasoning snapshot produced by the round-1 diting_think tool"
+      "hint": "Structured reasoning snapshot produced by the round-1 diting_think tool",
+      "executionStrategy": {
+        "label": "Strategy",
+        "direct_iteration": "Direct iteration",
+        "delegated_workflow": "Delegated workflow",
+        "delegated_agent": "Delegated agent",
+        "hybrid": "Hybrid"
+      },
+      "proposedNextPhase": {
+        "label": "Next",
+        "empty": "No next step specified"
+      }
     },
     "voice": {
       "listening": "Listening...",

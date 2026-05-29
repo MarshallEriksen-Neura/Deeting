@@ -153,8 +153,6 @@ fn world_model_snapshot_prefix_includes_runtime_context_before_user_text() {
         desktop_runtime_core::FrameProvenance::bootstrap("test"),
     );
     frame.append_user_directive("do the thing", None).unwrap();
-    let mut policy = build_default_local_execution_policy();
-    policy.require_world_model_update = true;
     let messages = vec![LocalChatInputMessage {
         role: "user".to_string(),
         content: "latest user text".to_string(),
@@ -164,7 +162,11 @@ fn world_model_snapshot_prefix_includes_runtime_context_before_user_text() {
         name: None,
     }];
 
-    let rendered = messages_with_world_model_snapshot(&messages, Some(&frame), &policy);
+    let rendered = messages_with_world_model_snapshot(
+        &messages,
+        Some(&frame),
+        WorldModelUpdatePromptMode::RequiredFull,
+    );
 
     // System message injected at index 0
     assert_eq!(rendered[0].role, "system");
@@ -172,7 +174,7 @@ fn world_model_snapshot_prefix_includes_runtime_context_before_user_text() {
     assert!(system_content.contains("=== World Model Snapshot"));
     assert!(!system_content.contains("delta projection"));
     assert!(system_content.contains("[WORLD MODEL UPDATE PROTOCOL]"));
-    assert!(system_content.contains("every response, append"));
+    assert!(system_content.contains("Required: append the block"));
     assert!(system_content.contains("facts"));
     assert!(system_content.contains("assumptions"));
     assert!(system_content.contains("resolved_unknowns"));
@@ -182,6 +184,218 @@ fn world_model_snapshot_prefix_includes_runtime_context_before_user_text() {
     // User message preserved at index 1
     assert_eq!(rendered[1].role, "user");
     assert_eq!(rendered[1].content, "latest user text");
+}
+
+#[test]
+fn world_model_snapshot_update_protocol_can_be_disabled_for_plain_rounds() {
+    let frame = desktop_runtime_core::WorldModelFrame::new(
+        "frame-1",
+        "session-1",
+        "task-1",
+        "answer directly",
+        desktop_runtime_core::ExecutionStrategy::DirectIteration,
+        desktop_runtime_core::FrameProvenance::bootstrap("test"),
+    );
+    let messages = vec![LocalChatInputMessage {
+        role: "user".to_string(),
+        content: "latest user text".to_string(),
+        reasoning_content: None,
+        tool_calls: vec![],
+        tool_call_id: None,
+        name: None,
+    }];
+
+    let rendered = messages_with_world_model_snapshot(
+        &messages,
+        Some(&frame),
+        WorldModelUpdatePromptMode::Off,
+    );
+    let system_content = &rendered[0].content;
+
+    assert!(system_content.contains("=== World Model Snapshot"));
+    assert!(system_content.contains("Do not append a <!--wm_update--> block"));
+    assert!(!system_content.contains("\"facts\""));
+    assert!(!system_content.contains("\"proposed_next_phase\""));
+}
+
+#[test]
+fn messages_for_provider_round_compacts_static_protocol_after_first_round() {
+    let messages = vec![
+        LocalChatInputMessage {
+            role: "system".to_string(),
+            content: "<base_router_prompt>\n## Current Context\n</base_router_prompt>".to_string(),
+            reasoning_content: None,
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
+        },
+        LocalChatInputMessage {
+            role: "system".to_string(),
+            content: "<communication_style>\n## Communication Style\n</communication_style>"
+                .to_string(),
+            reasoning_content: None,
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
+        },
+        LocalChatInputMessage {
+            role: "system".to_string(),
+            content: "## Installed Skills\n- keep this dynamic".to_string(),
+            reasoning_content: None,
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
+        },
+        LocalChatInputMessage {
+            role: "user".to_string(),
+            content: "continue".to_string(),
+            reasoning_content: None,
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
+        },
+    ];
+
+    let first_round = messages_for_provider_round(&messages, 1);
+    let replay_round = messages_for_provider_round(&messages, 2);
+
+    assert_eq!(first_round.len(), 4);
+    assert_eq!(replay_round.len(), 3);
+    assert!(replay_round[0].content.contains("[protocol_ref]"));
+    assert!(replay_round[0].content.contains("desktop-local-runtime@v2"));
+    assert!(replay_round[1].content.contains("## Installed Skills"));
+    assert_eq!(replay_round[2].content, "continue");
+}
+
+#[test]
+fn pending_tool_result_messages_detect_latest_tool_feedback_only() {
+    fn message(role: &str, content: &str) -> LocalChatInputMessage {
+        LocalChatInputMessage {
+            role: role.to_string(),
+            content: content.to_string(),
+            reasoning_content: None,
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
+        }
+    }
+
+    assert!(has_pending_tool_result_messages(&[
+        message("user", "read the file"),
+        message("tool", "{\"ok\":true}"),
+    ]));
+    assert!(has_pending_tool_result_messages(&[
+        message("user", "run tool"),
+        message("user", "Tool execution round 1 completed with 1 result"),
+    ]));
+    assert!(!has_pending_tool_result_messages(&[
+        message("user", "old request"),
+        message("tool", "old tool result"),
+        message("user", "new request"),
+    ]));
+}
+
+#[test]
+fn world_model_update_prompt_mode_requires_delta_after_tool_results() {
+    fn message(role: &str, content: &str) -> LocalChatInputMessage {
+        LocalChatInputMessage {
+            role: role.to_string(),
+            content: content.to_string(),
+            reasoning_content: None,
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
+        }
+    }
+
+    let frame = desktop_runtime_core::WorldModelFrame::new(
+        "frame-1",
+        "session-1",
+        "task-1",
+        "continue after tool",
+        desktop_runtime_core::ExecutionStrategy::DirectIteration,
+        desktop_runtime_core::FrameProvenance::bootstrap("test"),
+    );
+    let mut state = LocalChatToolRuntimeState {
+        max_rounds: 4,
+        round: 2,
+        trace_id: "trace-wm-mode-1".to_string(),
+        request_id: None,
+        execution_policy: build_default_local_execution_policy(),
+        model_connection: LocalModelConnection {
+            model_id: "deeting-os".to_string(),
+            provider_model_id: "deepseek-v3.1".to_string(),
+            logical_model_key: Some("deeting-os".to_string()),
+            protocol_family: "openai_chat".to_string(),
+        },
+        orchestrated_messages: Vec::new(),
+        world_model_frame: Some(frame),
+        task_query: None,
+        session_id: "session-wm-mode-1".to_string(),
+        temperature: None,
+        max_tokens: None,
+        reasoning_enabled: None,
+        reasoning_effort: None,
+        active_capability: None,
+        active_skill_context: None,
+        runtime_metrics: RuntimeMetricsAccumulator::default(),
+        captured_world_model_update: None,
+        last_capability_snapshot: None,
+        terminal_context: None,
+        workflow_context: None,
+        last_response: None,
+        runtime_transition_blocks: Vec::new(),
+        realtime_emitter: LocalRealtimeToolTraceEmitter::new(None, Some("trace-wm-mode-1"), None),
+        selected_knowledge_file_ids: Vec::new(),
+    };
+
+    assert_eq!(
+        world_model_update_prompt_mode(&state, &[]),
+        WorldModelUpdatePromptMode::Off
+    );
+    assert_eq!(
+        world_model_update_prompt_mode(
+            &state,
+            &[serde_json::json!({
+                "id": "call-1",
+                "name": "read_file",
+                "status": "success",
+                "result": {"text": "ok"}
+            })],
+        ),
+        WorldModelUpdatePromptMode::RequiredDelta
+    );
+    state.orchestrated_messages = vec![
+        message("user", "read the file"),
+        message("tool", "{\"ok\":true}"),
+    ];
+    assert_eq!(
+        world_model_update_prompt_mode(&state, &[]),
+        WorldModelUpdatePromptMode::RequiredDelta
+    );
+    state.orchestrated_messages = vec![
+        message("user", "run tool"),
+        message("user", "Tool execution round 1 completed with 1 result"),
+    ];
+    assert_eq!(
+        world_model_update_prompt_mode(&state, &[]),
+        WorldModelUpdatePromptMode::RequiredDelta
+    );
+    state.orchestrated_messages = vec![
+        message("user", "old request"),
+        message("tool", "old result"),
+        message("user", "new request"),
+    ];
+    assert_eq!(
+        world_model_update_prompt_mode(&state, &[]),
+        WorldModelUpdatePromptMode::Off
+    );
+
+    state.execution_policy.require_world_model_update = true;
+    assert_eq!(
+        world_model_update_prompt_mode(&state, &[]),
+        WorldModelUpdatePromptMode::RequiredFull
+    );
 }
 
 #[test]

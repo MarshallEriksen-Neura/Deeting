@@ -1,7 +1,7 @@
 use super::fingerprint::build_task_fingerprint;
 use super::types::{
     is_legacy_route_control_delta, TaskPolicyHint, TaskPolicyHintItem,
-    DECISION_POINT_CAPABILITY_ATTACH, DECISION_POINT_DISCOVERY, DECISION_POINT_EXECUTION,
+    DECISION_POINT_DISCOVERY, DECISION_POINT_EXECUTION,
     DECISION_POINT_VERIFICATION, DECISION_POINT_WORKER_SELECTION,
 };
 
@@ -13,9 +13,6 @@ pub(crate) fn normalize_decision_point(value: &str) -> String {
             DECISION_POINT_WORKER_SELECTION.to_string()
         }
         "discovery" | "search" | "search_sdk" => DECISION_POINT_DISCOVERY.to_string(),
-        "capability_attach" | "attach" | "attach_capability" => {
-            DECISION_POINT_CAPABILITY_ATTACH.to_string()
-        }
         "execution" | "execution_escalation" | "execute" | "execute_code_plan" => {
             DECISION_POINT_EXECUTION.to_string()
         }
@@ -31,9 +28,6 @@ fn guidance_for_decision_point(decision_point: &str) -> Option<String> {
         ),
         DECISION_POINT_DISCOVERY => Some(
             "Discovery priors should influence whether to call `search_sdk` early and whether to refine weak results before concluding capability limits.".to_string(),
-        ),
-        DECISION_POINT_CAPABILITY_ATTACH => Some(
-            "Capability-attach priors should influence whether `attach_capability` is justified for this task family.".to_string(),
         ),
         DECISION_POINT_EXECUTION => Some(
             "Execution priors should influence whether escalation into `execute_code_plan` is justified or whether lighter direct tools should stay preferred.".to_string(),
@@ -132,7 +126,6 @@ mod tests {
 
     #[test]
     fn normalize_decision_point_maps_aliases() {
-        assert_eq!(normalize_decision_point("attach"), "capability_attach");
         assert_eq!(normalize_decision_point("execute_code_plan"), "execution");
         assert_eq!(normalize_decision_point("search"), "discovery");
         assert_eq!(

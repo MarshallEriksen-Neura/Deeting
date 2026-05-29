@@ -1,8 +1,8 @@
 use super::types::{
     EvaluatedOutcome, PolicyDelta, TaskAttribution, TaskFingerprint,
     TaskLearningDelegatedExecution, TaskLearningEvaluation, TaskLearningSignals,
-    ACTION_CAPABILITY_ATTACH, ACTION_DISCOVERY_SEARCH_EARLY, ACTION_EXECUTE_CODE_PLAN,
-    ACTION_VERIFICATION_STRONGER_CHECKS, DECISION_POINT_CAPABILITY_ATTACH,
+    ACTION_DISCOVERY_SEARCH_EARLY, ACTION_EXECUTE_CODE_PLAN,
+    ACTION_VERIFICATION_STRONGER_CHECKS,
     DECISION_POINT_DISCOVERY, DECISION_POINT_EXECUTION, DECISION_POINT_VERIFICATION,
     DECISION_POINT_WORKER_SELECTION,
 };
@@ -54,13 +54,6 @@ pub(crate) fn collect_task_learning_signals(
         match tool_name {
             "search_sdk" => {
                 signals.search_sdk_calls = signals.search_sdk_calls.saturating_add(1);
-            }
-            "attach_capability" => {
-                signals.used_attach_capability = true;
-                if status.eq_ignore_ascii_case("error") {
-                    signals.attach_capability_errors =
-                        signals.attach_capability_errors.saturating_add(1);
-                }
             }
             "execute_code_plan" => {
                 signals.used_execute_code_plan = true;
@@ -308,9 +301,6 @@ fn build_secondary_evidence(
     if signals.used_execute_code_plan {
         evidence.push("used_execute_code_plan".to_string());
     }
-    if signals.used_attach_capability {
-        evidence.push("used_attach_capability".to_string());
-    }
     if let Some(delegated_execution) = delegated_execution {
         evidence.push(format!("delegated_kind:{}", delegated_execution.kind));
         evidence.push(format!("delegated_status:{}", delegated_execution.status));
@@ -405,22 +395,6 @@ fn compute_policy_delta(
                 outcome.discovery_judgment
             ),
         }),
-        DECISION_POINT_CAPABILITY_ATTACH => Some(PolicyDelta {
-            decision_point: DECISION_POINT_CAPABILITY_ATTACH.to_string(),
-            action_key: ACTION_CAPABILITY_ATTACH.to_string(),
-            direction: if signals.attach_capability_errors > 0 {
-                "weaken".to_string()
-            } else {
-                "strengthen".to_string()
-            },
-            magnitude,
-            state,
-            rationale: if signals.attach_capability_errors > 0 {
-                "Capability attach failed for this fingerprint.".to_string()
-            } else {
-                "Capability attach helped this fingerprint.".to_string()
-            },
-        }),
         DECISION_POINT_EXECUTION => Some(PolicyDelta {
             decision_point: DECISION_POINT_EXECUTION.to_string(),
             action_key: ACTION_EXECUTE_CODE_PLAN.to_string(),
@@ -499,11 +473,6 @@ fn primary_stage_from_outcome(
         "skipped_when_needed" | "excessive"
     ) {
         return Some(DECISION_POINT_DISCOVERY.to_string());
-    }
-    if signals.attach_capability_errors > 0
-        || (signals.used_attach_capability && outcome.final_status == "success")
-    {
-        return Some(DECISION_POINT_CAPABILITY_ATTACH.to_string());
     }
     if signals.used_execute_code_plan {
         return Some(DECISION_POINT_EXECUTION.to_string());
@@ -652,7 +621,6 @@ pub(crate) fn evaluate_task_learning(
         finish_reason: finish_reason.to_string(),
         tool_call_count: signals.tool_call_count,
         search_sdk_calls: signals.search_sdk_calls,
-        used_attach_capability: signals.used_attach_capability,
         used_execute_code_plan: signals.used_execute_code_plan,
         had_delegated_execution,
         delegated_execution,
@@ -780,7 +748,6 @@ mod tests {
                 delta.decision_point.as_str(),
                 "worker_selection"
                     | "discovery"
-                    | "capability_attach"
                     | "execution"
                     | "verification"
             )

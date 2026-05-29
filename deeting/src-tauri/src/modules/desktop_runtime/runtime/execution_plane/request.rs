@@ -34,6 +34,7 @@ pub(crate) struct LocalExecutionRequest {
     pub(crate) terminal_context: Option<Value>,
     pub(crate) workflow_context: Option<Value>,
     pub(crate) event_tx: Option<UnboundedSender<String>>,
+    pub(crate) status_stream: bool,
     pub(crate) trace_id: Option<String>,
     pub(crate) request_id: Option<String>,
     // Selected knowledge file IDs from the chat workflow context, used as the

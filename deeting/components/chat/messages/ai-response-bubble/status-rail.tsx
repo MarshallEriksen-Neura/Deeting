@@ -221,15 +221,24 @@ export function AIResponseStatusRail({
   const shouldShowStatusRail = useMinRailDisplay(rawShow);
 
   return (
-    <AnimatePresence>
+    <AnimatePresence mode="popLayout">
       {shouldShowStatusRail && (
         <motion.div
           key="minimal-status"
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -2, transition: { duration: 0.4, ease: [0.25, 0.1, 0.25, 1] } }}
-          transition={{ duration: 0.35, ease: [0.25, 0.1, 0.25, 1] }}
-          className="mb-2"
+          initial={{ opacity: 0, y: 12, filter: "blur(4px)" }}
+          animate={{
+            opacity: 1,
+            y: 0,
+            filter: "blur(0px)",
+            transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] },
+          }}
+          exit={{
+            opacity: 0,
+            y: -20,
+            filter: "blur(6px)",
+            transition: { duration: 0.45, ease: [0.4, 0, 1, 1] },
+          }}
+          className="mb-2 will-change-[transform,opacity,filter]"
         >
           <MinimalStatusIndicator
             label={currentStepLabel}
@@ -279,15 +288,24 @@ export function AIResponseStreamingTail({
   const visible = isActive && hasContent;
 
   return (
-    <AnimatePresence>
+    <AnimatePresence mode="popLayout">
       {visible && (
         <motion.div
           key="streaming-tail"
-          initial={{ opacity: 0, y: 2 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, transition: { duration: 0.4, ease: "easeOut" } }}
-          transition={{ duration: 0.3, ease: "easeOut", delay: 0.1 }}
-          className="mt-1 flex items-center gap-2"
+          initial={{ opacity: 0, y: 6, filter: "blur(2px)" }}
+          animate={{
+            opacity: 1,
+            y: 0,
+            filter: "blur(0px)",
+            transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1], delay: 0.1 },
+          }}
+          exit={{
+            opacity: 0,
+            y: -14,
+            filter: "blur(4px)",
+            transition: { duration: 0.35, ease: [0.4, 0, 1, 1] },
+          }}
+          className="mt-1 flex items-center gap-2 will-change-[transform,opacity,filter] origin-bottom"
         >
           <span className="relative inline-flex h-1.5 w-1.5 shrink-0">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-500/40" />

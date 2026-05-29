@@ -82,30 +82,6 @@ export const ThoughtBlock = memo<{ content?: string; cost?: string }>(
   },
 );
 
-export const CapabilityTransitionCard = memo<{
-  action?: "activated" | "deactivated" | "updated";
-  capabilityName?: string;
-  reason?: string;
-}>(function CapabilityTransitionCard({ action, capabilityName, reason }) {
-  const title =
-    action === "activated"
-      ? `已启用专家能力：${capabilityName ?? ""}`.trim()
-      : action === "deactivated"
-        ? `已退出专家能力：${capabilityName ?? ""}`.trim()
-        : `专家能力上下文已更新${capabilityName ? `：${capabilityName}` : ""}`;
-  const accentClass =
-    action === "activated"
-      ? "border-sky-200 bg-sky-50/70 dark:border-sky-900 dark:bg-sky-900/20"
-      : "border-amber-200 bg-amber-50/70 dark:border-amber-900 dark:bg-amber-900/20";
-
-  return (
-    <div className={cn("rounded-lg border px-3 py-2 text-sm", accentClass)}>
-      <div className="font-medium text-foreground">{title}</div>
-      {reason ? <div className="mt-1 text-xs text-muted-foreground">{reason}</div> : null}
-    </div>
-  );
-});
-
 export const ErrorMessageBlock = memo<{ message?: string | object }>(
   function ErrorMessageBlock({ message }) {
     const t = useI18n("chat");

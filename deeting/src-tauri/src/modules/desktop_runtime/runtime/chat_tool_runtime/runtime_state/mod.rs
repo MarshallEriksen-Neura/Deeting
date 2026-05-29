@@ -2,7 +2,6 @@ use super::frame_tools::WorldModelUpdate;
 use super::lifecycle::extract_resume_response_text;
 use super::runtime_metrics::RuntimeMetricsAccumulator;
 use super::streaming::LocalRealtimeToolTraceEmitter;
-use super::tool_execution::LocalCapabilityTransition;
 use crate::modules::desktop_runtime::runtime::{
     ActiveSkillContextState, LocalCapabilityActivationState, LocalExecutionPolicy,
 };
@@ -24,7 +23,6 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) enum LocalTo
         approval_tokens: Vec<String>,
         tool_call_meta: Vec<serde_json::Value>,
         results: Vec<String>,
-        capability_update: Option<LocalCapabilityTransition>,
         skill_context_update: Option<ActiveSkillContextState>,
         captured_world_model_update: Option<WorldModelUpdate>,
         runtime_transition_blocks: Vec<serde_json::Value>,

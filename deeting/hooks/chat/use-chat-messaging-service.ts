@@ -509,6 +509,31 @@ function extractDitingThinkFrameBlockFromResponse(
   const verificationTargets = stringListFromUnknown(extract.verification_targets)
   const rules = stringListFromUnknown(extract.rules)
 
+  const executionStrategy =
+    typeof extract.execution_strategy === "string" && extract.execution_strategy.trim().length > 0
+      ? (extract.execution_strategy.trim() as "direct_iteration" | "delegated_workflow" | "delegated_agent" | "hybrid")
+      : undefined
+
+  const proposedNextPhaseRaw =
+    extract.proposed_next_phase && typeof extract.proposed_next_phase === "object"
+      ? (extract.proposed_next_phase as Record<string, unknown>)
+      : null
+  const proposedNextPhase = proposedNextPhaseRaw
+    ? {
+        stepType:
+          typeof proposedNextPhaseRaw.step_type === "string"
+            ? proposedNextPhaseRaw.step_type.trim()
+            : "",
+        rationale:
+          typeof proposedNextPhaseRaw.rationale === "string"
+            ? proposedNextPhaseRaw.rationale.trim()
+            : "",
+        verificationTargetRefs: stringListFromUnknown(
+          proposedNextPhaseRaw.verification_target_refs,
+        ),
+      }
+    : undefined
+
   if (
     !intent &&
     facts.length === 0 &&
@@ -526,6 +551,8 @@ function extractDitingThinkFrameBlockFromResponse(
     assumptions,
     verificationTargets,
     rules,
+    executionStrategy,
+    proposedNextPhase,
   } as MessageBlock
 }
 

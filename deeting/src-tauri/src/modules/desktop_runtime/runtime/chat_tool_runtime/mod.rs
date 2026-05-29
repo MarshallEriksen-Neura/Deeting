@@ -91,6 +91,14 @@ use tool_meta::{
     tool_call_meta_with_resolved_ids,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorldModelUpdatePromptMode {
+    Off,
+    AllowedDelta,
+    RequiredDelta,
+    RequiredFull,
+}
+
 fn append_world_observations_from_tool_meta(
     frame: Option<&mut desktop_runtime_core::WorldModelFrame>,
     tool_call_meta: &[serde_json::Value],
@@ -301,22 +309,26 @@ fn attach_runtime_transition_events(
 fn messages_with_world_model_snapshot(
     messages: &[LocalChatInputMessage],
     frame: Option<&desktop_runtime_core::WorldModelFrame>,
-    execution_policy: &LocalExecutionPolicy,
+    prompt_mode: WorldModelUpdatePromptMode,
 ) -> Vec<LocalChatInputMessage> {
     let Some(frame) = frame else {
         return messages.to_vec();
     };
-    let config = if execution_policy.require_world_model_update {
+    let config = if matches!(prompt_mode, WorldModelUpdatePromptMode::RequiredFull) {
         desktop_runtime_core::frame::snapshot_render::SnapshotRenderConfig::full()
     } else {
         desktop_runtime_core::frame::snapshot_render::SnapshotRenderConfig::default()
     };
     let snapshot =
         desktop_runtime_core::frame::snapshot_render::render_world_model_snapshot(frame, &config);
-    let runtime_context = render_world_model_runtime_context(frame, execution_policy);
-    let system_content = format!(
-        "[System runtime context — not user input]\n{snapshot}\n\n{runtime_context}\n[/System runtime context]"
-    );
+    let runtime_context = render_world_model_runtime_context(prompt_mode);
+    let system_content = if runtime_context.trim().is_empty() {
+        format!("[System runtime context — not user input]\n{snapshot}\n[/System runtime context]")
+    } else {
+        format!(
+            "[System runtime context — not user input]\n{snapshot}\n\n{runtime_context}\n[/System runtime context]"
+        )
+    };
     let mut output = messages.to_vec();
     output.insert(
         0,
@@ -332,24 +344,33 @@ fn messages_with_world_model_snapshot(
     output
 }
 
-fn render_world_model_runtime_context(
-    frame: &desktop_runtime_core::WorldModelFrame,
-    execution_policy: &LocalExecutionPolicy,
-) -> String {
-    let mode_hint = if execution_policy.require_world_model_update {
-        "full"
-    } else {
-        "delta"
-    };
-    let mode_instruction = if mode_hint == "full" {
-        "Provide a complete assessment: all known facts, assumptions, unknowns, verification targets, rules, and execution_strategy."
-    } else {
-        "Only include NEW or CHANGED items since the last snapshot. Leave arrays empty if nothing changed."
+fn render_world_model_runtime_context(prompt_mode: WorldModelUpdatePromptMode) -> String {
+    if matches!(prompt_mode, WorldModelUpdatePromptMode::Off) {
+        return "[WORLD MODEL UPDATE PROTOCOL]\nDo not append a <!--wm_update--> block for this response unless a later instruction in this request explicitly requires it.".to_string();
+    }
+
+    let (mode_hint, requirement, mode_instruction) = match prompt_mode {
+        WorldModelUpdatePromptMode::RequiredFull => (
+            "full",
+            "Required: append the block at the end of this response.",
+            "Provide a complete assessment: all known facts, assumptions, unknowns, verification targets, rules, and execution_strategy.",
+        ),
+        WorldModelUpdatePromptMode::RequiredDelta => (
+            "delta",
+            "Required: append the block at the end of this response because runtime state changed.",
+            "Only include NEW or CHANGED items since the last snapshot. Leave arrays empty if nothing changed.",
+        ),
+        WorldModelUpdatePromptMode::AllowedDelta => (
+            "delta",
+            "Optional: append the block only if this response changes the task model.",
+            "Only include NEW or CHANGED items since the last snapshot. Omit the block when nothing changed.",
+        ),
+        WorldModelUpdatePromptMode::Off => unreachable!("off mode returned above"),
     };
 
     format!(
         "[WORLD MODEL UPDATE PROTOCOL]\n\
-         At the end of every response, append a {start} JSON {end} block.\n\
+         {requirement}\n\
          Mode: {mode}\n\
          {mode_instruction}\n\n\
          Schema:\n\
@@ -364,8 +385,113 @@ fn render_world_model_runtime_context(
         start = WORLD_MODEL_UPDATE_START_TAG,
         end = WORLD_MODEL_UPDATE_END_TAG,
         mode = mode_hint,
+        requirement = requirement,
         mode_instruction = mode_instruction,
     )
+}
+
+fn world_model_update_prompt_mode(
+    state: &LocalChatToolRuntimeState,
+    effective_tool_call_meta: &[serde_json::Value],
+) -> WorldModelUpdatePromptMode {
+    let Some(frame) = state.world_model_frame.as_ref() else {
+        return WorldModelUpdatePromptMode::Off;
+    };
+    if state.execution_policy.require_world_model_update
+        || frame.needs_refresh()
+        || frame.needs_revision()
+    {
+        return WorldModelUpdatePromptMode::RequiredFull;
+    }
+    if !effective_tool_call_meta.is_empty()
+        || has_pending_tool_result_messages(&state.orchestrated_messages)
+    {
+        return WorldModelUpdatePromptMode::RequiredDelta;
+    }
+    let highwater = frame.last_seen_by_model;
+    let has_new_directive = frame
+        .user_directed
+        .iter()
+        .any(|directive| directive.appended_at > highwater);
+    let has_new_runtime_change = frame
+        .world_observed
+        .iter()
+        .any(|observation| observation.appended_at > highwater)
+        || frame
+            .agent_committed
+            .iter()
+            .any(|commit| commit.committed_at > highwater);
+
+    if has_new_directive || has_new_runtime_change {
+        WorldModelUpdatePromptMode::RequiredDelta
+    } else if frame.turns_since_last_world_model_update() >= 10 {
+        WorldModelUpdatePromptMode::AllowedDelta
+    } else {
+        WorldModelUpdatePromptMode::Off
+    }
+}
+
+fn is_synthetic_tool_feedback_message(message: &LocalChatInputMessage) -> bool {
+    message.role.eq_ignore_ascii_case("user")
+        && message
+            .content
+            .trim_start()
+            .starts_with("Tool execution round ")
+}
+
+fn has_pending_tool_result_messages(messages: &[LocalChatInputMessage]) -> bool {
+    for message in messages.iter().rev() {
+        if message.role.eq_ignore_ascii_case("tool") || is_synthetic_tool_feedback_message(message)
+        {
+            return true;
+        }
+        if message.role.eq_ignore_ascii_case("user") {
+            return false;
+        }
+    }
+    false
+}
+
+fn compact_replayed_system_prompt_content(content: &str) -> Option<String> {
+    let trimmed = content.trim();
+    if trimmed.starts_with("<base_router_prompt>")
+        || trimmed.starts_with("<communication_style>")
+        || trimmed.starts_with("## Desktop Execution Tools")
+    {
+        return Some(
+            "[protocol_ref]\n\
+             desktop-local-runtime@v2, communication-style@v2, tool-capability-contract@v2, execution-tool-protocol@v2\n\
+             Static protocol text was provided earlier in this request. Continue following it. Dynamic tool allowlists, context manifests, skill candidates, and user messages below remain authoritative."
+                .to_string(),
+        );
+    }
+    None
+}
+
+fn messages_for_provider_round(
+    messages: &[LocalChatInputMessage],
+    round: usize,
+) -> Vec<LocalChatInputMessage> {
+    if round <= 1 {
+        return messages.to_vec();
+    }
+    let mut protocol_ref_inserted = false;
+    messages
+        .iter()
+        .filter_map(|message| {
+            let mut message = message.clone();
+            if message.role.eq_ignore_ascii_case("system") {
+                if let Some(compacted) = compact_replayed_system_prompt_content(&message.content) {
+                    if protocol_ref_inserted {
+                        return None;
+                    }
+                    message.content = compacted;
+                    protocol_ref_inserted = true;
+                }
+            }
+            Some(message)
+        })
+        .collect()
 }
 
 pub(crate) async fn run_local_chat_complete_with_tools(
@@ -500,14 +626,17 @@ async fn continue_local_chat_complete_with_tools(
             &effective_allowed_tool_names,
             state.last_capability_snapshot.as_ref(),
         );
+        let effective_tool_call_meta = build_state_effective_tool_call_meta(&state);
+        let provider_messages =
+            messages_for_provider_round(&state.orchestrated_messages, state.round);
         let response = request_provider_chat_completion(
             app_state,
             &provider_model_id,
             &model_id,
             messages_with_world_model_snapshot(
-                &state.orchestrated_messages,
+                &provider_messages,
                 state.world_model_frame.as_ref(),
-                &state.execution_policy,
+                world_model_update_prompt_mode(&state, &effective_tool_call_meta),
             ),
             tools,
             state.temperature,
@@ -580,6 +709,17 @@ async fn continue_local_chat_complete_with_tools(
                     &state.runtime_transition_blocks,
                 ),
             });
+        }
+
+        // Stream reasoning content as a thought block immediately,
+        // so the user sees thinking during intermediate tool-call rounds.
+        if let Some(reasoning) = response
+            .get("reasoning_content")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+        {
+            state.realtime_emitter.emit_thought(reasoning);
         }
 
         state
@@ -683,7 +823,6 @@ async fn continue_local_chat_complete_with_tools(
                 }
                 finalize_tool_round(
                     &mut state.orchestrated_messages,
-                    &mut state.active_capability,
                     &state.model_connection.protocol_family,
                     state.round,
                     &response,
@@ -704,7 +843,6 @@ async fn continue_local_chat_complete_with_tools(
                 approval_tokens: _approval_tokens,
                 mut tool_call_meta,
                 results,
-                capability_update,
                 skill_context_update,
                 runtime_transition_blocks,
                 captured_world_model_update,
@@ -761,7 +899,6 @@ async fn continue_local_chat_complete_with_tools(
                     &state,
                     &resolved_tool_call_meta,
                     &results,
-                    capability_update,
                     derive_pending_call_id_from_tool_call_meta(&resolved_tool_call_meta),
                     String::new(),
                 );

@@ -15,8 +15,6 @@ pub const READ_SKILL_RESOURCE_TOOL_NAME: &str = "read_skill_resource";
 pub const DELEGATE_TASK_TOOL_NAME: &str = "delegate_task";
 pub const EXECUTE_CODE_PLAN_TOOL_NAME: &str = "execute_code_plan";
 pub const CONSULT_EXPERT_NETWORK_TOOL_NAME: &str = "consult_expert_network";
-pub const ATTACH_CAPABILITY_TOOL_NAME: &str = "attach_capability";
-pub const DETACH_CAPABILITY_TOOL_NAME: &str = "detach_capability";
 pub const SYS_SUBMIT_ONBOARDING_REQUEST_TOOL_NAME: &str = "sys_submit_onboarding_request";
 pub const REFRESH_SKILL_INDEX_TOOL_NAME: &str = "refresh_skill_index";
 pub const CONTEXT_SEARCH_TOOL_NAME: &str = "context_search";
@@ -272,8 +270,6 @@ pub fn full_execution_tool_names() -> Vec<String> {
         DELEGATE_TASK_TOOL_NAME,
         EXECUTE_CODE_PLAN_TOOL_NAME,
         CONSULT_EXPERT_NETWORK_TOOL_NAME,
-        ATTACH_CAPABILITY_TOOL_NAME,
-        DETACH_CAPABILITY_TOOL_NAME,
         "terminal_context_peek",
         "terminal_context_read",
         "terminal_context_pack",

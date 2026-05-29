@@ -640,6 +640,48 @@ fn frame_refresh_artifact_name(artifact: Option<FrameRefreshArtifact>) -> &'stat
     }
 }
 
+fn emit_world_model_frame_status(
+    runtime_request: &LocalExecutionRequest,
+    state: &str,
+    code: &str,
+    meta: serde_json::Value,
+) {
+    if !runtime_request.status_stream {
+        return;
+    }
+    let Some(tx) = runtime_request.event_tx.as_ref() else {
+        return;
+    };
+
+    let mut payload = json!({
+        "type": "status",
+        "stage": "evolve",
+        "step": "world_model_frame",
+        "state": state,
+        "code": code,
+        "meta": meta,
+    });
+    if let Some(object) = payload.as_object_mut() {
+        if let Some(trace_id) = runtime_request
+            .trace_id
+            .as_ref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+        {
+            object.insert("trace_id".to_string(), json!(trace_id));
+        }
+        if let Some(request_id) = runtime_request
+            .request_id
+            .as_ref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+        {
+            object.insert("request_id".to_string(), json!(request_id));
+        }
+    }
+    let _ = tx.send(payload.to_string());
+}
+
 async fn request_world_model_update(
     runtime_request: &LocalExecutionRequest,
     current_frame: &WorldModelFrame,
@@ -649,8 +691,38 @@ async fn request_world_model_update(
     let prompt =
         build_world_model_update_refresh_prompt(current_frame, current_plan, refresh_request);
     let model_connection =
-        resolve_local_secretary_model_connection(&runtime_request.app_state).await?;
-    let response = request_provider_structured_tool_arguments_with_choice(
+        match resolve_local_secretary_model_connection(&runtime_request.app_state).await {
+            Ok(connection) => connection,
+            Err(err) => {
+                emit_world_model_frame_status(
+                    runtime_request,
+                    "failed",
+                    "world_model.frame_refresh.failed",
+                    json!({
+                        "artifact": frame_refresh_artifact_name(refresh_request.artifact),
+                        "frame_id": current_frame.frame_version_id.as_str(),
+                        "parent_frame_id": current_frame.parent_frame_id.as_deref(),
+                        "model_role": "secretary",
+                        "error_kind": "secretary_model_unavailable",
+                    }),
+                );
+                return Err(err);
+            }
+        };
+    emit_world_model_frame_status(
+        runtime_request,
+        "running",
+        "world_model.frame_refresh.request",
+        json!({
+            "artifact": frame_refresh_artifact_name(refresh_request.artifact),
+            "frame_id": current_frame.frame_version_id.as_str(),
+            "parent_frame_id": current_frame.parent_frame_id.as_deref(),
+            "model_role": "secretary",
+            "provider_model_id": model_connection.provider_model_id.as_str(),
+            "model_id": model_connection.model_id.as_str(),
+        }),
+    );
+    let response = match request_provider_structured_tool_arguments_with_choice(
         &runtime_request.app_state,
         &model_connection.provider_model_id,
         &model_connection.model_id,
@@ -679,11 +751,68 @@ async fn request_world_model_update(
         })),
     )
     .await
-    .map_err(|err| err.to_string())?;
+    {
+        Ok(response) => response,
+        Err(err) => {
+            emit_world_model_frame_status(
+                runtime_request,
+                "failed",
+                "world_model.frame_refresh.failed",
+                json!({
+                    "artifact": frame_refresh_artifact_name(refresh_request.artifact),
+                    "frame_id": current_frame.frame_version_id.as_str(),
+                    "parent_frame_id": current_frame.parent_frame_id.as_deref(),
+                    "model_role": "secretary",
+                    "provider_model_id": model_connection.provider_model_id.as_str(),
+                    "model_id": model_connection.model_id.as_str(),
+                    "error_kind": "upstream_request_failed",
+                    "error": err.to_string(),
+                }),
+            );
+            return Err(err.to_string());
+        }
+    };
 
-    parse_secretary_world_model_update_response(&response)
-        .map(Some)
-        .map_err(|err| format!("secretary_world_model_update_parse_failed: {err}"))
+    match parse_secretary_world_model_update_response(&response) {
+        Ok(update) => {
+            emit_world_model_frame_status(
+                runtime_request,
+                "success",
+                "world_model.frame_refresh.updated",
+                json!({
+                    "artifact": frame_refresh_artifact_name(refresh_request.artifact),
+                    "frame_id": current_frame.frame_version_id.as_str(),
+                    "parent_frame_id": current_frame.parent_frame_id.as_deref(),
+                    "model_role": "secretary",
+                    "provider_model_id": model_connection.provider_model_id.as_str(),
+                    "model_id": model_connection.model_id.as_str(),
+                    "facts": update.facts.len(),
+                    "assumptions": update.assumptions.len(),
+                    "verification_targets": update.verification_targets.len(),
+                    "rules": update.rules.len(),
+                }),
+            );
+            Ok(Some(update))
+        }
+        Err(err) => {
+            emit_world_model_frame_status(
+                runtime_request,
+                "failed",
+                "world_model.frame_refresh.failed",
+                json!({
+                    "artifact": frame_refresh_artifact_name(refresh_request.artifact),
+                    "frame_id": current_frame.frame_version_id.as_str(),
+                    "parent_frame_id": current_frame.parent_frame_id.as_deref(),
+                    "model_role": "secretary",
+                    "provider_model_id": model_connection.provider_model_id.as_str(),
+                    "model_id": model_connection.model_id.as_str(),
+                    "error_kind": "structured_response_parse_failed",
+                    "error": err.as_str(),
+                }),
+            );
+            Err(format!("secretary_world_model_update_parse_failed: {err}"))
+        }
+    }
 }
 
 fn parse_secretary_world_model_update_response(

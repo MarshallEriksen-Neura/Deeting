@@ -1,6 +1,4 @@
-use super::tool_result_blocks::{
-    extract_capability_transition_blocks, extract_ui_blocks_from_tool_result,
-};
+use super::tool_result_blocks::extract_ui_blocks_from_tool_result;
 
 fn trimmed_json_string(value: Option<&serde_json::Value>) -> Option<String> {
     value
@@ -150,9 +148,6 @@ pub(crate) fn build_local_tool_trace_blocks(
                 "status": if requires_approval { "requires_approval" } else { "success" },
                 "result": resolve_tool_trace_result(item),
             }));
-            blocks.extend(extract_capability_transition_blocks(
-                item, &call_id, tool_name,
-            ));
             blocks.extend(extract_ui_blocks_from_tool_result(
                 item, &call_id, tool_name,
             ));
@@ -197,9 +192,6 @@ pub(crate) fn append_streamable_local_tool_result_blocks(
             "status": if requires_approval { "requires_approval" } else { "success" },
             "result": resolve_tool_trace_result(item),
         }));
-        blocks.extend(extract_capability_transition_blocks(
-            item, &call_id, tool_name,
-        ));
         blocks.extend(extract_ui_blocks_from_tool_result(
             item, &call_id, tool_name,
         ));

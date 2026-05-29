@@ -1,26 +1,15 @@
 use super::super::tool_meta::build_effective_tool_call_meta;
-use super::derive_capability_update_from_tool_call_meta;
-use super::replay_capability::apply_capability_update;
 use super::replay_structured_messages::build_structured_tool_replay_messages;
-use crate::modules::desktop_runtime::runtime::{
-    build_tool_loop_feedback, LocalCapabilityActivationState,
-};
+use crate::modules::desktop_runtime::runtime::build_tool_loop_feedback;
 use crate::modules::mcp::commands::support::LocalChatInputMessage;
 pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn finalize_tool_round(
     orchestrated_messages: &mut Vec<LocalChatInputMessage>,
-    active_capability: &mut Option<LocalCapabilityActivationState>,
     protocol_family: &str,
     round: usize,
     response: &serde_json::Value,
     tool_call_meta: &[serde_json::Value],
     results: &[String],
 ) {
-    apply_capability_update(
-        orchestrated_messages,
-        active_capability,
-        derive_capability_update_from_tool_call_meta(tool_call_meta),
-    );
-
     if let Some(replay_messages) =
         build_structured_tool_replay_messages(protocol_family, response, tool_call_meta)
     {

@@ -509,6 +509,7 @@ pub async fn execute_local_orchestrated_chat(
             terminal_context: input.terminal_context.clone(),
             workflow_context: input.workflow_context.clone(),
             event_tx: ctx.event_tx.clone(),
+            status_stream: input.status_stream,
             trace_id: Some(trace_id.clone()),
             request_id: input.request_id.clone(),
             selected_knowledge_file_ids: ctx.selected_knowledge_file_ids.clone(),

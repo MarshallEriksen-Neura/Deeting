@@ -141,8 +141,72 @@ pub(crate) fn extract_world_model_update_from_response(
             WORLD_MODEL_UPDATE_FIELD.to_string(),
             serde_json::to_value(&extracted.update).unwrap_or(Value::Null),
         );
+        object.insert(
+            "diting_think_frame_extract".to_string(),
+            build_diting_think_frame_extract(&extracted.update),
+        );
     }
     (response, Some(extracted.update))
+}
+
+fn build_diting_think_frame_extract(update: &WorldModelUpdate) -> Value {
+    let mut map = serde_json::Map::new();
+    if let Some(ref intent) = update.intent {
+        map.insert("intent".to_string(), Value::String(intent.clone()));
+    }
+    map.insert(
+        "facts".to_string(),
+        Value::Array(
+            update
+                .facts
+                .iter()
+                .map(|s| Value::String(s.clone()))
+                .collect(),
+        ),
+    );
+    map.insert(
+        "assumptions".to_string(),
+        Value::Array(
+            update
+                .assumptions
+                .iter()
+                .map(|s| Value::String(s.clone()))
+                .collect(),
+        ),
+    );
+    map.insert(
+        "verification_targets".to_string(),
+        Value::Array(
+            update
+                .verification_targets
+                .iter()
+                .map(|s| Value::String(s.clone()))
+                .collect(),
+        ),
+    );
+    map.insert(
+        "rules".to_string(),
+        Value::Array(
+            update
+                .rules
+                .iter()
+                .map(|s| Value::String(s.clone()))
+                .collect(),
+        ),
+    );
+    if let Some(ref strategy) = update.execution_strategy {
+        map.insert(
+            "execution_strategy".to_string(),
+            serde_json::to_value(strategy).unwrap_or(Value::Null),
+        );
+    }
+    if let Some(ref phase) = update.proposed_next_phase {
+        map.insert(
+            "proposed_next_phase".to_string(),
+            serde_json::to_value(phase).unwrap_or(Value::Null),
+        );
+    }
+    Value::Object(map)
 }
 
 pub(crate) fn apply_world_model_update_to_frame(

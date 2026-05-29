@@ -49,6 +49,16 @@ where
     let runtime_event_store = DeetingRuntimeEventStore::default();
     let frame_resolution_policy = request.execution_policy.clone();
     let app_state = request.app_state.clone();
+    emit_status(
+        "evolve",
+        Some("world_model_frame"),
+        "running",
+        "world_model.frame.bootstrap",
+        Some(json!({
+            "task_input_source_kind": task_input_source_kind(&task_input_source),
+            "composition": "deeting_runtime_phase_composition",
+        })),
+    );
     let result = {
         let components = RuntimeComponents {
             bootstrap: DeetingBootstrapPrompt::new(request.clone(), task_id, hook_store.clone()),

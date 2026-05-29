@@ -30,9 +30,6 @@ const hasRenderableBlocks = (blocks: MessageBlock[]) =>
     if (block.type === "thought") {
       return true
     }
-    if (block.type === "capability_transition") {
-      return Boolean(block.action || block.capabilityName || block.reason)
-    }
     if (block.type === "tool_call") {
       return Boolean(block.toolName || block.toolArgs || block.status)
     }
@@ -170,25 +167,6 @@ const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBloc
       }
     }
 
-    if (block.type === "capability_transition") {
-      return {
-        ...block,
-        ...normalizedBase,
-        action:
-          block.action === "activated" || block.action === "deactivated"
-            ? block.action
-            : "updated",
-        capabilityId:
-          typeof block.capabilityId === "string" ? block.capabilityId : undefined,
-        capabilityName:
-          typeof block.capabilityName === "string"
-            ? normalizeTextValue(block.capabilityName)
-            : undefined,
-        reason:
-          typeof block.reason === "string" ? normalizeTextValue(block.reason) : undefined,
-      }
-    }
-
     if (block.type === "tool_call") {
       return {
         type: "tool_call" as const,
@@ -264,6 +242,26 @@ const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBloc
       const verificationTargets = toStringArray(
         candidate.verificationTargets ?? candidate.verification_targets,
       )
+      const executionStrategy =
+        typeof candidate.executionStrategy === "string" && candidate.executionStrategy.trim().length > 0
+          ? candidate.executionStrategy.trim()
+          : typeof candidate.execution_strategy === "string" && candidate.execution_strategy.trim().length > 0
+            ? candidate.execution_strategy.trim()
+            : undefined
+      const proposedNextPhaseRaw = candidate.proposedNextPhase ?? candidate.proposed_next_phase
+      const proposedNextPhase =
+        proposedNextPhaseRaw &&
+        typeof proposedNextPhaseRaw === "object" &&
+        typeof proposedNextPhaseRaw.step_type === "string" &&
+        typeof proposedNextPhaseRaw.rationale === "string"
+          ? {
+              stepType: proposedNextPhaseRaw.step_type.trim(),
+              rationale: proposedNextPhaseRaw.rationale.trim(),
+              verificationTargetRefs: toStringArray(
+                proposedNextPhaseRaw.verificationTargetRefs ?? proposedNextPhaseRaw.verification_target_refs,
+              ),
+            }
+          : undefined
       return {
         type: "diting_think_frame" as const,
         ...normalizedBase,
@@ -272,6 +270,8 @@ const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBloc
         assumptions: toStringArray(candidate.assumptions),
         verificationTargets,
         rules: toStringArray(candidate.rules),
+        ...(executionStrategy ? { executionStrategy } : {}),
+        ...(proposedNextPhase ? { proposedNextPhase } : {}),
       }
     }
 

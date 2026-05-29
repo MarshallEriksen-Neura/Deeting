@@ -83,7 +83,6 @@ mod tests {
         let prompt = render_execution_tool_prompt(&["search_sdk".to_string()]);
 
         assert!(prompt.contains("Use `execute_code_plan` only when the task needs"));
-        assert!(prompt.contains("Call `attach_capability` explicitly"));
         assert!(prompt.contains("Mandatory Discovery Gate"));
         assert!(prompt.contains("summarize what changed"));
         assert!(prompt.contains("required `code` field"));

@@ -1,4 +1,15 @@
-# Deeting 双 Plane 执行架构（Direct vs Worker）
+# Deeting 双 Plane 执行架构（已废弃）
+
+> ⚠️ **本文档描述的是旧版架构，已被 Composition-based 执行策略取代。**
+>
+> 当前执行模型使用 `ExecutionStrategy`（DirectIteration / DelegatedWorkflow / DelegatedAgent / Hybrid）
+> 配合 `PhaseStepType`（DirectChat / ToolCall / DelegatedWorker / DelegatedWorkflow / CapabilityAdmit / VerifyFinal）。
+>
+> 请参考 [architecture-overview.md](./architecture-overview.md) 中的 §4.3 执行策略 章节。
+
+---
+
+# Deeting 双 Plane 执行架构（Direct vs Worker）【历史归档】
 
 > 适用范围：桌面端本地对话（local chat）的"语义感知路由"——一句话进来，到底是**直接调工具开干**还是**走编排 / 委派**，是怎么决定的，决定完之后又跑什么样的流水线。
 > 不覆盖：DAG 执行图与可恢复运行时（见 [agent-dag-architecture.md](./agent-dag-architecture.md)）、prior 半衰减与 6 个决策点（见 [self-evolution-architecture.md](./self-evolution-architecture.md)）、上下文 manifest 与 `context_*` 工具（见 [rag-architecture.md](./rag-architecture.md)）、bandit 三策略与三场景（见 [bandit-architecture.md](./bandit-architecture.md)）。

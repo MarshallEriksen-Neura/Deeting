@@ -428,9 +428,6 @@ fn collect_capability_changes_from_trace_blocks(
         if let Some(payload) = block.get("payload") {
             collect_capability_changes_from_transition_payload(payload, added, removed);
         }
-        if block.get("type").and_then(Value::as_str) == Some("capability_transition") {
-            collect_capability_change_from_capability_block(block, added, removed);
-        }
     }
 }
 
@@ -448,49 +445,6 @@ fn collect_capability_changes_from_transition_payload(
     }
     extend_string_array(added, metadata.get("added_capabilities"));
     extend_string_array(removed, metadata.get("removed_capabilities"));
-}
-
-fn collect_capability_change_from_capability_block(
-    block: &Value,
-    added: &mut Vec<String>,
-    removed: &mut Vec<String>,
-) {
-    let Some(capability_ref) = block
-        .get("capabilityName")
-        .or_else(|| block.get("capability_name"))
-        .or_else(|| block.get("capabilityId"))
-        .or_else(|| block.get("capability_id"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-    else {
-        return;
-    };
-    let action = block
-        .get("action")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .unwrap_or_default();
-    if matches!(
-        action,
-        "detach" | "detached" | "remove" | "removed" | "revoke" | "revoked"
-    ) {
-        removed.push(capability_ref);
-    } else if matches!(
-        action,
-        "attach"
-            | "attached"
-            | "add"
-            | "added"
-            | "admit"
-            | "admitted"
-            | "activate"
-            | "activated"
-            | "updated"
-    ) {
-        added.push(capability_ref);
-    }
 }
 
 fn extend_string_array(target: &mut Vec<String>, value: Option<&Value>) {

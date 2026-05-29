@@ -2,7 +2,15 @@
 
 import { memo, useMemo, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { ChevronDown, AlertTriangle } from "lucide-react"
+import {
+  ChevronDown,
+  ChevronRight,
+  AlertTriangle,
+  Zap,
+  GitBranch,
+  Users,
+  Layers,
+} from "lucide-react"
 
 import type { DitingThinkFrameBlock } from "@/lib/chat/message-protocol"
 import { useI18n } from "@/hooks/use-i18n"
@@ -15,6 +23,9 @@ interface DitingThinkPanelProps {
 }
 
 type Translator = ReturnType<typeof useI18n>
+
+type ExecutionStrategy = NonNullable<DitingThinkFrameBlock["executionStrategy"]>
+type ProposedNextPhase = NonNullable<DitingThinkFrameBlock["proposedNextPhase"]>
 
 type Section = {
   key: "intent" | "context" | "plan" | "constraints" | "assumptions"
@@ -58,13 +69,37 @@ function countFilledSections(sections: Section[]): number {
   return sections.reduce((acc, section) => acc + (section.items.length > 0 ? 1 : 0), 0)
 }
 
-function SectionRow({
-  section,
-  t,
-}: {
-  section: Section
-  t: Translator
-}) {
+const STRATEGY_CONFIG: Record<
+  ExecutionStrategy,
+  { icon: typeof Zap; bg: string; text: string; iconColor: string }
+> = {
+  direct_iteration: {
+    icon: Zap,
+    bg: "bg-teal-100/80 dark:bg-teal-900/30",
+    text: "text-teal-700 dark:text-teal-300",
+    iconColor: "text-teal-500 dark:text-teal-400",
+  },
+  delegated_workflow: {
+    icon: GitBranch,
+    bg: "bg-violet-100/80 dark:bg-violet-900/30",
+    text: "text-violet-700 dark:text-violet-300",
+    iconColor: "text-violet-500 dark:text-violet-400",
+  },
+  delegated_agent: {
+    icon: Users,
+    bg: "bg-indigo-100/80 dark:bg-indigo-900/30",
+    text: "text-indigo-700 dark:text-indigo-300",
+    iconColor: "text-indigo-500 dark:text-indigo-400",
+  },
+  hybrid: {
+    icon: Layers,
+    bg: "bg-orange-100/80 dark:bg-orange-900/30",
+    text: "text-orange-700 dark:text-orange-300",
+    iconColor: "text-orange-500 dark:text-orange-400",
+  },
+}
+
+function SectionRow({ section, t }: { section: Section; t: Translator }) {
   const labelKey = `frame.sections.${section.key}` as const
   const emptyKey = `frame.empty.${section.key}` as const
   const label = t(labelKey)
@@ -104,6 +139,57 @@ function SectionRow({
   )
 }
 
+function ExecutionStrategyBadge({ strategy, t }: { strategy: ExecutionStrategy; t: Translator }) {
+  const config = STRATEGY_CONFIG[strategy]
+  const Icon = config.icon
+  const labelKey = `frame.executionStrategy.${strategy}` as const
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="font-medium text-[11px] uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">
+        {t("frame.executionStrategy.label")}
+      </span>
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+          config.bg,
+          config.text,
+        )}
+      >
+        <Icon size={12} className={config.iconColor} />
+        {t(labelKey)}
+      </span>
+    </div>
+  )
+}
+
+function ProposedNextPhasePreview({ phase, t }: { phase: ProposedNextPhase; t: Translator }) {
+  if (!phase.stepType && !phase.rationale) return null
+
+  return (
+    <div className="flex items-start gap-2">
+      <span className="mt-0.5 font-medium text-[11px] uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">
+        {t("frame.proposedNextPhase.label")}
+      </span>
+      <div className="min-w-0 flex-1 rounded-md border-l-2 border-l-sky-400/70 bg-sky-50/50 px-2.5 py-1.5 dark:border-l-sky-500/50 dark:bg-sky-950/20">
+        <div className="flex items-center gap-1.5">
+          {phase.stepType && (
+            <span className="inline-block rounded bg-slate-100 px-1.5 py-px font-mono text-[10.5px] tracking-tight text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+              {phase.stepType}
+            </span>
+          )}
+          <ChevronRight size={11} className="shrink-0 text-slate-400 dark:text-slate-500" />
+        </div>
+        {phase.rationale && (
+          <p className="mt-0.5 break-words text-[12px] leading-[1.5] text-slate-600 dark:text-slate-300">
+            {phase.rationale}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export const DitingThinkPanel = memo<DitingThinkPanelProps>(
   function DitingThinkPanel({ block, contradicted = false }) {
     const t = useI18n("chat")
@@ -111,6 +197,12 @@ export const DitingThinkPanel = memo<DitingThinkPanelProps>(
 
     const sections = useMemo(() => buildSections(block), [block])
     const filledCount = useMemo(() => countFilledSections(sections), [sections])
+
+    const hasStrategy = isNonEmpty(block.executionStrategy as string | null | undefined)
+    const hasNextPhase =
+      block.proposedNextPhase != null &&
+      (isNonEmpty(block.proposedNextPhase.stepType) || isNonEmpty(block.proposedNextPhase.rationale))
+    const hasActionSection = hasStrategy || hasNextPhase
 
     const summaryLabel = contradicted
       ? t("frame.summaryContradicted")
@@ -200,9 +292,35 @@ export const DitingThinkPanel = memo<DitingThinkPanelProps>(
                     : "border-slate-200/70 dark:border-slate-800/70",
                 )}
               >
+                {/* Action intent zone: strategy + next phase */}
+                {hasActionSection && (
+                  <div className="space-y-2">
+                    {hasStrategy && (
+                      <ExecutionStrategyBadge strategy={block.executionStrategy!} t={t} />
+                    )}
+                    {hasNextPhase && (
+                      <ProposedNextPhasePreview phase={block.proposedNextPhase!} t={t} />
+                    )}
+                  </div>
+                )}
+
+                {/* Separator between action and knowledge zones */}
+                {hasActionSection && filledCount > 0 && (
+                  <div
+                    className={cn(
+                      "border-t border-dashed",
+                      contradicted
+                        ? "border-amber-300/50 dark:border-amber-800/40"
+                        : "border-slate-200/60 dark:border-slate-800/60",
+                    )}
+                  />
+                )}
+
+                {/* Knowledge sections (existing 5) */}
                 {sections.map((section) => (
                   <SectionRow key={section.key} section={section} t={t} />
                 ))}
+
                 <p className="pt-1 text-[10.5px] leading-[1.5] text-slate-400 dark:text-slate-500">
                   {t("frame.hint")}
                 </p>

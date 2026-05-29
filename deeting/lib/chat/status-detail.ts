@@ -86,6 +86,16 @@ export function resolveStatusDetail(
       const latency = Number.isFinite(totalLatency) ? Math.max(0, Math.round(totalLatency)) : 0
       return t("status.detail.upstreamResponse", { latency })
     }
+    case "world_model.frame.bootstrap":
+      return t("status.detail.worldModelFrameBootstrap")
+    case "world_model.frame_refresh.request":
+      return t("status.detail.worldModelFrameRefreshRequest")
+    case "world_model.frame_refresh.updated":
+      return t("status.detail.worldModelFrameRefreshUpdated")
+    case "world_model.frame_refresh.failed":
+      return t("status.detail.worldModelFrameRefreshFailed")
+    case "runtime.phase_executor.frame_resolved":
+      return t("status.detail.worldModelFrameResolved")
     case "tool.call": {
       const name = String(meta?.name ?? "")
       return t("status.detail.toolCall", { name })

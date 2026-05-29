@@ -3,12 +3,10 @@ use sha1::{Digest, Sha1};
 
 pub(crate) const DECISION_POINT_WORKER_SELECTION: &str = "worker_selection";
 pub(crate) const DECISION_POINT_DISCOVERY: &str = "discovery";
-pub(crate) const DECISION_POINT_CAPABILITY_ATTACH: &str = "capability_attach";
 pub(crate) const DECISION_POINT_EXECUTION: &str = "execution";
 pub(crate) const DECISION_POINT_VERIFICATION: &str = "verification";
 
 pub(crate) const ACTION_DISCOVERY_SEARCH_EARLY: &str = "search_sdk_early";
-pub(crate) const ACTION_CAPABILITY_ATTACH: &str = "attach_capability";
 pub(crate) const ACTION_EXECUTE_CODE_PLAN: &str = "execute_code_plan";
 pub(crate) const ACTION_VERIFICATION_STRONGER_CHECKS: &str = "stronger_checks";
 
@@ -97,7 +95,6 @@ pub(crate) struct EvaluatedOutcome {
     pub(crate) finish_reason: String,
     pub(crate) tool_call_count: usize,
     pub(crate) search_sdk_calls: usize,
-    pub(crate) used_attach_capability: bool,
     pub(crate) used_execute_code_plan: bool,
     pub(crate) had_delegated_execution: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -136,8 +133,6 @@ pub(crate) struct TaskLearningSignals {
     pub(crate) tool_error_count: usize,
     pub(crate) requires_approval_count: usize,
     pub(crate) search_sdk_calls: usize,
-    pub(crate) used_attach_capability: bool,
-    pub(crate) attach_capability_errors: usize,
     pub(crate) used_execute_code_plan: bool,
     pub(crate) successful_execute_code_plan: bool,
     pub(crate) delegated_execution: bool,

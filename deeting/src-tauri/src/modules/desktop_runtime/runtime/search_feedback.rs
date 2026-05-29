@@ -21,8 +21,6 @@ const SEARCH_META_TOOLS: &[&str] = &[
     "search_sdk",
     "get_tool_schema",
     "execute_code_plan",
-    "attach_capability",
-    "detach_capability",
 ];
 const HISTORICAL_HALF_LIFE_MS: f64 = 7.0 * 24.0 * 60.0 * 60.0 * 1000.0;
 const QUERY_AFFINITY_HALF_LIFE_MS: f64 = 14.0 * 24.0 * 60.0 * 60.0 * 1000.0;

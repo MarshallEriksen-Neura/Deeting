@@ -110,8 +110,6 @@ pub(super) async fn record_query_affinity_from_tool_meta(
                 | "get_tool_schema"
                 | "execute_code_plan"
                 | "run_local_code_snippet"
-                | "attach_capability"
-                | "detach_capability"
         ) {
             continue;
         }

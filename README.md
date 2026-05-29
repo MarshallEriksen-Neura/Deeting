@@ -10,6 +10,10 @@
     ·
     <a href="./docs/macos-installation.md">macOS 安装说明</a>
     ·
+    <a href="./docs/architecture-overview.md">📐 桌面端架构</a>
+    ·
+    <a href="./docs/deeting-relay-architecture.md">IM Relay 架构</a>
+    ·
     <a href="./docs/rag-architecture.md">RAG 架构</a>
     ·
     <a href="./docs/self-evolution-architecture.md">自进化架构</a>
@@ -216,7 +220,9 @@ Island 承接 recent messages、pending approval、selection context、browser l
 >
 > 📖 Bandit 多臂老虎机（Thompson / UCB / ε-greedy 三策略、路由 / Worker 选择 / 记忆召回三场景、ROUTE_BANDIT_COEFF 平局拆解、Cooldown 故障保护、与 Python 实现位级对齐）详见 [docs/bandit-architecture.md](./docs/bandit-architecture.md)。
 >
-> 📖 双 Plane 执行架构（Direct / Worker 双模、共享 8 步编排流水线、RouteSelectionStep 决策、安全锁清单、Worker 自动委派 vs 模型主动 delegate_task、Workflow 引擎路径、delegated_result envelope）详见 [docs/dual-plane-architecture.md](./docs/dual-plane-architecture.md)。
+> 📖 执行策略（Execution Strategy：DirectIteration / DelegatedWorkflow / DelegatedAgent / Hybrid）详见 [docs/architecture-overview.md](./docs/architecture-overview.md) §4.3。
+>
+> ⚠️ 旧版双 Plane 架构已废弃，详见 [docs/dual-plane-architecture.md](./docs/dual-plane-architecture.md)（历史归档）。
 
 ## 一个更真实的工作流
 

@@ -67,6 +67,11 @@
         "upstreamStreaming": "流式输出中",
         "upstreamResponse": "上游响应 {latency}ms",
         "upstreamResponseWithBreakdown": "总耗时 {total}ms · 上游 {upstream}ms · 本地 {local}ms",
+        "worldModelFrameBootstrap": "正在建立任务框架",
+        "worldModelFrameRefreshRequest": "秘书模型正在更新世界模型",
+        "worldModelFrameRefreshUpdated": "世界模型已更新",
+        "worldModelFrameRefreshFailed": "世界模型更新失败",
+        "worldModelFrameResolved": "世界模型已对齐执行路径",
         "toolCall": "工具调用 {name}",
         "assistantSelected": "当前由 {name} 接管",
         "approvalRequired": "等待你批准 {name}",
@@ -477,7 +482,18 @@
         "constraints": "无显式约束",
         "assumptions": "无明确假设"
       },
-      "hint": "在第 1 轮通过 diting_think 工具产生的结构化推理快照"
+      "hint": "在第 1 轮通过 diting_think 工具产生的结构化推理快照",
+      "executionStrategy": {
+        "label": "执行策略",
+        "direct_iteration": "逐步迭代",
+        "delegated_workflow": "委托工作流",
+        "delegated_agent": "委托智能体",
+        "hybrid": "混合执行"
+      },
+      "proposedNextPhase": {
+        "label": "下一步",
+        "empty": "未指定下一步"
+      }
     },
     "routing": {
       "auto": "自动路由",

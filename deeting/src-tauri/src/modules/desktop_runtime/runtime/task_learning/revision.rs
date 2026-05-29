@@ -131,15 +131,6 @@ fn signals_from_outcome(outcome: &EvaluatedOutcome) -> TaskLearningSignals {
             0
         },
         search_sdk_calls: outcome.search_sdk_calls,
-        used_attach_capability: outcome.used_attach_capability,
-        attach_capability_errors: if outcome.used_attach_capability
-            && outcome.final_status != "success"
-            && outcome.error_profile == "structural"
-        {
-            1
-        } else {
-            0
-        },
         used_execute_code_plan: outcome.used_execute_code_plan,
         successful_execute_code_plan: outcome.used_execute_code_plan
             && outcome.execution_judgment == "justified"

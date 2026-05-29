@@ -1,7 +1,6 @@
 use super::super::runtime_state::LocalChatToolRuntimeState;
 use crate::modules::desktop_runtime::runtime::{
-    build_local_sdk_search_result_bundle_with_feedback_runtime,
-    project_capability_search_result_transition_blocks, search_feedback,
+    build_local_sdk_search_result_bundle_with_feedback_runtime, search_feedback,
 };
 use crate::state::AppState;
 
@@ -9,8 +8,6 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) struct Capab
 {
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) meta: serde_json::Value,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) result_message: String,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) capability_transition_blocks:
-        Vec<serde_json::Value>,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) full_payload:
         serde_json::Value,
 }
@@ -43,14 +40,6 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) async fn exe
         &feedback_context,
     )
     .await;
-    let capability_transition_blocks = project_capability_search_result_transition_blocks(
-        state.trace_id.as_str(),
-        state.request_id.as_deref(),
-        state.session_id.as_str(),
-        call_id,
-        query,
-        &search_bundle,
-    );
     let search_res = search_bundle.summary_payload;
     let result_message = format!(
         "SDK Search Result for '{}':\n{}",
@@ -72,7 +61,6 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) async fn exe
             }],
         }),
         result_message,
-        capability_transition_blocks,
         full_payload: search_bundle.full_payload,
     }
 }

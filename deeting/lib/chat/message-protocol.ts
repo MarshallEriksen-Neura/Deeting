@@ -1,7 +1,6 @@
 export type BlockType =
   | 'text'
   | 'thought'
-  | 'capability_transition'
   | 'tool_call'
   | 'tool_result'
   | 'console_log'
@@ -34,14 +33,6 @@ export interface ThoughtBlock extends BaseBlock {
   type: 'thought'
   content: string
   cost?: string
-}
-
-export interface CapabilityTransitionBlock extends BaseBlock {
-  type: 'capability_transition'
-  action: 'activated' | 'deactivated' | 'updated'
-  capabilityId?: string
-  capabilityName?: string
-  reason?: string
 }
 
 export interface ToolCallBlock extends BaseBlock {
@@ -136,6 +127,12 @@ export interface DitingThinkFrameBlock extends BaseBlock {
   assumptions: string[]
   verificationTargets: string[]
   rules: string[]
+  executionStrategy?: 'direct_iteration' | 'delegated_workflow' | 'delegated_agent' | 'hybrid'
+  proposedNextPhase?: {
+    stepType: string
+    rationale: string
+    verificationTargetRefs?: string[]
+  }
 }
 
 export interface HtmlRuntimePayload {
@@ -179,7 +176,6 @@ export interface HtmlRuntimeMetadata {
 export type MessageBlock =
   | TextBlock
   | ThoughtBlock
-  | CapabilityTransitionBlock
   | ToolCallBlock
   | ToolResultBlock
   | ConsoleLogBlock

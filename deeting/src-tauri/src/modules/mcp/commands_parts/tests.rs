@@ -1030,8 +1030,6 @@ for raw_line in sys.stdin:
         assert!(names.contains(&"search_sdk"));
         assert!(names.contains(&"get_tool_schema"));
         assert!(!names.contains(&"consult_expert_network"));
-        assert!(names.contains(&"attach_capability"));
-        assert!(names.contains(&"detach_capability"));
         assert!(names.contains(&"execute_code_plan"));
         assert!(names.contains(&"sys_submit_onboarding_request"));
 
@@ -3065,29 +3063,6 @@ for raw_line in sys.stdin:
                 .map(|arr| arr.len()),
             Some(1)
         );
-    }
-
-    #[test]
-    fn build_local_tool_trace_blocks_emits_capability_transition_block() {
-        let meta = vec![serde_json::json!({
-            "id": "call_activate",
-            "name": "attach_capability",
-            "status": "success",
-            "result": {
-                "capability_transition": {
-                    "action": "activated",
-                    "capability_id": "capability-1",
-                    "capability_name": "Expert",
-                    "reason": "best match"
-                }
-            }
-        })];
-
-        let blocks = build_local_tool_trace_blocks(&meta);
-        assert!(blocks.iter().any(|block| {
-            block.get("type").and_then(|v| v.as_str()) == Some("capability_transition")
-                && block.get("capabilityName").and_then(|v| v.as_str()) == Some("Expert")
-        }));
     }
 
     #[test]

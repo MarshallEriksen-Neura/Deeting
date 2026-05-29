@@ -66,6 +66,20 @@ impl LocalRealtimeToolTraceEmitter {
         self.emit_blocks(streamed_blocks);
     }
 
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn emit_thought(
+        &mut self,
+        reasoning: &str,
+    ) {
+        let trimmed = reasoning.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        self.emit_blocks(vec![serde_json::json!({
+            "type": "thought",
+            "content": trimmed,
+        })]);
+    }
+
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn emit_blocks(
         &mut self,
         blocks: Vec<serde_json::Value>,

@@ -52,8 +52,6 @@ mod recovery_prompt;
 mod recovery_prompt_lookup;
 mod recovery_prompt_meta;
 mod replay;
-mod replay_capability;
-mod replay_capability_transition;
 mod replay_content;
 mod replay_structured_messages;
 mod resume_assistant_blocks;
@@ -122,7 +120,6 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) use resume_r
 pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) use resumed_assistant_persistence::persist_resumed_local_chat_assistant_message;
 
 pub(super) use replay::finalize_tool_round;
-pub(super) use replay_capability_transition::derive_capability_update_from_tool_call_meta;
 pub(super) use replay_content::serialize_tool_replay_content;
 pub(super) use replay_structured_messages::build_structured_tool_replay_messages;
 

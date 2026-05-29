@@ -18,8 +18,7 @@ use super::{
     execute_local_code_snippet_tool, execute_query_task_policy_tool,
     execute_read_skill_resource_tool, execute_refresh_skill_index_tool, execute_search_sdk_tool,
     execute_sys_submit_onboarding_request_tool, execute_terminal_context_runtime_tool,
-    execute_workflow_plan_runtime_tool, handle_attach_capability_tool,
-    handle_detach_capability_tool,
+    execute_workflow_plan_runtime_tool,
 };
 use crate::modules::desktop_runtime::context_orchestrator::is_context_tool;
 use crate::modules::desktop_runtime::runtime::{
@@ -55,7 +54,6 @@ pub(crate) async fn process_chat_tool_calls(
     let mut tool_call_meta = Vec::new();
     let mut results = Vec::new();
     let mut synthesized = false;
-    let mut capability_update = None;
     let mut skill_context_update = None;
     let mut approval_tokens = Vec::new();
     let captured_world_model_update: Option<WorldModelUpdate> =
@@ -236,7 +234,6 @@ pub(crate) async fn process_chat_tool_calls(
                 &call.arguments,
             )
             .await;
-            runtime_transition_blocks.extend(search.capability_transition_blocks);
             *last_capability_snapshot = Some(search.full_payload);
             synthesized = true;
             realtime_emitter.emit_tool_result_meta(&search.meta);
@@ -350,34 +347,6 @@ pub(crate) async fn process_chat_tool_calls(
             realtime_emitter.emit_tool_result_meta(&policy_result.meta);
             tool_call_meta.push(policy_result.meta);
             results.push(policy_result.result_message);
-        } else if tool_name == "attach_capability" {
-            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
-            let admit = handle_attach_capability_tool(
-                app_state.mcp.store.as_ref(),
-                state.task_query.as_deref(),
-                call_id.as_str(),
-                tool_name.as_str(),
-                &call.arguments,
-            )
-            .await;
-            synthesized = true;
-            realtime_emitter.emit_tool_result_meta(&admit.meta);
-            tool_call_meta.push(admit.meta);
-            results.push(admit.result_message);
-            capability_update = admit.capability_update;
-        } else if tool_name == "detach_capability" {
-            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
-            let admit = handle_detach_capability_tool(
-                active_capability,
-                call_id.as_str(),
-                tool_name.as_str(),
-                &call.arguments,
-            );
-            synthesized = true;
-            realtime_emitter.emit_tool_result_meta(&admit.meta);
-            tool_call_meta.push(admit.meta);
-            results.push(admit.result_message);
-            capability_update = admit.capability_update;
         } else if tool_name == "sys_submit_onboarding_request" {
             realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
             let onboarding_result = execute_sys_submit_onboarding_request_tool(
@@ -484,7 +453,6 @@ pub(crate) async fn process_chat_tool_calls(
             approval_tokens,
             tool_call_meta,
             results,
-            capability_update,
             skill_context_update,
             captured_world_model_update,
             runtime_transition_blocks,

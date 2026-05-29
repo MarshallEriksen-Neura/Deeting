@@ -245,7 +245,6 @@ mod tests {
             "finish_reason": "stop",
             "tool_call_count": 0,
             "search_sdk_calls": 0,
-            "used_attach_capability": false,
             "used_execute_code_plan": false,
             "had_delegated_execution": false,
             "observed_error_codes": []

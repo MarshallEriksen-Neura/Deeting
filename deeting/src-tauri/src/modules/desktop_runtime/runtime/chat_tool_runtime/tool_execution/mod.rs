@@ -1,4 +1,3 @@
-mod capability_admit;
 mod capability_search;
 mod code_tools;
 mod context_dispatch;
@@ -11,9 +10,6 @@ mod skill_tools;
 mod tool_call_processor;
 mod tool_dispatch;
 
-pub(super) use capability_admit::{
-    handle_attach_capability_tool, handle_detach_capability_tool, LocalCapabilityTransition,
-};
 pub(super) use capability_search::execute_search_sdk_tool;
 pub(super) use code_tools::{execute_code_plan_tool, execute_local_code_snippet_tool};
 pub(super) use context_dispatch::{

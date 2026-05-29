@@ -35,7 +35,6 @@ pub(crate) use assistant_persistence::{
     mark_local_assistant_postprocess_completed, persist_local_assistant_turn,
 };
 pub(crate) use capability_contract::CapabilityExecutionContract;
-pub(crate) use capability_discovery::project_capability_search_result_transition_blocks;
 #[cfg(test)]
 pub(crate) use chat_completion::normalize_chat_completion_response;
 pub(crate) use chat_completion::{
