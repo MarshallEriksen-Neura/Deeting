@@ -66,7 +66,7 @@ pub struct LocalExecutionPolicy {
     pub inject_execution_protocol: bool,
     pub allow_worker_delegation: bool,
     pub prefer_workflow_runtime: bool,
-    pub require_diting_think_preflight: bool,
+    pub require_world_model_update: bool,
     pub capability_snapshot: Option<Value>,
 }
 
@@ -106,8 +106,8 @@ impl<'de> Deserialize<'de> for LocalExecutionPolicy {
             .get("prefer_workflow_runtime")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        let require_diting_think_preflight = object
-            .get("require_diting_think_preflight")
+        let require_world_model_update = object
+            .get("require_world_model_update")
             .and_then(Value::as_bool)
             .unwrap_or(false);
         let capability_snapshot = object
@@ -121,7 +121,7 @@ impl<'de> Deserialize<'de> for LocalExecutionPolicy {
             inject_execution_protocol,
             allow_worker_delegation,
             prefer_workflow_runtime,
-            require_diting_think_preflight,
+            require_world_model_update,
             capability_snapshot,
         })
     }
@@ -195,7 +195,7 @@ pub fn build_default_local_execution_policy() -> LocalExecutionPolicy {
         inject_execution_protocol: false,
         allow_worker_delegation: false,
         prefer_workflow_runtime: false,
-        require_diting_think_preflight: false,
+        require_world_model_update: false,
         capability_snapshot: None,
     }
 }
@@ -238,7 +238,7 @@ pub fn build_local_execution_policy_status_meta(policy: &LocalExecutionPolicy) -
         "inject_execution_protocol": policy.inject_execution_protocol,
         "allow_worker_delegation": policy.allow_worker_delegation,
         "prefer_workflow_runtime": policy.prefer_workflow_runtime,
-        "require_diting_think_preflight": policy.require_diting_think_preflight,
+        "require_world_model_update": policy.require_world_model_update,
         "has_capability_snapshot": policy.capability_snapshot.is_some(),
     })
 }
@@ -447,7 +447,7 @@ mod tests {
             inject_execution_protocol: true,
             allow_worker_delegation: true,
             prefer_workflow_runtime: false,
-            require_diting_think_preflight: false,
+            require_world_model_update: false,
             capability_snapshot: None,
         };
 

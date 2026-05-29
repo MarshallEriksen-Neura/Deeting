@@ -24,9 +24,7 @@ pub(super) use delegated_task::execute_delegate_task_tool;
 pub(super) use execution_support::{consult_task_policy_guidance, execute_code_mode_request};
 pub(super) use onboarding_tools::execute_sys_submit_onboarding_request_tool;
 pub(super) use policy_tools::execute_query_task_policy_tool;
-pub(super) use preflight_tools::{
-    build_diting_think_tool_result, build_policy_blocked_tool_result,
-};
+pub(super) use preflight_tools::build_policy_blocked_tool_result;
 pub(super) use skill_tools::{
     execute_activate_skill_tool, execute_read_skill_resource_tool, execute_refresh_skill_index_tool,
 };

@@ -5,10 +5,11 @@ pub(super) mod phase_step;
 use self::components::phase_executor_impl::{shared_phase_outcome, DeetingRealPhaseExecutor};
 use self::components::policy_hook_adapters::build_deeting_policy_hook_registry;
 use self::components::runtime_components::{
-    apply_diting_think_extract_to_frame, task_id_from_request, user_input_from_request,
-    DeetingBootstrapPrompt, DeetingFrameArtifactGenerator, DeetingInterruptionChannel,
-    DeetingPhaseProposalGenerator, DeetingRuntimeEventStore, DeetingTier2Validator,
+    task_id_from_request, user_input_from_request, DeetingBootstrapPrompt,
+    DeetingFrameArtifactGenerator, DeetingInterruptionChannel, DeetingPhaseProposalGenerator,
+    DeetingRuntimeEventStore, DeetingTier2Validator,
 };
+use crate::modules::desktop_runtime::runtime::chat_tool_runtime::apply_world_model_update_to_frame;
 use self::phase_step::{
     initial_phase_step_for_policy, phase_step_for_observable_frame_strategy, phase_step_type_name,
 };
@@ -199,9 +200,9 @@ fn attach_runtime_result_to_outcome(
     frame_resolved_payload: &Value,
 ) {
     let committed_phases = result.plan.committed_phases.clone();
-    let frame = apply_diting_think_extract_to_frame(
+    let frame = apply_world_model_update_to_frame(
         result.frame.clone(),
-        outcome.captured_frame_extract.as_ref(),
+        outcome.captured_world_model_update.as_ref(),
     );
     let summary = json!({
         "frame_version_id": frame.frame_version_id.clone(),
@@ -588,7 +589,7 @@ mod tests {
             inject_execution_protocol: worker_delegation,
             allow_worker_delegation: worker_delegation,
             prefer_workflow_runtime: false,
-            require_diting_think_preflight: false,
+            require_world_model_update: false,
             capability_snapshot: None,
         }
     }
@@ -867,7 +868,7 @@ mod tests {
                 "metadata": {}
             }),
             response_json: json!({"content":"done"}),
-            captured_frame_extract: None,
+            captured_world_model_update: None,
             world_model_frame: None,
         };
 

@@ -20,7 +20,7 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn persisted
         reasoning_effort: suspended.reasoning_effort.clone(),
         active_capability: suspended.active_capability.clone(),
         active_skill_context: suspended.active_skill_context.clone(),
-        captured_frame_extract: suspended.captured_frame_extract.clone(),
+        captured_world_model_update: suspended.captured_world_model_update.clone(),
         runtime_metrics: suspended.runtime_metrics.clone(),
         last_capability_snapshot: suspended.last_capability_snapshot.clone(),
         terminal_context: suspended.terminal_context.clone(),

@@ -103,7 +103,7 @@ pub(crate) enum HookDecision {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum RequiredArtifact {
-    DitingThinkPreflight,
+    
     PlanDraft,
     PlanRevision,
     VerificationPlan,
@@ -177,7 +177,7 @@ mod tests {
     #[test]
     fn hook_decision_serialization_payload_is_stable() {
         let decision = HookDecision::RequireArtifact {
-            artifact: RequiredArtifact::DitingThinkPreflight,
+            artifact: RequiredArtifact::WorldModelFrameRefresh,
             reason: "tool proposal crosses execution boundary".to_string(),
             enforcement: HookEnforcementMode::Enforced,
         };
@@ -186,7 +186,7 @@ mod tests {
             serde_json::to_value(&decision).expect("decision json"),
             json!({
                 "require_artifact": {
-                    "artifact": "diting_think_preflight",
+                    "artifact": "world_model_frame_refresh",
                     "reason": "tool proposal crosses execution boundary",
                     "enforcement": "enforced"
                 }

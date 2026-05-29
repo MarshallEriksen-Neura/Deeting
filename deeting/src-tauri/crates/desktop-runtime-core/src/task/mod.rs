@@ -117,7 +117,6 @@ pub struct FrameRefreshRequest {
 pub enum FrameRefreshArtifact {
     WorldModelFrameRefresh,
     WorldModelFrameRevision,
-    DitingThinkPreflight,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

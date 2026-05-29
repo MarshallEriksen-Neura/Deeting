@@ -28,9 +28,7 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn runtime_s
         workflow_context: context.workflow_context,
         last_response: context.last_response,
         runtime_transition_blocks: Vec::new(),
-        diting_think_consumed: false,
-        captured_reasoning: None,
-        captured_frame_extract: context.captured_frame_extract,
+        captured_world_model_update: context.captured_world_model_update,
         realtime_emitter: LocalRealtimeToolTraceEmitter::new(None, None, None),
         selected_knowledge_file_ids: context.selected_knowledge_file_ids,
     }

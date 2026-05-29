@@ -24,7 +24,7 @@ pub(crate) fn build_persisted_chat_runtime_context_from_execution_request(
         reasoning_effort: request.reasoning_effort.clone(),
         active_capability: None,
         active_skill_context: None,
-        captured_frame_extract: None,
+        captured_world_model_update: None,
         runtime_metrics: Default::default(),
         last_capability_snapshot: request.execution_policy.capability_snapshot.clone(),
         terminal_context: request.terminal_context.clone(),

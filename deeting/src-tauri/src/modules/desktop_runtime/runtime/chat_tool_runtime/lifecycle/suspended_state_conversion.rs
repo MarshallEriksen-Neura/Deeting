@@ -29,9 +29,7 @@ impl SuspendedChatToolExecution {
             workflow_context: self.workflow_context,
             last_response: self.last_response,
             runtime_transition_blocks: Vec::new(),
-            diting_think_consumed: false,
-            captured_reasoning: None,
-            captured_frame_extract: self.captured_frame_extract,
+            captured_world_model_update: self.captured_world_model_update,
             realtime_emitter: LocalRealtimeToolTraceEmitter::new(
                 None,
                 Some(self.trace_id.as_str()),

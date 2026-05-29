@@ -1243,7 +1243,7 @@ mod tests {
                     "transition_id": "runtime-transition:call-1",
                     "trace_id": "trace-1",
                     "request_id": "request-1",
-                    "required_artifact": "diting_think_preflight",
+                    "required_artifact": "world_model_frame_refresh",
                     "enforcement": "enforced"
                 }
             }],

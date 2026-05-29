@@ -682,7 +682,7 @@ mod tests {
             inject_execution_protocol: worker,
             allow_worker_delegation: worker,
             prefer_workflow_runtime: false,
-            require_diting_think_preflight: false,
+            require_world_model_update: false,
             capability_snapshot: None,
         }
     }

@@ -1,4 +1,4 @@
-use super::super::frame_tools::DitingThinkExtract;
+use super::super::frame_tools::WorldModelUpdate;
 use super::super::runtime_metrics::RuntimeMetricsAccumulator;
 use super::PersistedPendingApproval;
 use crate::modules::desktop_runtime::runtime::{
@@ -34,8 +34,8 @@ pub(crate) struct SuspendedChatToolExecution {
         Option<LocalCapabilityActivationState>,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) active_skill_context:
         Option<ActiveSkillContextState>,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) captured_frame_extract:
-        Option<DitingThinkExtract>,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) captured_world_model_update:
+        Option<WorldModelUpdate>,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) runtime_metrics:
         RuntimeMetricsAccumulator,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) last_capability_snapshot:

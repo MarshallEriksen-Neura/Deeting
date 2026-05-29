@@ -167,7 +167,7 @@ pub struct WorldModelFrame {
     #[serde(default)]
     pub model_turn_count: ModelTurnCount,
     #[serde(default)]
-    pub last_diting_think_turn: Option<ModelTurnCount>,
+    pub last_world_model_update_turn: Option<ModelTurnCount>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proposed_next_phase: Option<serde_json::Value>,
 }
@@ -203,7 +203,7 @@ impl WorldModelFrame {
             next_sequence: 0,
             last_seen_by_model: 0,
             model_turn_count: 0,
-            last_diting_think_turn: None,
+            last_world_model_update_turn: None,
             proposed_next_phase: None,
         }
     }
@@ -218,13 +218,13 @@ impl WorldModelFrame {
         self.model_turn_count = self.model_turn_count.saturating_add(1);
     }
 
-    pub fn mark_diting_think_seen(&mut self) {
-        self.last_diting_think_turn = Some(self.model_turn_count);
+    pub fn mark_world_model_update_seen(&mut self) {
+        self.last_world_model_update_turn = Some(self.model_turn_count);
     }
 
-    pub fn turns_since_last_diting_think(&self) -> ModelTurnCount {
+    pub fn turns_since_last_world_model_update(&self) -> ModelTurnCount {
         self.model_turn_count
-            .saturating_sub(self.last_diting_think_turn.unwrap_or(0))
+            .saturating_sub(self.last_world_model_update_turn.unwrap_or(0))
     }
 
     pub fn max_sequence(&self) -> SequenceNumber {
@@ -475,10 +475,10 @@ mod tests {
         frame.mark_seen();
         assert_eq!(frame.last_seen_by_model, 1);
         assert_eq!(frame.model_turn_count, 1);
-        assert_eq!(frame.turns_since_last_diting_think(), 1);
+        assert_eq!(frame.turns_since_last_world_model_update(), 1);
 
-        frame.mark_diting_think_seen();
-        assert_eq!(frame.last_diting_think_turn, Some(1));
-        assert_eq!(frame.turns_since_last_diting_think(), 0);
+        frame.mark_world_model_update_seen();
+        assert_eq!(frame.last_world_model_update_turn, Some(1));
+        assert_eq!(frame.turns_since_last_world_model_update(), 0);
     }
 }

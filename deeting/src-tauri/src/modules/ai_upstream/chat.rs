@@ -336,6 +336,62 @@ pub(crate) async fn request_provider_chat_completion(
     trace_id: Option<&str>,
     _session_id: Option<&str>,
 ) -> Result<serde_json::Value, String> {
+    request_provider_chat_completion_inner(
+        app_state,
+        provider_model_id,
+        model_id,
+        messages,
+        tools,
+        temperature,
+        max_tokens,
+        reasoning,
+        trace_id,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn request_provider_chat_json_object(
+    app_state: &AppState,
+    provider_model_id: &str,
+    model_id: &str,
+    messages: Vec<LocalChatInputMessage>,
+    temperature: Option<f32>,
+    max_tokens: Option<u32>,
+    reasoning: ReasoningRequestConfig,
+    trace_id: Option<&str>,
+    _session_id: Option<&str>,
+) -> Result<serde_json::Value, String> {
+    let response = request_provider_chat_completion_inner(
+        app_state,
+        provider_model_id,
+        model_id,
+        messages,
+        None,
+        temperature,
+        max_tokens,
+        reasoning,
+        trace_id,
+        Some(serde_json::json!({ "type": "json_object" })),
+    )
+    .await?;
+    parse_normalized_json_object_response(&response).ok_or_else(|| {
+        "provider did not return a structured JSON object response".to_string()
+    })
+}
+
+async fn request_provider_chat_completion_inner(
+    app_state: &AppState,
+    provider_model_id: &str,
+    model_id: &str,
+    messages: Vec<LocalChatInputMessage>,
+    tools: Option<serde_json::Value>,
+    temperature: Option<f32>,
+    max_tokens: Option<u32>,
+    reasoning: ReasoningRequestConfig,
+    trace_id: Option<&str>,
+    response_format: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
     let provider_model_uuid = Uuid::parse_str(provider_model_id).map_err(to_string)?;
     let model = app_state
         .providers
@@ -395,7 +451,7 @@ pub(crate) async fn request_provider_chat_completion(
         reasoning.effort,
     );
     let body = build_chat_request_data_from_canonical_request(&canonical_request);
-    let prepared = prepare_provider_request_from_canonical_request(
+    let mut prepared = prepare_provider_request_from_canonical_request(
         preset.as_ref(),
         &instance,
         &model,
@@ -406,6 +462,11 @@ pub(crate) async fn request_provider_chat_completion(
         tools.as_ref(),
         trace_id,
     )?;
+    if let Some(response_format) = response_format {
+        if let Some(body) = prepared.body.as_object_mut() {
+            body.insert("response_format".to_string(), response_format);
+        }
+    }
     let upstream_request_meta = serde_json::json!({
         "method": prepared.method,
         "url": prepared.display_url(),
@@ -567,6 +628,22 @@ pub(crate) async fn request_provider_chat_completion(
     let mut normalized = normalize_chat_completion_response(transformed);
     inject_runtime_metrics(&mut normalized, latency_ms as i64, ttft_ms, retry_count + 1);
     Ok(normalized)
+}
+
+fn parse_normalized_json_object_response(response: &serde_json::Value) -> Option<serde_json::Value> {
+    if response.is_object()
+        && response.get("content").is_none()
+        && response.get("tool_calls").is_none()
+    {
+        return Some(response.clone());
+    }
+    let content = response.get("content")?.as_str()?.trim();
+    if content.is_empty() {
+        return None;
+    }
+    serde_json::from_str::<serde_json::Value>(content)
+        .ok()
+        .filter(serde_json::Value::is_object)
 }
 
 pub(crate) fn normalize_chat_completion_response(raw: serde_json::Value) -> serde_json::Value {

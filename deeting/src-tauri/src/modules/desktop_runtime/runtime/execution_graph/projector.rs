@@ -633,7 +633,7 @@ mod tests {
                     "request_id": "request-transition",
                     "session_id": "session-1",
                     "source": "provider_response",
-                    "required_artifact": "diting_think_preflight",
+                    "required_artifact": "world_model_frame_refresh",
                     "enforcement": "enforced"
                 }
             })],
@@ -655,7 +655,7 @@ mod tests {
         assert_eq!(event.payload["request_id"], json!("request-transition"));
         assert_eq!(
             event.payload["required_artifact"],
-            json!("diting_think_preflight")
+            json!("world_model_frame_refresh")
         );
         assert_eq!(event.payload["enforcement"], json!("enforced"));
 

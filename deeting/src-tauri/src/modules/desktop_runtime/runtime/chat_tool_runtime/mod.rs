@@ -32,8 +32,8 @@ pub(crate) use approval_commands::{
     dispatch_local_chat_execution_run_command, ExecutionRunCommand,
 };
 pub(crate) use frame_tools::{
-    inject_diting_think_tool, parse_diting_think_arguments, DitingThinkExtract,
-    ProposedPhase, DITING_THINK_TOOL_NAME,
+    apply_world_model_update_to_frame, extract_world_model_update_from_response,
+    ProposedPhase, WorldModelUpdate, WORLD_MODEL_UPDATE_END_TAG, WORLD_MODEL_UPDATE_START_TAG,
 };
 use lifecycle::finalize_tool_round;
 #[cfg(test)]
@@ -69,8 +69,7 @@ use runtime_metrics::RuntimeMetricsAccumulator;
 #[cfg(test)]
 use runtime_state::classify_local_tool_execution_error_code;
 use runtime_state::{
-    backfill_captured_reasoning, build_max_rounds_exceeded_response,
-    clone_runtime_state_for_tool_execution, extract_initial_task_query,
+    build_max_rounds_exceeded_response, clone_runtime_state_for_tool_execution, extract_initial_task_query,
     resolve_child_agent_max_rounds, rewind_round_for_post_approval_continuation,
     LocalChatCompleteWithToolsOutput, LocalChatToolRuntimeOutput, LocalChatToolRuntimeState,
     LocalToolCallProcessingOutcome,
@@ -299,30 +298,6 @@ fn attach_runtime_transition_events(
     attach_runtime_transition_blocks_to_response(response, runtime_transition_blocks)
 }
 
-fn attach_diting_think_frame_extract(
-    mut response: serde_json::Value,
-    extract: Option<&DitingThinkExtract>,
-) -> serde_json::Value {
-    let Some(extract) = extract else {
-        return response;
-    };
-    if let Some(object) = response.as_object_mut() {
-        object.insert(
-            "diting_think_frame_extract".to_string(),
-            serde_json::to_value(extract).unwrap_or(serde_json::Value::Null),
-        );
-    }
-    response
-}
-
-fn should_inject_diting_think_tool(
-    round: usize,
-    diting_think_consumed: bool,
-    execution_policy: &LocalExecutionPolicy,
-) -> bool {
-    round == 1 && !diting_think_consumed && execution_policy.require_diting_think_preflight
-}
-
 fn messages_with_world_model_snapshot(
     messages: &[LocalChatInputMessage],
     frame: Option<&desktop_runtime_core::WorldModelFrame>,
@@ -367,22 +342,18 @@ fn render_world_model_runtime_context(
         "historical_runtime_evidence: observation_only".to_string(),
         "phase_dispatch_owner: committed_or_proposed_phase_step".to_string(),
     ];
-    if execution_policy.require_diting_think_preflight {
-        obligations.push(
-            "diting_think: preflight obligation is active; call diting_think if you need to restate beliefs, assumptions, strategy, or verification targets before committing."
-                .to_string(),
-        );
+    let mode_hint = if execution_policy.require_world_model_update {
+        "full"
     } else if frame.max_sequence() > frame.last_seen_by_model {
-        obligations.push(
-            "diting_think: new frame delta is visible; call diting_think only when the delta changes beliefs, assumptions, strategy, or verification targets."
-                .to_string(),
-        );
+        "delta"
     } else {
-        obligations.push(
-            "diting_think: available for metacognition; no separate bootstrap request is required."
-                .to_string(),
-        );
-    }
+        "delta"
+    };
+    obligations.push(format!(
+        "world_model_update: every assistant response must end with {start} JSON {end}; mode={mode_hint}; include facts, assumptions, resolved_unknowns, new_unknowns, verification_targets, rules, execution_strategy only when revised, and proposed_next_phase only when ready.",
+        start = WORLD_MODEL_UPDATE_START_TAG,
+        end = WORLD_MODEL_UPDATE_END_TAG,
+    ));
 
     format!("[RUNTIME CONTEXT]\n{}", obligations.join("\n"))
 }
@@ -460,9 +431,7 @@ pub(crate) async fn run_local_chat_complete_with_tools(
         reasoning_effort,
         active_capability: None,
         active_skill_context: None,
-        diting_think_consumed: false,
-        captured_reasoning: None,
-        captured_frame_extract: None,
+        captured_world_model_update: None,
         runtime_metrics: RuntimeMetricsAccumulator::default(),
         last_capability_snapshot: execution_policy.capability_snapshot.clone(),
         terminal_context,
@@ -478,16 +447,9 @@ pub(crate) async fn run_local_chat_complete_with_tools(
     };
     continue_local_chat_complete_with_tools(app, app_state, state)
         .await
-        .map(|mut output| {
-            backfill_captured_reasoning(&mut output.response, output.captured_reasoning.as_deref());
-            let response_json = attach_diting_think_frame_extract(
-                output.response,
-                output.captured_frame_extract.as_ref(),
-            );
-            LocalChatCompleteWithToolsOutput {
-                response_json,
-                world_model_frame: output.world_model_frame,
-            }
+        .map(|output| LocalChatCompleteWithToolsOutput {
+            response_json: output.response,
+            world_model_frame: output.world_model_frame,
         })
 }
 
@@ -510,8 +472,7 @@ async fn continue_local_chat_complete_with_tools(
             let effective_tool_call_meta = build_state_effective_tool_call_meta(&state);
             let fallback = build_max_rounds_exceeded_response(&state);
             return Ok(LocalChatToolRuntimeOutput {
-                captured_reasoning: state.captured_reasoning.clone(),
-                captured_frame_extract: state.captured_frame_extract.clone(),
+                captured_world_model_update: state.captured_world_model_update.clone(),
                 world_model_frame: state.world_model_frame.clone(),
                 response: enrich_response_with_tool_trace(
                     fallback,
@@ -529,15 +490,6 @@ async fn continue_local_chat_complete_with_tools(
             &effective_allowed_tool_names,
             state.last_capability_snapshot.as_ref(),
         );
-        let tools = if should_inject_diting_think_tool(
-            state.round,
-            state.diting_think_consumed,
-            &state.execution_policy,
-        ) {
-            inject_diting_think_tool(tools)
-        } else {
-            tools
-        };
         let response = request_provider_chat_completion(
             app_state,
             &provider_model_id,
@@ -559,8 +511,33 @@ async fn continue_local_chat_complete_with_tools(
         )
         .await
         .map_err(to_string)?;
+        let (response, world_model_update) = extract_world_model_update_from_response(response);
+        let world_model_update_applied = world_model_update.is_some();
+        if let Some(update) = world_model_update {
+            if let Some(frame) = state.world_model_frame.take() {
+                state.world_model_frame =
+                    Some(apply_world_model_update_to_frame(frame, Some(&update)));
+            }
+            state.runtime_transition_blocks.push(
+                project_world_model_frame_decision_block(WorldModelFrameProjectionInput {
+                    trace_id: state.trace_id.as_str(),
+                    request_id: state.request_id.as_deref(),
+                    session_id: state.session_id.as_str(),
+                    frame_kind: WorldModelFrameKind::Refresh,
+                    intent: update.intent.as_deref(),
+                    fact_count: update.facts.len(),
+                    assumption_count: update.assumptions.len(),
+                    verification_target_count: update.verification_targets.len(),
+                    rule_count: update.rules.len(),
+                }),
+            );
+            state.captured_world_model_update = Some(update);
+        }
         if let Some(frame) = state.world_model_frame.as_mut() {
             frame.mark_seen();
+            if world_model_update_applied {
+                frame.mark_world_model_update_seen();
+            }
         }
         state.runtime_metrics.observe_response(&response);
 
@@ -584,8 +561,7 @@ async fn continue_local_chat_complete_with_tools(
                 &state.runtime_metrics,
             );
             return Ok(LocalChatToolRuntimeOutput {
-                captured_reasoning: state.captured_reasoning.clone(),
-                captured_frame_extract: state.captured_frame_extract.clone(),
+                captured_world_model_update: state.captured_world_model_update.clone(),
                 world_model_frame: state.world_model_frame.clone(),
                 response: attach_runtime_transition_events(
                     response,
@@ -628,48 +604,16 @@ async fn continue_local_chat_complete_with_tools(
                 results,
                 skill_context_update,
                 runtime_transition_blocks,
-                captured_frame_extract,
+                captured_world_model_update,
             } => {
                 state
                     .runtime_transition_blocks
                     .extend(runtime_transition_blocks);
-                if captured_frame_extract.is_some() {
-                    state.captured_frame_extract = captured_frame_extract;
+                if captured_world_model_update.is_some() {
+                    state.captured_world_model_update = captured_world_model_update;
                 }
                 if let Some(update) = skill_context_update {
                     state.active_skill_context = Some(update);
-                }
-                if let Some(reasoning) = tool_call_meta.iter().find_map(|item| {
-                    if item.get("name").and_then(|v| v.as_str()) == Some(DITING_THINK_TOOL_NAME) {
-                        item.get("reasoning")
-                            .and_then(|v| v.as_str())
-                            .map(str::to_string)
-                    } else {
-                        None
-                    }
-                }) {
-                    state.diting_think_consumed = true;
-                    state.captured_reasoning = Some(reasoning);
-                    if let Some(frame) = state.world_model_frame.as_mut() {
-                        frame.mark_diting_think_seen();
-                    }
-                    if let Some(extract) = state.captured_frame_extract.as_ref() {
-                        state.runtime_transition_blocks.push(
-                            project_world_model_frame_decision_block(
-                                WorldModelFrameProjectionInput {
-                                    trace_id: state.trace_id.as_str(),
-                                    request_id: state.request_id.as_deref(),
-                                    session_id: state.session_id.as_str(),
-                                    frame_kind: WorldModelFrameKind::Refresh,
-                                    intent: extract.intent.as_deref(),
-                                    fact_count: extract.facts.len(),
-                                    assumption_count: extract.assumptions.len(),
-                                    verification_target_count: extract.verification_targets.len(),
-                                    rule_count: extract.rules.len(),
-                                },
-                            ),
-                        );
-                    }
                 }
                 let canonical_tool_call_meta = canonicalize_tool_call_meta_via_graph(
                     &session_id,
@@ -712,8 +656,7 @@ async fn continue_local_chat_complete_with_tools(
                     let mut current_tool_call_meta = build_state_effective_tool_call_meta(&state);
                     current_tool_call_meta.extend(canonical_tool_call_meta.clone());
                     return Ok(LocalChatToolRuntimeOutput {
-                        captured_reasoning: state.captured_reasoning.clone(),
-                        captured_frame_extract: state.captured_frame_extract.clone(),
+                        captured_world_model_update: state.captured_world_model_update.clone(),
                         world_model_frame: state.world_model_frame.clone(),
                         response: attach_runtime_transition_events(
                             enrich_response_with_tool_trace(
@@ -752,13 +695,13 @@ async fn continue_local_chat_complete_with_tools(
                 capability_update,
                 skill_context_update,
                 runtime_transition_blocks,
-                captured_frame_extract,
+                captured_world_model_update,
             } => {
                 state
                     .runtime_transition_blocks
                     .extend(runtime_transition_blocks);
-                if captured_frame_extract.is_some() {
-                    state.captured_frame_extract = captured_frame_extract;
+                if captured_world_model_update.is_some() {
+                    state.captured_world_model_update = captured_world_model_update;
                 }
                 if let Some(update) = skill_context_update {
                     state.active_skill_context = Some(update);
@@ -826,8 +769,7 @@ async fn continue_local_chat_complete_with_tools(
                     "content": last_response_content_or_empty(state.last_response.as_ref()),
                 });
                 return Ok(LocalChatToolRuntimeOutput {
-                    captured_reasoning: state.captured_reasoning.clone(),
-                    captured_frame_extract: state.captured_frame_extract.clone(),
+                    captured_world_model_update: state.captured_world_model_update.clone(),
                     world_model_frame: state.world_model_frame.clone(),
                     response: attach_runtime_transition_events(
                         enrich_response_with_tool_trace(

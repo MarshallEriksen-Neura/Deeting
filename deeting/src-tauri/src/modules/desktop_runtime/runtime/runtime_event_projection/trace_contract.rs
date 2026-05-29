@@ -90,7 +90,7 @@ pub(crate) fn project_runtime_transition_trace_verdicts(
                     .get("payload")
                     .and_then(|payload| payload.get("required_artifact"))
                     .and_then(Value::as_str)
-                    == Some("diting_think_preflight")
+                    == Some("world_model_frame_refresh")
         }) || events.iter().any(|event| {
             event.get("event_type").and_then(Value::as_str)
                 == Some("runtime_transition.correlation")
@@ -238,7 +238,7 @@ fn verify_tool_call_trace(graph: Option<&Value>) -> RuntimeTransitionTraceVerdic
                 .get("payload")
                 .and_then(|payload| payload.get("required_artifact"))
                 .and_then(Value::as_str)
-                == Some("diting_think_preflight")
+                == Some("world_model_frame_refresh")
             && event
                 .get("payload")
                 .and_then(|payload| payload.get("enforcement"))
@@ -246,7 +246,7 @@ fn verify_tool_call_trace(graph: Option<&Value>) -> RuntimeTransitionTraceVerdic
                 == Some("enforced")
     }) {
         missing.push(
-            "tool-call graph must contain an enforced diting_think_preflight transition decision"
+            "tool-call graph must contain an enforced world_model_frame_refresh transition decision"
                 .to_string(),
         );
     }
@@ -401,7 +401,7 @@ mod tests {
                     {
                         "event_type": "runtime_transition.decision",
                         "payload": {
-                            "required_artifact": "diting_think_preflight",
+                            "required_artifact": "world_model_frame_refresh",
                             "enforcement": "enforced"
                         }
                     },
@@ -470,7 +470,7 @@ mod tests {
                     {
                         "event_type": "runtime_transition.decision",
                         "payload": {
-                            "required_artifact": "diting_think_preflight",
+                            "required_artifact": "world_model_frame_refresh",
                             "enforcement": "enforced"
                         }
                     },

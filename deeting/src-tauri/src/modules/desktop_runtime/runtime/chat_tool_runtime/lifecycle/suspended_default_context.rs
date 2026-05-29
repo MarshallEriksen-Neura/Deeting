@@ -33,7 +33,7 @@ pub(super) fn fallback_chat_runtime_context_for_execution_graph(
         reasoning_effort: None,
         active_capability: None,
         active_skill_context: None,
-        captured_frame_extract: None,
+        captured_world_model_update: None,
         runtime_metrics: RuntimeMetricsAccumulator::default(),
         last_capability_snapshot: None,
         terminal_context: None,

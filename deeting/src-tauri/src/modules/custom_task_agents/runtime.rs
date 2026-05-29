@@ -37,7 +37,6 @@ const MAX_CUSTOM_TASK_AGENT_TOOL_ROUNDS: usize =
 const MAX_GUIDANCE_SKILL_DOCS: usize = 3;
 const LLM_WIKI_MAINTAINER_SOURCE_KIND: &str = "llm_wiki_maintainer";
 const LLM_WIKI_SEARCH_CALLABLE_NAME: &str = "llm_wiki_search_corpus";
-const DITING_THINK_CALLABLE_NAME: &str = "diting_think";
 const MAX_MAINTAINER_CORPUS_PREVIEW_SUMMARY_CHARS: usize = 180;
 pub(crate) const IMAGE_AGENT_INPUT_REQUIRED_CODE: &str = "IMAGE_AGENT_INPUT_REQUIRED";
 pub(crate) const IMAGE_AGENT_INPUT_LIMIT_EXCEEDED_CODE: &str = "IMAGE_AGENT_INPUT_LIMIT_EXCEEDED";
@@ -309,9 +308,6 @@ pub(crate) async fn preview_custom_task_agent_with_parent_model(
         .map_err(CustomTaskAgentRuntimeError::from)?;
     let builtin_callables = builtin_callables_for_profile(profile);
     let base_payload = BoundCallablePayload::build(&mcp_tools, &skill_actions, &builtin_callables);
-    let mut round0_builtins = builtin_callables.clone();
-    round0_builtins.push(diting_think_builtin_callable());
-    let round0_payload = BoundCallablePayload::build(&mcp_tools, &skill_actions, &round0_builtins);
     let maintainer_corpus_preview = load_maintainer_corpus_preview(app_state, profile).await;
     let mut messages = build_initial_messages(
         profile,
@@ -321,25 +317,18 @@ pub(crate) async fn preview_custom_task_agent_with_parent_model(
         worker_task_packet.as_ref(),
     );
     let mut tool_trace = Vec::<Value>::new();
-    let mut captured_reasoning: Option<String> = None;
-    let mut diting_think_consumed = false;
     let max_rounds = request
         .max_rounds
         .map(|value| value.max(1) as usize)
         .unwrap_or(MAX_CUSTOM_TASK_AGENT_TOOL_ROUNDS);
 
     for round in 0..max_rounds {
-        let active_payload = if round == 0 && !diting_think_consumed {
-            &round0_payload
-        } else {
-            &base_payload
-        };
         let response = request_provider_chat_completion(
             app_state,
             &model_connection.provider_model_id,
             &model_connection.model_id,
             messages.clone(),
-            active_payload.tool_payload(),
+            base_payload.tool_payload(),
             request.temperature,
             request.max_tokens,
             crate::modules::ai_upstream::ReasoningRequestConfig::default(),
@@ -348,7 +337,7 @@ pub(crate) async fn preview_custom_task_agent_with_parent_model(
         )
         .await
         .map_err(CustomTaskAgentRuntimeError::from)?;
-        let callables = active_payload.parse_tool_calls(&response);
+        let callables = base_payload.parse_tool_calls(&response);
         if callables.is_empty() {
             return Ok(CustomTaskAgentPreviewResponse {
                 status: "completed".to_string(),
@@ -363,8 +352,7 @@ pub(crate) async fn preview_custom_task_agent_with_parent_model(
                 reasoning_content: response
                     .get("reasoning_content")
                     .and_then(|value| value.as_str())
-                    .map(str::to_string)
-                    .or_else(|| captured_reasoning.clone()),
+                    .map(str::to_string),
                 tool_calls: response
                     .get("tool_calls")
                     .and_then(|value| value.as_array())
@@ -479,22 +467,6 @@ pub(crate) async fn preview_custom_task_agent_with_parent_model(
                     continue;
                 }
                 BoundCallableLane::BuiltinAction => {
-                    if callable.name == DITING_THINK_CALLABLE_NAME {
-                        let reasoning = format_diting_think_reasoning(&callable.arguments);
-                        diting_think_consumed = true;
-                        captured_reasoning = Some(reasoning.clone());
-                        let meta = json!({
-                            "id": callable.id,
-                            "name": callable.name,
-                            "lane": "builtin",
-                            "status": "success",
-                            "result": "Deep reasoning complete. Proceed with execution based on your plan.",
-                            "reasoning": reasoning,
-                        });
-                        tool_trace.push(meta.clone());
-                        action_results.push(meta);
-                        continue;
-                    }
                     match execute_builtin_callable(app_state, &callable.name, &callable.arguments)
                         .await
                     {
@@ -850,73 +822,6 @@ async fn load_guidance_skill_docs(
         }
     }
     Ok(sections.join("\n\n"))
-}
-
-fn diting_think_builtin_callable() -> BuiltinCallableDefinition {
-    BuiltinCallableDefinition {
-        callable_name: DITING_THINK_CALLABLE_NAME.to_string(),
-        description: "Structured deep-reasoning tool. Call this ONCE before executing any other tool when the task involves multi-step execution, ambiguous intent, or coordination across multiple capabilities. Analyze the user intent against the currently available tools and context, then output a concrete execution plan. Do NOT call this for trivial single-tool tasks.".to_string(),
-        parameters: json!({
-            "type": "object",
-            "properties": {
-                "intent": {
-                    "type": "string",
-                    "description": "One-sentence summary of the user's core intent."
-                },
-                "context_assessment": {
-                    "type": "string",
-                    "description": "Relevant context already available: injected memories, prior conversation state, discovered capabilities."
-                },
-                "tool_plan": {
-                    "type": "string",
-                    "description": "Which tools to call, in what order, with what arguments. Be specific."
-                },
-                "constraints": {
-                    "type": "string",
-                    "description": "Key risks, edge cases, permission boundaries, or scope limits."
-                }
-            },
-            "required": ["intent", "tool_plan"]
-        }),
-        lane: BoundCallableLane::BuiltinAction,
-    }
-}
-
-fn format_diting_think_reasoning(arguments: &Value) -> String {
-    let mut parts = Vec::new();
-    if let Some(intent) = arguments
-        .get("intent")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-    {
-        parts.push(format!("[意图] {}", intent));
-    }
-    if let Some(context) = arguments
-        .get("context_assessment")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-    {
-        parts.push(format!("[上下文] {}", context));
-    }
-    if let Some(plan) = arguments
-        .get("tool_plan")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-    {
-        parts.push(format!("[执行计划] {}", plan));
-    }
-    if let Some(constraints) = arguments
-        .get("constraints")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-    {
-        parts.push(format!("[约束] {}", constraints));
-    }
-    parts.join("\n")
 }
 
 fn builtin_callables_for_profile(

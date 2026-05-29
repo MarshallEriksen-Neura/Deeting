@@ -640,49 +640,6 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
             }),
         },
         CoreToolContract {
-            name: "diting_think",
-            description: "Structured deep-reasoning tool. Call this ONCE before executing any other tool when the task involves multi-step execution, ambiguous intent, or coordination across multiple capabilities. Analyze the user intent against the currently available tools and context, then output a concrete execution plan. Do NOT call this for trivial single-tool tasks. This tool is only available in the first round and disappears afterward.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "intent": {
-                        "type": "string",
-                        "description": "One-sentence summary of the user's core intent."
-                    },
-                    "context_assessment": {
-                        "type": "string",
-                        "description": "Relevant context already available: injected memories, prior conversation state, discovered capabilities. What do you already know that matters?"
-                    },
-                    "tool_plan": {
-                        "type": "string",
-                        "description": "Which tools to call, in what order, with what arguments. Be specific — name exact tools and justify the sequence."
-                    },
-                    "constraints": {
-                        "type": "string",
-                        "description": "Key risks, edge cases, permission boundaries, or scope limits that could derail execution."
-                    }
-                },
-                "required": ["intent", "tool_plan"]
-            }),
-            output_schema: json!({
-                "type": "object",
-                "properties": {
-                    "status": {"type": "string"},
-                    "reasoning": {"type": "string"}
-                },
-                "required": ["status", "reasoning"]
-            }),
-            permission_scope: &["local_reasoning"],
-            read_only: true,
-            mutating: false,
-            risk_level: "NONE",
-            example_arguments: json!({
-                "intent": "User wants to search the web for recent news and summarize findings",
-                "tool_plan": "1. search_sdk to find web search capability, 2. attach_capability, 3. execute the web search tool with user query",
-                "constraints": "Network access required; user did not specify language preference"
-            }),
-        },
-        CoreToolContract {
             name: "get_tool_schema",
             description: "Return the full callable contract for a selected direct tool, including input schema, typed parameter docs, example arguments, and risk metadata. Use this after search_sdk summary results when you need exact invocation details for one chosen tool.",
             input_schema: json!({

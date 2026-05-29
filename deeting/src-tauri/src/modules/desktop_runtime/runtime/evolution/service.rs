@@ -410,7 +410,7 @@ mod tests {
             "session_id": "sess-1",
             "request_id": serde_json::Value::Null,
             "transition_id": "runtime-transition:call-1",
-            "required_artifact": "diting_think_preflight",
+            "required_artifact": "world_model_frame_refresh",
             "hook_decision_id": "hook-decision:runtime-transition:call-1",
             "enforcement": "enforced",
         });
@@ -423,7 +423,7 @@ mod tests {
         assert!(payload.get("task_query").is_some());
         assert_eq!(
             payload["required_artifact"],
-            json!("diting_think_preflight")
+            json!("world_model_frame_refresh")
         );
         assert_eq!(payload["enforcement"], json!("enforced"));
     }

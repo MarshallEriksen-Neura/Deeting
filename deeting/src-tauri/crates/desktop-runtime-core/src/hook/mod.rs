@@ -176,7 +176,6 @@ impl HookDecision {
 pub enum RequiredArtifact {
     WorldModelFrameRefresh,
     WorldModelFrameRevision,
-    DitingThinkPreflight,
     PlanDraft,
     PlanRevision,
     VerificationPlan,
@@ -187,9 +186,9 @@ pub enum RequiredArtifact {
 impl RequiredArtifact {
     pub const fn decision_rank(self) -> HookDecisionRank {
         match self {
-            Self::WorldModelFrameRefresh
-            | Self::WorldModelFrameRevision
-            | Self::DitingThinkPreflight => HookDecisionRank::RequireFrameArtifact,
+            Self::WorldModelFrameRefresh | Self::WorldModelFrameRevision => {
+                HookDecisionRank::RequireFrameArtifact
+            }
             Self::PlanDraft | Self::PlanRevision | Self::VerificationPlan => {
                 HookDecisionRank::RequirePlanArtifact
             }
@@ -387,11 +386,11 @@ impl Hook for FrameFreshnessHook {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct DitingThinkPreflightHook;
+pub struct WorldModelUpdateHook;
 
-const DITING_THINK_PREFLIGHT_INTERESTS: [HookEventInterest; 1] =
+const WORLD_MODEL_UPDATE_INTERESTS: [HookEventInterest; 1] =
     [HookEventInterest::ProposePhaseExecution];
-const DITING_THINK_SAFETY_NET_N: usize = 10;
+const WORLD_MODEL_UPDATE_SAFETY_NET_N: usize = 10;
 
 const fn r2_thresholds(strategy: ExecutionStrategy) -> (usize, usize) {
     match strategy {
@@ -401,13 +400,13 @@ const fn r2_thresholds(strategy: ExecutionStrategy) -> (usize, usize) {
     }
 }
 
-impl Hook for DitingThinkPreflightHook {
+impl Hook for WorldModelUpdateHook {
     fn name(&self) -> &'static str {
-        "diting_think_preflight"
+        "world_model_frame_refresh"
     }
 
     fn interests(&self) -> &[HookEventInterest] {
-        &DITING_THINK_PREFLIGHT_INTERESTS
+        &WORLD_MODEL_UPDATE_INTERESTS
     }
 
     fn evaluate(&self, event: &HookEvent, state: &RuntimeStateView) -> HookDecision {
@@ -416,7 +415,7 @@ impl Hook for DitingThinkPreflightHook {
             HookEvent::CommitBoundary(CommitBoundary::ProposePhaseExecution { .. })
         ) {
             return HookDecision::Allow {
-                reason: "diting think hook ignored unrelated event".to_string(),
+                reason: "world model update hook ignored unrelated event".to_string(),
             };
         }
 
@@ -428,7 +427,7 @@ impl Hook for DitingThinkPreflightHook {
             .filter(|directive| directive.appended_at > highwater)
             .count();
         if new_directives > 0 {
-            return require_diting_think_preflight(format!(
+            return require_world_model_refresh(format!(
                 "R1: new user directive(s) since last model turn ({new_directives})"
             ));
         }
@@ -445,28 +444,28 @@ impl Hook for DitingThinkPreflightHook {
             .count();
         let (obs_threshold, commit_threshold) = r2_thresholds(frame.execution_strategy);
         if new_observations >= obs_threshold || new_commits >= commit_threshold {
-            return require_diting_think_preflight(format!(
+            return require_world_model_refresh(format!(
                 "R2: world changes accumulated (obs={new_observations}/{obs_threshold}, commits={new_commits}/{commit_threshold})"
             ));
         }
 
-        if frame.turns_since_last_diting_think() >= DITING_THINK_SAFETY_NET_N as u64 {
-            return require_diting_think_preflight(format!(
+        if frame.turns_since_last_world_model_update() >= WORLD_MODEL_UPDATE_SAFETY_NET_N as u64 {
+            return require_world_model_refresh(format!(
                 "R3: safety net {}-turn refresh",
-                DITING_THINK_SAFETY_NET_N
+                WORLD_MODEL_UPDATE_SAFETY_NET_N
             ));
         }
 
         HookDecision::Allow {
-            reason: "no diting think trigger condition met; model may call diting_think on its own"
+            reason: "no world model update trigger condition met; inline update may refresh naturally"
                 .to_string(),
         }
     }
 }
 
-fn require_diting_think_preflight(reason: String) -> HookDecision {
+fn require_world_model_refresh(reason: String) -> HookDecision {
     HookDecision::RequireArtifact {
-        artifact: RequiredArtifact::DitingThinkPreflight,
+        artifact: RequiredArtifact::WorldModelFrameRefresh,
         reason,
         enforcement: HookEnforcementMode::Enforced,
     }
@@ -809,9 +808,9 @@ mod tests {
     }
 
     #[test]
-    fn diting_think_preflight_hook_triggers_for_new_user_directive() {
+    fn world_model_update_hook_triggers_for_new_user_directive() {
         let mut registry = HookRegistry::new();
-        registry.register(DitingThinkPreflightHook);
+        registry.register(WorldModelUpdateHook);
         let mut current_frame = frame(ExecutionStrategy::DirectIteration);
         current_frame
             .append_user_directive("change the task", None)
@@ -829,7 +828,7 @@ mod tests {
         assert!(matches!(
             registry.evaluate(&event, &state),
             HookDecision::RequireArtifact {
-                artifact: RequiredArtifact::DitingThinkPreflight,
+                artifact: RequiredArtifact::WorldModelFrameRefresh,
                 enforcement: HookEnforcementMode::Enforced,
                 ..
             }
@@ -837,9 +836,9 @@ mod tests {
     }
 
     #[test]
-    fn diting_think_preflight_hook_r2_respects_strategy_thresholds() {
+    fn world_model_update_hook_r2_respects_strategy_thresholds() {
         let mut registry = HookRegistry::new();
-        registry.register(DitingThinkPreflightHook);
+        registry.register(WorldModelUpdateHook);
         let event = HookEvent::CommitBoundary(CommitBoundary::ProposePhaseExecution {
             phase_id: "phase-1".to_string(),
         });
@@ -892,7 +891,7 @@ mod tests {
         assert!(matches!(
             registry.evaluate(&event, &direct_state_5),
             HookDecision::RequireArtifact {
-                artifact: RequiredArtifact::DitingThinkPreflight,
+                artifact: RequiredArtifact::WorldModelFrameRefresh,
                 ..
             }
         ));
@@ -920,7 +919,7 @@ mod tests {
         assert!(matches!(
             registry.evaluate(&event, &delegated_state),
             HookDecision::RequireArtifact {
-                artifact: RequiredArtifact::DitingThinkPreflight,
+                artifact: RequiredArtifact::WorldModelFrameRefresh,
                 ..
             }
         ));
@@ -953,16 +952,16 @@ mod tests {
         assert!(matches!(
             registry.evaluate(&event, &delegated_commit_state),
             HookDecision::RequireArtifact {
-                artifact: RequiredArtifact::DitingThinkPreflight,
+                artifact: RequiredArtifact::WorldModelFrameRefresh,
                 ..
             }
         ));
     }
 
     #[test]
-    fn diting_think_preflight_hook_allows_when_highwater_caught_up() {
+    fn world_model_update_hook_allows_when_highwater_caught_up() {
         let mut registry = HookRegistry::new();
-        registry.register(DitingThinkPreflightHook);
+        registry.register(WorldModelUpdateHook);
         let mut current_frame = frame(ExecutionStrategy::Hybrid);
         current_frame
             .append_user_directive("already shown", None)
@@ -984,9 +983,9 @@ mod tests {
     }
 
     #[test]
-    fn diting_think_preflight_hook_triggers_safety_net() {
+    fn world_model_update_hook_triggers_safety_net() {
         let mut registry = HookRegistry::new();
-        registry.register(DitingThinkPreflightHook);
+        registry.register(WorldModelUpdateHook);
         let mut current_frame = frame(ExecutionStrategy::DirectIteration);
         current_frame.model_turn_count = 10;
         let event = HookEvent::CommitBoundary(CommitBoundary::ProposePhaseExecution {
@@ -1001,7 +1000,7 @@ mod tests {
         assert!(matches!(
             registry.evaluate(&event, &state),
             HookDecision::RequireArtifact {
-                artifact: RequiredArtifact::DitingThinkPreflight,
+                artifact: RequiredArtifact::WorldModelFrameRefresh,
                 ..
             }
         ));

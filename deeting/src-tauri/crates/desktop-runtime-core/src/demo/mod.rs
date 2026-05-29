@@ -65,12 +65,12 @@ impl FrameArtifactGenerator for DemoFrameArtifactGenerator {
         refreshed.provenance = FrameProvenance::bootstrap(request.reason.clone());
         if matches!(
             request.artifact,
-            Some(FrameRefreshArtifact::DitingThinkPreflight)
+            Some(FrameRefreshArtifact::WorldModelFrameRefresh)
         ) {
             refreshed.known_facts.push(Fact {
-                id: "demo-diting-fact".to_string(),
-                statement: "demo diting preflight completed".to_string(),
-                source: "diting_think".to_string(),
+                id: "demo-wm-fact".to_string(),
+                statement: "demo world model refresh completed".to_string(),
+                source: "world_model_update".to_string(),
             });
         }
         Ok(refreshed)

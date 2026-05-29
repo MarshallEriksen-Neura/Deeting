@@ -4,7 +4,7 @@ use super::execution_graph_projection::ExecutionGraphContext;
 use super::DelegatedExecutionSession;
 use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::modules::custom_task_agents::types::CustomTaskAgentProfile;
-use crate::modules::desktop_runtime::runtime::chat_tool_runtime::DitingThinkExtract;
+use crate::modules::desktop_runtime::runtime::chat_tool_runtime::WorldModelUpdate;
 use crate::state::AppState;
 use desktop_runtime_core::{TaskInputSource, UserInterruption, WorldModelFrame};
 use mcp_core::types::LocalChatInputMessage;
@@ -47,7 +47,7 @@ pub(crate) struct LocalExecutionOutcome {
     pub(crate) delegated_execution: Option<DelegatedExecutionSession>,
     pub(crate) execution_graph: Value,
     pub(crate) response_json: Value,
-    pub(crate) captured_frame_extract: Option<DitingThinkExtract>,
+    pub(crate) captured_world_model_update: Option<WorldModelUpdate>,
     pub(crate) world_model_frame: Option<WorldModelFrame>,
 }
 

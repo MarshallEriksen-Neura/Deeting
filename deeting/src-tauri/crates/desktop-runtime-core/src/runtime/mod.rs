@@ -11,11 +11,9 @@ use crate::traits::{
     BootstrapPrompt, EventStore, FrameArtifactGenerator, InterruptionChannel, PhaseExecutor,
     PhaseProposalGenerator, Tier2Validator,
 };
-use serde_json::{json, Value};
+use serde_json::json;
 
 const MAX_PHASE_ITERATIONS: usize = 8;
-const DITING_THINK_PREFLIGHT_ARTIFACT: &str = "diting_think_preflight";
-const RUNTIME_REQUIRED_ARTIFACTS_KEY: &str = "runtime_required_artifacts";
 
 pub struct RuntimeComponents<B, V, G, P, E, I, S> {
     pub bootstrap: B,
@@ -218,18 +216,28 @@ where
                     execution_decision
                 )));
             }
-            if execution_decision.contains_required_artifact(RequiredArtifact::DitingThinkPreflight)
+            if execution_decision.contains_required_artifact(RequiredArtifact::WorldModelFrameRefresh)
+                || execution_decision.contains_required_artifact(RequiredArtifact::WorldModelFrameRevision)
             {
-                if let Some(proposal) = plan
-                    .proposed_phases
-                    .iter_mut()
-                    .find(|proposal| proposal.proposal_id == proposal_id)
-                {
-                    require_runtime_artifact(
-                        &mut proposal.payload,
-                        DITING_THINK_PREFLIGHT_ARTIFACT,
-                    );
-                }
+                let artifact = frame_refresh_artifact_for_decision(&execution_decision)
+                    .unwrap_or(FrameRefreshArtifact::WorldModelFrameRefresh);
+                frame = self.components.frame_generator.refresh_frame(
+                    &frame,
+                    Some(&plan),
+                    &FrameRefreshRequest {
+                        reason: "hook requested frame artifact before phase execution".to_string(),
+                        interruption: None,
+                        artifact: Some(artifact),
+                    },
+                )?;
+                mark_frame_artifact_seen_by_model(&mut frame, artifact);
+                self.components
+                    .event_store
+                    .append_event(RuntimeEvent::FrameRefreshed {
+                        frame_version_id: frame.frame_version_id.clone(),
+                    })?;
+                plan.frame_version_id = frame.frame_version_id.clone();
+                continue;
             }
 
             let phase = plan.commit_proposal(&proposal_id, phase_id)?;
@@ -424,32 +432,10 @@ where
     }
 }
 
-fn require_runtime_artifact(payload: &mut Value, artifact: &'static str) {
-    if !payload.is_object() {
-        let original = payload.take();
-        *payload = json!({ "phase_payload": original });
-    }
-    let Some(object) = payload.as_object_mut() else {
-        return;
-    };
-    let artifacts = object
-        .entry(RUNTIME_REQUIRED_ARTIFACTS_KEY.to_string())
-        .or_insert_with(|| json!([]));
-    if !artifacts.is_array() {
-        *artifacts = json!([]);
-    }
-    let Some(array) = artifacts.as_array_mut() else {
-        return;
-    };
-    if !array.iter().any(|item| item.as_str() == Some(artifact)) {
-        array.push(Value::String(artifact.to_string()));
-    }
-}
-
 fn mark_frame_artifact_seen_by_model(frame: &mut WorldModelFrame, artifact: FrameRefreshArtifact) {
-    if matches!(artifact, FrameRefreshArtifact::DitingThinkPreflight) {
+    if matches!(artifact, FrameRefreshArtifact::WorldModelFrameRefresh) {
         frame.mark_seen();
-        frame.mark_diting_think_seen();
+        frame.mark_world_model_update_seen();
     }
 }
 
@@ -495,7 +481,7 @@ pub fn build_default_hook_registry() -> HookRegistry {
     let mut registry = HookRegistry::new();
     registry.register(PlanDraftHook);
     registry.register(FrameFreshnessHook);
-    registry.register(crate::hook::DitingThinkPreflightHook);
+    registry.register(crate::hook::WorldModelUpdateHook);
     registry.register(crate::hook::RuntimeApprovalHook);
     registry.register(crate::hook::RuntimeCompressionHook);
     registry.register(crate::hook::RuntimeMemoryHook);
@@ -574,12 +560,12 @@ mod tests {
             refreshed.provenance = FrameProvenance::bootstrap(request.reason.clone());
             if matches!(
                 request.artifact,
-                Some(FrameRefreshArtifact::DitingThinkPreflight)
+                Some(FrameRefreshArtifact::WorldModelFrameRefresh)
             ) {
                 refreshed.known_facts.push(Fact {
-                    id: "diting-fact-1".to_string(),
-                    statement: "diting preflight completed".to_string(),
-                    source: "diting_think".to_string(),
+                    id: "wm-fact-1".to_string(),
+                    statement: "world model refresh completed".to_string(),
+                    source: "world_model_update".to_string(),
                 });
             }
             Ok(refreshed)
@@ -687,7 +673,7 @@ mod tests {
             result.plan.committed_phases[0]
                 .payload
                 .pointer("/runtime_required_artifacts/0"),
-            Some(&json!("diting_think_preflight"))
+            Some(&json!("world_model_frame_refresh"))
         );
         assert!(matches!(
             result.decision,

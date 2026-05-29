@@ -69,8 +69,8 @@ where
         let mut request = self.request.take().ok_or_else(|| {
             RuntimeCoreError::InvalidState("deeting phase executor request already consumed".into())
         })?;
-        if phase_requires_diting_think_preflight(phase) {
-            request.execution_policy.require_diting_think_preflight = true;
+        if phase_requires_world_model_frame_refresh(phase) {
+            request.execution_policy.require_world_model_update = true;
         }
         let step_type = phase.step_type;
         let parent_frame_id = Some(frame.frame_version_id.clone());
@@ -106,7 +106,7 @@ where
     }
 }
 
-fn phase_requires_diting_think_preflight(phase: &Phase) -> bool {
+fn phase_requires_world_model_frame_refresh(phase: &Phase) -> bool {
     phase
         .payload
         .get("runtime_required_artifacts")
@@ -114,7 +114,7 @@ fn phase_requires_diting_think_preflight(phase: &Phase) -> bool {
         .is_some_and(|items| {
             items
                 .iter()
-                .any(|item| item.as_str() == Some("diting_think_preflight"))
+                .any(|item| item.as_str() == Some("world_model_frame_refresh"))
         })
 }
 
@@ -701,7 +701,7 @@ mod tests {
             delegated_execution: None,
             execution_graph: json!({}),
             response_json,
-            captured_frame_extract: None,
+            captured_world_model_update: None,
             world_model_frame: None,
         }
     }

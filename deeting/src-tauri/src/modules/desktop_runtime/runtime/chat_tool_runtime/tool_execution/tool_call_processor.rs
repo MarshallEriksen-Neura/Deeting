@@ -1,7 +1,5 @@
 use super::super::context_tools::{is_terminal_context_tool, is_workflow_plan_tool};
-use super::super::frame_tools::{
-    parse_diting_think_arguments, DitingThinkExtract, DITING_THINK_TOOL_NAME,
-};
+use super::super::frame_tools::WorldModelUpdate;
 use super::super::lifecycle::{
     clear_execution_graph_runtime_context, persist_running_tool_execution_runtime,
 };
@@ -15,7 +13,7 @@ use super::super::tool_meta::{
     resolve_local_tool_call_id,
 };
 use super::{
-    build_diting_think_tool_result, build_policy_blocked_tool_result, execute_activate_skill_tool,
+    build_policy_blocked_tool_result, execute_activate_skill_tool,
     execute_code_plan_tool, execute_context_runtime_tool, execute_delegate_task_tool,
     execute_generic_mcp_tool_call, execute_local_code_snippet_tool, execute_query_task_policy_tool,
     execute_read_skill_resource_tool, execute_refresh_skill_index_tool, execute_search_sdk_tool,
@@ -50,7 +48,7 @@ pub(crate) async fn process_chat_tool_calls(
             tool_call_meta: Vec::new(),
             results: Vec::new(),
             skill_context_update: None,
-            captured_frame_extract: None,
+            captured_world_model_update: None,
             runtime_transition_blocks: Vec::new(),
         };
     }
@@ -60,8 +58,8 @@ pub(crate) async fn process_chat_tool_calls(
     let mut capability_update = None;
     let mut skill_context_update = None;
     let mut approval_tokens = Vec::new();
-    let mut captured_frame_extract: Option<DitingThinkExtract> =
-        state.captured_frame_extract.clone();
+    let captured_world_model_update: Option<WorldModelUpdate> =
+        state.captured_world_model_update.clone();
     let mut runtime_transition_blocks = Vec::new();
 
     for (call_index, call) in tool_calls.into_iter().enumerate() {
@@ -79,17 +77,6 @@ pub(crate) async fn process_chat_tool_calls(
             resolve_local_tool_call_id(call.id.as_deref(), &tool_name, state.round, call_index);
         let meta_len_before = tool_call_meta.len();
         let approval_count_before = approval_tokens.len();
-
-        if tool_name == DITING_THINK_TOOL_NAME {
-            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
-            let preflight = build_diting_think_tool_result(call_id.as_str(), &call.arguments);
-            captured_frame_extract = Some(parse_diting_think_arguments(&call.arguments));
-            synthesized = true;
-            realtime_emitter.emit_tool_result_meta(&preflight.meta);
-            tool_call_meta.push(preflight.meta);
-            results.push(preflight.result_message);
-            continue;
-        }
 
         if !effective_allowed_tool_names
             .iter()
@@ -489,7 +476,7 @@ pub(crate) async fn process_chat_tool_calls(
             tool_call_meta,
             results,
             skill_context_update,
-            captured_frame_extract,
+            captured_world_model_update,
             runtime_transition_blocks,
         }
     } else {
@@ -499,7 +486,7 @@ pub(crate) async fn process_chat_tool_calls(
             results,
             capability_update,
             skill_context_update,
-            captured_frame_extract,
+            captured_world_model_update,
             runtime_transition_blocks,
         }
     }

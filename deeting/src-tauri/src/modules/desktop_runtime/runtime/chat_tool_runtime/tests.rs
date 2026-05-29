@@ -78,15 +78,22 @@ fn classify_local_tool_execution_error_code_detects_mcp_timeout() {
 }
 
 #[test]
-fn diting_think_injection_requires_world_model_preflight_policy() {
-    let mut policy = build_default_local_execution_policy();
+fn inline_world_model_update_strips_response_content() {
+    let response = serde_json::json!({
+        "content": "done\n<!--wm_update-->{\"facts\":[\"observed\"],\"verification_targets\":[\"target\"]}<!--/wm_update-->"
+    });
 
-    assert!(!should_inject_diting_think_tool(1, false, &policy));
+    let (response, update) = extract_world_model_update_from_response(response);
 
-    policy.require_diting_think_preflight = true;
-    assert!(should_inject_diting_think_tool(1, false, &policy));
-    assert!(!should_inject_diting_think_tool(2, false, &policy));
-    assert!(!should_inject_diting_think_tool(1, true, &policy));
+    assert_eq!(response["content"], serde_json::json!("done"));
+    assert_eq!(
+        response["world_model_update"]["facts"][0],
+        serde_json::json!("observed")
+    );
+    assert_eq!(
+        update.expect("update").verification_targets,
+        vec!["target".to_string()]
+    );
 }
 
 #[test]
@@ -146,7 +153,7 @@ fn world_model_snapshot_prefix_includes_runtime_context_before_user_text() {
     );
     frame.append_user_directive("do the thing", None).unwrap();
     let mut policy = build_default_local_execution_policy();
-    policy.require_diting_think_preflight = true;
+    policy.require_world_model_update = true;
     let messages = vec![LocalChatInputMessage {
         role: "user".to_string(),
         content: "latest user text".to_string(),
@@ -163,7 +170,7 @@ fn world_model_snapshot_prefix_includes_runtime_context_before_user_text() {
     assert!(content.contains("[RUNTIME CONTEXT]"));
     assert!(content.contains("runtime_owner: world_model_runtime_owner"));
     assert!(content.contains("historical_runtime_evidence: observation_only"));
-    assert!(content.contains("diting_think: preflight obligation is active"));
+    assert!(content.contains("world_model_update: every assistant response must end"));
     assert!(content.contains("latest user text"));
     assert!(content.find("[RUNTIME CONTEXT]") < content.find("latest user text"));
 }
@@ -612,7 +619,7 @@ fn attach_runtime_transition_events_appends_graph_projectable_trace_blocks() {
             "trace_id": "trace-1",
             "request_id": "request-1",
             "session_id": "session-1",
-            "required_artifact": "diting_think_preflight",
+            "required_artifact": "world_model_frame_refresh",
             "enforcement": "enforced"
         }
     })];
@@ -641,7 +648,7 @@ fn attach_runtime_transition_events_appends_graph_projectable_trace_blocks() {
     );
     assert_eq!(
         trace_blocks[1]["payload"]["required_artifact"],
-        serde_json::json!("diting_think_preflight")
+        serde_json::json!("world_model_frame_refresh")
     );
 }
 #[test]
@@ -1102,7 +1109,7 @@ fn attach_execution_graph_to_response_force_rebuild_replaces_stale_graph() {
             "trace_id": "trace-1",
             "request_id": "request-1",
             "session_id": "session-1",
-            "required_artifact": "diting_think_preflight",
+            "required_artifact": "world_model_frame_refresh",
             "enforcement": "enforced"
         }],
         "tool_trace_blocks": [
@@ -1116,7 +1123,7 @@ fn attach_execution_graph_to_response_force_rebuild_replaces_stale_graph() {
                     "trace_id": "trace-1",
                     "request_id": "request-1",
                     "session_id": "session-1",
-                    "required_artifact": "diting_think_preflight",
+                    "required_artifact": "world_model_frame_refresh",
                     "enforcement": "enforced"
                 }
             }
@@ -1182,9 +1189,7 @@ fn build_max_rounds_exceeded_response_appends_visible_notice() {
         active_capability: None,
         active_skill_context: None,
         runtime_metrics: RuntimeMetricsAccumulator::default(),
-        diting_think_consumed: false,
-        captured_reasoning: None,
-        captured_frame_extract: None,
+        captured_world_model_update: None,
         last_capability_snapshot: None,
         terminal_context: None,
         workflow_context: None,
@@ -1274,9 +1279,7 @@ fn rewind_round_for_post_approval_continuation_does_not_consume_user_round_budge
         active_capability: None,
         active_skill_context: None,
         runtime_metrics: RuntimeMetricsAccumulator::default(),
-        diting_think_consumed: false,
-        captured_reasoning: None,
-        captured_frame_extract: None,
+        captured_world_model_update: None,
         last_capability_snapshot: None,
         terminal_context: None,
         workflow_context: None,
@@ -1407,7 +1410,7 @@ fn suspended_execution_keeps_remaining_pending_approvals_after_one_is_approved()
         reasoning_effort: None,
         active_capability: None,
         active_skill_context: None,
-        captured_frame_extract: None,
+        captured_world_model_update: None,
         runtime_metrics: RuntimeMetricsAccumulator::default(),
         last_capability_snapshot: None,
         terminal_context: None,
@@ -1544,7 +1547,7 @@ fn sync_remaining_pending_approvals_prefers_token_bound_graph_identity() {
         reasoning_effort: None,
         active_capability: None,
         active_skill_context: None,
-        captured_frame_extract: None,
+        captured_world_model_update: None,
         runtime_metrics: RuntimeMetricsAccumulator::default(),
         last_capability_snapshot: None,
         terminal_context: None,

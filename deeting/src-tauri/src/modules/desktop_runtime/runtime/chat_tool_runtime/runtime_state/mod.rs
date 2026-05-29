@@ -1,4 +1,4 @@
-use super::frame_tools::DitingThinkExtract;
+use super::frame_tools::WorldModelUpdate;
 use super::lifecycle::extract_resume_response_text;
 use super::runtime_metrics::RuntimeMetricsAccumulator;
 use super::streaming::LocalRealtimeToolTraceEmitter;
@@ -17,7 +17,7 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) enum LocalTo
         tool_call_meta: Vec<serde_json::Value>,
         results: Vec<String>,
         skill_context_update: Option<ActiveSkillContextState>,
-        captured_frame_extract: Option<DitingThinkExtract>,
+        captured_world_model_update: Option<WorldModelUpdate>,
         runtime_transition_blocks: Vec<serde_json::Value>,
     },
     Interrupted {
@@ -26,7 +26,7 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) enum LocalTo
         results: Vec<String>,
         capability_update: Option<LocalCapabilityTransition>,
         skill_context_update: Option<ActiveSkillContextState>,
-        captured_frame_extract: Option<DitingThinkExtract>,
+        captured_world_model_update: Option<WorldModelUpdate>,
         runtime_transition_blocks: Vec<serde_json::Value>,
     },
 }
@@ -57,11 +57,8 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) struct Local
         Option<LocalCapabilityActivationState>,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) active_skill_context:
         Option<ActiveSkillContextState>,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) diting_think_consumed: bool,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) captured_reasoning:
-        Option<String>,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) captured_frame_extract:
-        Option<DitingThinkExtract>,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) captured_world_model_update:
+        Option<WorldModelUpdate>,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) runtime_metrics:
         RuntimeMetricsAccumulator,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) last_capability_snapshot:
@@ -91,10 +88,8 @@ pub(crate) struct LocalChatCompleteWithToolsOutput {
 pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) struct LocalChatToolRuntimeOutput
 {
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) response: serde_json::Value,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) captured_reasoning:
-        Option<String>,
-    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) captured_frame_extract:
-        Option<DitingThinkExtract>,
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) captured_world_model_update:
+        Option<WorldModelUpdate>,
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) world_model_frame:
         Option<WorldModelFrame>,
 }
@@ -120,9 +115,7 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn clone_run
         reasoning_effort: state.reasoning_effort.clone(),
         active_capability: state.active_capability.clone(),
         active_skill_context: state.active_skill_context.clone(),
-        diting_think_consumed: state.diting_think_consumed,
-        captured_reasoning: state.captured_reasoning.clone(),
-        captured_frame_extract: state.captured_frame_extract.clone(),
+        captured_world_model_update: state.captured_world_model_update.clone(),
         runtime_metrics: state.runtime_metrics.clone(),
         last_capability_snapshot: state.last_capability_snapshot.clone(),
         terminal_context: state.terminal_context.clone(),
@@ -137,30 +130,6 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn clone_run
             )
         }),
         selected_knowledge_file_ids: state.selected_knowledge_file_ids.clone(),
-    }
-}
-
-pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn backfill_captured_reasoning(
-    response: &mut serde_json::Value,
-    captured_reasoning: Option<&str>,
-) {
-    let reasoning = match captured_reasoning.map(str::trim).filter(|v| !v.is_empty()) {
-        Some(r) => r,
-        None => return,
-    };
-    let has_native = response
-        .get("reasoning_content")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-        .is_some();
-    if !has_native {
-        if let Some(obj) = response.as_object_mut() {
-            obj.insert(
-                "reasoning_content".to_string(),
-                serde_json::Value::String(reasoning.to_string()),
-            );
-        }
     }
 }
 

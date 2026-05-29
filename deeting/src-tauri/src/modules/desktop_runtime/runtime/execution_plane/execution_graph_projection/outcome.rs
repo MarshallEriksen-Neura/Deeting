@@ -1,4 +1,4 @@
-use super::super::super::chat_tool_runtime::DitingThinkExtract;
+use super::super::super::chat_tool_runtime::WorldModelUpdate;
 use super::super::super::runtime_event_projection::projection::merge_runtime_transition_events_into_trace_blocks;
 use super::super::{DelegatedExecutionSession, DelegatedExecutionStatus, LocalExecutionOutcome};
 use super::snapshot::{
@@ -32,7 +32,7 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane) fn running_del
         delegated_execution: Some(delegated_execution),
         execution_graph,
         response_json,
-        captured_frame_extract: None,
+        captured_world_model_update: None,
         world_model_frame: None,
     }
 }
@@ -42,10 +42,10 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane) fn completed_c
     response_json: Value,
     delegated_execution: Option<DelegatedExecutionSession>,
 ) -> LocalExecutionOutcome {
-    let captured_frame_extract = response_json
-        .get("diting_think_frame_extract")
+    let captured_world_model_update = response_json
+        .get("world_model_update")
         .cloned()
-        .and_then(|value| serde_json::from_value::<DitingThinkExtract>(value).ok());
+        .and_then(|value| serde_json::from_value::<WorldModelUpdate>(value).ok());
     let delegated_execution_tree = delegated_execution.as_ref().map(|execution| {
         execution
             .record
@@ -74,7 +74,7 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane) fn completed_c
         delegated_execution,
         execution_graph,
         response_json,
-        captured_frame_extract,
+        captured_world_model_update,
         world_model_frame: None,
     }
 }

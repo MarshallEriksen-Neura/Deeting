@@ -102,10 +102,10 @@ impl WorldModelFrameKind {
     fn reason(self) -> &'static str {
         match self {
             WorldModelFrameKind::Refresh => {
-                "diting_think structured reasoning refreshed the world model frame"
+                "world_model_update refreshed the world model frame"
             }
             WorldModelFrameKind::Revision => {
-                "diting_think structured reasoning revised the world model frame after contradiction"
+                "world_model_update revised the world model frame after contradiction"
             }
         }
     }
@@ -698,10 +698,10 @@ pub(crate) fn project_world_model_frame_decision_block(
         to_state: RuntimeStateKind::PlanDrafted,
         proposed_action: ProposedAction::DraftPlan,
         capability_id: None,
-        tool_name: Some("diting_think".to_string()),
+        tool_name: Some("world_model_update".to_string()),
         effect_scope: EffectScope::Session,
         observed_evidence: vec![EvidenceRef {
-            kind: "diting_think_extract".to_string(),
+            kind: "world_model_update".to_string(),
             source: "chat_tool_runtime".to_string(),
             id: input.request_id.map(str::to_string),
             metadata_json: json!({
@@ -891,7 +891,7 @@ fn runtime_transition_audit_decision(transition: &RuntimeTransition) -> Option<H
             "transition uncertainty should be captured as adaptive planning context",
         )),
         ProposedAction::ExecuteTool => Some(require_artifact(
-            RequiredArtifact::DitingThinkPreflight,
+            RequiredArtifact::WorldModelFrameRefresh,
             "tool execution proposal crosses from model output into runtime action",
         )),
         ProposedAction::ExposeCapability | ProposedAction::AdmitExecutableCapability => {
@@ -1026,7 +1026,7 @@ mod tests {
             "decision_id": "hook-decision:runtime-transition:call-1",
             "transition_id": "runtime-transition:call-1",
             "trace_id": "trace-1",
-            "required_artifact": "diting_think_preflight",
+            "required_artifact": "world_model_frame_refresh",
             "enforcement": "enforced"
         });
         let response = json!({
@@ -1105,7 +1105,7 @@ mod tests {
         assert_eq!(events[0]["payload"]["tool_name"], json!("shell_execute"));
         assert_eq!(
             events[0]["payload"]["required_artifact"],
-            json!("diting_think_preflight")
+            json!("world_model_frame_refresh")
         );
         assert_eq!(events[0]["payload"]["enforcement"], json!("enforced"));
     }
@@ -1404,14 +1404,14 @@ mod tests {
                 metadata_json: Value::Null,
             },
             &HookDecision::RequireArtifact {
-                artifact: RequiredArtifact::DitingThinkPreflight,
+                artifact: RequiredArtifact::WorldModelFrameRefresh,
                 reason: "test".to_string(),
                 enforcement: super::super::types::HookEnforcementMode::Enforced,
             },
         )];
 
         let provenance =
-            hook_provenance_for_required_artifact(&blocks, RequiredArtifact::DitingThinkPreflight)
+            hook_provenance_for_required_artifact(&blocks, RequiredArtifact::WorldModelFrameRefresh)
                 .expect("provenance");
 
         assert_eq!(provenance["transition_id"], json!("transition-1"));
