@@ -12,11 +12,11 @@ use crate::modules::mcp::store::McpStore;
 use crate::modules::providers::model_guard::resolve_local_secretary_model_connection;
 use crate::state::AppState;
 use desktop_runtime_core::{
-    ConfidenceLevel, EventStore, FrameArtifactGenerator, FrameBootstrapOutput,
-    FrameProvenance, FrameRefreshArtifact, FrameRefreshRequest, FrameValidation,
-    InterruptionChannel, PhaseProposal, PhaseProposalGenerator, PhaseStepType, PlanArtifact,
-    RuntimeCoreError, RuntimeCoreResult, RuntimeEvent, Tier2Validator, UserInput, UserInterruption,
-    WorldModelFrame, WorldModelFrameStatus,
+    ConfidenceLevel, EventStore, FrameArtifactGenerator, FrameBootstrapOutput, FrameProvenance,
+    FrameRefreshArtifact, FrameRefreshRequest, FrameValidation, InterruptionChannel, PhaseProposal,
+    PhaseProposalGenerator, PhaseStepType, PlanArtifact, RuntimeCoreError, RuntimeCoreResult,
+    RuntimeEvent, Tier2Validator, UserInput, UserInterruption, WorldModelFrame,
+    WorldModelFrameStatus,
 };
 use mcp_core::types::LocalChatInputMessage;
 use serde_json::json;
@@ -638,8 +638,10 @@ async fn request_world_model_update(
     current_plan: Option<&PlanArtifact>,
     refresh_request: &FrameRefreshRequest,
 ) -> Result<Option<WorldModelUpdate>, String> {
-    let prompt = build_world_model_update_refresh_prompt(current_frame, current_plan, refresh_request);
-    let model_connection = resolve_local_secretary_model_connection(&runtime_request.app_state).await?;
+    let prompt =
+        build_world_model_update_refresh_prompt(current_frame, current_plan, refresh_request);
+    let model_connection =
+        resolve_local_secretary_model_connection(&runtime_request.app_state).await?;
     let response = request_provider_structured_tool_arguments(
         &runtime_request.app_state,
         &model_connection.provider_model_id,
@@ -739,7 +741,9 @@ fn build_world_model_update_refresh_prompt(
         .map(|interruption| interruption.content.as_str())
         .unwrap_or("");
 
-    let plan_summary = current_plan.map(render_plan_summary).unwrap_or_else(|| "(no plan yet)".to_string());
+    let plan_summary = current_plan
+        .map(render_plan_summary)
+        .unwrap_or_else(|| "(no plan yet)".to_string());
 
     format!(
         concat!(
@@ -916,8 +920,8 @@ impl PhaseProposalGenerator for DeetingPhaseProposalGenerator {
         // 1. Check if frame contains a proposed_next_phase from world_model_update
         if let Some(proposed_value) = &frame.proposed_next_phase {
             if let Ok(proposed) = serde_json::from_value::<ProposedPhase>(proposed_value.clone()) {
-                let step_type = parse_phase_step_type(&proposed.step_type)
-                    .unwrap_or(PhaseStepType::ToolCall);
+                let step_type =
+                    parse_phase_step_type(&proposed.step_type).unwrap_or(PhaseStepType::ToolCall);
                 return Ok(Some(PhaseProposal {
                     proposal_id: format!("proposal:world_model_update:{}", proposed.step_type),
                     step_type,
@@ -943,7 +947,8 @@ impl PhaseProposalGenerator for DeetingPhaseProposalGenerator {
                 "frame_strategy": frame.execution_strategy,
                 "goal": frame.goal.clone(),
             }),
-            rationale: "phase derived from world model frame execution strategy (fallback)".to_string(),
+            rationale: "phase derived from world model frame execution strategy (fallback)"
+                .to_string(),
             proposed_at_frame_version: frame.frame_version_id.clone(),
         }))
     }
@@ -954,7 +959,9 @@ fn parse_phase_step_type(value: &str) -> Option<PhaseStepType> {
         "direct_chat" | "directchat" => Some(PhaseStepType::DirectChat),
         "tool_call" | "toolcall" => Some(PhaseStepType::ToolCall),
         "delegated_worker" | "delegatedworker" | "worker" => Some(PhaseStepType::DelegatedWorker),
-        "delegated_workflow" | "delegatedworkflow" | "workflow" => Some(PhaseStepType::DelegatedWorkflow),
+        "delegated_workflow" | "delegatedworkflow" | "workflow" => {
+            Some(PhaseStepType::DelegatedWorkflow)
+        }
         "capability_admit" | "capabilityadmit" => Some(PhaseStepType::CapabilityAdmit),
         "verify_final" | "verifyfinal" | "final" => Some(PhaseStepType::VerifyFinal),
         _ => None,
@@ -997,7 +1004,8 @@ fn detect_repeated_phase_pattern(plan: &PlanArtifact) -> bool {
     }
 
     // Check last N phases for identical step_type + rationale pattern
-    let recent_phases: Vec<_> = plan.committed_phases
+    let recent_phases: Vec<_> = plan
+        .committed_phases
         .iter()
         .rev()
         .take(MAX_REPETITIONS)
@@ -1469,7 +1477,10 @@ mod tests {
 
         assert_eq!(refreshed.status, WorldModelFrameStatus::Fresh);
         assert_eq!(
-            refreshed.known_facts.first().map(|fact| fact.source.as_str()),
+            refreshed
+                .known_facts
+                .first()
+                .map(|fact| fact.source.as_str()),
             Some("world_model_update")
         );
         assert_eq!(calls.load(Ordering::SeqCst), 1);

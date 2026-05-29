@@ -175,6 +175,7 @@ fn world_model_snapshot_prefix_includes_runtime_context_before_user_text() {
     assert!(system_content.contains("assumptions"));
     assert!(system_content.contains("resolved_unknowns"));
     assert!(system_content.contains("new_unknowns"));
+    assert!(system_content.contains("current conversation language"));
 
     // User message preserved at index 1
     assert_eq!(rendered[1].role, "user");

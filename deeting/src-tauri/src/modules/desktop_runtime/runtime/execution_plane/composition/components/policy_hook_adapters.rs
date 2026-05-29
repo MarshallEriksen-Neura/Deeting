@@ -1,10 +1,10 @@
 use super::super::hooks::SelfEvolutionHook;
 use crate::modules::mcp::store::McpStore;
 use desktop_runtime_core::{
-    FrameFreshnessHook, Hook, HookDecision, HookEnforcementMode,
-    HookEvent, HookEventInterest, HookRegistry, PlanDraftHook, RequiredArtifact,
-    RuntimeApprovalHook, RuntimeCapabilityChangeHook, RuntimeCompressionHook, RuntimeMemoryHook,
-    RuntimeStateView, WorldModelUpdateHook,
+    FrameFreshnessHook, Hook, HookDecision, HookEnforcementMode, HookEvent, HookEventInterest,
+    HookRegistry, PlanDraftHook, RequiredArtifact, RuntimeApprovalHook,
+    RuntimeCapabilityChangeHook, RuntimeCompressionHook, RuntimeMemoryHook, RuntimeStateView,
+    WorldModelUpdateHook,
 };
 use std::sync::Arc;
 

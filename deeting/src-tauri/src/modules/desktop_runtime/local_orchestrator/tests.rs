@@ -383,13 +383,13 @@ fn render_local_router_base_prompt_includes_date_timezone_and_language() {
     );
 
     assert!(prompt.contains("## Current Context"));
-    assert!(prompt.contains("- Current local date: 2026-03-08"));
-    assert!(prompt.contains("- Current local timezone: Asia/Shanghai"));
-    assert!(prompt.contains("## Core Routing Rules"));
+    assert!(prompt.contains("Date: 2026-03-08"));
+    assert!(prompt.contains("Timezone: Asia/Shanghai"));
+    assert!(prompt.contains("## Tool & Capability Contract"));
     assert!(prompt.contains("Default response language: Simplified Chinese (zh-CN)."));
-    assert!(prompt.contains("If the user explicitly requests another language"));
-    assert!(prompt.contains("When a retrieved semantic memory contains a direct user fact"));
-    assert!(prompt.contains("Do not fabricate facts, tool results, files, system state"));
+    assert!(prompt.contains("Override only when the user explicitly switches"));
+    assert!(prompt.contains("Treat retrieved semantic memories as supporting context"));
+    assert!(prompt.contains("Never fabricate file paths, command outputs, or system state"));
 }
 
 #[test]
@@ -400,39 +400,57 @@ fn render_local_runtime_system_prompt_adds_runtime_and_code_sections() {
         Some("execute_code_plan"),
     );
 
+    assert!(prompt.contains("<base_router_prompt>"));
     assert!(prompt.contains("## Current Context"));
+    assert!(prompt.contains("<runtime_capability_contract>"));
     assert!(prompt.contains("## Runtime Capability Contract"));
     assert!(prompt.contains("search_sdk, shell_execute"));
+    assert!(prompt.contains("<execution_tool_protocol>"));
     assert!(prompt.contains("## Execution Tool Protocol"));
     assert!(prompt.contains("execute_code_plan"));
-    assert!(prompt.contains("## User-Visible Tool Call Updates"));
-    assert!(prompt.contains("Before a user-visible tool call"));
-    assert!(prompt.contains("Do not repeat the same pre-tool note"));
+    assert!(!prompt.contains("<communication_style>"));
+    assert!(!prompt.contains("## Communication Style"));
 }
 
 #[test]
 fn render_local_runtime_system_prompt_omits_optional_sections_when_not_requested() {
     let prompt = render_local_runtime_system_prompt("## Current Context", None, None);
 
+    assert!(prompt.contains("<base_router_prompt>"));
     assert!(prompt.contains("## Current Context"));
     assert!(!prompt.contains("## Runtime Capability Contract"));
     assert!(!prompt.contains("## Execution Tool Protocol"));
-    assert!(prompt.contains("## User-Visible Tool Call Updates"));
+    assert!(!prompt.contains("<communication_style>"));
+    assert!(!prompt.contains("## Communication Style"));
 }
 
 #[test]
-fn build_local_prompt_plan_always_includes_pre_tool_visibility_guidance() {
-    let rendered = build_local_prelude_messages(&PromptAssets::default(), None)
+fn render_local_communication_style_prompt_is_separate_system_message_content() {
+    let rendered = render_local_communication_style_prompt();
+
+    assert!(rendered.contains("<communication_style>"));
+    assert!(rendered.contains("## Communication Style"));
+    assert!(rendered.contains("Tool calls render as live cards in the UI"));
+    assert!(rendered.contains("Read-only tools"));
+}
+
+#[test]
+fn build_local_prompt_plan_always_includes_communication_style_guidance() {
+    let messages = build_local_prelude_messages(&PromptAssets::default(), None);
+    let base = messages
         .first()
         .map(|message| message.content.clone())
         .unwrap_or_default();
+    let rendered = messages
+        .get(1)
+        .map(|message| message.content.clone())
+        .unwrap_or_default();
 
-    assert!(rendered.contains("## User-Visible Tool Call Updates"));
-    assert!(rendered
-        .contains("briefly state what you are about to check or do in one natural sentence"));
-    assert!(
-        rendered.contains("Do not add a pre-tool note when you can answer directly without tools")
-    );
+    assert!(!base.contains("## Communication Style"));
+    assert!(rendered.contains("<communication_style>"));
+    assert!(rendered.contains("## Communication Style"));
+    assert!(rendered.contains("Tool calls render as live cards in the UI"));
+    assert!(rendered.contains("Read-only tools"));
 }
 
 #[test]

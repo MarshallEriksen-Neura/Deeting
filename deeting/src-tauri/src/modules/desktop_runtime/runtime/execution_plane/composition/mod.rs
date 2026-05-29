@@ -9,13 +9,13 @@ use self::components::runtime_components::{
     DeetingFrameArtifactGenerator, DeetingInterruptionChannel, DeetingPhaseProposalGenerator,
     DeetingRuntimeEventStore, DeetingTier2Validator,
 };
-use crate::modules::desktop_runtime::runtime::chat_tool_runtime::apply_world_model_update_to_frame;
 use self::phase_step::{
     initial_phase_step_for_policy, phase_step_for_observable_frame_strategy, phase_step_type_name,
 };
 use super::super::control_plane::LocalExecutionPolicy;
 use super::super::e3_readiness;
 use super::{LocalExecutionOutcome, LocalExecutionRequest};
+use crate::modules::desktop_runtime::runtime::chat_tool_runtime::apply_world_model_update_to_frame;
 use desktop_runtime_core::{
     HookDecision, HookEvent, PhaseStepType, RuntimeComponents, RuntimeComposition, RuntimeEvent,
     RuntimeTickResult, TaskInputSource, WorldModelFrame,

@@ -152,14 +152,24 @@ fn manifest_renderer_includes_selected_scope_invocation_instruction() {
         "prompt must mention context_open for opening specific chunks"
     );
     assert!(
-        prompt.contains("Context tool strategy"),
-        "prompt must include a stable context tool invocation strategy"
+        prompt.contains("Tool schemas and tool results carry detailed search strategy"),
+        "prompt must keep strategy guidance delegated to context tool schemas/results"
     );
     assert!(
-        prompt.contains(
-            "llm_wiki supports filters.scope, doc_id, relative_path, relative_path_prefix"
-        ),
-        "prompt must document source-local LLM Wiki filters"
+        prompt.contains("coverage signals"),
+        "prompt must preserve lightweight coverage-signal guidance"
+    );
+    assert!(
+        prompt.contains("recommended_next_action"),
+        "prompt must preserve lightweight next-action guidance"
+    );
+    assert!(
+        prompt.contains("source_refs"),
+        "prompt must preserve lightweight source reference guidance"
+    );
+    assert!(
+        prompt.contains("Available context sources") && prompt.contains("llm_wiki"),
+        "prompt must advertise available LLM Wiki source without inlining detailed filters"
     );
 }
 
@@ -473,7 +483,7 @@ fn routing_policy_preserves_coverage_signals() {
 }
 
 #[test]
-fn manifest_renderer_teaches_model_to_read_coverage_signals() {
+fn manifest_renderer_keeps_context_tool_strategy_lightweight() {
     let manifest = ContextManifest::new(
         Vec::new(),
         vec![SelectedKnowledgeManifestItem {
@@ -488,54 +498,20 @@ fn manifest_renderer_teaches_model_to_read_coverage_signals() {
 
     let prompt = render_context_manifest_prompt(&manifest).expect("manifest prompt");
 
-    assert!(
-        prompt.contains("coverage_signals"),
-        "prompt must mention coverage_signals so the model knows it exists"
-    );
-    assert!(
-        prompt.contains("`strong`"),
-        "prompt must describe the strong confidence branch"
-    );
-    assert!(
-        prompt.contains("`ambiguous`"),
-        "prompt must describe the ambiguous confidence branch"
-    );
-    assert!(
-        prompt.contains("`mixed`"),
-        "prompt must describe the mixed confidence branch"
-    );
-    assert!(
-        prompt.contains("`empty`"),
-        "prompt must describe the empty confidence branch"
-    );
-    assert!(
-        prompt.contains("recommended_next_action"),
-        "prompt must remind the model to obey recommended_next_action"
-    );
-    assert!(
-        prompt.contains("source_coverage_confidence"),
-        "prompt must teach the model about source-specific confidence"
-    );
-    assert!(
-        prompt.contains("evidence_grade"),
-        "prompt must teach the model about evidence grading"
-    );
+    assert!(prompt.contains("detailed search strategy"));
+    assert!(prompt.contains("coverage signals"));
+    assert!(prompt.contains("recommended_next_action"));
     assert!(
         prompt.contains("source_refs"),
-        "prompt must require source_refs-based grounded answers"
+        "manifest should keep a pointer to evidence citation metadata"
     );
-    assert!(
-        prompt.contains("Query crafting"),
-        "prompt must teach the model to rewrite queries before searching"
-    );
-    assert!(
-        prompt.contains("multi-intent"),
-        "prompt must instruct the model to split multi-intent questions"
-    );
+    assert!(!prompt.contains("Query crafting"));
+    assert!(!prompt.contains("Multi-query fanout"));
+    assert!(!prompt.contains("Reciprocal Rank Fusion"));
 }
 
 #[test]
-fn manifest_renderer_teaches_model_to_use_multi_query_fanout() {
+fn manifest_renderer_lists_multi_query_tool_without_full_fanout_tutorial() {
     let manifest = ContextManifest::new(
         Vec::new(),
         vec![SelectedKnowledgeManifestItem {
@@ -554,14 +530,8 @@ fn manifest_renderer_teaches_model_to_use_multi_query_fanout() {
         prompt.contains("context_search_multi"),
         "prompt must advertise the new fanout tool by name"
     );
-    assert!(
-        prompt.contains("Reciprocal Rank Fusion"),
-        "prompt must explain the fusion algorithm so the model picks the right tool"
-    );
-    assert!(
-        prompt.contains("intra-source"),
-        "prompt must warn that fanout does not support auto/cross-source"
-    );
+    assert!(!prompt.contains("Reciprocal Rank Fusion"));
+    assert!(!prompt.contains("intra-source"));
 }
 
 fn evidence_item_with_score_breakdown(id: &str, score: f64) -> ContextEvidenceItem {

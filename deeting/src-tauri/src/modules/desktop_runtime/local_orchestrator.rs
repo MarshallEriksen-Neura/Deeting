@@ -14,8 +14,9 @@ use crate::modules::desktop_runtime::runtime::prompt_assets::PromptAssets;
 #[cfg(test)]
 use crate::modules::desktop_runtime::runtime::prompt_plan::{
     build_local_prelude_messages, parse_router_prompt_local_context,
-    render_local_router_base_prompt, render_local_runtime_system_prompt,
-    router_prompt_default_local_context, router_prompt_response_language_for_locale_pref,
+    render_local_communication_style_prompt, render_local_router_base_prompt,
+    render_local_runtime_system_prompt, router_prompt_default_local_context,
+    router_prompt_response_language_for_locale_pref,
 };
 use crate::modules::desktop_runtime::runtime::sovereign::{
     PosteriorSignalIngress, UserActionIngress,

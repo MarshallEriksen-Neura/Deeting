@@ -328,7 +328,10 @@ pub(crate) async fn generate_local_conversation_title_with_model(
         .get("title")
         .and_then(|value| value.as_str())
         .ok_or_else(|| "conversation title tool arguments missing title".to_string())?;
-    Ok(sanitize_generated_title(generated, normalized_first_message))
+    Ok(sanitize_generated_title(
+        generated,
+        normalized_first_message,
+    ))
 }
 
 pub(crate) async fn generate_local_conversation_title_with_secretary_model(

@@ -25,7 +25,9 @@ pub mod runtime_event_projection {
         include!("../src/modules/desktop_runtime/runtime/runtime_event_projection/projection.rs");
     }
     pub mod trace_contract {
-        include!("../src/modules/desktop_runtime/runtime/runtime_event_projection/trace_contract.rs");
+        include!(
+            "../src/modules/desktop_runtime/runtime/runtime_event_projection/trace_contract.rs"
+        );
     }
 }
 

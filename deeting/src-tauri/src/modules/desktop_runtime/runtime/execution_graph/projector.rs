@@ -486,12 +486,7 @@ fn resolve_execution_id(input: &GraphProjectionInput) -> String {
                 .filter(|value| !value.is_empty())
                 .map(|value| format!("local-trace:{value}"))
         })
-        .unwrap_or_else(|| {
-            format!(
-                "local-session:{}",
-                input.session_id
-            )
-        })
+        .unwrap_or_else(|| format!("local-session:{}", input.session_id))
 }
 
 fn map_tool_call_status(status: Option<&str>) -> LocalExecutionGraphNodeStatus {

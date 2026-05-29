@@ -101,9 +101,7 @@ impl WorldModelFrameKind {
 
     fn reason(self) -> &'static str {
         match self {
-            WorldModelFrameKind::Refresh => {
-                "world_model_update refreshed the world model frame"
-            }
+            WorldModelFrameKind::Refresh => "world_model_update refreshed the world model frame",
             WorldModelFrameKind::Revision => {
                 "world_model_update revised the world model frame after contradiction"
             }
@@ -1410,9 +1408,11 @@ mod tests {
             },
         )];
 
-        let provenance =
-            hook_provenance_for_required_artifact(&blocks, RequiredArtifact::WorldModelFrameRefresh)
-                .expect("provenance");
+        let provenance = hook_provenance_for_required_artifact(
+            &blocks,
+            RequiredArtifact::WorldModelFrameRefresh,
+        )
+        .expect("provenance");
 
         assert_eq!(provenance["transition_id"], json!("transition-1"));
         assert_eq!(provenance["enforcement"], json!("enforced"));

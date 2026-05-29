@@ -5,7 +5,6 @@ use crate::modules::code_mode::prompt::{
 };
 #[cfg(target_os = "windows")]
 use crate::utils::configure_background_std_command;
-#[cfg(test)]
 use mcp_core::types::LocalChatInputMessage;
 
 #[cfg(test)]
@@ -29,7 +28,7 @@ const COMMUNICATION_STYLE_PROMPT: &str = concat!(
     "After tools (final reply):\n",
     "1. Do not recap which tools you called or what they returned — the tool cards already show that.\n",
     "2. Do not write meta-narrative like \"Based on my research above\", \"In summary, I have done X, Y, Z\", \"综上所述\", \"经过以上分析\". State the conclusion or answer directly.\n",
-    "3. If the answer is a single fact or short conclusion, write it in one or two sentences — do not pad it to look thorough.\n",
+    "3. If the answer is a single fact or short conclusion, write it in one or two sentences — do not pad with unnecessary structure or repetition. Depth of content is controlled by response style; this rule is about expression efficiency, not content volume.\n",
     "4. Only add structure (headings, lists) when the answer genuinely has multiple parallel parts. A single conclusion does not need a heading.\n",
     "\n",
     "Always:\n",
@@ -82,29 +81,57 @@ pub(crate) fn render_local_runtime_system_prompt(
     let mut sections = Vec::new();
     let router_prompt = router_prompt.trim();
     if !router_prompt.is_empty() {
-        sections.push(router_prompt.to_string());
+        sections.push(format!(
+            "<base_router_prompt>\n{}\n</base_router_prompt>",
+            router_prompt
+        ));
     }
 
     if let Some(prompt) = runtime_capability_prompt
         .map(str::trim)
         .filter(|prompt| !prompt.is_empty())
     {
-        sections.push(format!("## Runtime Capability Contract\n{}", prompt));
+        sections.push(format!(
+            "<runtime_capability_contract>\n## Runtime Capability Contract\n{}\n</runtime_capability_contract>",
+            prompt
+        ));
     }
 
     if let Some(prompt) = execution_tool_prompt
         .map(str::trim)
         .filter(|prompt| !prompt.is_empty())
     {
-        sections.push(format!("## Execution Tool Protocol\n{}", prompt));
+        sections.push(format!(
+            "<execution_tool_protocol>\n## Execution Tool Protocol\n{}\n</execution_tool_protocol>",
+            prompt
+        ));
     }
 
-    sections.push(format!(
-        "## Communication Style\n{}",
-        COMMUNICATION_STYLE_PROMPT
-    ));
-
     sections.join("\n\n")
+}
+
+pub(crate) fn render_local_communication_style_prompt() -> String {
+    format!(
+        "<communication_style>\n## Communication Style\n{}\n</communication_style>",
+        COMMUNICATION_STYLE_PROMPT
+    )
+}
+
+fn communication_style_message() -> LocalChatInputMessage {
+    LocalChatInputMessage {
+        role: "system".to_string(),
+        content: render_local_communication_style_prompt(),
+        reasoning_content: None,
+        tool_calls: vec![],
+        tool_call_id: None,
+        name: None,
+    }
+}
+
+fn with_communication_style_message(prompt_assets: &PromptAssets) -> PromptAssets {
+    let mut system_messages = vec![communication_style_message()];
+    system_messages.extend(prompt_assets.system_messages().iter().cloned());
+    PromptAssets::from_system_messages(&system_messages)
 }
 
 pub(crate) fn build_local_prompt_plan(
@@ -147,8 +174,10 @@ pub(crate) fn build_local_prompt_plan(
         execution_tool_prompt.as_deref(),
     );
 
+    let prompt_assets = with_communication_style_message(prompt_assets);
+
     build_local_prompt_plan_inner(
-        prompt_assets,
+        &prompt_assets,
         local_context,
         &response_language,
         &base_system_prompt,
@@ -185,5 +214,6 @@ pub(crate) fn build_local_prelude_messages(
         execution_tool_prompt.as_deref(),
     );
 
-    build_local_prelude_messages_inner(prompt_assets, &base_system_prompt)
+    let prompt_assets = with_communication_style_message(prompt_assets);
+    build_local_prelude_messages_inner(&prompt_assets, &base_system_prompt)
 }

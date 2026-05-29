@@ -32,8 +32,8 @@ pub(crate) use approval_commands::{
     dispatch_local_chat_execution_run_command, ExecutionRunCommand,
 };
 pub(crate) use frame_tools::{
-    apply_world_model_update_to_frame, extract_world_model_update_from_response,
-    ProposedPhase, WorldModelUpdate, WORLD_MODEL_UPDATE_END_TAG, WORLD_MODEL_UPDATE_START_TAG,
+    apply_world_model_update_to_frame, extract_world_model_update_from_response, ProposedPhase,
+    WorldModelUpdate, WORLD_MODEL_UPDATE_END_TAG, WORLD_MODEL_UPDATE_START_TAG,
 };
 use lifecycle::finalize_tool_round;
 #[cfg(test)]
@@ -69,10 +69,10 @@ use runtime_metrics::RuntimeMetricsAccumulator;
 #[cfg(test)]
 use runtime_state::classify_local_tool_execution_error_code;
 use runtime_state::{
-    build_max_rounds_exceeded_response, clone_runtime_state_for_tool_execution, extract_initial_task_query,
-    resolve_child_agent_max_rounds, rewind_round_for_post_approval_continuation,
-    LocalChatCompleteWithToolsOutput, LocalChatToolRuntimeOutput, LocalChatToolRuntimeState,
-    LocalToolCallProcessingOutcome,
+    build_max_rounds_exceeded_response, clone_runtime_state_for_tool_execution,
+    extract_initial_task_query, resolve_child_agent_max_rounds,
+    rewind_round_for_post_approval_continuation, LocalChatCompleteWithToolsOutput,
+    LocalChatToolRuntimeOutput, LocalChatToolRuntimeState, LocalToolCallProcessingOutcome,
 };
 use streaming::LocalRealtimeToolTraceEmitter;
 use tool_execution::process_chat_tool_calls;
@@ -355,6 +355,7 @@ fn render_world_model_runtime_context(
          Rules:\n\
          - execution_strategy: only include when you believe the current strategy should change.\n\
          - proposed_next_phase: only include when you have a clear next step.\n\
+         - Write string values in the user's current conversation language when possible; keep JSON keys exactly as shown.\n\
          - Keep entries concise. Each item should be one sentence.",
         start = WORLD_MODEL_UPDATE_START_TAG,
         end = WORLD_MODEL_UPDATE_END_TAG,
@@ -523,19 +524,21 @@ async fn continue_local_chat_complete_with_tools(
                 state.world_model_frame =
                     Some(apply_world_model_update_to_frame(frame, Some(&update)));
             }
-            state.runtime_transition_blocks.push(
-                project_world_model_frame_decision_block(WorldModelFrameProjectionInput {
-                    trace_id: state.trace_id.as_str(),
-                    request_id: state.request_id.as_deref(),
-                    session_id: state.session_id.as_str(),
-                    frame_kind: WorldModelFrameKind::Refresh,
-                    intent: update.intent.as_deref(),
-                    fact_count: update.facts.len(),
-                    assumption_count: update.assumptions.len(),
-                    verification_target_count: update.verification_targets.len(),
-                    rule_count: update.rules.len(),
-                }),
-            );
+            state
+                .runtime_transition_blocks
+                .push(project_world_model_frame_decision_block(
+                    WorldModelFrameProjectionInput {
+                        trace_id: state.trace_id.as_str(),
+                        request_id: state.request_id.as_deref(),
+                        session_id: state.session_id.as_str(),
+                        frame_kind: WorldModelFrameKind::Refresh,
+                        intent: update.intent.as_deref(),
+                        fact_count: update.facts.len(),
+                        assumption_count: update.assumptions.len(),
+                        verification_target_count: update.verification_targets.len(),
+                        rule_count: update.rules.len(),
+                    },
+                ));
             state.captured_world_model_update = Some(update);
         }
         if let Some(frame) = state.world_model_frame.as_mut() {

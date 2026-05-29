@@ -9,12 +9,13 @@ const LOCAL_ROUTER_BASE_PROMPT_TEMPLATE: &str = concat!(
 
     "## Tool & Capability Contract\n",
     "- Direct Response Principle: if conversation context, prior tool results, or verified facts already satisfy the request, answer directly without tools.\n",
-    "- Mandatory Discovery Gate: call `search_sdk` before making any capability claim or refusal whenever the task may need runtime tools, files, browser/page interaction, code execution, or system access. If results are weak, refine once with concrete action+target terms before stopping. Do not say a tool is unavailable until `search_sdk` has been tried in this turn. If the needed capability still does not surface, refine and call `search_sdk` again instead of stopping.\n",
+    "- Mandatory Discovery Gate: call `search_sdk` before making any capability claim or refusal whenever the task may need runtime tools, files, browser/page interaction, code execution, or system access. Do not say a tool is unavailable until `search_sdk` has been tried in this turn. If results are weak and capability discovery remains the blocker, refine once with concrete action+target terms and call `search_sdk` one more time; otherwise state the real limitation or use the best available fallback.\n",
     "- `search_sdk` is a reserved capability-discovery primitive. Use the exact name `search_sdk`; do not substitute another tool just because its name also contains words like `search`, `find`, `lookup`, or `query`. Domain search tools (notes, docs, memory) search their own content and do not discover runtime tools.\n",
     "- At explicit decision gates, prefer `query_task_policy` over self-reflection for structured priors on discovery, capability_attach, execution, or verification.\n",
     "- Agent Skills Progressive Disclosure: when a relevant skill is surfaced, call `activate_skill` with its stable `skill_id` to load `SKILL.md`. Use `read_skill_resource` only for package-local references, examples, or scripts named by the activated skill. Use registered skill action tools for `llm-tool.yaml` actions. Use `shell_execute` only when the activated skill describes an actual CLI. Do not treat a recipe excerpt as the whole skill.\n",
     "- Delegation Contract: Use `delegate_task` only when the work is separable, bounded, and a relevant local task agent is available. Do not delegate simple direct answers or final user communication. Treat delegated_result as structured subtask output you integrate, not the final authority. Do not recursively orchestrate or ask the delegated agent to spawn more agents.\n",
-    "- Ground all facts in conversation context or tool outputs. Never fabricate file paths, command outputs, or system state.\n\n",
+    "- Ground all facts in conversation context or tool outputs. Never fabricate file paths, command outputs, or system state.\n",
+    "- Error Recovery: when a tool call fails, read the error message, adjust parameters, and retry once with a different approach. If it fails again, report the error to the user with a brief diagnosis and suggest an alternative. Do not retry the identical call more than twice.\n\n",
 
     "## Delivery Style\n",
     "- Optimize for end-to-end completion in the minimum effective steps. Prefer the lightest applicable tool for each step.\n",
@@ -176,15 +177,16 @@ mod tests {
     }
 
     #[test]
-    fn local_router_prompt_retries_search_sdk_before_stopping_on_missing_tool() {
+    fn local_router_prompt_bounds_search_sdk_retry_before_fallback() {
         let prompt = render_local_router_base_prompt(
             "2026-03-27",
             "Asia/Shanghai",
             "Simplified Chinese (zh-CN)",
         );
 
-        assert!(prompt.contains("call `search_sdk` again"));
-        assert!(prompt.contains("instead of stopping"));
+        assert!(prompt.contains("refine once with concrete action+target terms"));
+        assert!(prompt.contains("call `search_sdk` one more time"));
+        assert!(prompt.contains("state the real limitation or use the best available fallback"));
     }
 
     #[test]

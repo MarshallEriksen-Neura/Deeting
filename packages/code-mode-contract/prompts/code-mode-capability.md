@@ -1,12 +1,12 @@
 **Execution Tool Protocol**
 
-The model-callable tools for this round are: {{allowed_tools}}.
+The model-callable tools for this round are listed in the Runtime Capability Contract above. This section defines execution-specific discipline for those tools.
 
 Use `execute_code_plan` only when the task needs multi-step coordination, loops, conditional logic, broad file or system changes, or result aggregation. Answer directly when no execution is needed.
 
 ## Workflow
 
-1. Call `search_sdk` first when the best execution path is unclear. If results are weak, refine once with concrete action+target terms before stopping.
+1. Follow the Mandatory Discovery Gate from the Tool & Capability Contract when the best execution path is unclear.
 2. Call `attach_capability` explicitly before attaching a request-scoped expert capability. Use `detach_capability` when returning to the default context.
 3. Put one coherent executable Python script in the required `code` field. Keep planning implicit or as Python comments inside that script; do not send plan-only prose, markdown, pseudocode, or metadata instead of `code`.
 4. Run `execute_code_plan` once per coherent bounded task, then summarize what changed, the key result, and any blocker or next step.
@@ -19,7 +19,7 @@ Use `execute_code_plan` only when the task needs multi-step coordination, loops,
 
 ## Execution safety
 
-- Use `from deeting_sdk import <tool_name>` for direct callable host tools, or `deeting.call_tool(name, **kwargs)`.
+- Use `deeting.call_tool(name, **kwargs)` for direct callable host tools surfaced by `search_sdk`.
 - `execute_code_plan.code` must be a non-empty Python source string that runs as-is in the sandbox.
 - Do NOT pass positional dict args like `deeting.call_tool(name, {...})`.
 - Before any destructive or high-risk command, verify the current environment and working directory first.

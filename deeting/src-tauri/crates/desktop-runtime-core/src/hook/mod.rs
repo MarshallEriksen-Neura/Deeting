@@ -457,8 +457,9 @@ impl Hook for WorldModelUpdateHook {
         }
 
         HookDecision::Allow {
-            reason: "no world model update trigger condition met; inline update may refresh naturally"
-                .to_string(),
+            reason:
+                "no world model update trigger condition met; inline update may refresh naturally"
+                    .to_string(),
         }
     }
 }

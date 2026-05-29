@@ -216,8 +216,10 @@ where
                     execution_decision
                 )));
             }
-            if execution_decision.contains_required_artifact(RequiredArtifact::WorldModelFrameRefresh)
-                || execution_decision.contains_required_artifact(RequiredArtifact::WorldModelFrameRevision)
+            if execution_decision
+                .contains_required_artifact(RequiredArtifact::WorldModelFrameRefresh)
+                || execution_decision
+                    .contains_required_artifact(RequiredArtifact::WorldModelFrameRevision)
             {
                 let artifact = frame_refresh_artifact_for_decision(&execution_decision)
                     .unwrap_or(FrameRefreshArtifact::WorldModelFrameRefresh);

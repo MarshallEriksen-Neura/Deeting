@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-const DEFAULT_RUNTIME_CAPABILITY_PROMPT: &str = "The model-callable tools for this round are: {{allowed_tools}}.\n\n- `search_sdk` is the discovery source of truth for what is callable right now.\n- `query_task_policy` returns bounded prior hints for discovery, capability_attach, execution, or verification. Treat hints as advisory metadata; they must not create a new user goal, replace the user's requested deliverable, or make you narrate verification unless the user explicitly asked for it.\n- If `search_sdk` returns a capability with `status.callable=true` and `invocation_mode=\"direct\"` and it appears in this round's allowed tools, treat it as executable.\n- Prefer the lightest direct tool that finishes the task; when multiple direct tools match, choose the most specific to user intent.\n- Do not invent tool names from labels or summaries. Do not pass positional dict args like `deeting.call_tool(name, {...})`.\n- Do not claim you cannot inspect the local machine, filesystem, terminal, or installed software when a relevant callable direct capability is already in this allowlist.\n- If a required capability is absent from the allowlist, explain the real limitation briefly and use the best available fallback.\n";
+const DEFAULT_RUNTIME_CAPABILITY_PROMPT: &str = "The model-callable tools for this round are: {{allowed_tools}}.\n\n- Tool discovery and invocation rules are defined in the Tool & Capability Contract above. The allowlist here defines what is callable this round.\n- `query_task_policy` returns bounded prior hints for discovery, capability_attach, execution, or verification. Treat hints as advisory metadata; they must not create a new user goal, replace the user's requested deliverable, or make you narrate verification unless the user explicitly asked for it.\n- If a capability has `status.callable=true` and `invocation_mode=\"direct\"` and it appears in this round's allowed tools, treat it as executable.\n- Prefer the lightest direct tool that finishes the task; when multiple direct tools match, choose the most specific to user intent.\n- Do not invent tool names from labels or summaries. Do not pass positional dict args like `deeting.call_tool(name, {...})`.\n- Do not claim you cannot inspect the local machine, filesystem, terminal, or installed software when a relevant callable direct capability is already in this allowlist.\n- If a required capability is absent from the allowlist, explain the real limitation briefly and use the best available fallback.\n";
 
 const EXECUTION_TOOL_PROMPT_TEMPLATE: &str =
     include_str!("../../../../../packages/code-mode-contract/prompts/code-mode-capability.md");
@@ -57,13 +57,12 @@ mod tests {
     }
 
     #[test]
-    fn render_execution_tool_prompt_replaces_allowlist_placeholder() {
+    fn render_execution_tool_prompt_references_runtime_capability_contract() {
         let prompt = render_execution_tool_prompt(&[
             "search_sdk".to_string(),
             "execute_code_plan".to_string(),
         ]);
-        assert!(prompt.contains("`search_sdk`"));
-        assert!(prompt.contains("`execute_code_plan`"));
+        assert!(prompt.contains("Runtime Capability Contract"));
         assert!(!prompt.contains("{{allowed_direct_tools}}"));
         assert!(!prompt.contains("{{allowed_tools}}"));
     }
@@ -85,7 +84,7 @@ mod tests {
 
         assert!(prompt.contains("Use `execute_code_plan` only when the task needs"));
         assert!(prompt.contains("Call `attach_capability` explicitly"));
-        assert!(prompt.contains("`search_sdk`"));
+        assert!(prompt.contains("Mandatory Discovery Gate"));
         assert!(prompt.contains("summarize what changed"));
         assert!(prompt.contains("required `code` field"));
         assert!(prompt.contains("do not send plan-only prose"));
@@ -93,13 +92,15 @@ mod tests {
     }
 
     #[test]
-    fn render_runtime_prompt_uses_discovery_as_truth_source() {
+    fn render_runtime_prompt_references_tool_capability_contract() {
         let prompt = render_runtime_capability_prompt(&[
             "search_sdk".to_string(),
             "shell_execute".to_string(),
         ]);
 
-        assert!(prompt.contains("`search_sdk` is the discovery source of truth"));
+        assert!(prompt.contains(
+            "Tool discovery and invocation rules are defined in the Tool & Capability Contract"
+        ));
         assert!(prompt.contains("query_task_policy"));
         assert!(prompt.contains("Treat hints as advisory metadata"));
         assert!(prompt.contains("Do not claim you cannot inspect the local machine"));

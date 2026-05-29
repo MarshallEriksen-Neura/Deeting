@@ -51,7 +51,11 @@ pub(crate) fn parse_world_model_update_value(args: &Value) -> WorldModelUpdate {
         .and_then(Value::as_str)
         .and_then(parse_execution_strategy);
     let facts = string_list_field(args, "facts")
-        .or_else(|| args.get("context_assessment").and_then(Value::as_str).map(split_sentences))
+        .or_else(|| {
+            args.get("context_assessment")
+                .and_then(Value::as_str)
+                .map(split_sentences)
+        })
         .unwrap_or_default();
     let assumptions = string_list_field(args, "assumptions").unwrap_or_else(|| {
         facts
@@ -65,10 +69,18 @@ pub(crate) fn parse_world_model_update_value(args: &Value) -> WorldModelUpdate {
         .or_else(|| string_list_field(args, "unknowns"))
         .unwrap_or_default();
     let verification_targets = string_list_field(args, "verification_targets")
-        .or_else(|| args.get("tool_plan").and_then(Value::as_str).map(split_step_entries))
+        .or_else(|| {
+            args.get("tool_plan")
+                .and_then(Value::as_str)
+                .map(split_step_entries)
+        })
         .unwrap_or_default();
     let rules = string_list_field(args, "rules")
-        .or_else(|| args.get("constraints").and_then(Value::as_str).map(split_step_entries))
+        .or_else(|| {
+            args.get("constraints")
+                .and_then(Value::as_str)
+                .map(split_step_entries)
+        })
         .unwrap_or_default();
     let proposed_next_phase = args
         .get("proposed_next_phase")
@@ -88,7 +100,9 @@ pub(crate) fn parse_world_model_update_value(args: &Value) -> WorldModelUpdate {
     }
 }
 
-pub(crate) fn extract_world_model_update_from_text(text: &str) -> Option<ExtractedWorldModelUpdate> {
+pub(crate) fn extract_world_model_update_from_text(
+    text: &str,
+) -> Option<ExtractedWorldModelUpdate> {
     let start = text.find(WORLD_MODEL_UPDATE_START_TAG)?;
     let payload_start = start + WORLD_MODEL_UPDATE_START_TAG.len();
     let relative_end = text[payload_start..].find(WORLD_MODEL_UPDATE_END_TAG)?;

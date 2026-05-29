@@ -816,7 +816,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
         },
         CoreToolContract {
             name: "execute_code_plan",
-            description: "Run a bounded codemode tool call in the sandbox. Use it only for multi-step program logic, loops, branching, or broad edits that cannot be completed with one lighter direct tool call. Runtime exposes `deeting.log()`, `deeting.section()`, and `deeting.call_tool()`. SDK tool stubs are only for direct callable host tools surfaced by search_sdk. The required `code` field must contain one coherent executable Python script, not plan-only prose, markdown, pseudocode, or metadata. Keep planning implicit or as Python comments inside that script, and always emit final structured output via `deeting.log(json.dumps(result, ensure_ascii=False))` instead of relying on top-level `return`.",
+            description: "Run a bounded codemode tool call in the sandbox. Use it only for multi-step program logic, loops, branching, or broad edits that cannot be completed with one lighter direct tool call. Runtime exposes `deeting.log()`, `deeting.section()`, and `deeting.call_tool()`. Call direct host tools surfaced by search_sdk through `deeting.call_tool(name, **kwargs)`. The required `code` field must contain one coherent executable Python script, not plan-only prose, markdown, pseudocode, or metadata. Keep planning implicit or as Python comments inside that script, and always emit final structured output via `deeting.log(json.dumps(result, ensure_ascii=False))` instead of relying on top-level `return`.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -852,7 +852,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
                 "task": "Analyze and modify selected project files",
                 "scope": { "paths": ["src/foo.rs", "src/bar.rs"] },
                 "constraints": { "read_only": false, "max_steps": 8 },
-                "code": "from deeting_sdk import search_sdk\nresult = search_sdk(query='search web tools')\ndeeting.log(json.dumps(result, ensure_ascii=False))",
+                "code": "result = deeting.call_tool('search_sdk', query='search web tools')\ndeeting.log(json.dumps(result, ensure_ascii=False))",
                 "language": "python",
                 "dry_run": false
             }),
@@ -2528,6 +2528,26 @@ mod tests {
         assert!(tool
             .description
             .contains("replace the requested deliverable"));
+    }
+
+    #[test]
+    fn execute_code_plan_contract_uses_runtime_call_tool_api() {
+        let tool = desktop_runtime_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == "execute_code_plan")
+            .expect("execute_code_plan core tool should exist");
+        let example_code = tool
+            .example_arguments
+            .get("code")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+
+        assert!(tool
+            .description
+            .contains("deeting.call_tool(name, **kwargs)"));
+        assert!(example_code.contains("deeting.call_tool('search_sdk'"));
+        assert!(!tool.description.contains("deeting_sdk"));
+        assert!(!example_code.contains("deeting_sdk"));
     }
 
     #[test]
