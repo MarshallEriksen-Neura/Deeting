@@ -802,7 +802,7 @@ fn enrich_response_with_tool_trace_includes_error_result_blocks() {
     ];
     let metrics = RuntimeMetricsAccumulator::default();
 
-    let enriched = enrich_response_with_tool_trace(response, &meta, true, &metrics);
+    let enriched = enrich_response_with_tool_trace(response, &meta, true, &metrics, None);
     let blocks = enriched
         .get("tool_trace_blocks")
         .and_then(serde_json::Value::as_array)
@@ -945,7 +945,7 @@ fn enrich_response_with_tool_trace_falls_back_to_execution_graph_blocks() {
     });
     let metrics = RuntimeMetricsAccumulator::default();
 
-    let enriched = enrich_response_with_tool_trace(response, &[], false, &metrics);
+    let enriched = enrich_response_with_tool_trace(response, &[], false, &metrics, None);
     let blocks = enriched
         .get("tool_trace_blocks")
         .and_then(serde_json::Value::as_array)

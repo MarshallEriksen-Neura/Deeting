@@ -37,6 +37,7 @@ pub(super) fn prepare_runtime_state_for_approval_resume(
         graph_pending_tool_call_meta,
         false,
         &state.runtime_metrics,
+        None,
     ));
     rewind_round_for_post_approval_continuation(&mut state);
 

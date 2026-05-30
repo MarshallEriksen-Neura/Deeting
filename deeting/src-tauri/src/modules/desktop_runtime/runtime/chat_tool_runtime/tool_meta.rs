@@ -13,8 +13,15 @@ pub(super) fn enrich_response_with_tool_trace(
     tool_call_meta: &[serde_json::Value],
     tool_trace_streamed: bool,
     runtime_metrics: &RuntimeMetricsAccumulator,
+    captured_blocks: Option<&[serde_json::Value]>,
 ) -> serde_json::Value {
-    let mut trace_blocks = if !tool_call_meta.is_empty() {
+    let mut trace_blocks = if let Some(blocks) = captured_blocks.filter(|b| !b.is_empty()) {
+        // Use the chronological stream of blocks emitted during the agentic loop
+        // (thought -> text -> tool_call -> tool_result, per round). This preserves
+        // intermediate narrative (thought/text from middle rounds) that would
+        // otherwise be lost on reload, since tool_call_meta only covers tool calls.
+        blocks.to_vec()
+    } else if !tool_call_meta.is_empty() {
         build_local_tool_trace_blocks(tool_call_meta)
     } else {
         response
@@ -40,13 +47,19 @@ pub(super) fn enrich_response_with_tool_trace(
             .iter()
             .any(|block| block.get("type").and_then(|v| v.as_str()) == Some("thought"));
         if !has_thought_block {
-            trace_blocks.insert(
-                0,
-                serde_json::json!({
-                    "type": "thought",
-                    "content": reasoning,
-                }),
-            );
+            // Append the final round's reasoning AFTER the accumulated tool chain
+            // rather than hoisting it to the front. This `reasoning_content` is the
+            // final round's thinking, which chronologically happens *after* every
+            // tool call already in `trace_blocks`. These blocks are the reload
+            // source (meta_info.blocks) and are canonicalized on history reload
+            // WITHOUT the live append-time thought-hoist, so a front insert would
+            // pin the final thought above all tools on reload — the wrong order.
+            // When there are no tool blocks (plain Q&A) push == front insert, so
+            // the no-tools path is unchanged.
+            trace_blocks.push(serde_json::json!({
+                "type": "thought",
+                "content": reasoning,
+            }));
         }
     }
 

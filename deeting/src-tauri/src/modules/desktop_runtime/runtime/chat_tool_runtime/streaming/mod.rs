@@ -80,6 +80,37 @@ impl LocalRealtimeToolTraceEmitter {
         })]);
     }
 
+    /// Stream the assistant's visible `content` for an intermediate tool-call
+    /// round as a text block. Without this, any preamble the model writes in the
+    /// same turn it issues tool calls (e.g. "let me check that first…") is
+    /// silently dropped — only the final, tool-call-free round's content ever
+    /// reaches the UI via the orchestrator's terminal text block.
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn emit_text(
+        &mut self,
+        content: &str,
+    ) {
+        let trimmed = content.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        self.emit_blocks(vec![serde_json::json!({
+            "type": "text",
+            "content": trimmed,
+        })]);
+    }
+
+    /// Chronological snapshot of every block emitted this turn, in the exact
+    /// order the agentic loop produced them (thought -> text -> tool_call ->
+    /// tool_result, per round). This is the same stream the live UI received,
+    /// so persisting it as the reload source guarantees history renders
+    /// identically to the live turn. Captured even when no `tx` is wired
+    /// (non-stream / resume paths), so callers always get the real order.
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn captured_render_blocks(
+        &self,
+    ) -> &[serde_json::Value] {
+        &self.captured_blocks
+    }
+
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn emit_blocks(
         &mut self,
         blocks: Vec<serde_json::Value>,
@@ -119,4 +150,68 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn build_run
             request_id: realtime_emitter.request_id.clone(),
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn drain_blocks(rx: &mut tokio::sync::mpsc::UnboundedReceiver<String>) -> Vec<serde_json::Value> {
+        let mut blocks = Vec::new();
+        while let Ok(payload) = rx.try_recv() {
+            let value: serde_json::Value =
+                serde_json::from_str(&payload).expect("emitted payload must be valid json");
+            assert_eq!(value["type"], serde_json::json!("blocks"));
+            if let Some(array) = value["blocks"].as_array() {
+                blocks.extend(array.iter().cloned());
+            }
+        }
+        blocks
+    }
+
+    #[test]
+    fn emit_text_streams_intermediate_content_block() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut emitter = LocalRealtimeToolTraceEmitter::new(Some(tx), Some("trace-1"), None);
+
+        emitter.emit_text("  收到主人，让我先侦察一下  ");
+
+        let blocks = drain_blocks(&mut rx);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0]["type"], serde_json::json!("text"));
+        assert_eq!(
+            blocks[0]["content"],
+            serde_json::json!("收到主人，让我先侦察一下")
+        );
+    }
+
+    #[test]
+    fn emit_text_skips_blank_content() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut emitter = LocalRealtimeToolTraceEmitter::new(Some(tx), None, None);
+
+        emitter.emit_text("   \n  ");
+
+        assert!(drain_blocks(&mut rx).is_empty());
+        assert!(!emitter.emitted_any);
+    }
+
+    #[test]
+    fn intermediate_round_emits_thought_then_text_then_tool_call_in_order() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut emitter = LocalRealtimeToolTraceEmitter::new(Some(tx), Some("trace-2"), None);
+
+        // Mirrors the agentic-loop order: reasoning -> visible content -> tool call.
+        emitter.emit_thought("The user wants me to analyze the vault.");
+        emitter.emit_text("收到主人！傻妞马上帮你分析～");
+        emitter.emit_tool_call_running("call_abc", "search_sdk");
+
+        let blocks = drain_blocks(&mut rx);
+        assert_eq!(blocks.len(), 3);
+        assert_eq!(blocks[0]["type"], serde_json::json!("thought"));
+        assert_eq!(blocks[1]["type"], serde_json::json!("text"));
+        assert_eq!(blocks[1]["content"], serde_json::json!("收到主人！傻妞马上帮你分析～"));
+        assert_eq!(blocks[2]["type"], serde_json::json!("tool_call"));
+        assert_eq!(blocks[2]["callId"], serde_json::json!("call_abc"));
+    }
 }

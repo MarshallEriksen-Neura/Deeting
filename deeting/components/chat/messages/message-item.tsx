@@ -254,7 +254,7 @@ export const MessageItem = React.memo<MessageItemProps>(
         className={cn(
           "flex w-full min-w-0 gap-3 shrink-0 rounded-2xl transition-all duration-300",
           isFocusedMessage && "bg-amber-500/10 ring-1 ring-amber-400/30 px-2 py-2 -mx-2",
-          message.role === "user" ? "flex-row-reverse" : "flex-row"
+          "flex-row"
         )}
       >
         {/* 消息气泡 */}
@@ -336,8 +336,11 @@ export const MessageItem = React.memo<MessageItemProps>(
             />
           </div>
         ) : (
-          <div className="flex min-w-0 max-w-[min(82%,48rem)] flex-col items-end gap-1.5">
-            <div className="chat-user-bubble relative min-w-[9.75rem] max-w-full rounded-[32px] border px-5 py-3 text-[15px] font-normal leading-[1.48] tracking-normal">
+          <div className="flex min-w-0 max-w-[85%] flex-col gap-1.5">
+            <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/60">
+              {t("message.you")}
+            </div>
+            <div className="chat-user-bubble relative max-w-full rounded-xl border px-4 py-3 text-[15px] font-normal leading-[1.48] tracking-normal">
               {message.attachments?.length ? (
                 <div className="mb-3">
                   <MessageAttachments
@@ -352,7 +355,7 @@ export const MessageItem = React.memo<MessageItemProps>(
                 className="chat-markdown chat-markdown-user"
               />
             </div>
-            <div className="chat-user-bubble-meta px-1 text-right text-[11px]">
+            <div className="chat-user-bubble-meta px-1 text-[11px]">
               {userPageContextLabel ? (
                 <div className="mb-1 inline-flex max-w-full items-center gap-1 rounded-full border border-emerald-200/80 bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700 dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-200">
                   <span className="truncate">

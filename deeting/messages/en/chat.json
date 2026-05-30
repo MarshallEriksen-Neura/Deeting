@@ -191,6 +191,9 @@
       "records": "Highlighted records",
       "nextActions": "Suggested next actions"
     },
+    "message": {
+      "you": "You"
+    },
     "input": {
       "placeholder": "Message {name}...",
       "image": {

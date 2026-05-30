@@ -168,16 +168,23 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
   }, [searchParams]);
 
   const handleSelectSession = useCallback(async (targetSessionId: string) => {
+    // 从当前列表中查找目标会话的标题并同步到 store
+    const targetSession = items.find((s) => s.session_id === targetSessionId);
+    if (targetSession) {
+      const title = targetSession.title?.trim() || targetSession.summary_text?.trim() || null;
+      useChatRuntimeStore.getState().setSessionTitle(title);
+    }
     await loadHistoryBySession(targetSessionId);
     router.replace(buildChatUrl(targetSessionId));
     onClose();
-  }, [loadHistoryBySession, router, buildChatUrl, onClose]);
+  }, [loadHistoryBySession, router, buildChatUrl, onClose, items]);
 
   const handleResetSession = useCallback(async () => {
     resetSession();
     setMessages([]);
     clearAttachments();
     setGlobalLoading(true);
+    useChatRuntimeStore.getState().setSessionTitle(null);
     try {
       const created = await createConversation({});
       if (created.session_id) {
@@ -255,13 +262,17 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
     try {
       await renameConversation(renameSessionId, nextTitle);
       await mutate();
+      // 如果重命名的是当前正在查看的会话，同步更新运行时 store 中的标题
+      if (renameSessionId === sessionId) {
+        useChatRuntimeStore.getState().setSessionTitle(nextTitle);
+      }
       setRenameOpen(false);
     } catch {
       setRenameError(t('history.renameFailed'));
     } finally {
       setRenameSaving(false);
     }
-  }, [renameSessionId, renameValue, renameSaving, t, mutate]);
+  }, [renameSessionId, renameValue, renameSaving, t, mutate, sessionId]);
 
   const handleRenameOpenChange = useCallback((open: boolean) => {
     setRenameOpen(open);

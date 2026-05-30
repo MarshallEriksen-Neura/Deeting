@@ -130,25 +130,11 @@ function findNarrativeInsertionIndex(blocks: MessageBlock[]): number {
 }
 
 function findThoughtInsertionIndex(blocks: InternalMessageBlock[], fallbackIndex: number): number {
-  const existingThoughtIndex = blocks.findIndex((block) => block.type === "thought")
-  if (existingThoughtIndex >= 0) {
-    // A thought already exists. Incoming thought tokens belong either to the
-    // SAME streaming thought (still the trailing narrative block, so the caller
-    // merges into it) or to a NEW reasoning step that follows the previous
-    // step's tool chain. Both want the natural chronological position. Anchoring
-    // every thought right after the FIRST one collapses multi-step reasoning
-    // into a single block — breaking the think -> act -> observe -> think
-    // timeline for agentic turns.
-    return fallbackIndex
-  }
-
-  // First thought of the message: hoist it ahead of any already-streamed tool
-  // chain / answer text so reasoning leads the turn. Some providers emit
-  // reasoning_content only in the terminal payload, after tools and text.
-  const firstAnswerBlockIndex = blocks.findIndex(
-    (block) => block.type !== "activity_timeline" && block.type !== "diting_think_frame"
-  )
-  return firstAnswerBlockIndex >= 0 ? firstAnswerBlockIndex : fallbackIndex
+  // Always use chronological position. The backend now appends final reasoning
+  // AFTER the tool chain (not before), so reload order is chronological. Live
+  // UI must match: no hoist, even for the first thought. When there are no
+  // tool blocks (plain Q&A), fallbackIndex is 0, so thought still leads.
+  return fallbackIndex
 }
 
 function insertOrMergeNarrativeBlock(

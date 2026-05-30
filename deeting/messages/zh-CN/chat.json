@@ -191,6 +191,9 @@
       "records": "重点记录",
       "nextActions": "建议下一步"
     },
+    "message": {
+      "you": "你"
+    },
     "input": {
       "placeholder": "给 {name} 发消息...",
       "image": {

@@ -64,12 +64,13 @@ export default function HUD() {
       setModels: state.setModels,
     }))
   );
-  const { isLoading, errorMessage, statusCode, statusMeta } = useChatRuntimeStore(
+  const { isLoading, errorMessage, statusCode, statusMeta, sessionTitle } = useChatRuntimeStore(
     useShallow((state) => ({
       isLoading: state.isLoading,
       errorMessage: state.errorMessage,
       statusCode: state.statusCode,
       statusMeta: state.statusMeta,
+      sessionTitle: state.sessionTitle,
     }))
   );
 
@@ -242,7 +243,7 @@ export default function HUD() {
                className="flex items-center gap-2 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors hover:text-slate-900 dark:hover:text-white"
                aria-label={t("history.title")}
              >
-               <span className="truncate max-w-[120px]">{t("hud.sessionTitle")}</span>
+               <span className="truncate max-w-[120px]">{sessionTitle?.trim() || t("hud.sessionTitle")}</span>
              </button>
              <button
                type="button"

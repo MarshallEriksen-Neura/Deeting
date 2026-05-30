@@ -214,16 +214,12 @@
   --scrollbar-thumb-hover: color-mix(in oklch, var(--ink) 24%, transparent);
   --scrollbar-thumb-active: color-mix(in oklch, var(--ink) 34%, transparent);
 
-  /* chat user bubble (business) */
-  --chat-user-bubble-bg: linear-gradient(
-    135deg,
-    rgba(220, 217, 255, 0.97) 0%,
-    rgba(199, 212, 255, 0.97) 100%
-  );
-  --chat-user-bubble-border: rgba(255, 255, 255, 0.5);
-  --chat-user-bubble-fg: rgba(255, 255, 255, 0.97);
-  --chat-user-bubble-muted-fg: color-mix(in srgb, #6b7280 88%, transparent);
-  --chat-user-bubble-attachment-bg: rgba(255, 255, 255, 0.16);
+  /* chat user message (workspace) */
+  --chat-user-bubble-bg: color-mix(in srgb, var(--panel-bg) 92%, var(--primary) 8%);
+  --chat-user-bubble-border: var(--hairline);
+  --chat-user-bubble-fg: var(--foreground);
+  --chat-user-bubble-muted-fg: var(--muted-foreground);
+  --chat-user-bubble-attachment-bg: var(--muted);
 
   /* island (business) — warm gold floating capsule */
   --island-shell-bg: color-mix(in oklch, var(--panel-bg) 78%, #f5efe6 22%);
@@ -357,19 +353,11 @@ html.dark {
   --scrollbar-thumb-hover: color-mix(in oklch, var(--ink) 28%, transparent);
   --scrollbar-thumb-active: color-mix(in oklch, var(--ink) 38%, transparent);
 
-  --chat-user-bubble-bg: linear-gradient(
-    135deg,
-    rgba(115, 130, 210, 0.9) 0%,
-    rgba(95, 113, 190, 0.9) 100%
-  );
-  --chat-user-bubble-border: rgba(215, 225, 255, 0.18);
-  --chat-user-bubble-fg: rgba(247, 250, 255, 0.97);
-  --chat-user-bubble-muted-fg: color-mix(
-    in srgb,
-    rgba(232, 235, 255, 0.78) 92%,
-    transparent
-  );
-  --chat-user-bubble-attachment-bg: rgba(255, 255, 255, 0.12);
+  --chat-user-bubble-bg: color-mix(in srgb, var(--panel-bg) 92%, var(--primary) 8%);
+  --chat-user-bubble-border: var(--hairline);
+  --chat-user-bubble-fg: var(--foreground);
+  --chat-user-bubble-muted-fg: var(--muted-foreground);
+  --chat-user-bubble-attachment-bg: var(--muted);
 
   --island-shell-bg: color-mix(in oklch, var(--panel-bg) 72%, #2a2318 28%);
   --island-shell-border: color-mix(in oklch, var(--hairline) 55%, #8b7355 45%);
@@ -887,50 +875,31 @@ html:not(.dark) [data-tauri-drag-region] {
 }
 
 
-/* ─── 11. Chat bubble (business) ──────────────────────────────────────────── */
+/* ─── 11. Chat user message (workspace) ──────────────────────────────────── */
 .chat-user-bubble {
-  background:
-    linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.28) 0%,
-      rgba(255, 255, 255, 0) 44%
-    ),
-    var(--chat-user-bubble-bg);
+  background: var(--chat-user-bubble-bg);
   border-color: var(--chat-user-bubble-border);
   color: var(--chat-user-bubble-fg);
-  backdrop-filter: blur(18px) saturate(1.08);
-  -webkit-backdrop-filter: blur(18px) saturate(1.08);
-  text-shadow: 0 1px 1px rgba(90, 103, 177, 0.12);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.54),
-    0 10px 24px -22px rgba(129, 143, 214, 0.48),
-    0 3px 8px -7px rgba(108, 122, 194, 0.24);
 }
 
 .chat-user-bubble .chat-markdown-user {
-  --chat-link-color: color-mix(in srgb, white 78%, var(--primary) 22%);
-  --fgColor-default: var(--chat-user-bubble-fg);
-  --fgColor-muted: var(--chat-user-bubble-muted-fg);
-  --fgColor-accent: var(--chat-link-color);
-  --bgColor-muted: color-mix(in srgb, white 14%, transparent);
-  --borderColor-default: color-mix(in srgb, white 20%, transparent);
-  --color-prettylights-syntax-comment: color-mix(in srgb, var(--chat-user-bubble-fg) 66%, transparent);
-  --color-prettylights-syntax-constant: var(--chat-user-bubble-fg);
-  --color-prettylights-syntax-entity: color-mix(in srgb, var(--chat-link-color) 82%, var(--chat-user-bubble-fg) 18%);
-  --color-prettylights-syntax-keyword: color-mix(in srgb, var(--chat-link-color) 64%, var(--chat-user-bubble-fg) 36%);
-  --color-prettylights-syntax-string: color-mix(in srgb, var(--chat-user-bubble-fg) 88%, var(--chat-link-color) 12%);
-  --color-prettylights-syntax-variable: color-mix(in srgb, var(--chat-user-bubble-fg) 82%, var(--chat-link-color) 18%);
+  --chat-link-color: var(--primary);
+  --fgColor-default: var(--foreground);
+  --fgColor-muted: var(--muted-foreground);
+  --fgColor-accent: var(--primary);
+  --bgColor-muted: var(--muted);
+  --borderColor-default: var(--hairline);
 }
 
 .chat-user-bubble .chat-markdown-user :where(p, ul, ol, blockquote, pre, table):first-child { margin-top: 0; }
 .chat-user-bubble .chat-markdown-user :where(p, ul, ol, blockquote, pre, table):last-child { margin-bottom: 0; }
 
-.chat-user-bubble-meta { color: var(--chat-user-bubble-muted-fg); }
+.chat-user-bubble-meta { color: var(--muted-foreground); }
 
 .chat-user-attachment-card {
-  background: var(--chat-user-bubble-attachment-bg);
-  border-color: var(--chat-user-bubble-border);
-  color: var(--chat-user-bubble-fg);
+  background: var(--muted);
+  border-color: var(--hairline);
+  color: var(--foreground);
 }
 
 

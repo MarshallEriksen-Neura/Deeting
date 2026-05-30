@@ -44,6 +44,7 @@ interface ChatRuntimeStore {
   globalLoading: boolean
   activeMessageId: string | null
   interruptedMessageId: string | null
+  sessionTitle: string | null
   statusMessageId: string | null
   statusStage: string | null
   statusCode: string | null
@@ -57,6 +58,7 @@ interface ChatRuntimeStore {
   loadHistory: (sessionId: string) => Promise<void>
   resetSession: () => void
   setSessionId: (sessionId: string | null) => void
+  setSessionTitle: (title: string | null) => void
   setIsLoading: (loading: boolean) => void
   setGlobalLoading: (loading: boolean) => void
   setActiveMessageId: (messageId: string | null) => void
@@ -99,6 +101,7 @@ const emptyRuntimeState = {
   globalLoading: false,
   activeMessageId: null,
   interruptedMessageId: null,
+  sessionTitle: null,
   statusMessageId: null,
   statusStage: null,
   statusCode: null,
@@ -114,6 +117,7 @@ const emptyRuntimeState = {
   | "loadHistory"
   | "resetSession"
   | "setSessionId"
+  | "setSessionTitle"
   | "setIsLoading"
   | "setGlobalLoading"
   | "setActiveMessageId"
@@ -300,6 +304,9 @@ export const useChatRuntimeStore = create<ChatRuntimeStore>()((set, get) => ({
   setSessionId: (sessionId) => {
     set({ sessionId })
     mirrorRuntimePatchToChatStore({ sessionId })
+  },
+  setSessionTitle: (title) => {
+    set({ sessionTitle: title })
   },
   setIsLoading: (isLoading) => {
     set({ isLoading })

@@ -13,7 +13,6 @@ import type {
 } from "@/lib/chat/message-protocol";
 import { cn } from "@/lib/utils";
 import {
-  AIResponseStatusRail,
   AIResponseStreamingTail,
 } from "@/components/chat/messages/ai-response-bubble/status-rail";
 import { ExecutionConsole } from "@/components/chat/messages/ai-response-bubble/execution-console";
@@ -332,17 +331,6 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
         data-slot="glass-card"
       >
         <div className="pl-4 pr-1 py-2 min-w-0 overflow-hidden">
-          <AIResponseStatusRail
-            isActive={isActive && !activityTimelineBlock}
-            hasContent={hasAnswerContent}
-            hasToolActivity={hasToolActivity}
-            statusStage={statusStage}
-            statusCode={statusCode}
-            statusMeta={statusMeta}
-            streamEnabled={streamEnabled}
-            shouldRevealCallChain={shouldRevealCallChain}
-          />
-
           {activityTimelineBlock ? (
             <AssistantActivityTimeline
               block={activityTimelineBlock}

@@ -615,6 +615,7 @@ async fn continue_local_chat_complete_with_tools(
                     &effective_tool_call_meta,
                     state.realtime_emitter.emitted_any,
                     &state.runtime_metrics,
+                    Some(state.realtime_emitter.captured_render_blocks()),
                 ),
             });
         }
@@ -700,6 +701,7 @@ async fn continue_local_chat_complete_with_tools(
                 &effective_tool_call_meta,
                 state.realtime_emitter.emitted_any,
                 &state.runtime_metrics,
+                Some(state.realtime_emitter.captured_render_blocks()),
             );
             return Ok(LocalChatToolRuntimeOutput {
                 captured_world_model_update: state.captured_world_model_update.clone(),
@@ -720,6 +722,20 @@ async fn continue_local_chat_complete_with_tools(
             .filter(|v| !v.is_empty())
         {
             state.realtime_emitter.emit_thought(reasoning);
+        }
+
+        // Stream the assistant's visible content for this intermediate round as a
+        // text block, emitted after the thought and before the tool-call blocks so
+        // the UI renders thought -> text -> tool_call in chronological order.
+        // Final-round content is handled by the orchestrator's terminal text block,
+        // so this only covers content that shares a turn with tool calls.
+        if let Some(content) = response
+            .get("content")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+        {
+            state.realtime_emitter.emit_text(content);
         }
 
         state
@@ -816,6 +832,7 @@ async fn continue_local_chat_complete_with_tools(
                                 &current_tool_call_meta,
                                 state.realtime_emitter.emitted_any,
                                 &state.runtime_metrics,
+                                Some(state.realtime_emitter.captured_render_blocks()),
                             ),
                             &state.runtime_transition_blocks,
                         ),
@@ -835,6 +852,7 @@ async fn continue_local_chat_complete_with_tools(
                         &canonical_tool_call_meta,
                         state.realtime_emitter.emitted_any,
                         &state.runtime_metrics,
+                        None,
                     ),
                     &state.runtime_transition_blocks,
                 ));
@@ -926,6 +944,7 @@ async fn continue_local_chat_complete_with_tools(
                             &current_tool_call_meta,
                             state.realtime_emitter.emitted_any,
                             &state.runtime_metrics,
+                            Some(state.realtime_emitter.captured_render_blocks()),
                         ),
                         &state.runtime_transition_blocks,
                     ),
