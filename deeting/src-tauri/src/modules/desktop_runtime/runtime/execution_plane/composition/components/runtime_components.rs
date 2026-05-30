@@ -775,6 +775,20 @@ async fn request_world_model_update(
 
     match parse_secretary_world_model_update_response(&response) {
         Ok(update) => {
+            let goal = current_frame.goal.clone();
+            fn truncate_ellipsis(s: &str, max_chars: usize) -> String {
+                if s.chars().count() <= max_chars { return s.to_string(); }
+                let truncated: String = s.chars().take(max_chars).collect();
+                format!("{truncated}…")
+            }
+            let update_facts: Vec<String> = update.facts.iter().take(3)
+                .map(|s| truncate_ellipsis(s, 80)).collect();
+            let update_assumptions: Vec<String> = update.assumptions.iter().take(3)
+                .map(|s| truncate_ellipsis(s, 80)).collect();
+            let update_unknowns: Vec<String> = update.new_unknowns.iter().take(3)
+                .map(|s| truncate_ellipsis(s, 80)).collect();
+            let update_vts: Vec<String> = update.verification_targets.iter().take(3)
+                .map(|s| truncate_ellipsis(s, 80)).collect();
             emit_world_model_frame_status(
                 runtime_request,
                 "success",
@@ -790,6 +804,12 @@ async fn request_world_model_update(
                     "assumptions": update.assumptions.len(),
                     "verification_targets": update.verification_targets.len(),
                     "rules": update.rules.len(),
+                    "goal": goal,
+                    "update_facts": update_facts,
+                    "update_assumptions": update_assumptions,
+                    "update_unknowns": update_unknowns,
+                    "update_verification_targets": update_vts,
+                    "resolved_unknowns": update.resolved_unknowns.len(),
                 }),
             );
             Ok(Some(update))

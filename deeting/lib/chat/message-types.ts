@@ -2,6 +2,36 @@ import type { ChatAttachment } from "@/lib/chat/message-content"
 import type { MessageBlock } from "@/lib/chat/message-protocol"
 import type { ExecutionLifecyclePayload } from "@/lib/execution-tree/types"
 
+/** Token usage for a single response */
+export interface MessageUsage {
+  inputTokens: number
+  outputTokens: number
+  cachedTokens?: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
+  totalTokens: number
+  durationMs?: number
+  ttftMs?: number
+}
+
+/** Memory item injected into context */
+export interface MemoryInjectionRef {
+  id: string
+  content: string
+  category?: string
+  tier?: string
+}
+
+/** Aggregated session-level usage */
+export interface SessionUsage {
+  totalInputTokens: number
+  totalOutputTokens: number
+  totalCachedTokens: number
+  contextWindowUsed: number
+  contextWindowLimit: number
+  messageUsages: Record<string, MessageUsage>
+}
+
 export type MessageRole = "user" | "assistant" | "system"
 
 export type ToolCall = {

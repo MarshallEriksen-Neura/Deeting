@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Status Rail + Token Usage + Memory — Design Preview</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    background: #09090b;
+    color: #e4e4e7;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px;
+    gap: 56px;
+  }
+  h2 { font-size: 11px; font-weight: 500; color: #52525b; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 12px; }
+  .section { width: 100%; max-width: 640px; display: flex; flex-direction: column; gap: 24px; }
+  .section-title { font-size: 11px; font-weight: 500; color: #3f3f46; letter-spacing: 0.1em; text-transform: uppercase; border-bottom: 1px solid #27272a; padding-bottom: 8px; }
+  .glass { background: rgba(24, 24, 27, 0.8); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border: 1px solid rgba(63, 63, 70, 0.5); border-radius: 16px; }
+  .variants { display: flex; gap: 32px; flex-wrap: wrap; justify-content: center; }
+  .variant-col { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
+  .variant-label { font-size: 10px; color: #3f3f46; letter-spacing: 0.06em; }
+  .divider { height: 1px; background: #27272a; margin: 4px 0; }
+
+  /* ═══ HUD Capsule ═══ */
+  .hud-capsule {
+    display: inline-flex; align-items: center; gap: 12px;
+    padding: 8px 16px; background: rgba(24, 24, 27, 0.85); backdrop-filter: blur(32px);
+    border: 1px solid rgba(63, 63, 70, 0.4); border-radius: 999px;
+    font-size: 12px; cursor: pointer; transition: all 0.3s ease;
+  }
+  .hud-capsule:hover { border-color: rgba(113, 113, 122, 0.5); }
+  .hud-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 6px rgba(34, 197, 94, 0.4); flex-shrink: 0; }
+  .hud-dot.warn { background: #f59e0b; box-shadow: 0 0 6px rgba(245, 158, 11, 0.4); }
+  .hud-dot.danger { background: #ef4444; box-shadow: 0 0 6px rgba(239, 68, 68, 0.4); }
+  .hud-model { color: #a1a1aa; font-weight: 500; }
+  .hud-sep { width: 1px; height: 14px; background: #3f3f46; flex-shrink: 0; }
+  .hud-title { color: #71717a; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hud-usage { font-size: 10px; font-weight: 500; font-variant-numeric: tabular-nums; color: #52525b; margin-left: 4px; transition: color 0.3s; }
+  .hud-usage.warn { color: #f59e0b; }
+  .hud-usage.danger { color: #ef4444; }
+
+  /* ═══ Status Rail ═══ */
+  .status-rail {
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 12px 14px; min-width: 240px; max-width: 380px;
+  }
+
+  /* detail line */
+  .detail-line {
+    display: flex; align-items: flex-start; gap: 8px;
+    font-size: 11px; font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    line-height: 1.5;
+  }
+  .detail-line .dot {
+    width: 4px; height: 4px; border-radius: 50%;
+    background: #6366f1; opacity: 0.5; flex-shrink: 0; margin-top: 6px;
+  }
+  .detail-line.active .dot { opacity: 1; box-shadow: 0 0 4px rgba(99, 102, 241, 0.5); }
+  .detail-line .text { color: #52525b; }
+  .detail-line.active .text { color: #818cf8; }
+  .detail-line.done .text { color: #3f3f46; }
+  .detail-line .meta { color: #3f3f46; }
+
+  /* world model chip */
+  .wm-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px; border-radius: 999px;
+    background: rgba(99, 102, 241, 0.06); border: 1px solid rgba(99, 102, 241, 0.1);
+    font-size: 10px; font-family: "SF Mono", "Fira Code", monospace;
+    align-self: flex-start;
+  }
+  .wm-chip .wm-val { color: #818cf8; }
+  .wm-chip .wm-sep { color: #27272a; }
+  .wm-chip .wm-label { color: #52525b; }
+
+  /* world model goal */
+  .wm-goal { font-size: 10px; color: #6366f1; opacity: 0.4; font-style: italic; }
+
+  /* update fact */
+  .wm-fact { font-size: 10px; color: #6366f1; opacity: 0.35; font-family: "SF Mono", "Fira Code", monospace; }
+
+  /* upstream loader row */
+  .upstream-row {
+    display: flex; align-items: center; gap: 8px; margin-top: 4px;
+  }
+  .upstream-label { font-size: 10px; color: #52525b; text-transform: uppercase; letter-spacing: 0.06em; }
+  .upstream-elapsed { font-size: 10px; color: #3f3f46; font-variant-numeric: tabular-nums; }
+
+  /* MathCurveLoader mock — animated SVG */
+  .math-curve-loader {
+    width: 20px; height: 20px; flex-shrink: 0;
+    animation: loader-spin 2.4s linear infinite;
+  }
+  .math-curve-loader circle { fill: #6366f1; }
+  @keyframes loader-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+  /* timeline connector */
+  .timeline-connector {
+    width: 1px; height: 12px; background: linear-gradient(to bottom, rgba(99, 102, 241, 0.2), rgba(99, 102, 241, 0.05));
+    margin-left: 2px; flex-shrink: 0;
+  }
+
+  /* ═══ Message ═══ */
+  .msg-container { width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 6px; }
+  .msg-bubble { padding: 16px 20px; font-size: 14px; line-height: 1.65; color: #d4d4d8; }
+  .msg-bubble p { margin-bottom: 12px; }
+  .msg-bubble p:last-child { margin-bottom: 0; }
+  .msg-user {
+    padding: 12px 18px; border-radius: 16px;
+    background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.12);
+    font-size: 14px; color: #c4b5fd; align-self: flex-end; max-width: 80%;
+  }
+  code.inline {
+    color: #818cf8; background: rgba(99, 102, 241, 0.1);
+    padding: 1px 5px; border-radius: 3px; font-size: 12px;
+  }
+  .code-block {
+    padding: 12px; border-radius: 8px; background: rgba(0,0,0,0.3);
+    font-family: "SF Mono", "Fira Code", monospace; font-size: 12px;
+    color: #a1a1aa; line-height: 1.6;
+  }
+
+  /* ═══ Memory Badge ═══ */
+  .memory-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px;
+    font-size: 10px; font-weight: 500; letter-spacing: 0.04em;
+    cursor: pointer; transition: all 0.2s;
+    background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.15);
+    color: #818cf8; align-self: flex-start;
+  }
+  .memory-badge:hover { background: rgba(99, 102, 241, 0.14); border-color: rgba(99, 102, 241, 0.3); }
+  .memory-badge svg { width: 12px; height: 12px; opacity: 0.7; }
+
+  .memory-expanded { max-width: 560px; padding: 16px; display: flex; flex-direction: column; gap: 10px; align-self: flex-start; }
+  .memory-item {
+    display: flex; gap: 10px; padding: 10px 12px; border-radius: 8px;
+    background: rgba(99, 102, 241, 0.04); border: 1px solid rgba(99, 102, 241, 0.08);
+    font-size: 12px; line-height: 1.5; transition: border-color 0.2s;
+  }
+  .memory-item:hover { border-color: rgba(99, 102, 241, 0.2); }
+  .memory-tag {
+    flex-shrink: 0; padding: 2px 6px; border-radius: 4px;
+    font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  .memory-tag.fact { background: rgba(34, 197, 94, 0.1); color: #4ade80; }
+  .memory-tag.preference { background: rgba(245, 158, 11, 0.1); color: #fbbf24; }
+  .memory-tag.core { background: rgba(99, 102, 241, 0.1); color: #a5b4fc; }
+  .memory-content { color: #a1a1aa; flex: 1; }
+  .memory-id { color: #3f3f46; font-size: 10px; font-family: "SF Mono", monospace; flex-shrink: 0; }
+
+  /* ═══ Usage Panel ═══ */
+  .usage-panel { width: 100%; max-width: 360px; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+  .ctx-header { display: flex; justify-content: space-between; align-items: baseline; }
+  .ctx-label { font-size: 12px; font-weight: 500; color: #a1a1aa; }
+  .ctx-pct { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ctx-pct.normal { color: #e4e4e7; }
+  .ctx-pct.warn { color: #f59e0b; }
+  .ctx-pct.danger { color: #ef4444; }
+  .ctx-bar-track { width: 100%; height: 6px; background: #27272a; border-radius: 3px; overflow: hidden; display: flex; }
+  .ctx-bar-fill { height: 100%; border-radius: 3px; transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+  .ctx-bar-fill.system { background: #6366f1; }
+  .ctx-bar-fill.convo { background: #8b5cf6; }
+  .ctx-bar-fill.tools { background: #a78bfa; }
+  .ctx-tokens { font-size: 11px; color: #52525b; font-variant-numeric: tabular-nums; }
+  .breakdown { display: flex; flex-direction: column; gap: 8px; }
+  .breakdown-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; padding: 4px 0; }
+  .breakdown-left { display: flex; align-items: center; gap: 8px; }
+  .breakdown-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+  .breakdown-dot.system { background: #6366f1; }
+  .breakdown-dot.convo { background: #8b5cf6; }
+  .breakdown-dot.tools { background: #a78bfa; }
+  .breakdown-dot.available { background: #27272a; border: 1px solid #3f3f46; }
+  .breakdown-label { color: #a1a1aa; }
+  .breakdown-value { color: #71717a; font-variant-numeric: tabular-nums; font-size: 11px; }
+  .response-stats { display: flex; gap: 16px; flex-wrap: wrap; }
+  .stat { display: flex; flex-direction: column; gap: 2px; }
+  .stat-label { font-size: 10px; color: #52525b; text-transform: uppercase; letter-spacing: 0.06em; }
+  .stat-value { font-size: 14px; font-weight: 600; color: #e4e4e7; font-variant-numeric: tabular-nums; }
+  .stat-sub { font-size: 10px; color: #3f3f46; font-variant-numeric: tabular-nums; }
+
+  /* ═══ Warning Banner ═══ */
+  .warning-banner {
+    width: 100%; max-width: 560px; padding: 10px 16px; border-radius: 10px;
+    background: rgba(245, 158, 11, 0.06); border: 1px solid rgba(245, 158, 11, 0.15);
+    display: flex; align-items: center; gap: 10px; font-size: 12px; color: #fbbf24;
+  }
+  .warning-banner svg { flex-shrink: 0; width: 16px; height: 16px; opacity: 0.8; }
+  .warning-banner strong { font-weight: 600; }
+  .warning-banner .sub { color: #92400e; font-size: 11px; margin-left: 4px; }
+  .warning-banner.danger { background: rgba(239, 68, 68, 0.06); border-color: rgba(239, 68, 68, 0.15); color: #fca5a5; }
+  .warning-banner.danger .sub { color: #991b1b; }
+  .input-mock {
+    width: 100%; max-width: 560px; padding: 14px 18px; border-radius: 24px;
+    background: rgba(24, 24, 27, 0.6); border: 1px solid #27272a;
+    color: #52525b; font-size: 14px; display: flex; align-items: center; gap: 10px;
+  }
+  .input-mock svg { opacity: 0.4; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SECTION 1 · Status Rail — Vertical Flow
+     The main status display shown after user sends a message
+     ═══════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">1 · Status Rail — Vertical Detail Flow</div>
+  <h2>User sends message → AI processing → status lines accumulate vertically</h2>
+
+  <div class="variants">
+    <!-- Early stage: context loading -->
+    <div class="variant-col">
+      <div class="status-rail glass">
+        <div class="detail-line done">
+          <span class="dot"></span>
+          <span class="text">上下文已加载 · 12 条</span>
+        </div>
+        <div class="detail-line done">
+          <span class="dot"></span>
+          <span class="text">知识库匹配 · 3 文件 · 8 条片段</span>
+        </div>
+        <div class="detail-line active">
+          <span class="dot"></span>
+          <span class="text">正在组装提示词…</span>
+        </div>
+      </div>
+      <span class="variant-label">Early — loading context</span>
+    </div>
+
+    <!-- Mid stage: world model + routing -->
+    <div class="variant-col">
+      <div class="status-rail glass">
+        <div class="detail-line done">
+          <span class="dot"></span>
+          <span class="text">上下文已加载 · 12 条</span>
+        </div>
+        <div class="detail-line done">
+          <span class="dot"></span>
+          <span class="text">路由选择 · 3 候选 → anthropic</span>
+        </div>
+        <div class="wm-goal">重构 auth middleware 以支持 RBAC</div>
+        <div class="wm-chip">
+          <span class="wm-val">4</span><span class="wm-label">事实</span>
+          <span class="wm-sep">·</span>
+          <span class="wm-val">1</span><span class="wm-label">假设</span>
+          <span class="wm-sep">·</span>
+          <span class="wm-val">2</span><span class="wm-label">未知</span>
+        </div>
+        <div class="wm-fact">+ 项目使用 Next.js 15 App Router</div>
+        <div class="wm-fact">+ 已有 /api/auth/[...nextauth] 路由</div>
+        <div class="detail-line active">
+          <span class="dot"></span>
+          <span class="text">等待上游响应 · 4s</span>
+        </div>
+      </div>
+      <span class="variant-label">Mid — world model + waiting</span>
+    </div>
+
+    <!-- Late stage: upstream streaming -->
+    <div class="variant-col">
+      <div class="status-rail glass">
+        <div class="detail-line done">
+          <span class="dot"></span>
+          <span class="text">上下文已加载 · 12 条</span>
+        </div>
+        <div class="detail-line done">
+          <span class="dot"></span>
+          <span class="text">路由选择 · 3 候选 → anthropic</span>
+        </div>
+        <div class="wm-goal">重构 auth middleware 以支持 RBAC</div>
+        <div class="wm-chip">
+          <span class="wm-val">4</span><span class="wm-label">事实</span>
+          <span class="wm-sep">·</span>
+          <span class="wm-val">1</span><span class="wm-label">假设</span>
+          <span class="wm-sep">·</span>
+          <span class="wm-val">2</span><span class="wm-label">未知</span>
+        </div>
+        <div class="timeline-connector"></div>
+        <div class="upstream-row">
+          <svg class="math-curve-loader" viewBox="0 0 1 1">
+            <path d="M0.920 0.500L0.907 0.532L0.870 0.559L0.811 0.575L0.735 0.576L0.648 0.562L0.559 0.530L0.472 0.483L0.395 0.424L0.333 0.357L0.290 0.290L0.267 0.228L0.265 0.177L0.281 0.143L0.312 0.130L0.352 0.142L0.395 0.177L0.436 0.235L0.470 0.312L0.492 0.402L0.500 0.500L0.492 0.598L0.470 0.688L0.436 0.765L0.395 0.823L0.352 0.858L0.312 0.870L0.281 0.857L0.265 0.823L0.267 0.772L0.290 0.710L0.333 0.643L0.395 0.576L0.472 0.517L0.559 0.470L0.648 0.438L0.735 0.424L0.811 0.425L0.870 0.441L0.907 0.468L0.920 0.500"
+              fill="none" stroke="#6366f1" stroke-width="1" opacity="0.22" />
+            <circle cx="0.735" cy="0.576" r="0.024" fill="#6366f1" opacity="0.9" />
+            <circle cx="0.648" cy="0.562" r="0.024" fill="#6366f1" opacity="0.7" />
+            <circle cx="0.559" cy="0.530" r="0.024" fill="#6366f1" opacity="0.5" />
+            <circle cx="0.472" cy="0.483" r="0.024" fill="#6366f1" opacity="0.3" />
+          </svg>
+          <span class="upstream-label">upstream streaming</span>
+          <span class="upstream-elapsed">· 8s</span>
+        </div>
+      </div>
+      <span class="variant-label">Late — upstream streaming + loader</span>
+    </div>
+  </div>
+
+  <!-- Slow upstream hints -->
+  <h2 style="margin-top:16px;">Slow-upstream hint progression</h2>
+  <div class="variants">
+    <div class="variant-col">
+      <div class="status-rail glass" style="padding:10px 14px;">
+        <div class="upstream-row">
+          <svg class="math-curve-loader" viewBox="0 0 1 1"><path d="M0.920 0.500L0.500 0.500" fill="none" stroke="#6366f1" stroke-width="1" opacity="0.22" /><circle cx="0.7" cy="0.5" r="0.024" fill="#6366f1" opacity="0.8" /></svg>
+          <span class="upstream-label">upstream request stream</span>
+          <span class="upstream-elapsed">· 4s</span>
+        </div>
+      </div>
+      <span class="variant-label">&lt; 6s — just elapsed</span>
+    </div>
+    <div class="variant-col">
+      <div class="status-rail glass" style="padding:10px 14px;">
+        <div class="upstream-row">
+          <svg class="math-curve-loader" viewBox="0 0 1 1"><path d="M0.920 0.500L0.500 0.500" fill="none" stroke="#6366f1" stroke-width="1" opacity="0.22" /><circle cx="0.7" cy="0.5" r="0.024" fill="#6366f1" opacity="0.8" /></svg>
+          <span class="upstream-label" style="color:#f59e0b;">等上游响应 · 12s</span>
+        </div>
+      </div>
+      <span class="variant-label">6-15s — soft hint</span>
+    </div>
+    <div class="variant-col">
+      <div class="status-rail glass" style="padding:10px 14px;">
+        <div class="upstream-row">
+          <svg class="math-curve-loader" viewBox="0 0 1 1"><path d="M0.920 0.500L0.500 0.500" fill="none" stroke="#6366f1" stroke-width="1" opacity="0.22" /><circle cx="0.7" cy="0.5" r="0.024" fill="#6366f1" opacity="0.8" /></svg>
+          <span class="upstream-label" style="color:#f59e0b;">网络较慢,还在等 · 22s</span>
+        </div>
+      </div>
+      <span class="variant-label">15-30s — medium</span>
+    </div>
+    <div class="variant-col">
+      <div class="status-rail glass" style="padding:10px 14px;">
+        <div class="upstream-row">
+          <svg class="math-curve-loader" viewBox="0 0 1 1"><path d="M0.920 0.500L0.500 0.500" fill="none" stroke="#6366f1" stroke-width="1" opacity="0.22" /><circle cx="0.7" cy="0.5" r="0.024" fill="#6366f1" opacity="0.8" /></svg>
+          <span class="upstream-label" style="color:#ef4444;">上游响应慢 · 35s (没卡住,可稍候)</span>
+        </div>
+      </div>
+      <span class="variant-label">&gt; 30s — strong</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SECTION 2 · HUD Capsule — Context Window
+     ═══════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">2 · HUD Capsule — Context Window Indicator</div>
+  <h2>Normal &lt; 60% · Warning 60-85% · Danger &gt; 85%</h2>
+  <div class="variants">
+    <div class="variant-col">
+      <div class="hud-capsule">
+        <span class="hud-dot"></span>
+        <span class="hud-model">claude-sonnet-4-6</span>
+        <span class="hud-sep"></span>
+        <span class="hud-title">Design Review Session</span>
+        <span class="hud-usage">28k/128k</span>
+      </div>
+      <span class="variant-label">22%</span>
+    </div>
+    <div class="variant-col">
+      <div class="hud-capsule">
+        <span class="hud-dot warn"></span>
+        <span class="hud-model">claude-sonnet-4-6</span>
+        <span class="hud-sep"></span>
+        <span class="hud-title">Debugging Auth Flow</span>
+        <span class="hud-usage warn">86k/128k</span>
+      </div>
+      <span class="variant-label">67%</span>
+    </div>
+    <div class="variant-col">
+      <div class="hud-capsule">
+        <span class="hud-dot danger"></span>
+        <span class="hud-model">claude-sonnet-4-6</span>
+        <span class="hud-sep"></span>
+        <span class="hud-title">Long Conversation…</span>
+        <span class="hud-usage danger">118k/128k</span>
+      </div>
+      <span class="variant-label">92%</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SECTION 3 · Expanded Usage Panel
+     ═══════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">3 · Expanded Usage Panel</div>
+  <h2>Click HUD to reveal</h2>
+  <div class="variants">
+    <div class="variant-col">
+      <div class="usage-panel glass">
+        <div>
+          <div class="ctx-header">
+            <span class="ctx-label">Context Window</span>
+            <span class="ctx-pct normal">42%</span>
+          </div>
+          <div class="ctx-bar-track" style="margin-top:10px;">
+            <div class="ctx-bar-fill system" style="width:4%"></div>
+            <div class="ctx-bar-fill convo" style="width:30%"></div>
+            <div class="ctx-bar-fill tools" style="width:8%"></div>
+          </div>
+          <div class="ctx-tokens" style="margin-top:6px;">53,200 / 128,000</div>
+        </div>
+        <div class="breakdown">
+          <div class="breakdown-row"><div class="breakdown-left"><span class="breakdown-dot system"></span><span class="breakdown-label">System & Memory</span></div><span class="breakdown-value">4,200</span></div>
+          <div class="breakdown-row"><div class="breakdown-left"><span class="breakdown-dot convo"></span><span class="breakdown-label">Conversation</span></div><span class="breakdown-value">38,600</span></div>
+          <div class="breakdown-row"><div class="breakdown-left"><span class="breakdown-dot tools"></span><span class="breakdown-label">Tool Results</span></div><span class="breakdown-value">10,400</span></div>
+          <div class="divider"></div>
+          <div class="breakdown-row"><div class="breakdown-left"><span class="breakdown-dot available"></span><span class="breakdown-label">Available</span></div><span class="breakdown-value" style="color:#a1a1aa;">74,800</span></div>
+        </div>
+        <div class="divider"></div>
+        <div>
+          <div style="font-size:11px;color:#52525b;margin-bottom:8px;">Last Response</div>
+          <div class="response-stats">
+            <div class="stat"><span class="stat-label">Input</span><span class="stat-value">12,400</span></div>
+            <div class="stat"><span class="stat-label">Output</span><span class="stat-value">1,200</span></div>
+            <div class="stat"><span class="stat-label">Cached</span><span class="stat-value">8,200</span><span class="stat-sub">66% hit</span></div>
+          </div>
+        </div>
+      </div>
+      <span class="variant-label">Normal — 42%</span>
+    </div>
+    <div class="variant-col">
+      <div class="usage-panel glass">
+        <div>
+          <div class="ctx-header">
+            <span class="ctx-label">Context Window</span>
+            <span class="ctx-pct warn">73%</span>
+          </div>
+          <div class="ctx-bar-track" style="margin-top:10px;">
+            <div class="ctx-bar-fill system" style="width:3%"></div>
+            <div class="ctx-bar-fill convo" style="width:58%"></div>
+            <div class="ctx-bar-fill tools" style="width:12%"></div>
+          </div>
+          <div class="ctx-tokens" style="margin-top:6px;">93,800 / 128,000</div>
+        </div>
+        <div class="breakdown">
+          <div class="breakdown-row"><div class="breakdown-left"><span class="breakdown-dot system"></span><span class="breakdown-label">System & Memory</span></div><span class="breakdown-value">3,900</span></div>
+          <div class="breakdown-row"><div class="breakdown-left"><span class="breakdown-dot convo"></span><span class="breakdown-label">Conversation</span></div><span class="breakdown-value">74,200</span></div>
+          <div class="breakdown-row"><div class="breakdown-left"><span class="breakdown-dot tools"></span><span class="breakdown-label">Tool Results</span></div><span class="breakdown-value">15,700</span></div>
+          <div class="divider"></div>
+          <div class="breakdown-row"><div class="breakdown-left"><span class="breakdown-dot available"></span><span class="breakdown-label">Available</span></div><span class="breakdown-value" style="color:#f59e0b;">34,200</span></div>
+        </div>
+        <div class="divider"></div>
+        <div>
+          <div style="font-size:11px;color:#52525b;margin-bottom:8px;">Last Response</div>
+          <div class="response-stats">
+            <div class="stat"><span class="stat-label">Input</span><span class="stat-value">48,200</span></div>
+            <div class="stat"><span class="stat-label">Output</span><span class="stat-value">3,800</span></div>
+            <div class="stat"><span class="stat-label">Cached</span><span class="stat-value">32,100</span><span class="stat-sub">67% hit</span></div>
+          </div>
+        </div>
+      </div>
+      <span class="variant-label">Warning — 73%</span>
+    </div>
+    <div class="variant-col">
+      <div class="usage-panel glass">
+        <div>
+          <div class="ctx-header">
+            <span class="ctx-label">Context Window</span>
+            <span class="ctx-pct danger">91%</span>
+          </div>
+          <div class="ctx-bar-track" style="margin-top:10px;">
+            <div class="ctx-bar-fill system" style="width:3%"></div>
+            <div class="ctx-bar-fill convo" style="width:72%"></div>
+            <div class="ctx-bar-fill tools" style="width:16%"></div>
+          </div>
+          <div class="ctx-tokens" style="margin-top:6px;">116,500 / 128,000</div>
+        </div>
+        <div class="breakdown">
+          <div class="breakdown-row"><div class="breakdown-left"><span class="breakdown-dot system"></span><span class="breakdown-label">System & Memory</span></div><span class="breakdown-value">4,100</span></div>
+          <div class="breakdown-row"><div class="breakdown-left"><span class="breakdown-dot convo"></span><span class="breakdown-label">Conversation</span></div><span class="breakdown-value">92,600</span></div>
+          <div class="breakdown-row"><div class="breakdown-left"><span class="breakdown-dot tools"></span><span class="breakdown-label">Tool Results</span></div><span class="breakdown-value">19,800</span></div>
+          <div class="divider"></div>
+          <div class="breakdown-row"><div class="breakdown-left"><span class="breakdown-dot available"></span><span class="breakdown-label">Available</span></div><span class="breakdown-value" style="color:#ef4444;">11,500</span></div>
+        </div>
+        <div class="divider"></div>
+        <div>
+          <div style="font-size:11px;color:#52525b;margin-bottom:8px;">Last Response</div>
+          <div class="response-stats">
+            <div class="stat"><span class="stat-label">Input</span><span class="stat-value">98,400</span></div>
+            <div class="stat"><span class="stat-label">Output</span><span class="stat-value">6,200</span></div>
+            <div class="stat"><span class="stat-label">Cached</span><span class="stat-value">68,900</span><span class="stat-sub">70% hit</span></div>
+          </div>
+        </div>
+      </div>
+      <span class="variant-label">Danger — 91%</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SECTION 4 · Memory Injection
+     ═══════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">4 · Memory Injection — Message Level</div>
+  <h2>Badge + expanded list</h2>
+  <div class="msg-container">
+    <div class="msg-bubble glass">
+      <p>Based on your previous preferences, I've set up the authentication flow using NextAuth with the GitHub provider. The session strategy is set to JWT since you mentioned wanting edge-compatible sessions.</p>
+      <p>I've also added the middleware guard for <code class="inline">/dashboard</code> routes as we discussed last time.</p>
+    </div>
+    <div class="memory-badge">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/><path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/><path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M19.938 10.5a4 4 0 0 1 .585.396"/><path d="M6 18a4 4 0 0 1-1.967-.516"/><path d="M19.967 17.484A4 4 0 0 1 18 18"/></svg>
+      remember · 3 items
+    </div>
+  </div>
+  <h2 style="margin-top:8px;">Expanded</h2>
+  <div class="memory-expanded glass">
+    <div class="memory-item">
+      <span class="memory-tag preference">preference</span>
+      <span class="memory-content">Prefers NextAuth with GitHub provider; JWT session strategy for edge compatibility</span>
+      <span class="memory-id">mem_8f2a</span>
+    </div>
+    <div class="memory-item">
+      <span class="memory-tag fact">fact</span>
+      <span class="memory-content">Next.js 15 App Router with middleware-based route protection</span>
+      <span class="memory-id">mem_3b7c</span>
+    </div>
+    <div class="memory-item">
+      <span class="memory-tag core">core</span>
+      <span class="memory-content">Dashboard routes require authenticated session — redirect to /login if unauthenticated</span>
+      <span class="memory-id">mem_91d4</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SECTION 5 · Context Warning
+     ═══════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">5 · Context Warning — Input Area</div>
+  <div class="warning-banner">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+    <span><strong>Context 87% used</strong> — consider starting a new session soon<span class="sub">· ~11k tokens remaining</span></span>
+  </div>
+  <div class="warning-banner danger">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+    <span><strong>Context 94% full</strong> — responses may be truncated<span class="sub">· ~4k tokens remaining</span></span>
+  </div>
+  <div class="input-mock">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    <span>Type a message...</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     SECTION 6 · Full Integration
+     ═══════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">6 · Full Integration — Chat View</div>
+
+  <!-- HUD -->
+  <div style="display:flex;justify-content:center;margin-bottom:16px;">
+    <div class="hud-capsule">
+      <span class="hud-dot warn"></span>
+      <span class="hud-model">claude-sonnet-4-6</span>
+      <span class="hud-sep"></span>
+      <span class="hud-title">Auth System Refactor</span>
+      <span class="hud-usage warn">86k/128k</span>
+    </div>
+  </div>
+
+  <div class="msg-container" style="width:100%;max-width:560px;">
+    <!-- User message -->
+    <div class="msg-user">
+      Can you refactor the auth middleware to support role-based access?
+    </div>
+
+    <!-- Status rail (processing state) -->
+    <div class="status-rail glass" style="margin-top:12px;">
+      <div class="detail-line done">
+        <span class="dot"></span>
+        <span class="text">上下文已加载 · 12 条</span>
+      </div>
+      <div class="detail-line done">
+        <span class="dot"></span>
+        <span class="text">路由选择 · 3 候选 → anthropic</span>
+      </div>
+      <div class="wm-goal">重构 auth middleware 以支持 RBAC</div>
+      <div class="wm-chip">
+        <span class="wm-val">4</span><span class="wm-label">事实</span>
+        <span class="wm-sep">·</span>
+        <span class="wm-val">1</span><span class="wm-label">假设</span>
+      </div>
+      <div class="timeline-connector"></div>
+      <div class="upstream-row">
+        <svg class="math-curve-loader" viewBox="0 0 1 1">
+          <path d="M0.920 0.500L0.907 0.532L0.870 0.559L0.811 0.575L0.735 0.576L0.648 0.562L0.559 0.530L0.472 0.483L0.395 0.424L0.333 0.357L0.290 0.290L0.267 0.228L0.265 0.177L0.281 0.143L0.312 0.130L0.352 0.142L0.395 0.177L0.436 0.235L0.470 0.312L0.492 0.402L0.500 0.500L0.492 0.598L0.470 0.688L0.436 0.765L0.395 0.823L0.352 0.858L0.312 0.870L0.281 0.857L0.265 0.823L0.267 0.772L0.290 0.710L0.333 0.643L0.395 0.576L0.472 0.517L0.559 0.470L0.648 0.438L0.735 0.424L0.811 0.425L0.870 0.441L0.907 0.468L0.920 0.500"
+            fill="none" stroke="#6366f1" stroke-width="1" opacity="0.22" />
+          <circle cx="0.735" cy="0.576" r="0.024" fill="#6366f1" opacity="0.9" />
+          <circle cx="0.648" cy="0.562" r="0.024" fill="#6366f1" opacity="0.7" />
+          <circle cx="0.559" cy="0.530" r="0.024" fill="#6366f1" opacity="0.5" />
+        </svg>
+        <span class="upstream-label">upstream streaming</span>
+        <span class="upstream-elapsed">· 6s</span>
+      </div>
+    </div>
+
+    <!-- AI response (appears after status rail disappears) -->
+    <div class="msg-bubble glass" style="margin-top:12px;">
+      <p>I'll refactor the middleware to support RBAC. Here's the approach:</p>
+      <div class="code-block">
+        <span style="color:#c084fc;">const</span> <span style="color:#e4e4e7;">roleHierarchy</span> = {<br>
+        &nbsp;&nbsp;<span style="color:#4ade80;">admin</span>: [<span style="color:#4ade80;">'user'</span>, <span style="color:#4ade80;">'moderator'</span>],<br>
+        &nbsp;&nbsp;<span style="color:#4ade80;">moderator</span>: [<span style="color:#4ade80;">'user'</span>],<br>
+        &nbsp;&nbsp;<span style="color:#4ade80;">user</span>: []<br>
+        }
+      </div>
+    </div>
+
+    <!-- Memory badge -->
+    <div class="memory-badge" style="margin-top:4px;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/><path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/><path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M19.938 10.5a4 4 0 0 1 .585.396"/><path d="M6 18a4 4 0 0 1-1.967-.516"/><path d="M19.967 17.484A4 4 0 0 1 18 18"/></svg>
+      remember · 2 items
+    </div>
+
+    <!-- Warning + input -->
+    <div class="warning-banner" style="margin-top:20px;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+      <span><strong>Context 67% used</strong> — about 42k tokens remaining</span>
+    </div>
+    <div class="input-mock" style="margin-top:8px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span>Type a message...</span>
+    </div>
+  </div>
+</div>
+
+<div style="height:40px;"></div>
+</body>
+</html>

@@ -32,8 +32,9 @@ pub(crate) use approval_commands::{
     dispatch_local_chat_execution_run_command, ExecutionRunCommand,
 };
 pub(crate) use frame_tools::{
-    apply_world_model_update_to_frame, extract_world_model_update_from_response, ProposedPhase,
-    WorldModelUpdate, WORLD_MODEL_UPDATE_END_TAG, WORLD_MODEL_UPDATE_START_TAG,
+    apply_world_model_update_to_frame, build_world_model_snapshot_extract,
+    extract_world_model_update_from_response, ProposedPhase, WorldModelUpdate,
+    WORLD_MODEL_UPDATE_END_TAG, WORLD_MODEL_UPDATE_START_TAG,
 };
 use lifecycle::finalize_tool_round;
 #[cfg(test)]
@@ -703,6 +704,19 @@ async fn continue_local_chat_complete_with_tools(
                 &state.runtime_metrics,
                 Some(state.realtime_emitter.captured_render_blocks()),
             );
+            // Inject world model snapshot into the final response
+            let response = if let Some(frame) = state.world_model_frame.as_ref() {
+                let snapshot = build_world_model_snapshot_extract(frame);
+                if let Some(obj) = response.as_object().cloned() {
+                    let mut obj = obj;
+                    obj.insert("world_model_snapshot".to_string(), snapshot);
+                    Value::Object(obj)
+                } else {
+                    response
+                }
+            } else {
+                response
+            };
             return Ok(LocalChatToolRuntimeOutput {
                 captured_world_model_update: state.captured_world_model_update.clone(),
                 world_model_frame: state.world_model_frame.clone(),

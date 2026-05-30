@@ -68,10 +68,13 @@
         "upstreamResponse": "Upstream response {latency}ms",
         "upstreamResponseWithBreakdown": "Total {total}ms · upstream {upstream}ms · local {local}ms",
         "worldModelFrameBootstrap": "Building the task frame",
-        "worldModelFrameRefreshRequest": "Secretary model is updating the world model",
+        "worldModelFrameBootstrapGoal": "Goal: {goal}",
+        "worldModelFrameRefreshRequest": "Secretary model analyzing…",
         "worldModelFrameRefreshUpdated": "World model updated",
+        "worldModelFrameRefreshUpdatedSummary": "Added {facts} facts · {assumptions} assumptions · resolved {resolved} unknowns",
         "worldModelFrameRefreshFailed": "World model update failed",
         "worldModelFrameResolved": "World model aligned with the execution path",
+        "worldModelSummaryChip": "{facts} facts · {assumptions} assumptions · {unknowns} unknowns",
         "toolCall": "Tool call {name}",
         "assistantSelected": "Now handled by {name}",
         "approvalRequired": "Waiting for approval to run {name}",
@@ -937,6 +940,30 @@
         "label": "Next",
         "empty": "No next step specified"
       }
+    },
+    "worldModel": {
+      "title": "World Model",
+      "summaryReady": "{facts} facts · {assumptions} assumptions",
+      "summaryEmpty": "Not yet built",
+      "expand": "Expand",
+      "collapse": "Collapse",
+      "sections": {
+        "goal": "Goal",
+        "facts": "Known Facts",
+        "assumptions": "Assumptions",
+        "unknowns": "Unknowns",
+        "verificationTargets": "Verification Targets",
+        "rules": "Rules"
+      },
+      "empty": {
+        "facts": "No known facts yet",
+        "assumptions": "No assumptions yet",
+        "unknowns": "No unknowns yet",
+        "verificationTargets": "No verification targets yet",
+        "rules": "No rules yet"
+      },
+      "executionStrategy": "Execution Strategy",
+      "frameStatus": "Frame Status"
     },
     "voice": {
       "listening": "Listening...",

@@ -9,7 +9,10 @@ import { Switch } from "@/ui/shadcn/switch"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/hooks/use-i18n"
 import { useChatStore } from "@/store/chat-store"
+import { useChatRuntimeStore } from "@/store/chat-runtime-store"
 import { matchesChatModelSelectionValue } from "@/lib/api/models"
+import { formatContextWindow } from "@/components/models/types"
+import { AlertTriangle, CircleAlert } from "lucide-react"
 import { AttachmentPreview } from "./attachment-preview"
 import type { ChatAttachment } from "@/lib/chat/message-content"
 import {
@@ -93,15 +96,24 @@ export const ChatInput = React.memo<ChatInputProps>(
     const t = useI18n("chat")
     const fileInputRef = React.useRef<HTMLInputElement>(null)
     const [attachmentError, setAttachmentError] = React.useState<string | null>(null)
+
+    // Context window usage for warning banner
+    const sessionUsage = useChatRuntimeStore(useShallow((state) => state.sessionUsage))
+    const models = useChatStore(useShallow((state) => state.models))
+    const config = useChatStore(useShallow((state) => state.config))
+    const activeModel = React.useMemo(
+      () => models.find((m) => m.provider_model_id === config.model || m.id === config.model) ?? models[0],
+      [models, config.model]
+    )
+    const contextLimit = activeModel?.context_window ?? 0
+    const contextUsed = sessionUsage?.contextWindowUsed ?? 0
+    const contextPercent = contextLimit > 0 ? Math.round((contextUsed / contextLimit) * 100) : 0
+    const contextRemaining = Math.max(0, contextLimit - contextUsed)
+    const showContextWarning = contextPercent >= 85
+    const isContextCritical = contextPercent >= 93
     
     // 使用 attachments hook 来处理文件上传
-    const { addAttachments, models, config } = useChatStore(
-      useShallow((state) => ({
-        addAttachments: state.addAttachments,
-        models: state.models,
-        config: state.config,
-      }))
-    )
+    const addAttachments = useChatStore(useShallow((state) => state.addAttachments))
     
     // 计算是否有内容
     const hasContent = Boolean(inputValue.trim() || attachments.length)
@@ -318,6 +330,36 @@ export const ChatInput = React.memo<ChatInputProps>(
           {resolvedErrorMessage && (
             <div className="text-center text-xs font-medium text-red-500/90 dark:text-red-400/90 py-1">
               {resolvedErrorMessage}
+            </div>
+          )}
+
+          {/* Context window warning */}
+          {showContextWarning && (
+            <div
+              className={cn(
+                "flex items-center gap-2 px-3 py-2 rounded-xl text-[12px] font-medium transition-colors",
+                isContextCritical
+                  ? "bg-red-500/8 dark:bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400"
+                  : "bg-amber-500/8 dark:bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400"
+              )}
+            >
+              {isContextCritical ? (
+                <CircleAlert className="w-3.5 h-3.5 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              )}
+              <span>
+                <strong>Context {contextPercent}% {isContextCritical ? "full" : "used"}</strong>
+                {isContextCritical
+                  ? " — responses may be truncated or lose earlier context"
+                  : " — consider starting a new session soon"}
+                <span className={cn(
+                  "ml-1.5 text-[11px]",
+                  isContextCritical ? "text-red-500/60 dark:text-red-400/50" : "text-amber-500/60 dark:text-amber-400/50"
+                )}>
+                  · ~{formatContextWindow(contextRemaining)} remaining
+                </span>
+              </span>
             </div>
           )}
 

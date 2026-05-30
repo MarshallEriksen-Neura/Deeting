@@ -209,6 +209,70 @@ fn build_diting_think_frame_extract(update: &WorldModelUpdate) -> Value {
     Value::Object(map)
 }
 
+pub(crate) fn build_world_model_snapshot_extract(frame: &WorldModelFrame) -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert("goal".to_string(), Value::String(frame.goal.clone()));
+    map.insert(
+        "frame_status".to_string(),
+        Value::String(format!("{:?}", frame.status)),
+    );
+    map.insert(
+        "execution_strategy".to_string(),
+        serde_json::to_value(&frame.execution_strategy).unwrap_or(Value::Null),
+    );
+    map.insert(
+        "facts".to_string(),
+        Value::Array(
+            frame
+                .known_facts
+                .iter()
+                .map(|f| Value::String(f.statement.clone()))
+                .collect(),
+        ),
+    );
+    map.insert(
+        "assumptions".to_string(),
+        Value::Array(
+            frame
+                .assumptions
+                .iter()
+                .map(|a| Value::String(a.statement.clone()))
+                .collect(),
+        ),
+    );
+    map.insert(
+        "unknowns".to_string(),
+        Value::Array(
+            frame
+                .unknowns
+                .iter()
+                .map(|u| Value::String(u.question.clone()))
+                .collect(),
+        ),
+    );
+    map.insert(
+        "verification_targets".to_string(),
+        Value::Array(
+            frame
+                .verification_targets
+                .iter()
+                .map(|v| Value::String(v.description.clone()))
+                .collect(),
+        ),
+    );
+    map.insert(
+        "rules".to_string(),
+        Value::Array(
+            frame
+                .adaptation_rules
+                .iter()
+                .map(|r| Value::String(r.instruction.clone()))
+                .collect(),
+        ),
+    );
+    Value::Object(map)
+}
+
 pub(crate) fn apply_world_model_update_to_frame(
     mut frame: WorldModelFrame,
     update: Option<&WorldModelUpdate>,

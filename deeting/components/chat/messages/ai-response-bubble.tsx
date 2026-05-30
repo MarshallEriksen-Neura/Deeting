@@ -13,6 +13,7 @@ import type {
 } from "@/lib/chat/message-protocol";
 import { cn } from "@/lib/utils";
 import {
+  AIResponseStatusRail,
   AIResponseStreamingTail,
 } from "@/components/chat/messages/ai-response-bubble/status-rail";
 import { ExecutionConsole } from "@/components/chat/messages/ai-response-bubble/execution-console";
@@ -27,6 +28,7 @@ import {
   ToolResultBlock,
 } from "@/components/chat/messages/ai-response-bubble/tool-blocks";
 import { DitingThinkPanel } from "@/components/chat/messages/ai-response-bubble/diting-think-panel";
+import { WorldModelPanel } from "@/components/chat/messages/ai-response-bubble/world-model-panel";
 import { AssistantActivityTimeline } from "@/components/chat/messages/ai-response-bubble/assistant-activity-timeline";
 
 const ViewBlock = dynamic(() => import("@/components/views/view-block"), {
@@ -211,6 +213,15 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       return null;
     }, [parts]);
 
+    const worldModelBlock = useMemo(() => {
+      for (const part of parts) {
+        if (part.type === "world_model_snapshot") {
+          return part;
+        }
+      }
+      return null;
+    }, [parts]);
+
     const hasContradictedFrame = useMemo(() => {
       if (!dittingFrameBlock) return false;
       for (const part of parts) {
@@ -331,6 +342,17 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
         data-slot="glass-card"
       >
         <div className="pl-4 pr-1 py-2 min-w-0 overflow-hidden">
+          <AIResponseStatusRail
+            isActive={isActive && !activityTimelineBlock}
+            hasContent={hasAnswerContent}
+            hasToolActivity={hasToolActivity}
+            statusStage={statusStage}
+            statusCode={statusCode}
+            statusMeta={statusMeta}
+            streamEnabled={streamEnabled}
+            shouldRevealCallChain={shouldRevealCallChain}
+          />
+
           {activityTimelineBlock ? (
             <AssistantActivityTimeline
               block={activityTimelineBlock}
@@ -345,6 +367,10 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
             />
           ) : null}
 
+          {worldModelBlock ? (
+            <WorldModelPanel block={worldModelBlock} />
+          ) : null}
+
           {(hasContent || hasToolActivity) && (
             <motion.div
               initial={{ opacity: 0, y: 4 }}
@@ -353,7 +379,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
               className="space-y-3"
             >
               {parts.map((part, index) => {
-                if (part.type === "activity_timeline" || part.type === "diting_think_frame") {
+                if (part.type === "activity_timeline" || part.type === "diting_think_frame" || part.type === "world_model_snapshot") {
                   return null;
                 }
                 if (part.type === "thought") {

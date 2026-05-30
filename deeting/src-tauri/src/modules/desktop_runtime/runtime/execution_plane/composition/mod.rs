@@ -49,6 +49,10 @@ where
     let runtime_event_store = DeetingRuntimeEventStore::default();
     let frame_resolution_policy = request.execution_policy.clone();
     let app_state = request.app_state.clone();
+    let goal = super::user_input::latest_user_message(&request.messages)
+        .map(|m| m.trim().to_string())
+        .filter(|m| !m.is_empty())
+        .unwrap_or_else(|| "local runtime request".to_string());
     emit_status(
         "evolve",
         Some("world_model_frame"),
@@ -57,6 +61,7 @@ where
         Some(json!({
             "task_input_source_kind": task_input_source_kind(&task_input_source),
             "composition": "deeting_runtime_phase_composition",
+            "goal": goal,
         })),
     );
     let result = {

@@ -86,12 +86,25 @@ export function resolveStatusDetail(
       const latency = Number.isFinite(totalLatency) ? Math.max(0, Math.round(totalLatency)) : 0
       return t("status.detail.upstreamResponse", { latency })
     }
-    case "world_model.frame.bootstrap":
-      return t("status.detail.worldModelFrameBootstrap")
+    case "world_model.frame.bootstrap": {
+      const goal = typeof meta?.goal === "string" && meta.goal.trim()
+        ? meta.goal.trim()
+        : null
+      return goal
+        ? t("status.detail.worldModelFrameBootstrapGoal", { goal })
+        : t("status.detail.worldModelFrameBootstrap")
+    }
     case "world_model.frame_refresh.request":
       return t("status.detail.worldModelFrameRefreshRequest")
-    case "world_model.frame_refresh.updated":
+    case "world_model.frame_refresh.updated": {
+      const facts = Number(meta?.facts ?? 0)
+      const assumptions = Number(meta?.assumptions ?? 0)
+      const resolved = Number(meta?.resolved_unknowns ?? 0)
+      if (facts > 0 || assumptions > 0 || resolved > 0) {
+        return t("status.detail.worldModelFrameRefreshUpdatedSummary", { facts, assumptions, resolved })
+      }
       return t("status.detail.worldModelFrameRefreshUpdated")
+    }
     case "world_model.frame_refresh.failed":
       return t("status.detail.worldModelFrameRefreshFailed")
     case "runtime.phase_executor.frame_resolved":
@@ -119,4 +132,42 @@ export function resolveStatusDetail(
     default:
       return null
   }
+}
+
+const WORLD_MODEL_CODES = new Set([
+  "world_model.frame.bootstrap",
+  "world_model.frame_refresh.request",
+  "world_model.frame_refresh.updated",
+  "world_model.frame_refresh.failed",
+])
+
+export interface WorldModelSummary {
+  goal: string | null
+  facts: number
+  assumptions: number
+  unknowns: number
+  resolvedUnknowns: number
+  updateFacts: string[]
+  updateAssumptions: string[]
+  updateUnknowns: string[]
+}
+
+export function resolveWorldModelSummary(
+  code?: string | null,
+  meta?: Record<string, unknown> | null,
+): WorldModelSummary | null {
+  if (!code || !WORLD_MODEL_CODES.has(code)) return null
+
+  const goal = typeof meta?.goal === "string" && meta.goal.trim()
+    ? meta.goal.trim()
+    : null
+  const facts = Number(meta?.facts ?? 0)
+  const assumptions = Number(meta?.assumptions ?? 0)
+  const unknowns = Number(meta?.unknowns ?? 0)
+  const resolvedUnknowns = Number(meta?.resolved_unknowns ?? 0)
+  const updateFacts = Array.isArray(meta?.update_facts) ? meta.update_facts as string[] : []
+  const updateAssumptions = Array.isArray(meta?.update_assumptions) ? meta.update_assumptions as string[] : []
+  const updateUnknowns = Array.isArray(meta?.update_unknowns) ? meta.update_unknowns as string[] : []
+
+  return { goal, facts, assumptions, unknowns, resolvedUnknowns, updateFacts, updateAssumptions, updateUnknowns }
 }

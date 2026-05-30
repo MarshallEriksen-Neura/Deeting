@@ -11,6 +11,7 @@ export type BlockType =
   | 'ui'
   | 'activity_timeline'
   | 'diting_think_frame'
+  | 'world_model_snapshot'
 
 export type BlockStreamState = 'streaming' | 'completed'
 
@@ -135,6 +136,18 @@ export interface DitingThinkFrameBlock extends BaseBlock {
   }
 }
 
+export interface WorldModelSnapshotBlock extends BaseBlock {
+  type: 'world_model_snapshot'
+  goal: string
+  frameStatus: string
+  facts: string[]
+  assumptions: string[]
+  unknowns: string[]
+  verificationTargets: string[]
+  rules: string[]
+  executionStrategy?: string
+}
+
 export interface HtmlRuntimePayload {
   asset_id?: string
   snapshot_html?: string
@@ -186,6 +199,7 @@ export type MessageBlock =
   | UIBlock
   | ActivityTimelineBlock
   | DitingThinkFrameBlock
+  | WorldModelSnapshotBlock
 
 export interface PersistedMessage {
   id: string

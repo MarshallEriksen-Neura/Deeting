@@ -279,6 +279,25 @@ function upsertDitingThinkFrameBlock(
   return true
 }
 
+function upsertWorldModelSnapshotBlock(
+  next: InternalMessageBlock[],
+  block: InternalMessageBlock,
+): boolean {
+  if (block.type !== "world_model_snapshot") return false
+  const existingIndex = next.findIndex(
+    (candidate) => candidate.type === "world_model_snapshot",
+  )
+  if (existingIndex < 0) return false
+  const existing = next[existingIndex]
+  if (!existing || existing.type !== "world_model_snapshot") return false
+  next[existingIndex] = {
+    ...existing,
+    ...block,
+    id: existing.id || block.id,
+  }
+  return true
+}
+
 function applyToolResultStatuses(blocks: InternalMessageBlock[]): InternalMessageBlock[] {
   const normalized = [...blocks]
   for (const block of normalized) {
@@ -499,6 +518,10 @@ export function appendMessageBlocks(
     }
 
     if (upsertDitingThinkFrameBlock(next, block)) {
+      continue
+    }
+
+    if (upsertWorldModelSnapshotBlock(next, block)) {
       continue
     }
 

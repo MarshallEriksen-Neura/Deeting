@@ -12,10 +12,9 @@ import { useChatModels } from '@/hooks/use-chat-models';
 import { useI18n } from '@/hooks/use-i18n';
 import { resolveChatModelSelectionValue } from '@/lib/api/models';
 import { resolveModelVisual, type ModelPickerModel } from '@/components/models/model-visual';
-import { resolveStatusDetail } from '@/lib/chat/status-detail';
+import { formatContextWindow } from '@/components/models/types';
 import { isTauriRuntime as detectTauriRuntime } from '@/lib/runtime/tauri';
 import { DESKTOP_CONFIG_KEYS, getDesktopConfig, setDesktopConfig } from '@/lib/api/desktop-config';
-import { StatusPill } from '@/ui/common/status-pill';
 import { Textarea } from '@/ui/shadcn/textarea';
 import {
   Dialog,
@@ -64,13 +63,13 @@ export default function HUD() {
       setModels: state.setModels,
     }))
   );
-  const { isLoading, errorMessage, statusCode, statusMeta, sessionTitle } = useChatRuntimeStore(
+  const { isLoading, errorMessage, statusCode, sessionTitle, sessionUsage } = useChatRuntimeStore(
     useShallow((state) => ({
       isLoading: state.isLoading,
       errorMessage: state.errorMessage,
       statusCode: state.statusCode,
-      statusMeta: state.statusMeta,
       sessionTitle: state.sessionTitle,
+      sessionUsage: state.sessionUsage,
     }))
   );
 
@@ -136,8 +135,16 @@ export default function HUD() {
     isLoading,
     hasError: Boolean(errorMessage),
   });
-  const statusDetail = resolveStatusDetail(t, statusCode, statusMeta);
-  
+
+  // Derive context window usage
+  const contextWindowLimit = activeModel?.context_window ?? 0
+  const contextUsed = sessionUsage?.contextWindowUsed ?? 0
+  const usagePercent = contextWindowLimit > 0 ? Math.min(100, Math.round((contextUsed / contextWindowLimit) * 100)) : 0
+  const usageLabel = contextWindowLimit > 0
+    ? `${formatContextWindow(contextUsed)}/${formatContextWindow(contextWindowLimit)}`
+    : null
+  const usageTone = usagePercent >= 85 ? 'danger' : usagePercent >= 60 ? 'warn' : 'normal'
+
   const handleToggleControlCenter = useCallback(() => {
     setIsControlCenterOpen(prev => !prev);
   }, []);
@@ -267,10 +274,25 @@ export default function HUD() {
                  <span>{t("hud.personaPrompt.button")}</span>
                </button>
              ) : null}
-             {isLoading && statusDetail ? (
-               <StatusPill text={statusDetail} className="ml-1 max-w-[160px]" tone="subtle" isLoading />
-             ) : null}
           </div>
+
+          <span className="text-slate-200 dark:text-white/10 text-xs self-center h-4 w-px bg-current"></span>
+
+          {/* Context Window Usage Indicator */}
+          {usageLabel ? (
+            <span
+              className={`text-[10px] font-medium tabular-nums tracking-wide transition-colors duration-300 ${
+                usageTone === 'danger'
+                  ? 'text-red-400'
+                  : usageTone === 'warn'
+                    ? 'text-amber-400'
+                    : 'text-slate-400/70 dark:text-white/30'
+              }`}
+              title={`Context: ${usagePercent}% used`}
+            >
+              {usageLabel}
+            </span>
+          ) : null}
 
           <span className="text-slate-200 dark:text-white/10 text-xs self-center h-4 w-px bg-current"></span>
 

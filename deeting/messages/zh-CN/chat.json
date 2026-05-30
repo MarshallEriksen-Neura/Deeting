@@ -68,10 +68,13 @@
         "upstreamResponse": "上游响应 {latency}ms",
         "upstreamResponseWithBreakdown": "总耗时 {total}ms · 上游 {upstream}ms · 本地 {local}ms",
         "worldModelFrameBootstrap": "正在建立任务框架",
-        "worldModelFrameRefreshRequest": "秘书模型正在更新世界模型",
+        "worldModelFrameBootstrapGoal": "目标：{goal}",
+        "worldModelFrameRefreshRequest": "秘书模型分析中…",
         "worldModelFrameRefreshUpdated": "世界模型已更新",
+        "worldModelFrameRefreshUpdatedSummary": "新增 {facts} 事实 · {assumptions} 假设 · 解决 {resolved} 未知",
         "worldModelFrameRefreshFailed": "世界模型更新失败",
         "worldModelFrameResolved": "世界模型已对齐执行路径",
+        "worldModelSummaryChip": "{facts} 事实 · {assumptions} 假设 · {unknowns} 未知",
         "toolCall": "工具调用 {name}",
         "assistantSelected": "当前由 {name} 接管",
         "approvalRequired": "等待你批准 {name}",
@@ -497,6 +500,30 @@
         "label": "下一步",
         "empty": "未指定下一步"
       }
+    },
+    "worldModel": {
+      "title": "世界模型",
+      "summaryReady": "{facts} 事实 · {assumptions} 假设",
+      "summaryEmpty": "尚未构建",
+      "expand": "展开",
+      "collapse": "收起",
+      "sections": {
+        "goal": "目标",
+        "facts": "已知事实",
+        "assumptions": "假设",
+        "unknowns": "未知",
+        "verificationTargets": "验证目标",
+        "rules": "约束规则"
+      },
+      "empty": {
+        "facts": "暂无已知事实",
+        "assumptions": "暂无假设",
+        "unknowns": "暂无未知项",
+        "verificationTargets": "暂无验证目标",
+        "rules": "暂无约束规则"
+      },
+      "executionStrategy": "执行策略",
+      "frameStatus": "帧状态"
     },
     "routing": {
       "auto": "自动路由",

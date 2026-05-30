@@ -462,6 +462,11 @@ export function extractAssistantResponseBlocks(responseBody: Record<string, unkn
     nextBlocks.unshift(ditingFrame)
   }
 
+  const worldSnapshot = extractWorldModelSnapshotBlockFromResponse(responseBody, messageObject)
+  if (worldSnapshot && !nextBlocks.some((block) => block.type === "world_model_snapshot")) {
+    nextBlocks.unshift(worldSnapshot)
+  }
+
   return nextBlocks
 }
 
@@ -553,6 +558,57 @@ function extractDitingThinkFrameBlockFromResponse(
     rules,
     executionStrategy,
     proposedNextPhase,
+  } as MessageBlock
+}
+
+function readWorldModelSnapshotExtract(
+  source: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  if (!source) return null
+  const value = source.world_model_snapshot
+  if (!value || typeof value !== "object") return null
+  return value as Record<string, unknown>
+}
+
+function extractWorldModelSnapshotBlockFromResponse(
+  responseBody: Record<string, unknown>,
+  messageObject: Record<string, unknown>,
+): MessageBlock | null {
+  const metaInfoCandidate =
+    messageObject.meta_info && typeof messageObject.meta_info === "object"
+      ? (messageObject.meta_info as Record<string, unknown>)
+      : null
+
+  const extract =
+    readWorldModelSnapshotExtract(responseBody) ??
+    readWorldModelSnapshotExtract(messageObject) ??
+    readWorldModelSnapshotExtract(metaInfoCandidate)
+  if (!extract) return null
+
+  const goal = typeof extract.goal === "string" ? extract.goal.trim() : ""
+  const frameStatus = typeof extract.frame_status === "string" ? extract.frame_status.trim() : "Unknown"
+  const facts = stringListFromUnknown(extract.facts)
+  const assumptions = stringListFromUnknown(extract.assumptions)
+  const unknowns = stringListFromUnknown(extract.unknowns)
+  const verificationTargets = stringListFromUnknown(extract.verification_targets)
+  const rules = stringListFromUnknown(extract.rules)
+  const executionStrategy =
+    typeof extract.execution_strategy === "string" && extract.execution_strategy.trim().length > 0
+      ? extract.execution_strategy.trim()
+      : undefined
+
+  if (!goal && facts.length === 0 && assumptions.length === 0) return null
+
+  return {
+    type: "world_model_snapshot",
+    goal,
+    frameStatus,
+    facts,
+    assumptions,
+    unknowns,
+    verificationTargets,
+    rules,
+    executionStrategy,
   } as MessageBlock
 }
 
@@ -801,6 +857,7 @@ export function useChatMessagingService() {
       resetSession: state.resetSession,
       loadHistory: state.loadHistory,
       setHistoryState: state.setHistoryState,
+      updateUsage: state.updateUsage,
     }))
   )
   const {
@@ -979,6 +1036,7 @@ export function useChatMessagingService() {
     onTraceId,
     onSessionResolved,
     onStatusEvent,
+    onUsage,
     getCurrentBlocks,
     onRequestError,
   }: {
@@ -993,6 +1051,7 @@ export function useChatMessagingService() {
       code: string | null
       meta: Record<string, unknown> | null
     }) => void
+    onUsage?: (usage: import("@/lib/chat/message-types").MessageUsage) => void
     getCurrentBlocks: () => MessageBlock[]
     onRequestError: (message: string, errorCode?: string | null) => void
   }) => {
@@ -1113,6 +1172,7 @@ export function useChatMessagingService() {
             onBlocks(responseBlocks)
           }
         },
+        onUsage,
       },
       trackActiveRequest
         ? {
@@ -1398,6 +1458,9 @@ export function useChatMessagingService() {
             mergeMessageMeta(assistantMessageId, { runtime_metrics: status.meta })
           }
         },
+        onUsage: (usage) => {
+          updateUsage(assistantMessageId, usage)
+        },
         getCurrentBlocks: () => {
           const latest = useChatStore.getState().messages.find((message) => message.id === assistantMessageId)
           return Array.isArray(latest?.blocks) ? (latest.blocks as MessageBlock[]) : []
@@ -1450,6 +1513,7 @@ export function useChatMessagingService() {
     setInterruptedMessageId,
     resolveCurrentSessionId,
     runStreamedRequest,
+    updateUsage,
     composerMatchesDraft,
     clearComposer,
     t,
@@ -1702,6 +1766,9 @@ export function useChatMessagingService() {
             })
           }
         },
+        onUsage: (usage) => {
+          updateUsage(assistantMessageId, usage)
+        },
         getCurrentBlocks: () => {
           const latest = useChatStore.getState().messages.find((message) => message.id === assistantMessageId)
           return Array.isArray(latest?.blocks) ? (latest.blocks as MessageBlock[]) : []
@@ -1754,6 +1821,7 @@ export function useChatMessagingService() {
     clearAllCompareStates,
     resolveCurrentSessionId,
     runStreamedRequest,
+    updateUsage,
   ])
 
   const compareWithModel = useCallback(async (targetMessageId: string, modelValue: string) => {
@@ -1903,6 +1971,9 @@ export function useChatMessagingService() {
             statusMeta: status.meta,
           })
         },
+        onUsage: (usage) => {
+          updateUsage(`${targetMessageId}-${compareModelKey}`, usage)
+        },
         getCurrentBlocks: () => {
           const candidate = useChatStore.getState().compareByMessageId[targetMessageId]?.candidates[compareModelKey]
           return candidate?.blocks ?? []
@@ -1972,6 +2043,7 @@ export function useChatMessagingService() {
     resolveCurrentSessionId,
     upsertCompareCandidate,
     runStreamedRequest,
+    updateUsage,
     appendCompareCandidateBlocks,
     t,
   ])

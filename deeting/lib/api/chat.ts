@@ -1,5 +1,6 @@
 import { openApiSSE, openSSE, request } from "@/lib/http"
 import type { ChatMessageContent } from "@/lib/chat/message-content"
+import type { MessageUsage } from "@/lib/chat/message-types"
 import { collectLocalContext, type LocalContextSnapshot } from "@/lib/platform/context-collector"
 import { invoke as invokeTauri } from "@tauri-apps/api/core"
 
@@ -120,6 +121,7 @@ export async function streamChatCompletion(
   handlers: {
     onDelta?: (delta: string, snapshot: string) => void
     onMessage?: (data: unknown) => void
+    onUsage?: (usage: MessageUsage) => void
   } = {},
   control: {
     onCancel?: (cancel: () => void) => void
@@ -156,6 +158,7 @@ export async function streamDesktopLocalChatCompletion(
   handlers: {
     onDelta?: (delta: string, snapshot: string) => void
     onMessage?: (data: unknown) => void
+    onUsage?: (usage: MessageUsage) => void
   } = {},
   control: {
     onCancel?: (cancel: () => void) => void
@@ -229,6 +232,7 @@ async function streamViaSse(
   handlers: {
     onDelta?: (delta: string, snapshot: string) => void
     onMessage?: (data: unknown) => void
+    onUsage?: (usage: MessageUsage) => void
   },
   control: {
     onCancel?: (cancel: () => void) => void
@@ -338,6 +342,21 @@ async function streamViaSse(
               created_at: new Date().toISOString(),
             },
           }).catch((error) => console.warn("[ChatAPI] Local log backfill failed", error))
+        }
+
+        // Emit usage to UI regardless of runtime
+        if (parsedMessage?.usage) {
+          const usage = parsedMessage.usage
+          handlers.onUsage?.({
+            inputTokens: usage.prompt_tokens ?? 0,
+            outputTokens: usage.completion_tokens ?? 0,
+            cachedTokens: usage.prompt_tokens_details?.cached_tokens ?? usage.cached_tokens,
+            cacheReadTokens: usage.cache_read_input_tokens,
+            cacheWriteTokens: usage.cache_creation_input_tokens ?? usage.cache_write_input_tokens,
+            totalTokens: usage.total_tokens ?? 0,
+            durationMs: parsedMessage.duration_ms,
+            ttftMs: parsedMessage.ttft_ms,
+          })
         }
 
         const delta = extractStreamDeltaContent(parsed)

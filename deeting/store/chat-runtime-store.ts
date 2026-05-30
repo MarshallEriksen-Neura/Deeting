@@ -2,6 +2,7 @@
 
 import { create } from "zustand"
 import type { PendingChatTakeover, PendingTakeoverRequestedAction } from "@/store/chat-store"
+import type { MessageUsage, SessionUsage } from "@/lib/chat/message-types"
 import { loadConversationHistoryPage } from "@/lib/chat/history-loader"
 import { isTauriRuntime as detectTauriRuntime } from "@/lib/runtime/tauri"
 import { useChatStore } from "@/store/chat-store"
@@ -54,6 +55,7 @@ interface ChatRuntimeStore {
   historyHasMore: boolean
   pendingTakeover: PendingChatTakeover | null
   pendingTakeoverRequestedAction: PendingTakeoverRequestedAction | null
+  sessionUsage: SessionUsage | null
   initSession: (sessionId: string | null) => Promise<void>
   loadHistory: (sessionId: string) => Promise<void>
   resetSession: () => void
@@ -80,6 +82,7 @@ interface ChatRuntimeStore {
   } | null) => void
   setPendingTakeoverRequestedAction: (action: PendingTakeoverRequestedAction | null) => void
   clearPendingTakeover: () => void
+  updateUsage: (messageId: string, usage: MessageUsage, contextWindowLimit?: number) => void
 }
 
 function isStatusMetaEqual(
@@ -111,6 +114,7 @@ const emptyRuntimeState = {
   historyHasMore: false,
   pendingTakeover: null,
   pendingTakeoverRequestedAction: null,
+  sessionUsage: null,
 } satisfies Omit<
   ChatRuntimeStore,
   | "initSession"
@@ -129,6 +133,7 @@ const emptyRuntimeState = {
   | "setPendingTakeover"
   | "setPendingTakeoverRequestedAction"
   | "clearPendingTakeover"
+  | "updateUsage"
 >
 
 export const useChatRuntimeStore = create<ChatRuntimeStore>()((set, get) => ({
@@ -284,6 +289,7 @@ export const useChatRuntimeStore = create<ChatRuntimeStore>()((set, get) => ({
     })
     set({
       ...emptyRuntimeState,
+      sessionUsage: null,
     })
     mirrorRuntimePatchToChatStore({
       sessionId: null,
@@ -421,4 +427,41 @@ export const useChatRuntimeStore = create<ChatRuntimeStore>()((set, get) => ({
       set(patch)
       mirrorRuntimePatchToChatStore(patch)
     },
+  updateUsage: (messageId, usage, contextWindowLimit) => {
+    set((state) => {
+      const prev = state.sessionUsage
+      const prevMsgUsages = prev?.messageUsages ?? {}
+
+      // Deduplicate: skip if same message already recorded with identical totalTokens
+      const existing = prevMsgUsages[messageId]
+      if (existing && existing.totalTokens === usage.totalTokens) {
+        return state
+      }
+
+      const nextMsgUsages = { ...prevMsgUsages, [messageId]: usage }
+
+      // Aggregate totals from all message usages
+      let totalInput = 0
+      let totalOutput = 0
+      let totalCached = 0
+      for (const u of Object.values(nextMsgUsages)) {
+        totalInput += u.inputTokens
+        totalOutput += u.outputTokens
+        totalCached += u.cachedTokens ?? 0
+      }
+
+      const limit = contextWindowLimit ?? prev?.contextWindowLimit ?? 128000
+
+      const nextUsage: SessionUsage = {
+        totalInputTokens: totalInput,
+        totalOutputTokens: totalOutput,
+        totalCachedTokens: totalCached,
+        contextWindowUsed: totalInput + totalOutput,
+        contextWindowLimit: limit,
+        messageUsages: nextMsgUsages,
+      }
+
+      return { sessionUsage: nextUsage }
+    })
+  },
 }))
