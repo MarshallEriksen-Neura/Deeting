@@ -14,9 +14,11 @@ use super::super::tool_meta::{
 };
 use super::{
     build_policy_blocked_tool_result, execute_activate_skill_tool, execute_code_plan_tool,
-    execute_context_runtime_tool, execute_delegate_task_tool, execute_generic_mcp_tool_call,
-    execute_local_code_snippet_tool, execute_query_task_policy_tool,
-    execute_read_skill_resource_tool, execute_refresh_skill_index_tool, execute_search_sdk_tool,
+    execute_context_runtime_tool, execute_delegate_agents_start_tool,
+    execute_delegate_agents_status_tool, execute_delegate_agents_stop_tool,
+    execute_delegate_task_tool, execute_generic_mcp_tool_call, execute_local_code_snippet_tool,
+    execute_query_task_policy_tool, execute_read_skill_resource_tool,
+    execute_refresh_skill_index_tool, execute_search_sdk_tool,
     execute_sys_submit_onboarding_request_tool, execute_terminal_context_runtime_tool,
     execute_workflow_plan_runtime_tool,
 };
@@ -330,6 +332,97 @@ pub(crate) async fn process_chat_tool_calls(
                         Some(call_id.as_str()),
                         &tool_name,
                         "DELEGATE_TASK_FAILED",
+                        err,
+                    );
+                }
+            }
+        } else if tool_name == "delegate_agents_start" {
+            realtime_emitter.emit_execution_section_once("Delegate Agents");
+            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
+            match execute_delegate_agents_start_tool(
+                app,
+                app_state,
+                state,
+                session_id,
+                call_id.as_str(),
+                tool_name.as_str(),
+                &call.arguments,
+                effective_allowed_tool_names,
+            )
+            .await
+            {
+                Ok(result) => {
+                    synthesized = true;
+                    realtime_emitter.emit_tool_result_meta(&result.meta);
+                    tool_call_meta.push(result.meta);
+                    results.push(result.result_message);
+                }
+                Err(err) => {
+                    synthesized = true;
+                    push_local_tool_call_error_meta(
+                        &mut tool_call_meta,
+                        &mut results,
+                        realtime_emitter,
+                        Some(call_id.as_str()),
+                        &tool_name,
+                        "DELEGATE_AGENTS_FAILED",
+                        err,
+                    );
+                }
+            }
+        } else if tool_name == "delegate_agents_status" {
+            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
+            match execute_delegate_agents_status_tool(
+                call_id.as_str(),
+                tool_name.as_str(),
+                &call.arguments,
+            )
+            .await
+            {
+                Ok(result) => {
+                    synthesized = true;
+                    realtime_emitter.emit_tool_result_meta(&result.meta);
+                    tool_call_meta.push(result.meta);
+                    results.push(result.result_message);
+                }
+                Err(err) => {
+                    synthesized = true;
+                    push_local_tool_call_error_meta(
+                        &mut tool_call_meta,
+                        &mut results,
+                        realtime_emitter,
+                        Some(call_id.as_str()),
+                        &tool_name,
+                        "DELEGATE_AGENTS_STATUS_FAILED",
+                        err,
+                    );
+                }
+            }
+        } else if tool_name == "delegate_agents_stop" {
+            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
+            match execute_delegate_agents_stop_tool(
+                app_state,
+                call_id.as_str(),
+                tool_name.as_str(),
+                &call.arguments,
+            )
+            .await
+            {
+                Ok(result) => {
+                    synthesized = true;
+                    realtime_emitter.emit_tool_result_meta(&result.meta);
+                    tool_call_meta.push(result.meta);
+                    results.push(result.result_message);
+                }
+                Err(err) => {
+                    synthesized = true;
+                    push_local_tool_call_error_meta(
+                        &mut tool_call_meta,
+                        &mut results,
+                        realtime_emitter,
+                        Some(call_id.as_str()),
+                        &tool_name,
+                        "DELEGATE_AGENTS_STOP_FAILED",
                         err,
                     );
                 }

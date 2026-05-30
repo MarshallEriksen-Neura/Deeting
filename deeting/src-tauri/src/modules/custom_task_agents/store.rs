@@ -515,6 +515,30 @@ pub(crate) async fn fail_custom_task_agent_run(
     Ok(())
 }
 
+pub(crate) async fn cancel_custom_task_agent_run(
+    store: &McpStore,
+    run_id: &str,
+) -> Result<(), McpError> {
+    ensure_schema(store).await?;
+    let now = now_rfc3339()?;
+    sqlx::query(&format!(
+        r#"
+        UPDATE {RUN_TABLE_NAME}
+        SET status = ?, error = NULL, completed_at = ?, updated_at = ?
+        WHERE run_id = ? AND status = ?;
+        "#
+    ))
+    .bind(CustomTaskAgentRunStatus::Cancelled.as_str())
+    .bind(&now)
+    .bind(&now)
+    .bind(run_id.trim())
+    .bind(CustomTaskAgentRunStatus::Running.as_str())
+    .execute(&store.pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+    Ok(())
+}
+
 pub(crate) async fn delete_custom_task_agent(store: &McpStore, id: &str) -> Result<(), McpError> {
     ensure_schema(store).await?;
     let now = now_rfc3339()?;

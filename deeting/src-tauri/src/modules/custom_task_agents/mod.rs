@@ -1,3 +1,4 @@
+pub mod agent_types;
 pub mod bound_callables;
 pub mod commands;
 pub mod external_scan;

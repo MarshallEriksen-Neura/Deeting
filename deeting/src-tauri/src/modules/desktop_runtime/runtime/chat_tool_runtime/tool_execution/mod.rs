@@ -2,6 +2,7 @@ mod capability_search;
 mod code_tools;
 mod context_dispatch;
 mod delegated_task;
+mod delegation_batch;
 mod execution_support;
 mod onboarding_tools;
 mod policy_tools;
@@ -17,6 +18,10 @@ pub(super) use context_dispatch::{
     execute_workflow_plan_runtime_tool,
 };
 pub(super) use delegated_task::execute_delegate_task_tool;
+pub(super) use delegation_batch::{
+    execute_delegate_agents_start_tool, execute_delegate_agents_status_tool,
+    execute_delegate_agents_stop_tool,
+};
 pub(super) use execution_support::{consult_task_policy_guidance, execute_code_mode_request};
 pub(super) use onboarding_tools::execute_sys_submit_onboarding_request_tool;
 pub(super) use policy_tools::execute_query_task_policy_tool;

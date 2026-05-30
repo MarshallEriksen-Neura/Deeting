@@ -815,6 +815,184 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
             }),
         },
         CoreToolContract {
+            name: "delegate_agents_start",
+            description: "Start one or more delegated chat child agents. Use agent_id for an existing custom task agent, or agent_type for an ephemeral agent built from a predefined .claude/agents/{agent_type}.md template. The task text is written by the parent model; the child system prompt always comes from the selected agent_type template. Background children return immediately and later resume the parent runtime when completed.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "tasks": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "task": {
+                                    "type": "string",
+                                    "description": "Required bounded task description for the child agent."
+                                },
+                                "agent_type": {
+                                    "type": "string",
+                                    "description": "Predefined or .claude/agents/{agent_type}.md template name. Required unless agent_id is provided."
+                                },
+                                "agent_id": {
+                                    "type": "string",
+                                    "description": "Existing registered custom task agent id. If provided, this takes precedence and agent_type/agent_spec are ignored."
+                                },
+                                "agent_spec": {
+                                    "type": "object",
+                                    "description": "Optional runtime overrides for ephemeral agent configuration. system_prompt/task_prompt are forbidden.",
+                                    "properties": {
+                                        "name": {"type": "string"},
+                                        "callable_mcp_tool_ids": {"type": "array", "items": {"type": "string"}},
+                                        "guidance_skill_ids": {"type": "array", "items": {"type": "string"}},
+                                        "callable_skill_action_refs": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "skill_id": {"type": "string"},
+                                                    "action_id": {"type": "string"}
+                                                },
+                                                "required": ["skill_id", "action_id"]
+                                            }
+                                        },
+                                        "model_config": {"type": "object"},
+                                        "thinking_level": {"type": "string"},
+                                        "max_rounds": {"type": "integer"},
+                                        "tags": {"type": "array", "items": {"type": "string"}}
+                                    },
+                                    "not": {
+                                        "anyOf": [
+                                            {"required": ["system_prompt"]},
+                                            {"required": ["task_prompt"]}
+                                        ]
+                                    }
+                                },
+                                "max_rounds": {
+                                    "type": "integer",
+                                    "description": "Optional per-child round cap. If omitted, agent_spec/template max_rounds or runtime budget is used."
+                                },
+                                "run_in_background": {
+                                    "type": "boolean",
+                                    "description": "When true, start the child in the background and return running status immediately. Defaults to false.",
+                                    "default": false
+                                }
+                            },
+                            "required": ["task"]
+                        }
+                    }
+                },
+                "required": ["tasks"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "delegation_batch_id": {"type": "string"},
+                    "children": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "child_run_id": {"type": "string"},
+                                "execution_id": {"type": "string"},
+                                "agent_id": {"type": "string"},
+                                "agent_type": {"type": ["string", "null"]},
+                                "agent_name": {"type": "string"},
+                                "agent_source": {"type": "string"},
+                                "task": {"type": "string"},
+                                "status": {"type": "string"},
+                                "delegated_result": {"type": ["object", "null"]},
+                                "started_at_ms": {"type": "integer"},
+                                "completed_at_ms": {"type": ["integer", "null"]}
+                            },
+                            "required": ["child_run_id", "agent_id", "agent_name", "task", "status"]
+                        }
+                    }
+                },
+                "required": ["delegation_batch_id", "children"]
+            }),
+            permission_scope: &["local_runtime", "agent_delegation"],
+            read_only: false,
+            mutating: true,
+            risk_level: "MEDIUM",
+            example_arguments: json!({
+                "tasks": [{
+                    "task": "Find authentication-related files and summarize their purpose.",
+                    "agent_type": "explore",
+                    "run_in_background": true
+                }]
+            }),
+        },
+        CoreToolContract {
+            name: "delegate_agents_status",
+            description: "Query the in-memory status of a delegate_agents_start batch. Use as an auxiliary progress check; background completion is pushed through the runtime resume path when possible.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "delegation_batch_id": {"type": "string"},
+                    "child_run_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional child run ids. Omit to return all children in original start order."
+                    }
+                },
+                "required": ["delegation_batch_id"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "batch_id": {"type": "string"},
+                    "children": {"type": "array"}
+                },
+                "required": ["batch_id", "children"]
+            }),
+            permission_scope: &["local_runtime", "agent_delegation"],
+            read_only: true,
+            mutating: false,
+            risk_level: "LOW",
+            example_arguments: json!({"delegation_batch_id": "batch-uuid"}),
+        },
+        CoreToolContract {
+            name: "delegate_agents_stop",
+            description: "Stop running children in a delegate_agents_start batch. Running children are aborted and marked cancelled; completed children stay completed.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "delegation_batch_id": {"type": "string"},
+                    "child_run_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional child run ids. Omit to stop all running children in the batch."
+                    }
+                },
+                "required": ["delegation_batch_id"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "batch_id": {"type": "string"},
+                    "stopped_children": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "child_run_id": {"type": "string"},
+                                "status": {"type": "string"},
+                                "was_running": {"type": "boolean"}
+                            },
+                            "required": ["child_run_id", "status", "was_running"]
+                        }
+                    }
+                },
+                "required": ["batch_id", "stopped_children"]
+            }),
+            permission_scope: &["local_runtime", "agent_delegation"],
+            read_only: false,
+            mutating: true,
+            risk_level: "MEDIUM",
+            example_arguments: json!({"delegation_batch_id": "batch-uuid"}),
+        },
+        CoreToolContract {
             name: "execute_code_plan",
             description: "Run a bounded codemode tool call in the sandbox. Use it only for multi-step program logic, loops, branching, or broad edits that cannot be completed with one lighter direct tool call. Runtime exposes `deeting.log()`, `deeting.section()`, and `deeting.call_tool()`. Call direct host tools surfaced by search_sdk through `deeting.call_tool(name, **kwargs)`. The required `code` field must contain one coherent executable Python script, not plan-only prose, markdown, pseudocode, or metadata. Keep planning implicit or as Python comments inside that script, and always emit final structured output via `deeting.log(json.dumps(result, ensure_ascii=False))` instead of relying on top-level `return`.",
             input_schema: json!({
