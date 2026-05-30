@@ -11,6 +11,7 @@ import { MessageActions } from "./message-actions"
 import { WikiCrystallizationCard } from "./ai-response-bubble/wiki-crystallization-card"
 import { MarkdownViewer } from "@/components/chat/markdown-viewer"
 import { useChatStore, type Message, type ChatAssistant } from "@/store/chat-store"
+import { useChatRuntimeStore } from "@/store/chat-runtime-store"
 import { useI18n } from "@/hooks/use-i18n"
 import type { ChatAttachment } from "@/lib/chat/message-content"
 import type { ChatFeedbackReasonPayload } from "@/lib/chat/feedback-payload"
@@ -152,6 +153,16 @@ export const MessageItem = React.memo<MessageItemProps>(
       }
       return parts.length > 0 ? parts.join(" · ") : null
     }, [message.role, messageMetaInfo, t])
+    const messageUsage = useChatRuntimeStore(
+      React.useCallback((state) => state.sessionUsage?.messageUsages?.[message.id] ?? null, [message.id])
+    )
+    const tokenUsageSummary = React.useMemo(() => {
+      if (message.role !== "assistant" || !messageUsage) return null
+      const total = messageUsage.totalTokens
+      if (!total) return null
+      const formatted = total >= 1000 ? `${(total / 1000).toFixed(1)}k` : String(total)
+      return `${formatted} tokens`
+    }, [message.role, messageUsage])
     const assistantCopyContent = React.useMemo(() => {
       if (activeCompareCandidate) {
         return activeCompareCandidate.content
@@ -316,6 +327,11 @@ export const MessageItem = React.memo<MessageItemProps>(
                     minute: "2-digit",
                   })}
                 </span>
+                {!isActive && tokenUsageSummary ? (
+                  <span className="text-[10px] text-muted-foreground/80">
+                    {tokenUsageSummary}
+                  </span>
+                ) : null}
               </div>
             </div>
             {onCompareWithModel && compareDialogOpen ? (

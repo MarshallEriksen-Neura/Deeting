@@ -36,6 +36,7 @@ export const ModelInfoSchema = z.object({
   runtime_source: z.enum(["desktop_local", "cloud_internal"]).optional(),
   is_platform: z.boolean().optional(),
   pricing: z.record(z.string(), z.unknown()).nullable().optional(),
+  context_window: z.number().optional(),
 })
 
 export const ModelListResponseSchema = z.object({

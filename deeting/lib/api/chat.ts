@@ -347,6 +347,11 @@ async function streamViaSse(
         // Emit usage to UI regardless of runtime
         if (parsedMessage?.usage) {
           const usage = parsedMessage.usage
+          console.debug("[ChatAPI] onUsage emit", {
+            prompt: usage.prompt_tokens,
+            completion: usage.completion_tokens,
+            total: usage.total_tokens,
+          })
           handlers.onUsage?.({
             inputTokens: usage.prompt_tokens ?? 0,
             outputTokens: usage.completion_tokens ?? 0,

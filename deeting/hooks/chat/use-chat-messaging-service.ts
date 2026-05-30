@@ -836,6 +836,7 @@ export function useChatMessagingService() {
     resetSession: resetRuntimeSession,
     loadHistory: loadRuntimeHistory,
     setHistoryState,
+    updateUsage,
   } = useChatRuntimeStore(
     useShallow((state) => ({
       sessionId: state.sessionId,

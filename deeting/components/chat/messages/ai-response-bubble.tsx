@@ -28,6 +28,8 @@ import {
   ToolResultBlock,
 } from "@/components/chat/messages/ai-response-bubble/tool-blocks";
 import { DitingThinkPanel } from "@/components/chat/messages/ai-response-bubble/diting-think-panel";
+import { resolveMemoryInjections } from "@/lib/chat/status-detail";
+import { MemoryInjectionBadge } from "@/components/chat/messages/ai-response-bubble/memory-injection-badge";
 import { WorldModelPanel } from "@/components/chat/messages/ai-response-bubble/world-model-panel";
 import { AssistantActivityTimeline } from "@/components/chat/messages/ai-response-bubble/assistant-activity-timeline";
 
@@ -221,6 +223,11 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       }
       return null;
     }, [parts]);
+
+    const memoryInjections = useMemo(
+      () => resolveMemoryInjections(statusCode, statusMeta),
+      [statusCode, statusMeta],
+    );
 
     const hasContradictedFrame = useMemo(() => {
       if (!dittingFrameBlock) return false;
@@ -535,6 +542,16 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                   </AnimatedBlock>
                 );
               })}
+
+              {memoryInjections && memoryInjections.length > 0 && !isActive && (
+                <motion.div
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: 0.2 }}
+                >
+                  <MemoryInjectionBadge items={memoryInjections} />
+                </motion.div>
+              )}
 
               {isActive && streamEnabled ? (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>

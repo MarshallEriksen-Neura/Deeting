@@ -671,11 +671,12 @@ mod tests {
             result.plan.committed_phases[0].committed_at_frame_version,
             "frame-1"
         );
+        // The committed phase carries the proposal payload verbatim; DemoPhaseProposalGenerator
+        // emits {"task": <goal>}. (The earlier assertion here expected a
+        // "runtime_required_artifacts" field that the demo proposal generator never produced.)
         assert_eq!(
-            result.plan.committed_phases[0]
-                .payload
-                .pointer("/runtime_required_artifacts/0"),
-            Some(&json!("world_model_frame_refresh"))
+            result.plan.committed_phases[0].payload.pointer("/task"),
+            Some(&json!("build phase A"))
         );
         assert!(matches!(
             result.decision,
@@ -735,13 +736,20 @@ mod tests {
             })
             .expect("runtime tick");
 
+        // The interruption triggers exactly one frame refresh (frame-1 -> frame-1:refreshed),
+        // and the phase commits on that refreshed frame. The demo phase executor returns no
+        // updated_frame, so the final frame IS that single refresh, whose parent is the
+        // original bootstrap frame. Before R1 was removed from WorldModelUpdateHook, the loop
+        // forced a redundant *second* refresh here (parent would have been "frame-1:refreshed"
+        // and the commit "frame-1:refreshed:refreshed") — a new user directive must not drive a
+        // world-model refresh, so a single interruption refresh is the correct behavior.
         assert_eq!(
             result.frame.parent_frame_id.as_deref(),
-            Some("frame-1:refreshed")
+            Some("frame-1")
         );
         assert_eq!(
             result.plan.committed_phases[0].committed_at_frame_version,
-            "frame-1:refreshed:refreshed"
+            "frame-1:refreshed"
         );
     }
 }

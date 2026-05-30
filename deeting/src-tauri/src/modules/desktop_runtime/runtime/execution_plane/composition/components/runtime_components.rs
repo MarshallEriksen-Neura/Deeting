@@ -30,7 +30,7 @@ use std::time::{Duration, Instant};
 const TIER2_VALIDATION_CACHE_TTL: Duration = Duration::from_secs(5 * 60);
 const TIER2_VALIDATION_CACHE_MAX_ENTRIES: usize = 256;
 const TIER2_VALIDATION_AUXILIARY_TEMPERATURE: f32 = 0.1;
-const TIER2_VALIDATION_MAX_TOKENS: u32 = 240;
+const TIER2_VALIDATION_MAX_TOKENS: u32 = 512;
 const WORLD_MODEL_REFRESH_TEMPERATURE: f32 = 0.1;
 const TIER2_VALIDATION_TOOL_NAME: &str = "submit_frame_validation";
 const WORLD_MODEL_REFRESH_TOOL_NAME: &str = "submit_world_model_update";

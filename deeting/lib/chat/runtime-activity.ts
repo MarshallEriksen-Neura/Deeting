@@ -58,11 +58,20 @@ function isCancelledCode(code: string) {
   return code.includes("cancelled") || code.includes("canceled");
 }
 
+function isWorldModelDoneCode(code: string) {
+  return code === "world_model.frame_refresh.updated" || code === "runtime.phase_executor.frame_resolved";
+}
+
 function statusEventTitle(code: string, meta?: Record<string, unknown> | null): string | null {
   if (code === "approval.required") return "需要你确认";
   if (code === "approval.executing") return "已确认, 继续执行";
   if (code.includes("context.pressure") || code.includes("context_pressure")) return "上下文接近上限";
   if (isCancelledCode(code)) return "执行已取消";
+  if (code === "world_model.frame.bootstrap") return "建立任务框架";
+  if (code === "world_model.frame_refresh.request") return "秘书模型分析中";
+  if (code === "world_model.frame_refresh.updated") return "世界模型已更新";
+  if (code === "world_model.frame_refresh.failed") return "世界模型更新失败";
+  if (code === "runtime.phase_executor.frame_resolved") return "世界模型已对齐";
   if (isFailureCode(code)) return "执行阶段失败";
 
   if (code === "context.loaded" || code === "context.manifest.loaded" || code.startsWith("knowledge.context.")) {
@@ -93,6 +102,31 @@ function statusEventTitle(code: string, meta?: Record<string, unknown> | null): 
 }
 
 function statusEventDetail(code: string, meta?: Record<string, unknown> | null): string | undefined {
+  if (code === "world_model.frame.bootstrap") {
+    const goal = asString(meta?.goal);
+    return goal ? goal.slice(0, 120) : undefined;
+  }
+  if (code === "world_model.frame_refresh.request") {
+    const role = asString(meta?.model_role);
+    const model = asString(meta?.model_id);
+    return [role, model].filter(Boolean).join(" · ") || undefined;
+  }
+  if (code === "world_model.frame_refresh.updated") {
+    const facts = Number(meta?.facts ?? 0);
+    const assumptions = Number(meta?.assumptions ?? 0);
+    const resolved = Number(meta?.resolved_unknowns ?? 0);
+    const parts: string[] = [];
+    if (Number.isFinite(facts) && facts > 0) parts.push(`${facts} 事实`);
+    if (Number.isFinite(assumptions) && assumptions > 0) parts.push(`${assumptions} 假设`);
+    if (Number.isFinite(resolved) && resolved > 0) parts.push(`解决 ${resolved} 未知`);
+    return parts.join(" · ") || undefined;
+  }
+  if (code === "world_model.frame_refresh.failed") {
+    return asString(meta?.reason) ?? asString(meta?.error) ?? asString(meta?.artifact) ?? undefined;
+  }
+  if (code === "runtime.phase_executor.frame_resolved") {
+    return asString(meta?.phase_step_source) ?? asString(meta?.composition) ?? undefined;
+  }
   if (code === "context.loaded") {
     const count = Number(meta?.count ?? 0);
     return Number.isFinite(count) && count > 0 ? `${count} 条上下文` : undefined;
@@ -136,7 +170,7 @@ export function activityEventFromStatus({
         ? "error"
         : isCancelledCode(normalizedCode) || normalizedCode.includes("context.pressure")
           ? "warning"
-          : normalizedCode === "upstream.response"
+          : normalizedCode === "upstream.response" || isWorldModelDoneCode(normalizedCode)
             ? "success"
             : "info";
 
@@ -147,7 +181,7 @@ export function activityEventFromStatus({
         ? "failed"
         : isCancelledCode(normalizedCode)
           ? "cancelled"
-          : normalizedCode === "upstream.response"
+          : normalizedCode === "upstream.response" || isWorldModelDoneCode(normalizedCode)
             ? "done"
             : "running";
 

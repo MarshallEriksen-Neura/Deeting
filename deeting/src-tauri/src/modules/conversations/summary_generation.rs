@@ -11,10 +11,10 @@ use mcp_core::types::LocalChatInputMessage;
 use mcp_session::conversation::LocalConversationHistoryMessage;
 use serde_json::json;
 
-pub(crate) const LOCAL_CONVERSATION_SUMMARY_MAX_TOKENS: u32 = 768;
+pub(crate) const LOCAL_CONVERSATION_SUMMARY_MAX_TOKENS: u32 = 2048;
 pub(crate) const LOCAL_CONVERSATION_SUMMARY_WORKER_IDLE_INTERVAL_SECS: u64 = 2;
 const LOCAL_CONVERSATION_TOPIC_TITLE_MAX_CHARS: usize = 40;
-const LOCAL_CONVERSATION_TOPIC_NAMING_MAX_TOKENS: u32 = 48;
+const LOCAL_CONVERSATION_TOPIC_NAMING_MAX_TOKENS: u32 = 256;
 const LOCAL_CONVERSATION_AUXILIARY_TEMPERATURE: f32 = 0.2;
 const LOCAL_CONVERSATION_TITLE_TOOL_NAME: &str = "submit_conversation_title";
 const LOCAL_CONVERSATION_SUMMARY_TOOL_NAME: &str = "submit_conversation_summary";

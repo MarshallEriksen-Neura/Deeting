@@ -129,6 +129,20 @@ export function resolveStatusDetail(
         ? t("status.detail.approvalExecuting", { name })
         : t("status.detail.approvalExecutingFallback")
     }
+    case "kernel.perception_done": {
+      const count = Number(meta?.memory_count ?? 0)
+      const persona = typeof meta?.active_persona === "string" ? meta.active_persona : null
+      if (count > 0 && persona) {
+        return `Recalled ${count} memories · activated ${persona}`
+      }
+      if (count > 0) {
+        return `Recalled ${count} memories`
+      }
+      if (persona) {
+        return `Activated persona: ${persona}`
+      }
+      return null
+    }
     default:
       return null
   }
@@ -170,4 +184,34 @@ export function resolveWorldModelSummary(
   const updateUnknowns = Array.isArray(meta?.update_unknowns) ? meta.update_unknowns as string[] : []
 
   return { goal, facts, assumptions, unknowns, resolvedUnknowns, updateFacts, updateAssumptions, updateUnknowns }
+}
+
+// ── Memory Injection ──
+
+export interface MemoryInjectionItem {
+  id: string
+  content: string
+  category?: string
+  memoryTier?: string
+  isCore?: boolean
+  isBoot?: boolean
+}
+
+const MEMORY_CODES = new Set(["kernel.perception_done"])
+
+export function resolveMemoryInjections(
+  code?: string | null,
+  meta?: Record<string, unknown> | null,
+): MemoryInjectionItem[] | null {
+  if (!code || !MEMORY_CODES.has(code)) return null
+  if (!meta || !Array.isArray(meta.memory_items) || meta.memory_items.length === 0) return null
+
+  return (meta.memory_items as Record<string, unknown>[]).map((item) => ({
+    id: String(item.id ?? ""),
+    content: String(item.content ?? ""),
+    category: typeof item.category === "string" ? item.category : undefined,
+    memoryTier: typeof item.memory_tier === "string" ? item.memory_tier : undefined,
+    isCore: Boolean(item.is_core),
+    isBoot: Boolean(item.is_boot),
+  }))
 }

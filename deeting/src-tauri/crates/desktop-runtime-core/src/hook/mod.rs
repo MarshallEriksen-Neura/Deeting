@@ -421,17 +421,12 @@ impl Hook for WorldModelUpdateHook {
 
         let frame = &state.current_frame;
         let highwater = frame.last_seen_by_model;
-        let new_directives = frame
-            .user_directed
-            .iter()
-            .filter(|directive| directive.appended_at > highwater)
-            .count();
-        if new_directives > 0 {
-            return require_world_model_refresh(format!(
-                "R1: new user directive(s) since last model turn ({new_directives})"
-            ));
-        }
-
+        // NOTE: a new user directive deliberately does NOT trigger a world-model refresh
+        // here. This hook assimilates *world changes* (observations, tool results) into the
+        // frame's beliefs — see build_world_model_update_refresh_prompt, whose facts are
+        // "things confirmed through observation", not restated input. A changed user intent
+        // is captured by the next tick's bootstrap + Tier2 validation (and, mid-tick, by the
+        // interruption refresh path), not by re-summarizing the input as a "fact".
         let new_observations = frame
             .world_observed
             .iter()
@@ -809,7 +804,10 @@ mod tests {
     }
 
     #[test]
-    fn world_model_update_hook_triggers_for_new_user_directive() {
+    fn world_model_update_hook_ignores_new_user_directive() {
+        // A new user directive is an input, not an observed world change, so it must NOT by
+        // itself force a world-model refresh. With no accumulated observations/commits (R2) and
+        // the safety net (R3) not yet reached, the hook allows the commit boundary through.
         let mut registry = HookRegistry::new();
         registry.register(WorldModelUpdateHook);
         let mut current_frame = frame(ExecutionStrategy::DirectIteration);
@@ -828,11 +826,7 @@ mod tests {
 
         assert!(matches!(
             registry.evaluate(&event, &state),
-            HookDecision::RequireArtifact {
-                artifact: RequiredArtifact::WorldModelFrameRefresh,
-                enforcement: HookEnforcementMode::Enforced,
-                ..
-            }
+            HookDecision::Allow { .. }
         ));
     }
 

@@ -100,7 +100,7 @@ pub(crate) async fn extract_and_store_facts(
             provider_model_id,
             model_id,
             &prompt,
-            None,
+            Some(1024),
             Some(session_id),
         )
         .await

@@ -26,6 +26,39 @@ describe("runtime activity timeline", () => {
     })
   })
 
+  it("maps world-model frame statuses into visible activity nodes", () => {
+    const request = activityEventFromStatus({
+      messageId: "m1",
+      stage: "evolve",
+      code: "world_model.frame_refresh.request",
+      meta: { model_role: "secretary", model_id: "mimo-v2.5-pro" },
+      timestamp: 100,
+    })
+    const updated = activityEventFromStatus({
+      messageId: "m1",
+      stage: "evolve",
+      code: "world_model.frame_refresh.updated",
+      meta: { facts: 2, assumptions: 1, resolved_unknowns: 1 },
+      timestamp: 200,
+    })
+
+    expect(request).toMatchObject({
+      id: "status:world_model.frame_refresh.request",
+      title: "秘书模型分析中",
+      detail: "secretary · mimo-v2.5-pro",
+      status: "running",
+      source: "status",
+    })
+    expect(updated).toMatchObject({
+      id: "status:world_model.frame_refresh.updated",
+      title: "世界模型已更新",
+      detail: "2 事实 · 1 假设 · 解决 1 未知",
+      level: "success",
+      status: "done",
+      source: "status",
+    })
+  })
+
   it("dedupes repeated status events while preserving later detail", () => {
     const first = createActivityTimelineBlock("m1", [
       activityEventFromStatus({
