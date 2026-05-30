@@ -1,261 +1,163 @@
 # 世界模型框架历史表现分析工具
 
-本目录包含用于分析世界模型框架历史表现的工具脚本。
+分析 Deeting 世界模型框架(任务学习 / 策略进化)的历史运行表现。
 
 ## 📋 文件说明
 
-- `query_world_model_performance.sql` - SQL查询脚本，包含14个分析维度
-- `run_world_model_analysis.sh` - Bash脚本，快速执行SQL分析
-- `analyze_world_model.py` - Python分析工具，提供格式化输出和数据导出
+| 文件 | 用途 |
+|---|---|
+| `analyze_world_model.py` | **主力工具**。纯 Python 标准库,只读连接,格式化输出 + JSON/CSV 导出 |
+| `query_world_model_performance.sql` | sqlite3 CLI 查询脚本(16 个分析维度) |
+| `run_world_model_analysis.sh` | Bash 封装,自动探测库路径并以只读模式执行 SQL |
+
+## 🗄️ 数据源(真实表)
+
+世界模型框架的表现数据存储在桌面应用主库 `deeting.db` 中,核心是以下 4 张表:
+
+| 表 | 含义 | 关键字段 |
+|---|---|---|
+| **`task_learning_runs`** | 每次任务执行的学习记录(**核心**) | `outcome_json`、`execution_policy_json`、`policy_delta_json`、`learning_eligible`、`delta_state`、`last_signal`、`fingerprint_key` |
+| `task_policy_priors` | 学到的策略先验 | `decision_point`、`action_key`、`weight`、`confidence`、`evidence_count`、`maturity` |
+| `posterior_signal_events` | 后验信号事件 | `source`、`signal`、`confidence` |
+| `evolution_signals` | 进化信号(辅助,显式反馈链路) | `source`、`classification`、`confidence` |
+
+### 数据库默认路径
+
+| 平台 | 路径 |
+|---|---|
+| Windows | `%APPDATA%\com.deeting.desktop\deeting.db` |
+| macOS | `~/Library/Application Support/com.deeting.desktop/deeting.db` |
+| Linux | `~/.local/share/com.deeting.desktop/deeting.db` |
+
+> ⚠️ 桌面应用运行时会以 WAL 模式持有该库。本工具**一律只读连接**(`file:...?mode=ro` / `sqlite3 -readonly`),不会写入或加锁。可在应用运行时安全查询。
 
 ## 🚀 快速开始
 
-### 方法1: 使用Bash脚本 (推荐用于快速查看)
+### 方法 1: Python(推荐,无需额外依赖)
 
 ```bash
-# 使用默认数据库路径 (~/.deeting/mcp.db)
-./scripts/run_world_model_analysis.sh
-
-# 指定数据库路径
-./scripts/run_world_model_analysis.sh /path/to/your/mcp.db
-```
-
-### 方法2: 使用Python脚本 (推荐用于详细分析)
-
-```bash
-# 使用默认数据库路径
+# 自动探测默认库路径
 python scripts/analyze_world_model.py
 
-# 指定数据库路径
-python scripts/analyze_world_model.py ~/.deeting/mcp.db
+# 指定库路径
+python scripts/analyze_world_model.py "%APPDATA%\com.deeting.desktop\deeting.db"
 
-# 导出JSON报告
+# 导出 JSON / CSV
 python scripts/analyze_world_model.py --export-json report.json
-
-# 导出CSV数据
-python scripts/analyze_world_model.py --export-csv ./csv_output
-
-# 查看帮助
-python scripts/analyze_world_model.py --help
+python scripts/analyze_world_model.py --export-csv ./csv_out
 ```
 
-### 方法3: 直接使用SQL (用于自定义查询)
+### 方法 2: Bash + sqlite3 CLI
 
 ```bash
-sqlite3 ~/.deeting/mcp.db < scripts/query_world_model_performance.sql
+./scripts/run_world_model_analysis.sh
+./scripts/run_world_model_analysis.sh /path/to/deeting.db
 ```
 
-## 📊 分析维度
+### 方法 3: 直接 SQL
 
-### 1. 进化信号总体统计
-- 总信号数量
-- 唯一任务指纹数
-- 涉及会话数和追踪数
-- 时间范围
-
-### 2. 按分类统计
-- Accepted (接受)
-- Rejected (拒绝)
-- Corrected (修正)
-- Neutral (中性)
-- Unknown (未知)
-
-### 3. 按来源统计
-- `deeting_think` - Deeting思考过程
-- `explicit_trace_feedback` - 显式追踪反馈
-- `manual_task_learning_revision` - 手动任务学习修订
-- `monitor_observation` - 监控观察
-- `monitor_feedback` - 监控反馈
-
-### 4. 按状态统计
-- `observed` - 已观察
-- `classified` - 已分类
-- `correlated` - 已关联
-- `applied` - 已应用
-- `ignored` - 已忽略
-
-### 5. 成功率分析
-- 接受/拒绝比率
-- 整体成功率百分比
-
-### 6. 时间趋势分析
-- 按天统计信号数量
-- 每日接受/拒绝趋势
-
-### 7. 高频任务指纹
-- Top 10 最活跃的任务
-- 每个任务的成功/失败统计
-
-### 8. 进化案例统计
-- Reference (参考案例)
-- Negative (负面案例)
-- Constraint (约束案例)
-
-### 9. 显式反馈分析
-- 用户显式反馈的分类分布
-- 置信度统计
-
-### 10. 问题信号识别
-- 低置信度 + 拒绝的信号
-- 潜在问题点
-
-### 11. 监控任务相关
-- 监控任务产生的信号统计
-
-### 12. 最近7天活跃度
-- 近期活跃度趋势
-- 接受率变化
-
-### 13. 案例与信号关联
-- 进化案例与原始信号的关联关系
-
-### 14. 置信度分布
-- 按置信度区间统计信号分布
-
-## 📈 输出示例
-
-### Python脚本输出示例
-
-```
-================================================================================
- 世界模型框架历史表现分析报告
-================================================================================
-
-数据库路径: /home/user/.deeting/mcp.db
-分析时间: 2026-05-30T10:30:00
-
-================================================================================
- 1. 总体统计
-================================================================================
-  总信号数: 1,234
-  唯一任务指纹数: 89
-  涉及会话数: 156
-  涉及追踪数: 234
-  最早记录: 2026-04-15 08:23:45
-  最新记录: 2026-05-30 10:15:32
-
-================================================================================
- 2. 按分类统计
-================================================================================
-  分类          | 数量    | 占比(%)  | 平均置信度 | 涉及任务数
-  ----------------------------------------------------------------
-  accepted      | 678     | 54.94    | 0.823      | 67
-  rejected      | 234     | 18.96    | 0.456      | 45
-  corrected     | 156     | 12.64    | 0.712      | 34
-  neutral       | 123     | 9.97     | 0.500      | 28
-  unknown       | 43      | 3.48     | 0.234      | 12
-
-================================================================================
- 3. 成功率分析
-================================================================================
-  接受数量: 678
-  拒绝数量: 234
-  修正数量: 156
-  中性数量: 123
-  成功率: 74.34%
+```bash
+sqlite3 -readonly ~/AppData/Roaming/com.deeting.desktop/deeting.db \
+  < scripts/query_world_model_performance.sql
 ```
 
-## 🔍 关键指标解读
+## 📊 分析维度(16 项)
 
-### 成功率 (Success Rate)
-- **计算公式**: `接受数 / (接受数 + 拒绝数) × 100%`
-- **健康范围**: 70% - 85%
-- **低于60%**: 表明世界模型框架可能存在系统性问题
-- **高于90%**: 可能表明验证不够严格
+1. 总体统计(运行数 / 任务数 / 会话 / 时间范围)
+2. **最终状态**(`final_status`: success / blocked / failed)— 成功率
+3. **验证结果**(`verification_result`: unverified / failed / passed / weak_pass)— 质量含金量
+4. **成本等级**(`cost_class`: low / medium / high / disproportionate)
+5. 框架自评判断(`route_judgment` / `discovery_judgment` / `execution_judgment`)
+6. 执行路由 / 平面(`route`: Direct / Worker;`plane`: ResponseOnly / WorkerReasoning)
+7. 置信度区间(`outcome.confidence`)
+8. 用户反馈信号(`last_signal`: silent / accepted / rejected / corrected)
+9. 学习资格 × Δ状态(`learning_eligible` × `delta_state`)
+10. 策略调整(`policy_delta`: direction / decision_point / action_key / magnitude)
+11. 按周时间趋势
+12. 高频任务指纹 Top 12
+13. 策略先验成熟度(`maturity`: provisional / confirmed)
+14. 最成熟先验 Top 10(按证据数)
+15. 后验信号事件(`signal` / `source`)
+16. 进化信号(辅助)
 
-### 置信度 (Confidence)
-- **0.9-1.0**: 极高置信度，模型非常确定
-- **0.7-0.9**: 高置信度，正常范围
-- **0.5-0.7**: 中等置信度，需要关注
-- **0.3-0.5**: 低置信度，可能存在问题
-- **0.0-0.3**: 极低置信度，需要人工审查
+## 🔑 关键字段含义
 
-### 进化案例类型
-- **Reference**: 成功案例，用于正向学习
-- **Negative**: 失败案例，用于避免重复错误
-- **Constraint**: 约束案例，用于边界条件学习
+### `outcome_json`(任务结果画像)
+- `final_status`: 最终状态 — `success` / `blocked`(被验证拦截)/ `failed`
+- `verification_result`: 验证结果 — `unverified`(未验证)/ `failed` / `passed` / `weak_pass`
+- `cost_class`: 成本评级 — `low` / `medium` / `high` / `disproportionate`(不成比例)
+- `route_judgment`: 路由质量 — `good` / `acceptable` / `wrong` / `wasteful`
+- `discovery_judgment`: 发现质量 — `sufficient` / `shallow` / `skipped_when_needed` / `excessive`
+- `execution_judgment`: 执行质量 — `justified` / `failed` / `unnecessary` / `fragile`
+- `confidence`: 框架对本次判断的置信度(0~1)
+
+### `execution_policy_json`(执行策略)
+- `route`: `Direct`(直接响应)/ `Worker`(委托工作者)
+- `plane`: `ResponseOnly` / `WorkerReasoning`
+- `allow_worker_delegation`、`prefer_workflow_runtime`、`allowed_tool_names` 等
+
+### `policy_delta_json`(策略调整)
+- `decision_point`: 决策点 — `route` / `discovery` / `verification` / `worker_selection`
+- `direction`: `strengthen`(强化)/ `weaken`(弱化)
+- `magnitude`: 调整幅度;`state`: `provisional` / `confirmed`
+
+## 🩺 指标解读
+
+| 指标 | 健康区间 | 异常含义 |
+|---|---|---|
+| 成功率(`success` 占比) | 70%–85% | 过低=系统性问题;过高=验证不严 |
+| **验证通过率**(`passed`/`weak_pass`) | 越高越好 | 大量 `unverified` = "成功"含金量低 |
+| 成本(`disproportionate` 占比) | 越低越好 | 高占比 = 用力过猛 / 产出不足 |
+| 置信度均值 | >0.6 | 长期 <0.5 = 框架普遍不确定 |
+| 先验成熟度(`confirmed` 占比) | 随时间上升 | 长期全 `provisional` = 学习闭环未收敛 |
+| 用户反馈(`silent` 占比) | 越低越好 | 接近 100% silent = 缺乏正向确认信号 |
+
+## 📈 关键发现速览(2026-05 快照)
+
+> 基于 2026-04-14 ~ 2026-05-29、445 次运行的一次实测,实际以你运行结果为准。
+
+- 成功率 76.9%,但 **76.4% 的运行 `unverified`**,真正通过验证仅 2 个 → 成功含金量存疑。
+- **77.8% 的任务 `cost_class=disproportionate`** → 成本与产出失衡显著。
+- 路由 96.4% 是 `Direct`,Worker 委托几乎闲置。
+- 置信度 70.8% 落在 0.4–0.6,均值 0.446 偏低。
+- 用户反馈 99.8% `silent`;先验 25/26 停留 `provisional`(平均置信度 0.30)。
+- **W19 起 `blocked` 与策略调整双双归零**,疑与框架收敛重构相关,建议确认是否预期。
 
 ## 🛠️ 故障排查
 
-### 数据库文件找不到
-
 ```bash
-# 检查默认路径
-ls -la ~/.deeting/mcp.db
+# 找不到库?手动定位
+find ~ -name "deeting.db" 2>/dev/null
 
-# 查找所有.db文件
-find ~ -name "*.db" -type f 2>/dev/null | grep -i deeting
+# Windows 中文乱码?Python 脚本已内置 UTF-8 修复;sqlite3 CLI 可设:
+export PYTHONIOENCODING=utf-8
+
+# sqlite3 未安装?直接用 Python 版(零依赖)
+python scripts/analyze_world_model.py
 ```
 
-### Python依赖问题
-
-```bash
-# 脚本只依赖Python标准库，无需额外安装
-python3 --version  # 确保Python 3.6+
-```
-
-### 权限问题
-
-```bash
-# 添加执行权限
-chmod +x scripts/run_world_model_analysis.sh
-chmod +x scripts/analyze_world_model.py
-```
-
-## 📝 自定义查询
-
-如果需要自定义分析，可以直接修改 `query_world_model_performance.sql` 或编写新的SQL查询：
+## 📝 自定义查询示例
 
 ```sql
--- 示例: 查询特定时间范围的信号
-SELECT *
-FROM evolution_signals
-WHERE created_at_unix_ms >= strftime('%s', '2026-05-01') * 1000
-  AND created_at_unix_ms < strftime('%s', '2026-06-01') * 1000
+-- 某任务指纹的逐次运行明细
+SELECT datetime(created_at_unix_ms/1000,'unixepoch') AS t,
+       json_extract(outcome_json,'$.final_status') AS status,
+       json_extract(outcome_json,'$.confidence')   AS conf
+FROM task_learning_runs
+WHERE fingerprint_key LIKE '7403a26f%'
 ORDER BY created_at_unix_ms DESC;
 
--- 示例: 查询特定任务指纹的详细信息
-SELECT
-    es.*,
-    datetime(es.created_at_unix_ms/1000, 'unixepoch') AS created_at
-FROM evolution_signals es
-WHERE es.fingerprint_key = 'your-fingerprint-key-here'
-ORDER BY es.created_at_unix_ms DESC;
+-- 验证失败(blocked)的运行分布
+SELECT json_extract(outcome_json,'$.verification_result') AS vr, COUNT(*)
+FROM task_learning_runs
+WHERE json_extract(outcome_json,'$.final_status')='blocked'
+GROUP BY vr;
 ```
 
 ## 🔗 相关文档
 
-- [世界模型架构审计文档](../docs/world-model-architecture-audit.md)
-- [架构审计2026-05](../docs/architecture-audit-2026-05.md)
-- [委托批处理代码审查](../docs/delegation-batch-code-review.md)
-
-## 📧 问题反馈
-
-如果发现数据异常或工具问题，请检查：
-
-1. 数据库文件是否完整
-2. SQLite版本是否兼容 (建议3.35+)
-3. 是否有足够的磁盘空间
-4. 数据库文件是否被其他进程锁定
-
-## 🎯 最佳实践
-
-1. **定期分析**: 建议每周运行一次分析，跟踪趋势变化
-2. **关注异常**: 重点关注成功率突然下降或置信度异常的时期
-3. **对比分析**: 保存历史报告，进行时间序列对比
-4. **深入调查**: 对于问题信号，使用fingerprint_key深入追踪
-5. **导出数据**: 使用`--export-json`或`--export-csv`保存数据用于进一步分析
-
-## 📊 数据可视化建议
-
-导出的JSON/CSV数据可以导入到以下工具进行可视化：
-
-- **Grafana**: 时间序列趋势图
-- **Jupyter Notebook**: 自定义Python分析
-- **Excel/Google Sheets**: 快速图表生成
-- **Tableau/Power BI**: 企业级仪表板
+- [世界模型架构审计](../docs/world-model-architecture-audit.md)
+- [架构审计 2026-05](../docs/architecture-audit-2026-05.md)
 
 ---
-
 **最后更新**: 2026-05-30
-**维护者**: Deeting Team

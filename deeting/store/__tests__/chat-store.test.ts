@@ -160,6 +160,54 @@ describe("useChatStore session state", () => {
     ])
   })
 
+  it("appendMessageBlocks should keep multi-step thoughts interleaved with their tool chains", () => {
+    useChatStore.setState({
+      messages: [
+        {
+          id: "assistant-agentic-1",
+          role: "assistant",
+          content: "",
+          createdAt: 1,
+          blocks: [],
+        },
+      ],
+    })
+
+    const store = useChatStore.getState()
+    // Mirror the real SSE delivery: each step arrives as its own blocks event,
+    // in the order think -> act -> observe -> think -> act.
+    store.appendMessageBlocks("assistant-agentic-1", [
+      { type: "thought", content: "Let me start exploring the vault." } as MessageBlock,
+    ])
+    store.appendMessageBlocks("assistant-agentic-1", [
+      { type: "tool_call", callId: "c1", toolName: "list_directory", status: "running" } as MessageBlock,
+    ])
+    store.appendMessageBlocks("assistant-agentic-1", [
+      { type: "tool_result", callId: "c1", toolName: "list_directory", status: "success", result: { ok: true } } as MessageBlock,
+    ])
+    store.appendMessageBlocks("assistant-agentic-1", [
+      { type: "thought", content: "Now let me explore each directory." } as MessageBlock,
+    ])
+    store.appendMessageBlocks("assistant-agentic-1", [
+      { type: "tool_call", callId: "c2", toolName: "list_directory_with_sizes", status: "running" } as MessageBlock,
+    ])
+
+    const blocks = useChatStore.getState().messages[0]?.blocks ?? []
+    // Thoughts must stay in chronological order with their tool chains, not
+    // collapse into a single leading "thinking" block.
+    expect(blocks.map((block) => block.type)).toEqual([
+      "thought",
+      "tool_call",
+      "tool_result",
+      "thought",
+      "tool_call",
+    ])
+    const thoughts = blocks.filter((block) => block.type === "thought")
+    expect(thoughts).toHaveLength(2)
+    expect((thoughts[0] as { content?: string }).content).toBe("Let me start exploring the vault.")
+    expect((thoughts[1] as { content?: string }).content).toBe("Now let me explore each directory.")
+  })
+
   it("appendMessageBlocks should replace the matching tool call by callId", () => {
     useChatStore.setState({
       messages: [

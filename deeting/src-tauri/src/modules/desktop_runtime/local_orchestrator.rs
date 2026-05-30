@@ -125,6 +125,74 @@ fn extract_latest_assistant_trace_id(
     })
 }
 
+fn spawn_local_conversation_title_generation(app_state: AppState, session_id: String) {
+    tauri::async_runtime::spawn(async move {
+        let title_context = match app_state
+            .mcp
+            .store
+            .get_local_conversation_title_context(&session_id)
+            .await
+        {
+            Ok(value) => value,
+            Err(err) => {
+                log::warn!(
+                    "get_local_conversation_title_context failed session={} err={}",
+                    session_id,
+                    err
+                );
+                return;
+            }
+        };
+
+        if title_context
+            .title
+            .as_deref()
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false)
+        {
+            return;
+        }
+        if title_context.message_count > 1 {
+            return;
+        }
+
+        let Some(first_user_message) = title_context.first_user_message.as_deref() else {
+            return;
+        };
+
+        match generate_local_conversation_title_with_secretary_model(
+            &app_state,
+            first_user_message,
+            Some(session_id.as_str()),
+        )
+        .await
+        {
+            Ok(Some(title)) => {
+                if let Err(err) = app_state
+                    .mcp
+                    .store
+                    .update_local_conversation_title_if_empty(&session_id, &title)
+                    .await
+                {
+                    log::warn!(
+                        "update_local_conversation_title_if_empty failed session={} err={}",
+                        session_id,
+                        err
+                    );
+                }
+            }
+            Ok(None) => {}
+            Err(err) => {
+                log::warn!(
+                    "generate_local_conversation_title_with_secretary_model failed session={} err={}",
+                    session_id,
+                    err
+                );
+            }
+        }
+    });
+}
+
 pub async fn execute_local_orchestrated_chat(
     app_handle: &AppHandle,
     app_state: &AppState,
@@ -224,6 +292,8 @@ pub async fn execute_local_orchestrated_chat(
                     session_id, e
                 )
             })?;
+
+        spawn_local_conversation_title_generation(app_state.clone(), session_id.clone());
 
         let runtime_window = store
             .load_local_conversation_runtime_window(&session_id)
@@ -774,73 +844,6 @@ pub async fn execute_local_orchestrated_chat(
         })?;
         let persisted_assistant_turn_index = persistence.turn_index;
         assistant_meta = persistence.assistant_meta;
-        let title_app_state = app_state.clone();
-        let title_session_id = session_id.clone();
-        tauri::async_runtime::spawn(async move {
-            let title_context = match title_app_state
-                .mcp
-                .store
-                .get_local_conversation_title_context(&title_session_id)
-                .await
-            {
-                Ok(value) => value,
-                Err(err) => {
-                    log::warn!(
-                        "get_local_conversation_title_context failed session={} err={}",
-                        title_session_id,
-                        err
-                    );
-                    return;
-                }
-            };
-
-            if title_context
-                .title
-                .as_deref()
-                .map(|value| !value.trim().is_empty())
-                .unwrap_or(false)
-            {
-                return;
-            }
-            if title_context.message_count > 2 {
-                return;
-            }
-
-            let Some(first_user_message) = title_context.first_user_message.as_deref() else {
-                return;
-            };
-
-            match generate_local_conversation_title_with_secretary_model(
-                &title_app_state,
-                first_user_message,
-                Some(title_session_id.as_str()),
-            )
-            .await
-            {
-                Ok(Some(title)) => {
-                    if let Err(err) = title_app_state
-                        .mcp
-                        .store
-                        .update_local_conversation_title_if_empty(&title_session_id, &title)
-                        .await
-                    {
-                        log::warn!(
-                            "update_local_conversation_title_if_empty failed session={} err={}",
-                            title_session_id,
-                            err
-                        );
-                    }
-                }
-                Ok(None) => {}
-                Err(err) => {
-                    log::warn!(
-                        "generate_local_conversation_title_with_secretary_model failed session={} err={}",
-                        title_session_id,
-                        err
-                    );
-                }
-            }
-        });
 
         if let Some(variant) = ctx.selected_prompt_variant.clone() {
             let bandit_store = app_state.providers.store.clone();

@@ -1,232 +1,238 @@
 -- 世界模型框架历史表现分析查询
--- 数据库: SQLite (evolution_signals 和 evolution_cases 表)
--- 生成时间: 2026-05-30
+-- 数据库: SQLite (主库 deeting.db)
+-- 真实表: task_learning_runs / task_policy_priors / posterior_signal_events / evolution_signals
+-- 更新时间: 2026-05-30
+--
+-- 用法 (需已安装 sqlite3 CLI 且编译了 JSON1 扩展, 现代版本默认包含):
+--   sqlite3 "file:<db路径>?mode=ro" < query_world_model_performance.sql
+-- Windows 默认库路径:
+--   %APPDATA%\com.deeting.desktop\deeting.db
+-- 说明: 务必用 mode=ro 只读连接, 因为桌面应用运行时会持有该库 (WAL 模式)。
+
+.headers on
+.mode column
 
 -- ============================================
--- 1. 进化信号总体统计
+-- 1. 学习运行总体统计 (task_learning_runs)
 -- ============================================
 SELECT
-    '进化信号总体统计' AS 分析类别,
-    COUNT(*) AS 总信号数,
+    '总体统计' AS 分析类别,
+    COUNT(*) AS 学习运行数,
     COUNT(DISTINCT fingerprint_key) AS 唯一任务指纹数,
     COUNT(DISTINCT session_id) AS 涉及会话数,
     COUNT(DISTINCT trace_id) AS 涉及追踪数,
-    MIN(datetime(created_at_unix_ms/1000, 'unixepoch')) AS 最早记录时间,
-    MAX(datetime(created_at_unix_ms/1000, 'unixepoch')) AS 最新记录时间
-FROM evolution_signals;
+    SUM(learning_eligible) AS 可学习运行数,
+    datetime(MIN(created_at_unix_ms)/1000, 'unixepoch') AS 最早记录,
+    datetime(MAX(created_at_unix_ms)/1000, 'unixepoch') AS 最新记录
+FROM task_learning_runs;
 
 -- ============================================
--- 2. 按分类统计信号分布
+-- 2. 最终状态分布 (成功率核心)
 -- ============================================
 SELECT
-    '按分类统计' AS 分析类别,
-    classification AS 分类,
-    COUNT(*) AS 信号数量,
-    ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM evolution_signals), 2) AS 占比百分比,
-    ROUND(AVG(confidence), 3) AS 平均置信度,
-    COUNT(DISTINCT fingerprint_key) AS 涉及任务数
-FROM evolution_signals
-GROUP BY classification
-ORDER BY COUNT(*) DESC;
-
--- ============================================
--- 3. 按来源统计信号分布
--- ============================================
-SELECT
-    '按来源统计' AS 分析类别,
-    source AS 信号来源,
-    COUNT(*) AS 信号数量,
-    ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM evolution_signals), 2) AS 占比百分比,
-    COUNT(DISTINCT fingerprint_key) AS 涉及任务数
-FROM evolution_signals
-GROUP BY source
-ORDER BY COUNT(*) DESC;
-
--- ============================================
--- 4. 按状态统计信号处理进度
--- ============================================
-SELECT
-    '按状态统计' AS 分析类别,
-    status AS 处理状态,
-    COUNT(*) AS 信号数量,
-    ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM evolution_signals), 2) AS 占比百分比
-FROM evolution_signals
-GROUP BY status
-ORDER BY
-    CASE status
-        WHEN 'observed' THEN 1
-        WHEN 'classified' THEN 2
-        WHEN 'correlated' THEN 3
-        WHEN 'applied' THEN 4
-        WHEN 'ignored' THEN 5
-        ELSE 6
-    END;
-
--- ============================================
--- 5. 成功率分析 (Accepted vs Rejected)
--- ============================================
-SELECT
-    '成功率分析' AS 分析类别,
-    SUM(CASE WHEN classification = 'accepted' THEN 1 ELSE 0 END) AS 接受数量,
-    SUM(CASE WHEN classification = 'rejected' THEN 1 ELSE 0 END) AS 拒绝数量,
-    SUM(CASE WHEN classification = 'corrected' THEN 1 ELSE 0 END) AS 修正数量,
-    SUM(CASE WHEN classification = 'neutral' THEN 1 ELSE 0 END) AS 中性数量,
-    ROUND(
-        SUM(CASE WHEN classification = 'accepted' THEN 1 ELSE 0 END) * 100.0 /
-        NULLIF(SUM(CASE WHEN classification IN ('accepted', 'rejected') THEN 1 ELSE 0 END), 0),
-        2
-    ) AS 成功率百分比
-FROM evolution_signals;
-
--- ============================================
--- 6. 时间趋势分析 (按天统计)
--- ============================================
-SELECT
-    '时间趋势' AS 分析类别,
-    DATE(created_at_unix_ms/1000, 'unixepoch') AS 日期,
-    COUNT(*) AS 信号数量,
-    COUNT(DISTINCT fingerprint_key) AS 任务数,
-    SUM(CASE WHEN classification = 'accepted' THEN 1 ELSE 0 END) AS 接受数,
-    SUM(CASE WHEN classification = 'rejected' THEN 1 ELSE 0 END) AS 拒绝数
-FROM evolution_signals
-WHERE created_at_unix_ms > 0
-GROUP BY DATE(created_at_unix_ms/1000, 'unixepoch')
-ORDER BY 日期 DESC
-LIMIT 30;
-
--- ============================================
--- 7. 高频任务指纹分析 (Top 10)
--- ============================================
-SELECT
-    '高频任务指纹' AS 分析类别,
-    fingerprint_key AS 任务指纹,
-    COUNT(*) AS 信号数量,
-    SUM(CASE WHEN classification = 'accepted' THEN 1 ELSE 0 END) AS 接受数,
-    SUM(CASE WHEN classification = 'rejected' THEN 1 ELSE 0 END) AS 拒绝数,
-    ROUND(AVG(confidence), 3) AS 平均置信度,
-    MIN(datetime(created_at_unix_ms/1000, 'unixepoch')) AS 首次出现,
-    MAX(datetime(created_at_unix_ms/1000, 'unixepoch')) AS 最近出现
-FROM evolution_signals
-WHERE fingerprint_key IS NOT NULL
-GROUP BY fingerprint_key
-ORDER BY COUNT(*) DESC
-LIMIT 10;
-
--- ============================================
--- 8. 进化案例统计
--- ============================================
-SELECT
-    '进化案例统计' AS 分析类别,
-    case_type AS 案例类型,
-    COUNT(*) AS 案例数量,
-    COUNT(DISTINCT fingerprint_key) AS 涉及任务数,
-    ROUND(AVG(confidence), 3) AS 平均置信度,
-    MIN(datetime(created_at_unix_ms/1000, 'unixepoch')) AS 最早案例,
-    MAX(datetime(created_at_unix_ms/1000, 'unixepoch')) AS 最新案例
-FROM evolution_cases
-GROUP BY case_type
-ORDER BY COUNT(*) DESC;
-
--- ============================================
--- 9. 显式反馈信号分析 (ExplicitTraceFeedback)
--- ============================================
-SELECT
-    '显式反馈分析' AS 分析类别,
-    classification AS 分类,
+    '最终状态' AS 分析类别,
+    json_extract(outcome_json, '$.final_status') AS 状态,
     COUNT(*) AS 数量,
-    ROUND(AVG(confidence), 3) AS 平均置信度,
-    COUNT(DISTINCT fingerprint_key) AS 涉及任务数
-FROM evolution_signals
-WHERE source = 'explicit_trace_feedback'
-GROUP BY classification
-ORDER BY COUNT(*) DESC;
+    ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM task_learning_runs WHERE json_valid(outcome_json)), 1) AS 占比
+FROM task_learning_runs
+WHERE json_valid(outcome_json)
+GROUP BY 状态
+ORDER BY 数量 DESC;
 
 -- ============================================
--- 10. 问题信号识别 (低置信度 + 拒绝)
+-- 3. 验证结果分布 (质量含金量)
 -- ============================================
 SELECT
-    '问题信号识别' AS 分析类别,
-    id AS 信号ID,
-    source AS 来源,
-    classification AS 分类,
-    fingerprint_key AS 任务指纹,
-    confidence AS 置信度,
-    datetime(created_at_unix_ms/1000, 'unixepoch') AS 创建时间,
-    SUBSTR(note, 1, 100) AS 备注摘要
-FROM evolution_signals
-WHERE classification = 'rejected' AND confidence < 0.5
-ORDER BY created_at_unix_ms DESC
-LIMIT 20;
+    '验证结果' AS 分析类别,
+    json_extract(outcome_json, '$.verification_result') AS 验证结果,
+    COUNT(*) AS 数量,
+    ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM task_learning_runs WHERE json_valid(outcome_json)), 1) AS 占比
+FROM task_learning_runs
+WHERE json_valid(outcome_json)
+GROUP BY 验证结果
+ORDER BY 数量 DESC;
 
 -- ============================================
--- 11. 监控任务相关信号
+-- 4. 成本等级分布 (cost_class)
 -- ============================================
 SELECT
-    '监控任务信号' AS 分析类别,
-    COUNT(*) AS 监控信号总数,
-    COUNT(DISTINCT monitor_task_id) AS 涉及监控任务数,
-    SUM(CASE WHEN source = 'monitor_observation' THEN 1 ELSE 0 END) AS 观察信号数,
-    SUM(CASE WHEN source = 'monitor_feedback' THEN 1 ELSE 0 END) AS 反馈信号数
-FROM evolution_signals
-WHERE monitor_task_id IS NOT NULL;
+    '成本等级' AS 分析类别,
+    json_extract(outcome_json, '$.cost_class') AS 成本等级,
+    COUNT(*) AS 数量,
+    ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM task_learning_runs WHERE json_valid(outcome_json)), 1) AS 占比
+FROM task_learning_runs
+WHERE json_valid(outcome_json)
+GROUP BY 成本等级
+ORDER BY 数量 DESC;
 
 -- ============================================
--- 12. 最近7天活跃度分析
+-- 5. 框架自评判断 (route / discovery / execution)
+-- ============================================
+SELECT '路由判断' AS 维度, json_extract(outcome_json, '$.route_judgment') AS 取值, COUNT(*) AS 数量
+FROM task_learning_runs WHERE json_valid(outcome_json) GROUP BY 取值
+UNION ALL
+SELECT '发现判断', json_extract(outcome_json, '$.discovery_judgment'), COUNT(*)
+FROM task_learning_runs WHERE json_valid(outcome_json) GROUP BY json_extract(outcome_json, '$.discovery_judgment')
+UNION ALL
+SELECT '执行判断', json_extract(outcome_json, '$.execution_judgment'), COUNT(*)
+FROM task_learning_runs WHERE json_valid(outcome_json) GROUP BY json_extract(outcome_json, '$.execution_judgment')
+ORDER BY 维度, 数量 DESC;
+
+-- ============================================
+-- 6. 执行路由与平面分布 (execution_policy_json)
 -- ============================================
 SELECT
-    '最近7天活跃度' AS 分析类别,
-    DATE(created_at_unix_ms/1000, 'unixepoch') AS 日期,
-    COUNT(*) AS 信号数量,
-    COUNT(DISTINCT session_id) AS 活跃会话数,
-    ROUND(
-        SUM(CASE WHEN classification = 'accepted' THEN 1 ELSE 0 END) * 100.0 / COUNT(*),
-        2
-    ) AS 接受率百分比
-FROM evolution_signals
-WHERE created_at_unix_ms >= (strftime('%s', 'now', '-7 days') * 1000)
-GROUP BY DATE(created_at_unix_ms/1000, 'unixepoch')
-ORDER BY 日期 DESC;
+    '执行路由' AS 分析类别,
+    json_extract(execution_policy_json, '$.route') AS 路由,
+    json_extract(execution_policy_json, '$.plane') AS 平面,
+    COUNT(*) AS 数量,
+    ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM task_learning_runs WHERE json_valid(execution_policy_json)), 1) AS 占比
+FROM task_learning_runs
+WHERE json_valid(execution_policy_json)
+GROUP BY 路由, 平面
+ORDER BY 数量 DESC;
 
 -- ============================================
--- 13. 案例与信号关联分析
--- ============================================
-SELECT
-    '案例信号关联' AS 分析类别,
-    ec.case_type AS 案例类型,
-    ec.fingerprint_key AS 任务指纹,
-    ec.confidence AS 案例置信度,
-    COUNT(DISTINCT es.id) AS 关联信号数,
-    datetime(ec.created_at_unix_ms/1000, 'unixepoch') AS 案例创建时间,
-    SUBSTR(ec.summary, 1, 100) AS 案例摘要
-FROM evolution_cases ec
-LEFT JOIN evolution_signals es ON
-    es.fingerprint_key = ec.fingerprint_key
-    AND es.created_at_unix_ms <= ec.created_at_unix_ms
-GROUP BY ec.id
-ORDER BY ec.created_at_unix_ms DESC
-LIMIT 20;
-
--- ============================================
--- 14. 置信度分布分析
+-- 7. 置信度区间分布 (outcome.confidence)
 -- ============================================
 SELECT
     '置信度分布' AS 分析类别,
     CASE
-        WHEN confidence >= 0.9 THEN '0.9-1.0 (极高)'
-        WHEN confidence >= 0.7 THEN '0.7-0.9 (高)'
-        WHEN confidence >= 0.5 THEN '0.5-0.7 (中)'
-        WHEN confidence >= 0.3 THEN '0.3-0.5 (低)'
-        ELSE '0.0-0.3 (极低)'
+        WHEN json_extract(outcome_json, '$.confidence') >= 0.8 THEN '0.8-1.0 (高)'
+        WHEN json_extract(outcome_json, '$.confidence') >= 0.6 THEN '0.6-0.8 (中高)'
+        WHEN json_extract(outcome_json, '$.confidence') >= 0.4 THEN '0.4-0.6 (中)'
+        ELSE '<0.4 (低)'
     END AS 置信度区间,
-    COUNT(*) AS 信号数量,
-    ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM evolution_signals), 2) AS 占比百分比
+    COUNT(*) AS 数量,
+    ROUND(AVG(json_extract(outcome_json, '$.confidence')), 3) AS 区间均值
+FROM task_learning_runs
+WHERE json_valid(outcome_json)
+GROUP BY 置信度区间
+ORDER BY 置信度区间 DESC;
+
+-- ============================================
+-- 8. 用户反馈信号分布 (last_signal)
+-- ============================================
+SELECT
+    '用户反馈信号' AS 分析类别,
+    COALESCE(last_signal, '(null)') AS 信号,
+    COUNT(*) AS 数量,
+    ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM task_learning_runs), 1) AS 占比
+FROM task_learning_runs
+GROUP BY last_signal
+ORDER BY 数量 DESC;
+
+-- ============================================
+-- 9. 学习资格与策略调整状态
+-- ============================================
+SELECT
+    '学习资格×Δ状态' AS 分析类别,
+    learning_eligible AS 可学习,
+    COALESCE(delta_state, '(null)') AS Δ状态,
+    COUNT(*) AS 数量
+FROM task_learning_runs
+GROUP BY learning_eligible, delta_state
+ORDER BY 数量 DESC;
+
+-- ============================================
+-- 10. 策略调整方向与决策点 (policy_delta_json)
+-- ============================================
+SELECT
+    '策略调整' AS 分析类别,
+    json_extract(policy_delta_json, '$.decision_point') AS 决策点,
+    json_extract(policy_delta_json, '$.action_key') AS 动作,
+    json_extract(policy_delta_json, '$.direction') AS 方向,
+    COUNT(*) AS 数量,
+    ROUND(AVG(json_extract(policy_delta_json, '$.magnitude')), 3) AS 平均幅度
+FROM task_learning_runs
+WHERE json_valid(policy_delta_json)
+GROUP BY 决策点, 动作, 方向
+ORDER BY 数量 DESC
+LIMIT 15;
+
+-- ============================================
+-- 11. 按周时间趋势
+-- ============================================
+SELECT
+    '按周趋势' AS 分析类别,
+    strftime('%Y-W%W', datetime(created_at_unix_ms/1000, 'unixepoch')) AS 周,
+    COUNT(*) AS 运行数,
+    COUNT(DISTINCT fingerprint_key) AS 任务数,
+    SUM(learning_eligible) AS 可学习,
+    SUM(CASE WHEN json_extract(outcome_json, '$.final_status') = 'success' THEN 1 ELSE 0 END) AS 成功,
+    SUM(CASE WHEN json_extract(outcome_json, '$.final_status') = 'blocked' THEN 1 ELSE 0 END) AS 拦截,
+    ROUND(AVG(json_extract(outcome_json, '$.confidence')), 3) AS 平均置信度
+FROM task_learning_runs
+GROUP BY 周
+ORDER BY 周;
+
+-- ============================================
+-- 12. 高频任务指纹 Top 12
+-- ============================================
+SELECT
+    '高频任务' AS 分析类别,
+    substr(fingerprint_key, 1, 16) AS 任务指纹,
+    COUNT(*) AS 运行数,
+    SUM(learning_eligible) AS 可学习,
+    SUM(CASE WHEN json_extract(outcome_json, '$.final_status') = 'success' THEN 1 ELSE 0 END) AS 成功,
+    SUM(CASE WHEN json_extract(outcome_json, '$.final_status') = 'blocked' THEN 1 ELSE 0 END) AS 拦截,
+    ROUND(AVG(json_extract(outcome_json, '$.confidence')), 3) AS 平均置信度
+FROM task_learning_runs
+GROUP BY fingerprint_key
+ORDER BY 运行数 DESC
+LIMIT 12;
+
+-- ============================================
+-- 13. 策略先验成熟度 (task_policy_priors)
+-- ============================================
+SELECT
+    '先验成熟度' AS 分析类别,
+    maturity AS 成熟度,
+    COUNT(*) AS 先验数,
+    ROUND(AVG(weight), 3) AS 平均权重,
+    ROUND(AVG(confidence), 3) AS 平均置信度,
+    SUM(evidence_count) AS 总证据数
+FROM task_policy_priors
+GROUP BY maturity
+ORDER BY 先验数 DESC;
+
+-- ============================================
+-- 14. 最成熟的先验 Top 10 (按证据数)
+-- ============================================
+SELECT
+    '成熟先验' AS 分析类别,
+    decision_point AS 决策点,
+    substr(action_key, 1, 20) AS 动作,
+    ROUND(weight, 3) AS 权重,
+    ROUND(confidence, 3) AS 置信度,
+    evidence_count AS 证据数,
+    maturity AS 成熟度
+FROM task_policy_priors
+ORDER BY evidence_count DESC, confidence DESC
+LIMIT 10;
+
+-- ============================================
+-- 15. 后验信号事件分布 (posterior_signal_events)
+-- ============================================
+SELECT
+    '后验信号' AS 分析类别,
+    signal AS 信号,
+    source AS 来源,
+    COUNT(*) AS 数量,
+    ROUND(AVG(confidence), 3) AS 平均置信度
+FROM posterior_signal_events
+GROUP BY signal, source
+ORDER BY 数量 DESC;
+
+-- ============================================
+-- 16. 进化信号分布 (evolution_signals, 辅助)
+-- ============================================
+SELECT
+    '进化信号' AS 分析类别,
+    source AS 来源,
+    classification AS 分类,
+    COUNT(*) AS 数量,
+    ROUND(AVG(confidence), 3) AS 平均置信度
 FROM evolution_signals
-GROUP BY
-    CASE
-        WHEN confidence >= 0.9 THEN '0.9-1.0 (极高)'
-        WHEN confidence >= 0.7 THEN '0.7-0.9 (高)'
-        WHEN confidence >= 0.5 THEN '0.5-0.7 (中)'
-        WHEN confidence >= 0.3 THEN '0.3-0.5 (低)'
-        ELSE '0.0-0.3 (极低)'
-    END
-ORDER BY MIN(confidence) DESC;
+GROUP BY source, classification
+ORDER BY 数量 DESC;

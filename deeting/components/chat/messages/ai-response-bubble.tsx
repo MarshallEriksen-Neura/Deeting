@@ -48,6 +48,15 @@ function getRenderableBlockContent(block: MessageBlock): string | null {
   return null;
 }
 
+function getExecutionSectionTitle(blocks: MessageBlock[], fallback: string) {
+  for (const block of blocks) {
+    if (block.type !== "execution_section") continue;
+    const title = typeof block.title === "string" ? block.title.trim() : "";
+    if (title) return title;
+  }
+  return fallback;
+}
+
 function serializeComparableBlock(block: MessageBlock) {
   switch (block.type) {
     case "text":
@@ -143,7 +152,12 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
     statusMeta = null,
   }) {
     const hasContent = useMemo(
-      () => parts.some((part) => part.type !== "activity_timeline"),
+      () =>
+        parts.some(
+          (part) =>
+            part.type !== "activity_timeline" &&
+            part.type !== "execution_section",
+        ),
       [parts],
     );
 
@@ -298,16 +312,6 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       [hasCallLinkedUi, pairedResultIndices.size, toolCallEntries.length],
     );
     const enableRunnableFences = true;
-
-    const consoleTitle = useMemo(() => {
-      for (const part of parts) {
-        if (part.type === "execution_section") {
-          const title = typeof part.title === "string" ? part.title.trim() : "";
-          if (title) return title;
-        }
-      }
-      return "Code Execution";
-    }, [parts]);
 
     const shouldShowSandboxLabelForConsole = (nextPartIndex: number) => {
       const nextPart = parts[nextPartIndex];
@@ -474,6 +478,10 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                     }
                   }
 
+                  if (!consoleSequence.some((block) => block.type === "console_log")) {
+                    return null;
+                  }
+
                   return (
                     <motion.div
                       key={`console-group-${index}`}
@@ -484,7 +492,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                         blocks={consoleSequence}
                         isActive={isActive}
                         showSandboxLabel={shouldShowSandboxLabelForConsole(nextPartIndex)}
-                        title={consoleTitle}
+                        title={getExecutionSectionTitle(consoleSequence, "Code Execution")}
                       />
                     </motion.div>
                   );
@@ -525,6 +533,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                 hasContent={hasAnswerContent}
                 statusStage={statusStage}
                 statusCode={statusCode}
+                statusMeta={statusMeta}
               />
             </motion.div>
           )}

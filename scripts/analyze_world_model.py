@@ -2,441 +2,387 @@
 """
 世界模型框架历史表现分析工具
 
-使用方法:
-    python analyze_world_model.py [数据库路径]
-    python analyze_world_model.py --help
+数据源 (主库 deeting.db) 真实表:
+  - task_learning_runs       每次任务执行的学习记录 (核心)
+  - task_policy_priors       学到的策略先验
+  - posterior_signal_events  后验信号事件
+  - evolution_signals        进化信号 (辅助)
 
-示例:
-    python analyze_world_model.py ~/.deeting/mcp.db
+用法:
+    python analyze_world_model.py [数据库路径]
     python analyze_world_model.py --export-json report.json
+    python analyze_world_model.py --export-csv ./csv_out
+
+不传路径时自动探测桌面应用默认库位置:
+    Windows: %APPDATA%\\com.deeting.desktop\\deeting.db
+    macOS:   ~/Library/Application Support/com.deeting.desktop/deeting.db
+    Linux:   ~/.local/share/com.deeting.desktop/deeting.db
+
+注意: 桌面应用运行时会持有该库 (WAL 模式), 本工具一律以只读模式连接, 不会写入或加锁。
 """
+
+from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
+
+# 修复 Windows 控制台中文乱码 (GBK -> UTF-8)
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+
+def default_db_path() -> Path:
+    """跨平台探测桌面应用默认数据库路径。"""
+    app_dir = "com.deeting.desktop"
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+        return Path(base) / app_dir / "deeting.db"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / app_dir / "deeting.db"
+    return Path.home() / ".local" / "share" / app_dir / "deeting.db"
 
 
 class WorldModelAnalyzer:
-    """世界模型框架性能分析器"""
+    """世界模型框架性能分析器 (只读)。"""
 
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
         if not self.db_path.exists():
-            raise FileNotFoundError(f"数据库文件不存在: {db_path}")
-        self.conn = sqlite3.connect(str(self.db_path))
+            raise FileNotFoundError(f"数据库文件不存在: {self.db_path}")
+        # 只读 URI 连接, 避免与运行中的桌面应用争锁
+        uri = f"file:{self.db_path.as_posix()}?mode=ro"
+        self.conn = sqlite3.connect(uri, uri=True)
         self.conn.row_factory = sqlite3.Row
 
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, *exc):
         self.conn.close()
 
-    def execute_query(self, query: str) -> List[Dict[str, Any]]:
-        """执行SQL查询并返回结果"""
-        cursor = self.conn.cursor()
-        cursor.execute(query)
-        return [dict(row) for row in cursor.fetchall()]
+    def _rows(self, sql: str) -> list[dict[str, Any]]:
+        cur = self.conn.cursor()
+        cur.execute(sql)
+        return [dict(r) for r in cur.fetchall()]
 
-    def get_overall_stats(self) -> Dict[str, Any]:
-        """获取总体统计信息"""
-        query = """
-        SELECT
-            COUNT(*) AS total_signals,
-            COUNT(DISTINCT fingerprint_key) AS unique_tasks,
-            COUNT(DISTINCT session_id) AS total_sessions,
-            COUNT(DISTINCT trace_id) AS total_traces,
-            MIN(datetime(created_at_unix_ms/1000, 'unixepoch')) AS earliest_record,
-            MAX(datetime(created_at_unix_ms/1000, 'unixepoch')) AS latest_record
-        FROM evolution_signals
-        """
-        result = self.execute_query(query)
-        return result[0] if result else {}
+    def _one(self, sql: str) -> dict[str, Any]:
+        rows = self._rows(sql)
+        return rows[0] if rows else {}
 
-    def get_classification_stats(self) -> List[Dict[str, Any]]:
-        """获取分类统计"""
-        query = """
-        SELECT
-            classification,
-            COUNT(*) AS count,
-            ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM evolution_signals), 2) AS percentage,
-            ROUND(AVG(confidence), 3) AS avg_confidence,
-            COUNT(DISTINCT fingerprint_key) AS unique_tasks
-        FROM evolution_signals
-        GROUP BY classification
-        ORDER BY count DESC
-        """
-        return self.execute_query(query)
+    # ---- task_learning_runs ----
+    def overall(self) -> dict[str, Any]:
+        return self._one(
+            """
+            SELECT COUNT(*) AS runs,
+                   COUNT(DISTINCT fingerprint_key) AS tasks,
+                   COUNT(DISTINCT session_id) AS sessions,
+                   COUNT(DISTINCT trace_id) AS traces,
+                   SUM(learning_eligible) AS eligible,
+                   datetime(MIN(created_at_unix_ms)/1000,'unixepoch') AS earliest,
+                   datetime(MAX(created_at_unix_ms)/1000,'unixepoch') AS latest
+            FROM task_learning_runs
+            """
+        )
 
-    def get_source_stats(self) -> List[Dict[str, Any]]:
-        """获取来源统计"""
-        query = """
-        SELECT
-            source,
-            COUNT(*) AS count,
-            ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM evolution_signals), 2) AS percentage,
-            COUNT(DISTINCT fingerprint_key) AS unique_tasks
-        FROM evolution_signals
-        GROUP BY source
-        ORDER BY count DESC
-        """
-        return self.execute_query(query)
+    def _outcome_dist(self, field: str) -> list[dict[str, Any]]:
+        return self._rows(
+            f"""
+            SELECT json_extract(outcome_json,'$.{field}') AS value,
+                   COUNT(*) AS count,
+                   ROUND(COUNT(*)*100.0/(SELECT COUNT(*) FROM task_learning_runs
+                                         WHERE json_valid(outcome_json)),1) AS pct
+            FROM task_learning_runs
+            WHERE json_valid(outcome_json)
+            GROUP BY value ORDER BY count DESC
+            """
+        )
 
-    def get_status_stats(self) -> List[Dict[str, Any]]:
-        """获取状态统计"""
-        query = """
-        SELECT
-            status,
-            COUNT(*) AS count,
-            ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM evolution_signals), 2) AS percentage
-        FROM evolution_signals
-        GROUP BY status
-        ORDER BY
-            CASE status
-                WHEN 'observed' THEN 1
-                WHEN 'classified' THEN 2
-                WHEN 'correlated' THEN 3
-                WHEN 'applied' THEN 4
-                WHEN 'ignored' THEN 5
-                ELSE 6
-            END
-        """
-        return self.execute_query(query)
+    def final_status(self):
+        return self._outcome_dist("final_status")
 
-    def get_success_rate(self) -> Dict[str, Any]:
-        """获取成功率分析"""
-        query = """
-        SELECT
-            SUM(CASE WHEN classification = 'accepted' THEN 1 ELSE 0 END) AS accepted_count,
-            SUM(CASE WHEN classification = 'rejected' THEN 1 ELSE 0 END) AS rejected_count,
-            SUM(CASE WHEN classification = 'corrected' THEN 1 ELSE 0 END) AS corrected_count,
-            SUM(CASE WHEN classification = 'neutral' THEN 1 ELSE 0 END) AS neutral_count,
-            ROUND(
-                SUM(CASE WHEN classification = 'accepted' THEN 1 ELSE 0 END) * 100.0 /
-                NULLIF(SUM(CASE WHEN classification IN ('accepted', 'rejected') THEN 1 ELSE 0 END), 0),
-                2
-            ) AS success_rate
-        FROM evolution_signals
-        """
-        result = self.execute_query(query)
-        return result[0] if result else {}
+    def verification(self):
+        return self._outcome_dist("verification_result")
 
-    def get_time_trend(self, days: int = 30) -> List[Dict[str, Any]]:
-        """获取时间趋势"""
-        query = f"""
-        SELECT
-            DATE(created_at_unix_ms/1000, 'unixepoch') AS date,
-            COUNT(*) AS count,
-            COUNT(DISTINCT fingerprint_key) AS unique_tasks,
-            SUM(CASE WHEN classification = 'accepted' THEN 1 ELSE 0 END) AS accepted,
-            SUM(CASE WHEN classification = 'rejected' THEN 1 ELSE 0 END) AS rejected
-        FROM evolution_signals
-        WHERE created_at_unix_ms > 0
-        GROUP BY DATE(created_at_unix_ms/1000, 'unixepoch')
-        ORDER BY date DESC
-        LIMIT {days}
-        """
-        return self.execute_query(query)
+    def cost_class(self):
+        return self._outcome_dist("cost_class")
 
-    def get_top_fingerprints(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """获取高频任务指纹"""
-        query = f"""
-        SELECT
-            fingerprint_key,
-            COUNT(*) AS signal_count,
-            SUM(CASE WHEN classification = 'accepted' THEN 1 ELSE 0 END) AS accepted,
-            SUM(CASE WHEN classification = 'rejected' THEN 1 ELSE 0 END) AS rejected,
-            ROUND(AVG(confidence), 3) AS avg_confidence,
-            MIN(datetime(created_at_unix_ms/1000, 'unixepoch')) AS first_seen,
-            MAX(datetime(created_at_unix_ms/1000, 'unixepoch')) AS last_seen
-        FROM evolution_signals
-        WHERE fingerprint_key IS NOT NULL
-        GROUP BY fingerprint_key
-        ORDER BY signal_count DESC
-        LIMIT {limit}
-        """
-        return self.execute_query(query)
-
-    def get_case_stats(self) -> List[Dict[str, Any]]:
-        """获取进化案例统计"""
-        query = """
-        SELECT
-            case_type,
-            COUNT(*) AS count,
-            COUNT(DISTINCT fingerprint_key) AS unique_tasks,
-            ROUND(AVG(confidence), 3) AS avg_confidence,
-            MIN(datetime(created_at_unix_ms/1000, 'unixepoch')) AS earliest,
-            MAX(datetime(created_at_unix_ms/1000, 'unixepoch')) AS latest
-        FROM evolution_cases
-        GROUP BY case_type
-        ORDER BY count DESC
-        """
-        return self.execute_query(query)
-
-    def get_confidence_distribution(self) -> List[Dict[str, Any]]:
-        """获取置信度分布"""
-        query = """
-        SELECT
-            CASE
-                WHEN confidence >= 0.9 THEN '0.9-1.0 (极高)'
-                WHEN confidence >= 0.7 THEN '0.7-0.9 (高)'
-                WHEN confidence >= 0.5 THEN '0.5-0.7 (中)'
-                WHEN confidence >= 0.3 THEN '0.3-0.5 (低)'
-                ELSE '0.0-0.3 (极低)'
-            END AS confidence_range,
-            COUNT(*) AS count,
-            ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM evolution_signals), 2) AS percentage
-        FROM evolution_signals
-        GROUP BY
-            CASE
-                WHEN confidence >= 0.9 THEN '0.9-1.0 (极高)'
-                WHEN confidence >= 0.7 THEN '0.7-0.9 (高)'
-                WHEN confidence >= 0.5 THEN '0.5-0.7 (中)'
-                WHEN confidence >= 0.3 THEN '0.3-0.5 (低)'
-                ELSE '0.0-0.3 (极低)'
-            END
-        ORDER BY MIN(confidence) DESC
-        """
-        return self.execute_query(query)
-
-    def generate_report(self) -> Dict[str, Any]:
-        """生成完整报告"""
+    def judgments(self) -> dict[str, list[dict[str, Any]]]:
         return {
-            "metadata": {
-                "database_path": str(self.db_path),
-                "analysis_time": datetime.now().isoformat(),
-            },
-            "overall_stats": self.get_overall_stats(),
-            "classification_stats": self.get_classification_stats(),
-            "source_stats": self.get_source_stats(),
-            "status_stats": self.get_status_stats(),
-            "success_rate": self.get_success_rate(),
-            "time_trend": self.get_time_trend(),
-            "top_fingerprints": self.get_top_fingerprints(),
-            "case_stats": self.get_case_stats(),
-            "confidence_distribution": self.get_confidence_distribution(),
+            "route_judgment": self._outcome_dist("route_judgment"),
+            "discovery_judgment": self._outcome_dist("discovery_judgment"),
+            "execution_judgment": self._outcome_dist("execution_judgment"),
+        }
+
+    def routes(self) -> list[dict[str, Any]]:
+        return self._rows(
+            """
+            SELECT json_extract(execution_policy_json,'$.route') AS route,
+                   json_extract(execution_policy_json,'$.plane') AS plane,
+                   COUNT(*) AS count,
+                   ROUND(COUNT(*)*100.0/(SELECT COUNT(*) FROM task_learning_runs
+                                         WHERE json_valid(execution_policy_json)),1) AS pct
+            FROM task_learning_runs
+            WHERE json_valid(execution_policy_json)
+            GROUP BY route, plane ORDER BY count DESC
+            """
+        )
+
+    def confidence_bands(self) -> list[dict[str, Any]]:
+        return self._rows(
+            """
+            SELECT CASE
+                     WHEN json_extract(outcome_json,'$.confidence')>=0.8 THEN '0.8-1.0 (高)'
+                     WHEN json_extract(outcome_json,'$.confidence')>=0.6 THEN '0.6-0.8 (中高)'
+                     WHEN json_extract(outcome_json,'$.confidence')>=0.4 THEN '0.4-0.6 (中)'
+                     ELSE '<0.4 (低)'
+                   END AS band,
+                   COUNT(*) AS count,
+                   ROUND(AVG(json_extract(outcome_json,'$.confidence')),3) AS avg
+            FROM task_learning_runs
+            WHERE json_valid(outcome_json)
+            GROUP BY band ORDER BY band DESC
+            """
+        )
+
+    def user_signals(self) -> list[dict[str, Any]]:
+        return self._rows(
+            """
+            SELECT COALESCE(last_signal,'(null)') AS signal,
+                   COUNT(*) AS count,
+                   ROUND(COUNT(*)*100.0/(SELECT COUNT(*) FROM task_learning_runs),1) AS pct
+            FROM task_learning_runs GROUP BY last_signal ORDER BY count DESC
+            """
+        )
+
+    def learning_state(self) -> list[dict[str, Any]]:
+        return self._rows(
+            """
+            SELECT learning_eligible AS eligible,
+                   COALESCE(delta_state,'(null)') AS delta_state,
+                   COUNT(*) AS count
+            FROM task_learning_runs
+            GROUP BY learning_eligible, delta_state ORDER BY count DESC
+            """
+        )
+
+    def policy_deltas(self) -> list[dict[str, Any]]:
+        return self._rows(
+            """
+            SELECT json_extract(policy_delta_json,'$.decision_point') AS decision_point,
+                   json_extract(policy_delta_json,'$.action_key') AS action_key,
+                   json_extract(policy_delta_json,'$.direction') AS direction,
+                   COUNT(*) AS count,
+                   ROUND(AVG(json_extract(policy_delta_json,'$.magnitude')),3) AS avg_magnitude
+            FROM task_learning_runs
+            WHERE json_valid(policy_delta_json)
+            GROUP BY decision_point, action_key, direction
+            ORDER BY count DESC LIMIT 15
+            """
+        )
+
+    def weekly_trend(self) -> list[dict[str, Any]]:
+        return self._rows(
+            """
+            SELECT strftime('%Y-W%W', datetime(created_at_unix_ms/1000,'unixepoch')) AS week,
+                   COUNT(*) AS runs,
+                   COUNT(DISTINCT fingerprint_key) AS tasks,
+                   SUM(learning_eligible) AS eligible,
+                   SUM(CASE WHEN json_extract(outcome_json,'$.final_status')='success' THEN 1 ELSE 0 END) AS success,
+                   SUM(CASE WHEN json_extract(outcome_json,'$.final_status')='blocked' THEN 1 ELSE 0 END) AS blocked,
+                   ROUND(AVG(json_extract(outcome_json,'$.confidence')),3) AS avg_conf
+            FROM task_learning_runs GROUP BY week ORDER BY week
+            """
+        )
+
+    def top_fingerprints(self, limit: int = 12) -> list[dict[str, Any]]:
+        return self._rows(
+            f"""
+            SELECT substr(fingerprint_key,1,16) AS fingerprint,
+                   COUNT(*) AS runs,
+                   SUM(learning_eligible) AS eligible,
+                   SUM(CASE WHEN json_extract(outcome_json,'$.final_status')='success' THEN 1 ELSE 0 END) AS success,
+                   SUM(CASE WHEN json_extract(outcome_json,'$.final_status')='blocked' THEN 1 ELSE 0 END) AS blocked,
+                   ROUND(AVG(json_extract(outcome_json,'$.confidence')),3) AS avg_conf
+            FROM task_learning_runs GROUP BY fingerprint_key ORDER BY runs DESC LIMIT {limit}
+            """
+        )
+
+    # ---- task_policy_priors ----
+    def prior_maturity(self) -> list[dict[str, Any]]:
+        return self._rows(
+            """
+            SELECT maturity, COUNT(*) AS count,
+                   ROUND(AVG(weight),3) AS avg_weight,
+                   ROUND(AVG(confidence),3) AS avg_confidence,
+                   SUM(evidence_count) AS total_evidence
+            FROM task_policy_priors GROUP BY maturity ORDER BY count DESC
+            """
+        )
+
+    def top_priors(self, limit: int = 10) -> list[dict[str, Any]]:
+        return self._rows(
+            f"""
+            SELECT decision_point, substr(action_key,1,20) AS action_key,
+                   ROUND(weight,3) AS weight, ROUND(confidence,3) AS confidence,
+                   evidence_count, maturity
+            FROM task_policy_priors
+            ORDER BY evidence_count DESC, confidence DESC LIMIT {limit}
+            """
+        )
+
+    # ---- posterior_signal_events / evolution_signals ----
+    def posterior_signals(self) -> list[dict[str, Any]]:
+        return self._rows(
+            """
+            SELECT signal, source, COUNT(*) AS count, ROUND(AVG(confidence),3) AS avg_conf
+            FROM posterior_signal_events GROUP BY signal, source ORDER BY count DESC
+            """
+        )
+
+    def evolution_signals(self) -> list[dict[str, Any]]:
+        return self._rows(
+            """
+            SELECT source, classification, COUNT(*) AS count, ROUND(AVG(confidence),3) AS avg_conf
+            FROM evolution_signals GROUP BY source, classification ORDER BY count DESC
+            """
+        )
+
+    def report(self) -> dict[str, Any]:
+        return {
+            "metadata": {"database_path": str(self.db_path), "analysis_time": datetime.now().isoformat()},
+            "overall": self.overall(),
+            "final_status": self.final_status(),
+            "verification": self.verification(),
+            "cost_class": self.cost_class(),
+            "judgments": self.judgments(),
+            "routes": self.routes(),
+            "confidence_bands": self.confidence_bands(),
+            "user_signals": self.user_signals(),
+            "learning_state": self.learning_state(),
+            "policy_deltas": self.policy_deltas(),
+            "weekly_trend": self.weekly_trend(),
+            "top_fingerprints": self.top_fingerprints(),
+            "prior_maturity": self.prior_maturity(),
+            "top_priors": self.top_priors(),
+            "posterior_signals": self.posterior_signals(),
+            "evolution_signals": self.evolution_signals(),
         }
 
 
-def print_section(title: str, width: int = 80):
-    """打印分节标题"""
-    print("\n" + "=" * width)
-    print(f" {title}")
-    print("=" * width)
-
-
-def print_table(headers: List[str], rows: List[List[Any]], col_widths: Optional[List[int]] = None):
-    """打印表格"""
+def _table(rows: list[dict[str, Any]]):
     if not rows:
         print("  (无数据)")
         return
-
-    if col_widths is None:
-        col_widths = [max(len(str(h)), max(len(str(row[i])) for row in rows)) for i, h in enumerate(headers)]
-
-    # 打印表头
-    header_line = "  " + " | ".join(str(h).ljust(w) for h, w in zip(headers, col_widths))
-    print(header_line)
-    print("  " + "-" * (len(header_line) - 2))
-
-    # 打印数据行
-    for row in rows:
-        print("  " + " | ".join(str(cell).ljust(w) for cell, w in zip(row, col_widths)))
+    headers = list(rows[0].keys())
+    widths = [max(len(str(h)), max(len(str(r[h])) for r in rows)) for h in headers]
+    print("  " + " | ".join(str(h).ljust(w) for h, w in zip(headers, widths)))
+    print("  " + "-+-".join("-" * w for w in widths))
+    for r in rows:
+        print("  " + " | ".join(str(r[h]).ljust(w) for h, w in zip(headers, widths)))
 
 
-def print_report(report: Dict[str, Any]):
-    """打印格式化报告"""
-    print_section("世界模型框架历史表现分析报告")
+def _section(title: str):
+    print(f"\n{'=' * 78}\n {title}\n{'=' * 78}")
 
-    # 元数据
-    metadata = report["metadata"]
-    print(f"\n数据库路径: {metadata['database_path']}")
-    print(f"分析时间: {metadata['analysis_time']}")
 
-    # 总体统计
-    print_section("1. 总体统计")
-    stats = report["overall_stats"]
-    print(f"  总信号数: {stats.get('total_signals', 0):,}")
-    print(f"  唯一任务指纹数: {stats.get('unique_tasks', 0):,}")
-    print(f"  涉及会话数: {stats.get('total_sessions', 0):,}")
-    print(f"  涉及追踪数: {stats.get('total_traces', 0):,}")
-    print(f"  最早记录: {stats.get('earliest_record', 'N/A')}")
-    print(f"  最新记录: {stats.get('latest_record', 'N/A')}")
+def print_report(rep: dict[str, Any]):
+    _section("世界模型框架历史表现分析报告")
+    m = rep["metadata"]
+    print(f"\n数据库: {m['database_path']}\n分析时间: {m['analysis_time']}")
 
-    # 分类统计
-    print_section("2. 按分类统计")
-    classification_data = report["classification_stats"]
-    if classification_data:
-        headers = ["分类", "数量", "占比(%)", "平均置信度", "涉及任务数"]
-        rows = [
-            [
-                item["classification"],
-                f"{item['count']:,}",
-                f"{item['percentage']:.2f}",
-                f"{item['avg_confidence']:.3f}",
-                f"{item['unique_tasks']:,}",
-            ]
-            for item in classification_data
-        ]
-        print_table(headers, rows)
+    o = rep["overall"]
+    _section("1. 总体统计")
+    print(f"  学习运行数: {o.get('runs', 0):,}   唯一任务: {o.get('tasks', 0):,}   "
+          f"会话: {o.get('sessions', 0):,}   可学习: {o.get('eligible', 0) or 0:,}")
+    print(f"  时间范围: {o.get('earliest', 'N/A')}  ~  {o.get('latest', 'N/A')}")
 
-    # 成功率分析
-    print_section("3. 成功率分析")
-    success = report["success_rate"]
-    print(f"  接受数量: {success.get('accepted_count', 0):,}")
-    print(f"  拒绝数量: {success.get('rejected_count', 0):,}")
-    print(f"  修正数量: {success.get('corrected_count', 0):,}")
-    print(f"  中性数量: {success.get('neutral_count', 0):,}")
-    success_rate = success.get('success_rate')
-    if success_rate is not None:
-        print(f"  成功率: {success_rate:.2f}%")
-    else:
-        print(f"  成功率: N/A (无有效数据)")
-
-    # 来源统计
-    print_section("4. 按来源统计")
-    source_data = report["source_stats"]
-    if source_data:
-        headers = ["来源", "数量", "占比(%)", "涉及任务数"]
-        rows = [
-            [item["source"], f"{item['count']:,}", f"{item['percentage']:.2f}", f"{item['unique_tasks']:,}"]
-            for item in source_data
-        ]
-        print_table(headers, rows)
-
-    # 状态统计
-    print_section("5. 按状态统计")
-    status_data = report["status_stats"]
-    if status_data:
-        headers = ["状态", "数量", "占比(%)"]
-        rows = [[item["status"], f"{item['count']:,}", f"{item['percentage']:.2f}"] for item in status_data]
-        print_table(headers, rows)
-
-    # 高频任务指纹
-    print_section("6. 高频任务指纹 (Top 10)")
-    fingerprint_data = report["top_fingerprints"]
-    if fingerprint_data:
-        headers = ["任务指纹", "信号数", "接受", "拒绝", "平均置信度"]
-        rows = [
-            [
-                item["fingerprint_key"][:20] + "..." if len(item["fingerprint_key"]) > 20 else item["fingerprint_key"],
-                f"{item['signal_count']:,}",
-                f"{item['accepted']:,}",
-                f"{item['rejected']:,}",
-                f"{item['avg_confidence']:.3f}",
-            ]
-            for item in fingerprint_data[:10]
-        ]
-        print_table(headers, rows)
-
-    # 进化案例统计
-    print_section("7. 进化案例统计")
-    case_data = report["case_stats"]
-    if case_data:
-        headers = ["案例类型", "数量", "涉及任务数", "平均置信度"]
-        rows = [
-            [item["case_type"], f"{item['count']:,}", f"{item['unique_tasks']:,}", f"{item['avg_confidence']:.3f}"]
-            for item in case_data
-        ]
-        print_table(headers, rows)
-    else:
-        print("  (无进化案例数据)")
-
-    # 置信度分布
-    print_section("8. 置信度分布")
-    confidence_data = report["confidence_distribution"]
-    if confidence_data:
-        headers = ["置信度区间", "数量", "占比(%)"]
-        rows = [[item["confidence_range"], f"{item['count']:,}", f"{item['percentage']:.2f}"] for item in confidence_data]
-        print_table(headers, rows)
-
-    # 时间趋势
-    print_section("9. 最近30天趋势")
-    trend_data = report["time_trend"]
-    if trend_data:
-        headers = ["日期", "信号数", "任务数", "接受", "拒绝"]
-        rows = [
-            [item["date"], f"{item['count']:,}", f"{item['unique_tasks']:,}", f"{item['accepted']:,}", f"{item['rejected']:,}"]
-            for item in trend_data[:10]  # 只显示最近10天
-        ]
-        print_table(headers, rows)
-        if len(trend_data) > 10:
-            print(f"  ... (共 {len(trend_data)} 天数据)")
-
-    print("\n" + "=" * 80)
-    print(" 分析完成")
-    print("=" * 80 + "\n")
+    _section("2. 最终状态 (成功率)")
+    _table(rep["final_status"])
+    _section("3. 验证结果 (质量含金量)")
+    _table(rep["verification"])
+    _section("4. 成本等级")
+    _table(rep["cost_class"])
+    _section("5. 框架自评判断")
+    for dim, rows in rep["judgments"].items():
+        print(f"  [{dim}]")
+        _table(rows)
+    _section("6. 执行路由 / 平面")
+    _table(rep["routes"])
+    _section("7. 置信度区间")
+    _table(rep["confidence_bands"])
+    _section("8. 用户反馈信号")
+    _table(rep["user_signals"])
+    _section("9. 学习资格 × Δ状态")
+    _table(rep["learning_state"])
+    _section("10. 策略调整 (方向/决策点)")
+    _table(rep["policy_deltas"])
+    _section("11. 按周趋势")
+    _table(rep["weekly_trend"])
+    _section("12. 高频任务指纹 Top 12")
+    _table(rep["top_fingerprints"])
+    _section("13. 策略先验成熟度")
+    _table(rep["prior_maturity"])
+    _section("14. 最成熟先验 Top 10")
+    _table(rep["top_priors"])
+    _section("15. 后验信号事件")
+    _table(rep["posterior_signals"])
+    _section("16. 进化信号 (辅助)")
+    _table(rep["evolution_signals"])
+    print(f"\n{'=' * 78}\n 分析完成\n{'=' * 78}\n")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="世界模型框架历史表现分析工具",
+        description="世界模型框架历史表现分析工具 (只读)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-示例:
-  %(prog)s ~/.deeting/mcp.db
-  %(prog)s --export-json report.json ~/.deeting/mcp.db
-        """,
     )
-    parser.add_argument("database", nargs="?", help="SQLite数据库文件路径 (默认: ~/.deeting/mcp.db)")
-    parser.add_argument("--export-json", metavar="FILE", help="导出JSON格式报告到指定文件")
-    parser.add_argument("--export-csv", metavar="DIR", help="导出CSV格式数据到指定目录")
-
+    parser.add_argument("database", nargs="?", help="SQLite 数据库路径 (默认: 桌面应用 deeting.db)")
+    parser.add_argument("--export-json", metavar="FILE", help="导出 JSON 报告")
+    parser.add_argument("--export-csv", metavar="DIR", help="导出 CSV 数据到目录")
     args = parser.parse_args()
 
-    # 确定数据库路径
-    if args.database:
-        db_path = args.database
-    else:
-        db_path = str(Path.home() / ".deeting" / "mcp.db")
+    db_path = args.database or default_db_path()
 
     try:
-        with WorldModelAnalyzer(db_path) as analyzer:
-            report = analyzer.generate_report()
+        with WorldModelAnalyzer(db_path) as az:
+            rep = az.report()
+            print_report(rep)
 
-            # 打印报告
-            print_report(report)
-
-            # 导出JSON
             if args.export_json:
-                with open(args.export_json, "w", encoding="utf-8") as f:
-                    json.dump(report, f, ensure_ascii=False, indent=2)
-                print(f"✓ JSON报告已导出到: {args.export_json}")
+                Path(args.export_json).write_text(
+                    json.dumps(rep, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+                print(f"✓ JSON 报告已导出: {args.export_json}")
 
-            # 导出CSV
             if args.export_csv:
-                csv_dir = Path(args.export_csv)
-                csv_dir.mkdir(parents=True, exist_ok=True)
-
-                # 导出各个统计表
                 import csv
 
-                for key, data in report.items():
+                out = Path(args.export_csv)
+                out.mkdir(parents=True, exist_ok=True)
+                for key, data in rep.items():
                     if isinstance(data, list) and data:
-                        csv_path = csv_dir / f"{key}.csv"
-                        with open(csv_path, "w", newline="", encoding="utf-8") as f:
-                            writer = csv.DictWriter(f, fieldnames=data[0].keys())
-                            writer.writeheader()
-                            writer.writerows(data)
-                        print(f"✓ CSV已导出: {csv_path}")
+                        with open(out / f"{key}.csv", "w", newline="", encoding="utf-8") as f:
+                            w = csv.DictWriter(f, fieldnames=list(data[0].keys()))
+                            w.writeheader()
+                            w.writerows(data)
+                        print(f"✓ CSV 已导出: {out / f'{key}.csv'}")
 
     except FileNotFoundError as e:
         print(f"错误: {e}", file=sys.stderr)
-        print(f"\n提示: 请确认数据库文件路径是否正确", file=sys.stderr)
-        print(f"默认路径: ~/.deeting/mcp.db", file=sys.stderr)
+        print(f"提示: 默认路径 {default_db_path()}", file=sys.stderr)
+        print("可手动传入数据库路径作为第一个参数。", file=sys.stderr)
         sys.exit(1)
     except sqlite3.Error as e:
         print(f"数据库错误: {e}", file=sys.stderr)
-        sys.exit(1)
-    except Exception as e:
-        print(f"未预期的错误: {e}", file=sys.stderr)
-        import traceback
-
-        traceback.print_exc()
         sys.exit(1)
 
 

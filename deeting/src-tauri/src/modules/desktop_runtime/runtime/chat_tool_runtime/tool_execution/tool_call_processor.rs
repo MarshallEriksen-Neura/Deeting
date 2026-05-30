@@ -303,7 +303,6 @@ pub(crate) async fn process_chat_tool_calls(
                 }
             }
         } else if tool_name == "delegate_task" {
-            realtime_emitter.emit_execution_section_once("Delegate Task");
             realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
             match execute_delegate_task_tool(
                 app,

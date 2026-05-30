@@ -48,15 +48,6 @@ function isWorkflowAssistantMessage(message: Message) {
   )
 }
 
-const UPSTREAM_REQUEST_STATUS_CODES = new Set([
-  "upstream.request.stream",
-  "upstream.request.batch",
-])
-
-function isUpstreamRequestStatus(statusCode: string | null) {
-  return Boolean(statusCode && UPSTREAM_REQUEST_STATUS_CODES.has(statusCode))
-}
-
 interface ChatMessageListProps {
   messages: Message[]
   agent?: ChatAssistant
@@ -155,12 +146,9 @@ export function ChatMessageList({
     return undefined
   }, [messages])
   const lastAssistantId = lastAssistantMessage?.id
-  const lastAssistantHasBlocks = Boolean(lastAssistantMessage?.blocks?.length)
 
   // 判断是否启用虚拟滚动（消息数量 > 50）
   const useVirtualScroll = messages.length > 50
-  const shouldShowBottomRequestLoader =
-    isTyping && lastAssistantHasBlocks && isUpstreamRequestStatus(statusCode)
 
   // 根据 HUD/Controls 高度为消息列表预留空间
   React.useEffect(() => {
@@ -233,24 +221,17 @@ export function ChatMessageList({
   React.useEffect(() => {
     if (useVirtualScroll || !autoScrollEnabledRef.current) return
     scrollEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages.length, isTyping, shouldShowBottomRequestLoader, useVirtualScroll])
+  }, [messages.length, isTyping, useVirtualScroll])
 
   // 自动滚动到底部（虚拟滚动模式）
   React.useEffect(() => {
     if (!useVirtualScroll || !autoScrollEnabledRef.current) return
-    if (shouldShowBottomRequestLoader) {
-      virtuosoRef.current?.scrollTo({
-        top: Number.MAX_SAFE_INTEGER,
-        behavior: "smooth",
-      })
-      return
-    }
     virtuosoRef.current?.scrollToIndex({
       index: messages.length - 1,
       behavior: "smooth",
       align: "end",
     })
-  }, [messages.length, isTyping, shouldShowBottomRequestLoader, useVirtualScroll])
+  }, [messages.length, isTyping, useVirtualScroll])
 
   // 更新滚动按钮状态（使用 ref 比较避免不必要的 setState）
   const updateScrollButtons = React.useCallback((showTop: boolean, showBottom: boolean, nearBottom: boolean) => {
@@ -291,7 +272,7 @@ export function ChatMessageList({
       container.removeEventListener("scroll", handleScroll)
       resizeObserver?.disconnect()
     }
-  }, [useVirtualScroll, scrollParent, updateScrollButtons, messages.length, isTyping, shouldShowBottomRequestLoader])
+  }, [useVirtualScroll, scrollParent, updateScrollButtons, messages.length, isTyping])
 
   // 滚动到顶部
   const scrollToTop = React.useCallback(() => {
@@ -310,13 +291,6 @@ export function ChatMessageList({
   const scrollToBottom = React.useCallback(() => {
     autoScrollEnabledRef.current = true
     if (useVirtualScroll) {
-      if (shouldShowBottomRequestLoader) {
-        virtuosoRef.current?.scrollTo({
-          top: Number.MAX_SAFE_INTEGER,
-          behavior: "smooth",
-        })
-        return
-      }
       virtuosoRef.current?.scrollToIndex({
         index: messages.length - 1,
         behavior: "smooth",
@@ -325,7 +299,7 @@ export function ChatMessageList({
     } else {
       scrollEndRef.current?.scrollIntoView({ behavior: "smooth" })
     }
-  }, [useVirtualScroll, messages.length, shouldShowBottomRequestLoader])
+  }, [useVirtualScroll, messages.length])
 
   // Virtuoso rangeChanged 处理（使用 ref 避免循环）
   const handleRangeChanged = React.useCallback((range: { startIndex: number; endIndex: number }) => {
@@ -404,13 +378,10 @@ export function ChatMessageList({
     ]
   )
 
-  // 渲染请求中的底部占位符。初始请求还没有 assistant 消息时显示；
-  // 已有工具/状态卡片后，仅在等待上游模型返回时继续显示在列表底部。
+  // 渲染初始请求占位符；已有 assistant/tool 内容后，等待态由当前消息内的
+  // 状态行承接，避免在底部额外插入一个空白气泡。
   const renderRequestLoader = React.useCallback(() => {
-    if (!isTyping) return null
-    const shouldShowInitialLoader = !lastAssistantId
-    const shouldShowUpstreamLoader = lastAssistantHasBlocks && isUpstreamRequestStatus(statusCode)
-    if (!shouldShowInitialLoader && !shouldShowUpstreamLoader) return null
+    if (!isTyping || lastAssistantId) return null
 
     return (
       <div className="flex">
@@ -427,7 +398,7 @@ export function ChatMessageList({
         </div>
       </div>
     )
-  }, [isTyping, lastAssistantId, lastAssistantHasBlocks, streamEnabled, statusStage, statusCode, statusMeta])
+  }, [isTyping, lastAssistantId, streamEnabled, statusStage, statusCode, statusMeta])
 
   // Virtuoso Footer 组件
   const VirtuosoFooter = React.useCallback(() => (

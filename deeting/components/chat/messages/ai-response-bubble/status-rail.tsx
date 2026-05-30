@@ -267,11 +267,13 @@ export function AIResponseStreamingTail({
   hasContent,
   statusStage,
   statusCode,
+  statusMeta,
 }: {
   isActive: boolean;
   hasContent: boolean;
   statusStage: string | null;
   statusCode: string | null;
+  statusMeta: Record<string, unknown> | null;
 }) {
   const t = useI18n("chat");
   const steps = useMemo(
@@ -285,7 +287,29 @@ export function AIResponseStreamingTail({
   const currentLabel =
     steps[activeStep]?.label ?? t("status.header.processing");
   const upstreamRound = useUpstreamRoundCounter(statusCode);
+  const isUpstreamRequest = Boolean(
+    statusCode && UPSTREAM_REQUEST_CODES.has(statusCode),
+  );
   const elapsedSeconds = useElapsedSeconds(isActive, upstreamRound);
+  const upstreamElapsedSeconds = useElapsedSeconds(
+    isActive && isUpstreamRequest,
+    upstreamRound,
+  );
+  const statusDetail = useMemo(
+    () => resolveStatusDetail(t, statusCode, statusMeta),
+    [t, statusCode, statusMeta],
+  );
+  const upstreamHint = isUpstreamRequest
+    ? resolveSlowUpstreamHint(upstreamElapsedSeconds)
+    : null;
+  const liveDetail = isUpstreamRequest
+    ? (
+      upstreamHint ??
+      (statusDetail
+        ? `${statusDetail} · ${upstreamElapsedSeconds}s`
+        : `${upstreamElapsedSeconds}s`)
+    )
+    : null;
 
   const visible = isActive && hasContent;
 
@@ -307,16 +331,16 @@ export function AIResponseStreamingTail({
             filter: "blur(4px)",
             transition: { duration: 0.35, ease: [0.4, 0, 1, 1] },
           }}
-          className="mt-1 flex items-center gap-2 will-change-[transform,opacity,filter] origin-bottom"
+          className="mt-1 flex min-w-0 items-center gap-2 will-change-[transform,opacity,filter] origin-bottom"
         >
           <span className="relative inline-flex h-1.5 w-1.5 shrink-0">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-500/40" />
             <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-blue-500/70" />
           </span>
-          <span className="flex items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.1em] text-muted-foreground/55">
-            <span>{currentLabel}</span>
-            <span className="text-muted-foreground/35 normal-case tracking-normal">
-              · {elapsedSeconds}s
+          <span className="flex min-w-0 items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.1em] text-muted-foreground/55">
+            <span className="shrink-0">{currentLabel}</span>
+            <span className="min-w-0 truncate text-muted-foreground/35 normal-case tracking-normal">
+              · {liveDetail ?? `${elapsedSeconds}s`}
             </span>
           </span>
         </motion.div>
