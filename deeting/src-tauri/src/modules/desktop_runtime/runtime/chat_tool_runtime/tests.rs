@@ -174,7 +174,7 @@ fn world_model_snapshot_prefix_includes_runtime_context_before_user_text() {
     assert!(system_content.contains("=== World Model Snapshot"));
     assert!(!system_content.contains("delta projection"));
     assert!(system_content.contains("[WORLD MODEL UPDATE PROTOCOL]"));
-    assert!(system_content.contains("Required: append the block"));
+    assert!(system_content.contains("Required: call world_model_update tool"));
     assert!(system_content.contains("facts"));
     assert!(system_content.contains("assumptions"));
     assert!(system_content.contains("resolved_unknowns"));
@@ -213,7 +213,7 @@ fn world_model_snapshot_update_protocol_can_be_disabled_for_plain_rounds() {
     let system_content = &rendered[0].content;
 
     assert!(system_content.contains("=== World Model Snapshot"));
-    assert!(system_content.contains("Do not append a <!--wm_update--> block"));
+    assert!(system_content.contains("Do not call world_model_update"));
     assert!(!system_content.contains("\"facts\""));
     assert!(!system_content.contains("\"proposed_next_phase\""));
 }

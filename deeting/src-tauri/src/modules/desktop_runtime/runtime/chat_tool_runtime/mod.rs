@@ -35,7 +35,6 @@ pub(crate) use approval_commands::{
 pub(crate) use frame_tools::{
     apply_world_model_update_to_frame, build_world_model_snapshot_extract,
     extract_world_model_update_from_response, ProposedPhase, WorldModelUpdate,
-    WORLD_MODEL_UPDATE_END_TAG, WORLD_MODEL_UPDATE_START_TAG,
 };
 use lifecycle::finalize_tool_round;
 #[cfg(test)]
@@ -348,24 +347,24 @@ fn messages_with_world_model_snapshot(
 
 fn render_world_model_runtime_context(prompt_mode: WorldModelUpdatePromptMode) -> String {
     if matches!(prompt_mode, WorldModelUpdatePromptMode::Off) {
-        return "[WORLD MODEL UPDATE PROTOCOL]\nDo not append a <!--wm_update--> block for this response unless a later instruction in this request explicitly requires it.".to_string();
+        return "[WORLD MODEL UPDATE PROTOCOL]\nDo not call world_model_update for this response unless a later instruction in this request explicitly requires it.".to_string();
     }
 
     let (mode_hint, requirement, mode_instruction) = match prompt_mode {
         WorldModelUpdatePromptMode::RequiredFull => (
             "full",
-            "Required: append the block at the end of this response.",
+            "Required: call world_model_update tool in the same turn as your visible response.",
             "Provide a complete assessment: all known facts, assumptions, unknowns, verification targets, rules, and execution_strategy.",
         ),
         WorldModelUpdatePromptMode::RequiredDelta => (
             "delta",
-            "Required: append the block at the end of this response because runtime state changed.",
+            "Required: call world_model_update tool in the same turn as your visible response because runtime state changed.",
             "Only include NEW or CHANGED items since the last snapshot. Leave arrays empty if nothing changed.",
         ),
         WorldModelUpdatePromptMode::AllowedDelta => (
             "delta",
-            "Optional: append the block only if this response changes the task model.",
-            "Only include NEW or CHANGED items since the last snapshot. Omit the block when nothing changed.",
+            "Optional: call world_model_update tool only if this response changes the task model.",
+            "Only include NEW or CHANGED items since the last snapshot. Omit the tool call when nothing changed.",
         ),
         WorldModelUpdatePromptMode::Off => unreachable!("off mode returned above"),
     };
@@ -375,17 +374,15 @@ fn render_world_model_runtime_context(prompt_mode: WorldModelUpdatePromptMode) -
          {requirement}\n\
          Mode: {mode}\n\
          {mode_instruction}\n\n\
-         Schema:\n\
-         {start}\n\
-         {{\n  \"facts\": [\"confirmed facts about the task/project\"],\n  \"assumptions\": [\"unverified beliefs\"],\n  \"resolved_unknowns\": [\"questions now answered\"],\n  \"new_unknowns\": [\"new questions discovered\"],\n  \"verification_targets\": [\"conditions that must be true when done\"],\n  \"rules\": [\"constraints to follow\"],\n  \"execution_strategy\": \"direct_iteration | delegated_workflow | delegated_agent | hybrid\",\n  \"proposed_next_phase\": {{ \"step_type\": \"...\", \"rationale\": \"...\" }}\n}}\n\
-         {end}\n\n\
+         Tool: world_model_update\n\
+         This is a meta-protocol tool - you don't wait for a response. Call it in the same turn as your visible text response.\n\n\
+         Parameters:\n\
+         {{\n  \"facts\": [\"confirmed facts about the task/project\"],\n  \"assumptions\": [\"unverified beliefs\"],\n  \"resolved_unknowns\": [\"questions now answered\"],\n  \"new_unknowns\": [\"new questions discovered\"],\n  \"verification_targets\": [\"conditions that must be true when done\"],\n  \"rules\": [\"constraints to follow\"],\n  \"execution_strategy\": \"direct_iteration | delegated_workflow | delegated_agent | hybrid\",\n  \"proposed_next_phase\": {{ \"step_type\": \"...\", \"rationale\": \"...\" }}\n}}\n\n\
          Rules:\n\
          - execution_strategy: only include when you believe the current strategy should change.\n\
          - proposed_next_phase: only include when you have a clear next step.\n\
          - Write string values in the user's current conversation language when possible; keep JSON keys exactly as shown.\n\
          - Keep entries concise. Each item should be one sentence.",
-        start = WORLD_MODEL_UPDATE_START_TAG,
-        end = WORLD_MODEL_UPDATE_END_TAG,
         mode = mode_hint,
         requirement = requirement,
         mode_instruction = mode_instruction,

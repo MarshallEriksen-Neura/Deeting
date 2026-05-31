@@ -1799,6 +1799,75 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
         patch_generated_artifact_contract(),
         write_docx_contract(),
         write_pptx_contract(),
+        CoreToolContract {
+            name: "world_model_update",
+            description: "Meta-protocol tool: update the world model frame when your understanding of the task changes. This tool does not return a result and does not block execution. Call it in the same turn as your visible response when facts, assumptions, unknowns, verification targets, rules, execution strategy, or next phase have changed.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "facts": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Verified facts about the task, codebase, or requirements."
+                    },
+                    "assumptions": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Working assumptions that need validation."
+                    },
+                    "resolved_unknowns": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Previously unknown items that are now resolved."
+                    },
+                    "new_unknowns": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Newly discovered unknowns that need investigation."
+                    },
+                    "verification_targets": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Specific items that need verification before completion."
+                    },
+                    "rules": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Constraints, requirements, or rules governing the task."
+                    },
+                    "execution_strategy": {
+                        "type": "string",
+                        "enum": ["direct_iteration", "delegated_workflow", "delegated_agent", "hybrid"],
+                        "description": "Current execution strategy for the task."
+                    },
+                    "proposed_next_phase": {
+                        "type": "object",
+                        "properties": {
+                            "step_type": {"type": "string"},
+                            "rationale": {"type": "string"}
+                        },
+                        "description": "Proposed next phase with rationale."
+                    }
+                }
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string", "enum": ["applied", "ignored"]},
+                    "message": {"type": "string"}
+                },
+                "required": ["status"]
+            }),
+            permission_scope: &["local_runtime"],
+            read_only: false,
+            mutating: false,
+            risk_level: "LOW",
+            example_arguments: json!({
+                "facts": ["Code uses Rust", "Project has existing test suite"],
+                "assumptions": ["User wants performance optimization"],
+                "verification_targets": ["Confirm 20% performance improvement"]
+            }),
+        },
     ]
 }
 
@@ -3093,5 +3162,23 @@ mod tests {
         assert!(!tool.read_only);
         assert!(tool.mutating);
         assert_eq!(tool.risk_level, "LOW");
+    }
+
+    #[test]
+    fn core_tool_registry_includes_world_model_update_meta_protocol_tool() {
+        let tool = desktop_runtime_core_tools()
+            .into_iter()
+            .find(|tool| tool.name == "world_model_update")
+            .expect("world_model_update core tool should exist");
+
+        assert!(!tool.read_only);
+        assert!(!tool.mutating);
+        assert_eq!(tool.risk_level, "LOW");
+        assert_eq!(tool.permission_scope, &["local_runtime"]);
+        assert!(tool.description.contains("Meta-protocol tool"));
+        assert!(tool.description.contains("does not return a result"));
+        assert!(tool.input_schema["properties"]["facts"].is_object());
+        assert!(tool.input_schema["properties"]["assumptions"].is_object());
+        assert!(tool.input_schema["properties"]["execution_strategy"].is_object());
     }
 }

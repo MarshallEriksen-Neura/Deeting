@@ -23,6 +23,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   sys_submit_onboarding_request: "Onboarding",
   shell_execute: "Shell Execute",
   "shell.exec": "Shell Execute",
+  delegate_task: "Delegate Task",
 };
 
 const TOOL_NAMESPACE_STOP_WORDS = new Set([
@@ -589,6 +590,38 @@ export function resolveToolResultPreview({
     return translate
       ? translate("toolGroup.preview.preparedInteractive")
       : "Prepared an interactive result view";
+  }
+
+  const delegateResult = toRecord(result);
+  if (
+    delegateResult &&
+    typeof delegateResult.type === "string" &&
+    delegateResult.type === "delegated_result"
+  ) {
+    const agentName =
+      typeof delegateResult.target === "object" &&
+      delegateResult.target !== null &&
+      typeof (delegateResult.target as Record<string, unknown>).name === "string"
+        ? ((delegateResult.target as Record<string, unknown>).name as string).trim()
+        : null;
+    const primaryOutput = toRecord(delegateResult.primary_output);
+    const outputAgentName =
+      agentName ??
+      (primaryOutput && typeof primaryOutput.agent_name === "string"
+        ? primaryOutput.agent_name.trim()
+        : null);
+    const status =
+      typeof delegateResult.status === "string"
+        ? delegateResult.status.trim()
+        : "";
+    const succeeded =
+      status === "completed" || status === "succeeded";
+    if (outputAgentName) {
+      return succeeded
+        ? `${outputAgentName} 已完成`
+        : `${outputAgentName} ${status || "已返回"}`;
+    }
+    return succeeded ? "委派任务已完成" : `委派任务 ${status || "已返回"}`;
   }
 
   const countHint = extractResultCount(result);

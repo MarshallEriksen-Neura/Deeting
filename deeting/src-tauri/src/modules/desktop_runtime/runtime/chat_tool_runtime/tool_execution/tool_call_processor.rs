@@ -101,6 +101,16 @@ pub(crate) async fn process_chat_tool_calls(
         .ok()
         .flatten();
 
+        // Meta-protocol tool: world_model_update
+        if tool_name == "world_model_update" {
+            // Apply world model update directly to state without returning a tool result
+            if let Ok(update) = serde_json::from_value::<WorldModelUpdate>(call.arguments.clone()) {
+                state.captured_world_model_update = Some(update);
+            }
+            // Meta-protocol tools do not emit tool results or enter the tool execution loop
+            continue;
+        }
+
         if is_terminal_context_tool(&tool_name) {
             state.realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
             match execute_terminal_context_runtime_tool(

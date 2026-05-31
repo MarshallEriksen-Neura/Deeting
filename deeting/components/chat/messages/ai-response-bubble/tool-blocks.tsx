@@ -642,6 +642,107 @@ function toInlinePreview(value: string, maxLength = 96): string | null {
   return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
 }
 
+/* ─── Delegate Task Result ─── */
+
+type DelegateTaskStep = {
+  title: string;
+  status: string;
+  summary: string | null;
+  error: string | null;
+};
+
+type DelegateTaskInsight = {
+  status: string;
+  agentName: string | null;
+  agentId: string | null;
+  summary: string | null;
+  taskKind: string | null;
+  deliverableKind: string | null;
+  content: string | null;
+  modelId: string | null;
+  steps: DelegateTaskStep[];
+  error: string | null;
+  durationMs: number | null;
+  availableActions: string[];
+};
+
+function extractDelegateTaskInsight(
+  toolName?: string,
+  result?: unknown,
+): DelegateTaskInsight | null {
+  if (toolName !== "delegate_task") return null;
+  const payload = toRecord(result);
+  if (!payload) return null;
+  if (asTrimmedString(payload.type) !== "delegated_result") return null;
+
+  const target = toRecord(payload.target);
+  const primaryOutput = toRecord(payload.primary_output);
+  const packetReceipt = toRecord(payload.packet_receipt);
+
+  const steps: DelegateTaskStep[] = Array.isArray(payload.steps)
+    ? payload.steps
+        .map((item) => {
+          const step = toRecord(item);
+          if (!step) return null;
+          return {
+            title:
+              typeof step.title === "string" ? step.title : "Unknown step",
+            status:
+              typeof step.status === "string" ? step.status : "unknown",
+            summary: asTrimmedString(step.summary),
+            error: asTrimmedString(step.error),
+          };
+        })
+        .filter((item): item is DelegateTaskStep => Boolean(item))
+    : [];
+
+  const startedMs = toNumber(payload.started_at_ms);
+  const completedMs = toNumber(payload.completed_at_ms);
+  const durationMs =
+    startedMs !== null && completedMs !== null && completedMs > startedMs
+      ? completedMs - startedMs
+      : null;
+
+  const actions = Array.isArray(payload.available_actions)
+    ? payload.available_actions
+        .map((item) => {
+          const action = toRecord(item);
+          return action && typeof action.kind === "string"
+            ? action.kind
+            : null;
+        })
+        .filter((item): item is string => Boolean(item))
+    : [];
+
+  return {
+    status: asTrimmedString(payload.status) ?? "unknown",
+    agentName:
+      asTrimmedString(target?.name) ??
+      asTrimmedString(primaryOutput?.agent_name),
+    agentId:
+      asTrimmedString(target?.id) ??
+      asTrimmedString(primaryOutput?.agent_id),
+    summary: asTrimmedString(payload.summary),
+    taskKind: asTrimmedString(packetReceipt?.task_kind),
+    deliverableKind: asTrimmedString(packetReceipt?.deliverable_kind),
+    content: asTrimmedString(primaryOutput?.content),
+    modelId: asTrimmedString(primaryOutput?.model_id),
+    steps,
+    error: asTrimmedString(payload.error),
+    durationMs,
+    actions,
+  };
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remaining = seconds % 60;
+  return remaining > 0 ? `${minutes}m ${remaining}s` : `${minutes}m`;
+}
+
 function extractLocalCodeSnippetInsight(
   toolName?: string,
   result?: unknown,
@@ -1526,6 +1627,230 @@ function ContextEvidenceCard({ insight }: { insight: ContextEvidenceInsight }) {
   );
 }
 
+const DelegateTaskResultCard = memo<{ insight: DelegateTaskInsight }>(
+  function DelegateTaskResultCard({ insight }) {
+    const t = useI18n("chat");
+    const statusTone =
+      insight.status === "completed" || insight.status === "succeeded"
+        ? "ok"
+        : insight.status === "failed" || insight.status === "blocked"
+          ? "danger"
+          : "info";
+
+    const statusLabel =
+      insight.status === "completed" || insight.status === "succeeded"
+        ? "已完成"
+        : insight.status === "failed"
+          ? "执行失败"
+          : insight.status === "blocked"
+            ? "已阻断"
+            : insight.status;
+
+    return (
+      <div className="rounded-[var(--r-12)] border border-[var(--hairline)] bg-[var(--panel-bg)] overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 border-b border-[var(--hairline)] bg-[var(--panel-bg-inset)]">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span
+              className={cn(
+                "inline-flex items-center justify-center h-7 w-7 rounded-[var(--r-8)] shrink-0",
+                statusTone === "ok" &&
+                  "bg-[var(--ok-soft)] text-[var(--ok)] border border-[var(--ok-border)]",
+                statusTone === "danger" &&
+                  "bg-[var(--danger-soft)] text-[var(--danger)] border border-[var(--danger-border)]",
+                statusTone === "info" &&
+                  "bg-[var(--info-soft)] text-[var(--info)] border border-[var(--info-border)]",
+              )}
+            >
+              {statusTone === "ok" ? (
+                <Check size={13} />
+              ) : statusTone === "danger" ? (
+                <AlertTriangle size={13} />
+              ) : (
+                <Loader2 size={13} className="animate-spin" />
+              )}
+            </span>
+            <div className="min-w-0">
+              <div className="ws-pane-title truncate">
+                {insight.agentName ?? "Delegate Task"}
+              </div>
+              {insight.summary ? (
+                <div className="ws-caption truncate mt-0.5">
+                  {insight.summary}
+                </div>
+              ) : null}
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 h-6 rounded-full px-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] border",
+                statusTone === "ok" &&
+                  "bg-[var(--ok-soft)] text-[var(--ok)] border-[var(--ok-border)]",
+                statusTone === "danger" &&
+                  "bg-[var(--danger-soft)] text-[var(--danger)] border-[var(--danger-border)]",
+                statusTone === "info" &&
+                  "bg-[var(--info-soft)] text-[var(--info)] border-[var(--info-border)]",
+              )}
+            >
+              <span
+                className={cn(
+                  "w-1.5 h-1.5 rounded-full",
+                  statusTone === "ok" && "bg-[var(--ok)]",
+                  statusTone === "danger" && "bg-[var(--danger)]",
+                  statusTone === "info" && "bg-[var(--info)]",
+                  statusTone === "info" && "animate-pulse",
+                )}
+              />
+              {statusLabel}
+            </span>
+          </div>
+        </div>
+
+        {/* Meta row */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3.5 py-2 border-b border-[var(--hairline)] bg-[var(--panel-bg)]">
+          {insight.taskKind ? (
+            <div className="flex items-center gap-1.5">
+              <span className="ws-caption">任务类型</span>
+              <span className="ws-control font-mono text-[var(--ink-2)]">
+                {insight.taskKind}
+              </span>
+            </div>
+          ) : null}
+          {insight.deliverableKind ? (
+            <div className="flex items-center gap-1.5">
+              <span className="ws-caption">交付物</span>
+              <span className="ws-control font-mono text-[var(--ink-2)]">
+                {insight.deliverableKind}
+              </span>
+            </div>
+          ) : null}
+          {insight.modelId ? (
+            <div className="flex items-center gap-1.5">
+              <span className="ws-caption">模型</span>
+              <span className="ws-control font-mono text-[var(--ink-2)]">
+                {insight.modelId}
+              </span>
+            </div>
+          ) : null}
+          {insight.durationMs !== null ? (
+            <div className="flex items-center gap-1.5">
+              <span className="ws-caption">耗时</span>
+              <span className="ws-control font-mono text-[var(--ink-2)]">
+                {formatDuration(insight.durationMs)}
+              </span>
+            </div>
+          ) : null}
+        </div>
+
+        {/* Steps timeline */}
+        {insight.steps.length > 0 ? (
+          <div className="px-3.5 py-3 border-b border-[var(--hairline)]">
+            <div className="ws-caption uppercase tracking-[0.14em] mb-2.5">
+              执行阶段
+            </div>
+            <div className="space-y-0">
+              {insight.steps.map((step, index) => {
+                const isDone =
+                  step.status === "succeeded" || step.status === "completed";
+                const isFailed =
+                  step.status === "failed" || step.status === "blocked";
+                const isLast = index === insight.steps.length - 1;
+                return (
+                  <div key={`${step.title}-${index}`} className="flex gap-2.5">
+                    {/* Rail + dot */}
+                    <div className="flex flex-col items-center pt-0.5">
+                      <span
+                        className={cn(
+                          "w-2 h-2 rounded-full shrink-0 mt-[3px]",
+                          isDone && "bg-[var(--ok)]",
+                          isFailed && "bg-[var(--danger)]",
+                          !isDone &&
+                            !isFailed &&
+                            "bg-[var(--info)] animate-pulse",
+                        )}
+                      />
+                      {!isLast ? (
+                        <div className="w-px flex-1 min-h-[16px] bg-[var(--hairline)] my-1" />
+                      ) : null}
+                    </div>
+                    {/* Content */}
+                    <div
+                      className={cn(
+                        "min-w-0 pb-3",
+                        isLast && "pb-0",
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "text-[12px] font-medium leading-snug",
+                          isDone && "text-[var(--ink)]",
+                          isFailed && "text-[var(--danger)]",
+                          !isDone &&
+                            !isFailed &&
+                            "text-[var(--info)]",
+                        )}
+                      >
+                        {step.title}
+                      </div>
+                      {step.summary ? (
+                        <div className="ws-caption mt-0.5 leading-relaxed">
+                          {step.summary}
+                        </div>
+                      ) : null}
+                      {step.error ? (
+                        <div className="mt-1 text-[11px] text-[var(--danger)] leading-relaxed">
+                          {step.error}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Content output */}
+        {insight.content ? (
+          <div className="px-3.5 py-3">
+            <div className="ws-caption uppercase tracking-[0.14em] mb-2">
+              交付内容
+            </div>
+            <div className="rounded-[var(--r-8)] border border-[var(--hairline)] bg-[var(--panel-bg-inset)] p-3 max-h-[320px] overflow-auto">
+              <MarkdownViewer
+                content={insight.content}
+                className="chat-markdown chat-markdown-assistant text-[13px]"
+              />
+            </div>
+          </div>
+        ) : null}
+
+        {/* Error banner */}
+        {insight.error ? (
+          <div className="px-3.5 py-3 border-t border-[var(--hairline)]">
+            <div className="rounded-[var(--r-8)] border border-[var(--danger-border)] bg-[var(--danger-soft)] px-3 py-2 text-[12px] text-[var(--danger)] leading-relaxed">
+              {insight.error}
+            </div>
+            {insight.actions.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {insight.actions.map((action) => (
+                  <span
+                    key={action}
+                    className="inline-flex items-center h-6 rounded-full px-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] bg-[var(--warn-soft)] text-[var(--warn)] border border-[var(--warn-border)]"
+                  >
+                    {action}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    );
+  },
+);
+
 export const ToolCallBlock = memo<{
   messageId?: string;
   callId?: string;
@@ -1626,6 +1951,14 @@ export const ToolCallBlock = memo<{
   const contextEvidenceInsight = useMemo(
     () => extractContextEvidenceInsight(resultBlock?.result),
     [resultBlock?.result],
+  );
+  const delegateTaskInsight = useMemo(
+    () =>
+      extractDelegateTaskInsight(
+        resultBlock?.toolName || name,
+        resultBlock?.result,
+      ),
+    [resultBlock?.toolName, name, resultBlock?.result],
   );
   const visualState = useMemo(
     () => resolveToolVisualState(status, resultBlock),
@@ -1950,6 +2283,11 @@ export const ToolCallBlock = memo<{
               ) : shellExecutionInsight ? (
                 <div className="space-y-3">
                   <ShellExecutionResultCard insight={shellExecutionInsight} />
+                  <ToolDebugPanel debug={resultBlock?.debug} />
+                </div>
+              ) : delegateTaskInsight ? (
+                <div className="space-y-3">
+                  <DelegateTaskResultCard insight={delegateTaskInsight} />
                   <ToolDebugPanel debug={resultBlock?.debug} />
                 </div>
               ) : contextEvidenceInsight ? (
