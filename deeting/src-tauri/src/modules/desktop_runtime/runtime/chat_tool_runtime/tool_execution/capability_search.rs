@@ -14,7 +14,7 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) struct Capab
 
 pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) async fn execute_search_sdk_tool(
     app_state: &AppState,
-    state: &LocalChatToolRuntimeState,
+    state: &mut LocalChatToolRuntimeState,
     feedback_tool_call_meta: &[serde_json::Value],
     call_id: &str,
     tool_name: &str,
@@ -41,6 +41,19 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) async fn exe
     )
     .await;
     let search_res = search_bundle.summary_payload;
+
+    // Extract and cache discovered tools from the search result
+    if let Some(capabilities) = search_res.get("capabilities").and_then(|v| v.as_array()) {
+        for cap in capabilities {
+            if let Some(name) = cap.get("name").and_then(|v| v.as_str()) {
+                let normalized = name.trim().to_lowercase();
+                if !normalized.is_empty() {
+                    state.session_discovered_tools.insert(normalized);
+                }
+            }
+        }
+    }
+
     let result_message = format!(
         "SDK Search Result for '{}':\n{}",
         query,

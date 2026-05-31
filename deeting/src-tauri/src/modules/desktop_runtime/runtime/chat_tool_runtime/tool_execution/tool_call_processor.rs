@@ -33,14 +33,12 @@ use tauri::AppHandle;
 pub(crate) async fn process_chat_tool_calls(
     app: &AppHandle,
     app_state: &AppState,
-    state: &LocalChatToolRuntimeState,
+    state: &mut LocalChatToolRuntimeState,
     chat_response: &serde_json::Value,
     _prior_tool_call_meta: &[serde_json::Value],
     session_id: &str,
     effective_allowed_tool_names: &[String],
     active_capability: Option<&LocalCapabilityActivationState>,
-    last_capability_snapshot: &mut Option<serde_json::Value>,
-    realtime_emitter: &mut LocalRealtimeToolTraceEmitter,
 ) -> LocalToolCallProcessingOutcome {
     let tool_calls = extract_chat_tool_calls(chat_response);
     if tool_calls.is_empty() {
@@ -67,7 +65,7 @@ pub(crate) async fn process_chat_tool_calls(
         let tool_name = resolve_provider_tool_name_for_execution(
             &requested_tool_name,
             effective_allowed_tool_names,
-            last_capability_snapshot.as_ref(),
+            state.last_capability_snapshot.as_ref(),
         )
         .unwrap_or(requested_tool_name);
         let tool_name =
@@ -81,11 +79,12 @@ pub(crate) async fn process_chat_tool_calls(
         if !effective_allowed_tool_names
             .iter()
             .any(|item| item == &tool_name)
+            && !state.session_discovered_tools.contains(&tool_name)
         {
             synthesized = true;
-            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
+            state.realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
             let blocked = build_policy_blocked_tool_result(call_id.as_str(), tool_name.as_str());
-            realtime_emitter.emit_tool_result_meta(&blocked.meta);
+            state.realtime_emitter.emit_tool_result_meta(&blocked.meta);
             tool_call_meta.push(blocked.meta);
             results.push(blocked.result_message);
             continue;
@@ -103,7 +102,7 @@ pub(crate) async fn process_chat_tool_calls(
         .flatten();
 
         if is_terminal_context_tool(&tool_name) {
-            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
+            state.realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
             match execute_terminal_context_runtime_tool(
                 app,
                 state.terminal_context.as_ref(),
@@ -113,7 +112,7 @@ pub(crate) async fn process_chat_tool_calls(
             ) {
                 Ok(result) => {
                     synthesized = true;
-                    realtime_emitter.emit_tool_result_meta(&result.meta);
+                    state.realtime_emitter.emit_tool_result_meta(&result.meta);
                     tool_call_meta.push(result.meta);
                     results.push(result.result_message);
                 }
@@ -122,7 +121,7 @@ pub(crate) async fn process_chat_tool_calls(
                     push_local_tool_call_error_meta(
                         &mut tool_call_meta,
                         &mut results,
-                        realtime_emitter,
+                        &mut state.realtime_emitter,
                         Some(call_id.as_str()),
                         &tool_name,
                         "TERMINAL_CONTEXT_FAILED",
@@ -131,7 +130,7 @@ pub(crate) async fn process_chat_tool_calls(
                 }
             }
         } else if is_workflow_plan_tool(&tool_name) {
-            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
+            state.realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
             match execute_workflow_plan_runtime_tool(
                 app,
                 app_state,
@@ -144,7 +143,7 @@ pub(crate) async fn process_chat_tool_calls(
             {
                 Ok(result) => {
                     synthesized = true;
-                    realtime_emitter.emit_tool_result_meta(&result.meta);
+                    state.realtime_emitter.emit_tool_result_meta(&result.meta);
                     tool_call_meta.push(result.meta);
                     results.push(result.result_message);
                 }
@@ -153,7 +152,7 @@ pub(crate) async fn process_chat_tool_calls(
                     push_local_tool_call_error_meta(
                         &mut tool_call_meta,
                         &mut results,
-                        realtime_emitter,
+                        &mut state.realtime_emitter,
                         Some(call_id.as_str()),
                         &tool_name,
                         "WORKFLOW_PLAN_FAILED",
@@ -162,7 +161,7 @@ pub(crate) async fn process_chat_tool_calls(
                 }
             }
         } else if is_context_tool(&tool_name) {
-            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
+            state.realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
             match execute_context_runtime_tool(
                 app_state,
                 &state.selected_knowledge_file_ids,
@@ -174,7 +173,7 @@ pub(crate) async fn process_chat_tool_calls(
             {
                 Ok(result) => {
                     synthesized = true;
-                    realtime_emitter.emit_tool_result_meta(&result.meta);
+                    state.realtime_emitter.emit_tool_result_meta(&result.meta);
                     tool_call_meta.push(result.meta);
                     results.push(result.result_message);
                 }
@@ -183,7 +182,7 @@ pub(crate) async fn process_chat_tool_calls(
                     push_local_tool_call_error_meta(
                         &mut tool_call_meta,
                         &mut results,
-                        realtime_emitter,
+                        &mut state.realtime_emitter,
                         Some(call_id.as_str()),
                         &tool_name,
                         "CONTEXT_TOOL_FAILED",
@@ -192,13 +191,13 @@ pub(crate) async fn process_chat_tool_calls(
                 }
             }
         } else if tool_name == "execute_code_plan" {
-            realtime_emitter.emit_execution_section_once("Code Execution");
-            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
+            state.realtime_emitter.emit_execution_section_once("Code Execution");
+            state.realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
             let code_result = execute_code_plan_tool(
                 app_state,
                 state,
-                last_capability_snapshot.as_ref(),
-                realtime_emitter,
+                state.last_capability_snapshot.as_ref(),
+                &state.realtime_emitter,
                 call_id.as_str(),
                 tool_name.as_str(),
                 &call.arguments,
@@ -208,11 +207,11 @@ pub(crate) async fn process_chat_tool_calls(
                 runtime_transition_blocks.push(block);
             }
             synthesized = true;
-            realtime_emitter.emit_tool_result_meta(&code_result.meta);
+            state.realtime_emitter.emit_tool_result_meta(&code_result.meta);
             tool_call_meta.push(code_result.meta);
             results.push(code_result.result_message);
         } else if tool_name == "run_local_code_snippet" {
-            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
+            state.realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
             let snippet_result = execute_local_code_snippet_tool(
                 app_state,
                 session_id,
@@ -222,11 +221,11 @@ pub(crate) async fn process_chat_tool_calls(
             )
             .await;
             synthesized = true;
-            realtime_emitter.emit_tool_result_meta(&snippet_result.meta);
+            state.realtime_emitter.emit_tool_result_meta(&snippet_result.meta);
             tool_call_meta.push(snippet_result.meta);
             results.push(snippet_result.result_message);
         } else if tool_name == "search_sdk" {
-            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
+            state.realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
             let search = execute_search_sdk_tool(
                 app_state,
                 state,
@@ -236,13 +235,13 @@ pub(crate) async fn process_chat_tool_calls(
                 &call.arguments,
             )
             .await;
-            *last_capability_snapshot = Some(search.full_payload);
+            state.last_capability_snapshot = Some(search.full_payload);
             synthesized = true;
-            realtime_emitter.emit_tool_result_meta(&search.meta);
+            state.realtime_emitter.emit_tool_result_meta(&search.meta);
             tool_call_meta.push(search.meta);
             results.push(search.result_message);
         } else if tool_name == "activate_skill" {
-            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
+            state.realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
             match execute_activate_skill_tool(
                 app_state,
                 call_id.as_str(),
@@ -254,7 +253,7 @@ pub(crate) async fn process_chat_tool_calls(
                 Ok(result) => {
                     synthesized = true;
                     skill_context_update = Some(result.active_skill);
-                    realtime_emitter.emit_tool_result_meta(&result.meta);
+                    state.realtime_emitter.emit_tool_result_meta(&result.meta);
                     tool_call_meta.push(result.meta);
                     results.push(result.result_message);
                 }
@@ -263,7 +262,7 @@ pub(crate) async fn process_chat_tool_calls(
                     push_local_tool_call_error_meta(
                         &mut tool_call_meta,
                         &mut results,
-                        realtime_emitter,
+                        &mut state.realtime_emitter,
                         Some(call_id.as_str()),
                         &tool_name,
                         "SKILL_ACTIVATION_FAILED",
@@ -272,7 +271,7 @@ pub(crate) async fn process_chat_tool_calls(
                 }
             }
         } else if tool_name == "read_skill_resource" {
-            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
+            state.realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
             match execute_read_skill_resource_tool(
                 app_state,
                 state.active_skill_context.as_ref(),
@@ -285,7 +284,7 @@ pub(crate) async fn process_chat_tool_calls(
                 Ok(result) => {
                     synthesized = true;
                     skill_context_update = Some(result.active_skill);
-                    realtime_emitter.emit_tool_result_meta(&result.meta);
+                    state.realtime_emitter.emit_tool_result_meta(&result.meta);
                     tool_call_meta.push(result.meta);
                     results.push(result.result_message);
                 }
@@ -294,7 +293,7 @@ pub(crate) async fn process_chat_tool_calls(
                     push_local_tool_call_error_meta(
                         &mut tool_call_meta,
                         &mut results,
-                        realtime_emitter,
+                        &mut state.realtime_emitter,
                         Some(call_id.as_str()),
                         &tool_name,
                         "SKILL_RESOURCE_READ_FAILED",
@@ -303,7 +302,7 @@ pub(crate) async fn process_chat_tool_calls(
                 }
             }
         } else if tool_name == "delegate_task" {
-            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
+            state.realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
             match execute_delegate_task_tool(
                 app,
                 app_state,
@@ -318,7 +317,7 @@ pub(crate) async fn process_chat_tool_calls(
             {
                 Ok(result) => {
                     synthesized = true;
-                    realtime_emitter.emit_tool_result_meta(&result.meta);
+                    state.realtime_emitter.emit_tool_result_meta(&result.meta);
                     tool_call_meta.push(result.meta);
                     results.push(result.result_message);
                 }
@@ -327,7 +326,7 @@ pub(crate) async fn process_chat_tool_calls(
                     push_local_tool_call_error_meta(
                         &mut tool_call_meta,
                         &mut results,
-                        realtime_emitter,
+                        &mut state.realtime_emitter,
                         Some(call_id.as_str()),
                         &tool_name,
                         "DELEGATE_TASK_FAILED",
@@ -336,8 +335,8 @@ pub(crate) async fn process_chat_tool_calls(
                 }
             }
         } else if tool_name == "delegate_agents_start" {
-            realtime_emitter.emit_execution_section_once("Delegate Agents");
-            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
+            state.realtime_emitter.emit_execution_section_once("Delegate Agents");
+            state.realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
             match execute_delegate_agents_start_tool(
                 app,
                 app_state,
@@ -352,7 +351,7 @@ pub(crate) async fn process_chat_tool_calls(
             {
                 Ok(result) => {
                     synthesized = true;
-                    realtime_emitter.emit_tool_result_meta(&result.meta);
+                    state.realtime_emitter.emit_tool_result_meta(&result.meta);
                     tool_call_meta.push(result.meta);
                     results.push(result.result_message);
                 }
@@ -361,7 +360,7 @@ pub(crate) async fn process_chat_tool_calls(
                     push_local_tool_call_error_meta(
                         &mut tool_call_meta,
                         &mut results,
-                        realtime_emitter,
+                        &mut state.realtime_emitter,
                         Some(call_id.as_str()),
                         &tool_name,
                         "DELEGATE_AGENTS_FAILED",
@@ -370,7 +369,7 @@ pub(crate) async fn process_chat_tool_calls(
                 }
             }
         } else if tool_name == "delegate_agents_status" {
-            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
+            state.realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
             match execute_delegate_agents_status_tool(
                 call_id.as_str(),
                 tool_name.as_str(),
@@ -380,7 +379,7 @@ pub(crate) async fn process_chat_tool_calls(
             {
                 Ok(result) => {
                     synthesized = true;
-                    realtime_emitter.emit_tool_result_meta(&result.meta);
+                    state.realtime_emitter.emit_tool_result_meta(&result.meta);
                     tool_call_meta.push(result.meta);
                     results.push(result.result_message);
                 }
@@ -389,7 +388,7 @@ pub(crate) async fn process_chat_tool_calls(
                     push_local_tool_call_error_meta(
                         &mut tool_call_meta,
                         &mut results,
-                        realtime_emitter,
+                        &mut state.realtime_emitter,
                         Some(call_id.as_str()),
                         &tool_name,
                         "DELEGATE_AGENTS_STATUS_FAILED",
@@ -398,7 +397,7 @@ pub(crate) async fn process_chat_tool_calls(
                 }
             }
         } else if tool_name == "delegate_agents_stop" {
-            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
+            state.realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
             match execute_delegate_agents_stop_tool(
                 app_state,
                 call_id.as_str(),
@@ -409,7 +408,7 @@ pub(crate) async fn process_chat_tool_calls(
             {
                 Ok(result) => {
                     synthesized = true;
-                    realtime_emitter.emit_tool_result_meta(&result.meta);
+                    state.realtime_emitter.emit_tool_result_meta(&result.meta);
                     tool_call_meta.push(result.meta);
                     results.push(result.result_message);
                 }
@@ -418,7 +417,7 @@ pub(crate) async fn process_chat_tool_calls(
                     push_local_tool_call_error_meta(
                         &mut tool_call_meta,
                         &mut results,
-                        realtime_emitter,
+                        &mut state.realtime_emitter,
                         Some(call_id.as_str()),
                         &tool_name,
                         "DELEGATE_AGENTS_STOP_FAILED",
@@ -427,7 +426,7 @@ pub(crate) async fn process_chat_tool_calls(
                 }
             }
         } else if tool_name == "query_task_policy" {
-            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
+            state.realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
             let policy_result = execute_query_task_policy_tool(
                 app_state,
                 call_id.as_str(),
@@ -436,11 +435,11 @@ pub(crate) async fn process_chat_tool_calls(
             )
             .await;
             synthesized = true;
-            realtime_emitter.emit_tool_result_meta(&policy_result.meta);
+            state.realtime_emitter.emit_tool_result_meta(&policy_result.meta);
             tool_call_meta.push(policy_result.meta);
             results.push(policy_result.result_message);
         } else if tool_name == "sys_submit_onboarding_request" {
-            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
+            state.realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
             let onboarding_result = execute_sys_submit_onboarding_request_tool(
                 app,
                 app_state,
@@ -450,11 +449,11 @@ pub(crate) async fn process_chat_tool_calls(
             )
             .await;
             synthesized = true;
-            realtime_emitter.emit_tool_result_meta(&onboarding_result.meta);
+            state.realtime_emitter.emit_tool_result_meta(&onboarding_result.meta);
             tool_call_meta.push(onboarding_result.meta);
             results.push(onboarding_result.result_message);
         } else if tool_name == "refresh_skill_index" {
-            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
+            state.realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
             let refresh_result = execute_refresh_skill_index_tool(
                 app.clone(),
                 app_state,
@@ -463,12 +462,12 @@ pub(crate) async fn process_chat_tool_calls(
             )
             .await;
             synthesized = true;
-            realtime_emitter.emit_tool_result_meta(&refresh_result.meta);
+            state.realtime_emitter.emit_tool_result_meta(&refresh_result.meta);
             tool_call_meta.push(refresh_result.meta);
             results.push(refresh_result.result_message);
         } else {
             synthesized = true;
-            realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
+            state.realtime_emitter.emit_tool_call_running(call_id.as_str(), tool_name.as_str());
             match execute_generic_mcp_tool_call(
                 &app_state.mcp,
                 session_id,
@@ -479,7 +478,7 @@ pub(crate) async fn process_chat_tool_calls(
             .await
             {
                 Ok(dispatch) => {
-                    realtime_emitter.emit_tool_result_meta(&dispatch.meta);
+                    state.realtime_emitter.emit_tool_result_meta(&dispatch.meta);
                     tool_call_meta.push(dispatch.meta);
                     results.push(dispatch.result_message);
                     if let Some(approval_token) = dispatch.approval_token {
@@ -492,7 +491,7 @@ pub(crate) async fn process_chat_tool_calls(
                     push_local_tool_call_error_meta(
                         &mut tool_call_meta,
                         &mut results,
-                        realtime_emitter,
+                        &mut state.realtime_emitter,
                         Some(call_id.as_str()),
                         &tool_name,
                         classify_local_tool_execution_error_code(&error),
@@ -516,7 +515,7 @@ pub(crate) async fn process_chat_tool_calls(
             push_local_tool_call_error_meta(
                 &mut tool_call_meta,
                 &mut results,
-                realtime_emitter,
+                &mut state.realtime_emitter,
                 Some(call_id.as_str()),
                 &tool_name,
                 "LOCAL_TOOL_RESULT_MISSING",

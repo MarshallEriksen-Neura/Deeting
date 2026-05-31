@@ -36,6 +36,7 @@ impl SuspendedChatToolExecution {
                 self.request_id.as_deref(),
             ),
             selected_knowledge_file_ids: self.selected_knowledge_file_ids,
+            session_discovered_tools: std::collections::HashSet::new(),
         }
     }
 }

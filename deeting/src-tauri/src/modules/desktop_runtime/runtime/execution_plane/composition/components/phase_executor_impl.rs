@@ -35,7 +35,7 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) s
 > where
     F: FnMut(&str, Option<&str>, &str, &str, Option<Value>),
 {
-    request: Option<LocalExecutionRequest>,
+    request: LocalExecutionRequest,
     emit_status: &'a mut F,
     outcome: SharedPhaseOutcome,
 }
@@ -50,11 +50,24 @@ where
         outcome: SharedPhaseOutcome,
     ) -> Self {
         Self {
-            request: Some(request),
+            request,
             emit_status,
             outcome,
         }
     }
+}
+
+fn prepare_phase_execution_request(
+    request: &LocalExecutionRequest,
+    frame: &WorldModelFrame,
+    phase: &Phase,
+) -> LocalExecutionRequest {
+    let mut request = request.clone();
+    request.world_model_frame = Some(frame.clone());
+    if phase_requires_world_model_frame_refresh(phase) {
+        request.execution_policy.require_world_model_update = true;
+    }
+    request
 }
 
 impl<F> PhaseExecutor for DeetingRealPhaseExecutor<'_, F>
@@ -66,15 +79,9 @@ where
         frame: &WorldModelFrame,
         phase: &Phase,
     ) -> RuntimeCoreResult<PhaseObservation> {
-        let mut request = self.request.take().ok_or_else(|| {
-            RuntimeCoreError::InvalidState("deeting phase executor request already consumed".into())
-        })?;
-        if phase_requires_world_model_frame_refresh(phase) {
-            request.execution_policy.require_world_model_update = true;
-        }
+        let request = prepare_phase_execution_request(&self.request, frame, phase);
         let step_type = phase.step_type;
         let parent_frame_id = Some(frame.frame_version_id.clone());
-        request.world_model_frame = Some(frame.clone());
         let outcome = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
                 match step_type {

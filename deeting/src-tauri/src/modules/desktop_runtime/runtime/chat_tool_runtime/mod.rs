@@ -581,6 +581,7 @@ pub(crate) async fn run_local_chat_complete_with_tools(
             request_id,
         ),
         selected_knowledge_file_ids,
+        session_discovered_tools: std::collections::HashSet::new(),
     };
     continue_local_chat_complete_with_tools(app, app_state, state)
         .await
@@ -765,18 +766,20 @@ async fn continue_local_chat_complete_with_tools(
             ));
         let prior_tool_call_meta = build_state_effective_tool_call_meta(&state);
         state.last_response = Some(response.clone());
-        let state_snapshot = clone_runtime_state_for_tool_execution(&state, None);
+
+        // Extract values before mutable borrow to avoid borrow checker conflicts
+        let session_id_str = state.session_id.clone();
+        let active_capability_ref = state.active_capability.clone();
+
         match process_chat_tool_calls(
             app,
             app_state,
-            &state_snapshot,
+            &mut state,
             &response,
             &prior_tool_call_meta,
-            state.session_id.as_str(),
+            session_id_str.as_str(),
             &effective_allowed_tool_names,
-            state.active_capability.as_ref(),
-            &mut state.last_capability_snapshot,
-            &mut state.realtime_emitter,
+            active_capability_ref.as_ref(),
         )
         .await
         {

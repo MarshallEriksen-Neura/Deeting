@@ -76,6 +76,11 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) struct Local
     // `scope: "selected"` but omits `filters.selected_file_ids`.
     pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) selected_knowledge_file_ids:
         Vec<String>,
+    // Session-level cache of tools discovered via search_sdk.
+    // Tools in this set are allowed for the remainder of the session without
+    // requiring explicit policy allowlist entries.
+    pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) session_discovered_tools:
+        std::collections::HashSet<String>,
 }
 
 pub(crate) struct LocalChatCompleteWithToolsOutput {
@@ -128,6 +133,7 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn clone_run
             )
         }),
         selected_knowledge_file_ids: state.selected_knowledge_file_ids.clone(),
+        session_discovered_tools: state.session_discovered_tools.clone(),
     }
 }
 

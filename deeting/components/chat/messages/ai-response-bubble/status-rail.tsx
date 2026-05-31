@@ -5,8 +5,9 @@ import { motion, AnimatePresence, type Variants } from "framer-motion";
 
 import { resolveStatusDetail, resolveWorldModelSummary } from "@/lib/chat/status-detail";
 import { useI18n } from "@/hooks/use-i18n";
+import { cn } from "@/lib/utils";
 import { MathCurveLoader } from "@/components/chat/visuals/math-curve-loader";
-import { ArrowRight, Clock3, Globe } from "lucide-react";
+import { ArrowRight, Clock3, Globe, Sparkles } from "lucide-react";
 import {
   useStepProgress,
   resolveStageIndex,
@@ -136,15 +137,70 @@ function railReducer(state: RailState, action: RailAction): RailState {
 // ── Animation variants ──
 
 const DETAIL_VARIANTS: Variants = {
-  initial: { opacity: 0, y: 6 },
-  enter: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } },
-  exit: { opacity: 0, y: -10, transition: { duration: 0.3 } },
+  initial: { opacity: 0, x: -8, scale: 0.96 },
+  enter: {
+    opacity: 1,
+    x: 0,
+    scale: 1,
+    transition: {
+      duration: 0.4,
+      ease: [0.16, 1, 0.3, 1],
+      opacity: { duration: 0.3 }
+    }
+  },
+  exit: {
+    opacity: 0,
+    x: -12,
+    scale: 0.94,
+    transition: { duration: 0.25, ease: [0.4, 0, 1, 1] }
+  },
 };
 
 const RAIL_VARIANTS: Variants = {
-  initial: { opacity: 0, y: 12, filter: "blur(4px)" },
-  enter: { opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] } },
-  exit: { opacity: 0, y: -20, filter: "blur(6px)", transition: { duration: 0.45, ease: [0.4, 0, 1, 1] } },
+  initial: { opacity: 0, y: 16, scale: 0.96, filter: "blur(8px)" },
+  enter: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    filter: "blur(0px)",
+    transition: {
+      duration: 0.5,
+      ease: [0.16, 1, 0.3, 1],
+      scale: { duration: 0.4 },
+      filter: { duration: 0.35 }
+    }
+  },
+  exit: {
+    opacity: 0,
+    y: -24,
+    scale: 0.94,
+    filter: "blur(10px)",
+    transition: {
+      duration: 0.4,
+      ease: [0.4, 0, 1, 1]
+    }
+  },
+};
+
+// __CONTINUE_PART2__
+
+const TIMELINE_NODE_VARIANTS: Variants = {
+  initial: { scale: 0, opacity: 0 },
+  enter: {
+    scale: 1,
+    opacity: 1,
+    transition: {
+      type: "spring",
+      stiffness: 400,
+      damping: 25,
+      mass: 0.8
+    }
+  },
+  exit: {
+    scale: 0,
+    opacity: 0,
+    transition: { duration: 0.2 }
+  },
 };
 
 // ── Main component ──
@@ -188,7 +244,6 @@ export function AIResponseStatusRail({
   useEffect(() => {
     if (!isActive && !hasContent) {
       lastDetailRef.current = null;
-      wmRef.current = null;
       dispatch({ type: "reset" });
     }
   }, [hasContent, isActive]);
@@ -202,8 +257,10 @@ export function AIResponseStatusRail({
     dispatch({ type: "append", text });
   }, [isActive, statusDetail]);
 
+  // __CONTINUE_PART3__
+
   const isUpstreamRequest = Boolean(statusCode && UPSTREAM_REQUEST_CODES.has(statusCode));
-  const isWorldModelEvent = Boolean(statusCode && WORLD_MODEL_EVENT_CODES.has(statusCode));
+  const isWorldModelEvent = Boolean(wmSummary);
   const upstreamRound = useUpstreamRoundCounter(statusCode);
   const upstreamElapsed = useElapsedSeconds(isActive && isUpstreamRequest, upstreamRound);
   const upstreamHint = isUpstreamRequest ? resolveSlowUpstreamHint(upstreamElapsed) : null;
@@ -255,60 +312,104 @@ export function AIResponseStatusRail({
     return rows.filter((row) => row.text.trim().length > 0).slice(0, 6);
   }, [wmSummary]);
 
-  // Visibility — keep rail visible while the response is active,
-  // regardless of whether content has started arriving.
-  // This ensures status updates (world model, tool calls, etc.)
-  // remain visible throughout the entire response lifecycle.
   const rawShow = isActive;
   const shouldShow = useMinRailDisplay(rawShow);
+
+  // __CONTINUE_PART4__
 
   return (
     <AnimatePresence mode="popLayout">
       {shouldShow && (
         <motion.div
           key="status-rail"
-          data-wm-tick={wmTick}
           variants={RAIL_VARIANTS}
           initial="initial"
           animate="enter"
           exit="exit"
           className={cn(
-            "mb-2 will-change-[transform,opacity,filter]",
+            "mb-3 will-change-[transform,opacity,filter]",
             isWorldModelEvent
-              ? "overflow-hidden rounded-[22px] border border-white/10 bg-[#111318]/96 text-slate-100 shadow-[0_22px_60px_-30px_rgba(0,0,0,0.85)] backdrop-blur-xl"
-              : "flex flex-col gap-1.5 px-1 py-3 min-h-[40px]",
+              ? "relative overflow-hidden rounded-2xl border border-white/[0.08] bg-gradient-to-br from-slate-900/95 via-slate-900/98 to-slate-950/95 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.4),0_0_0_1px_rgba(255,255,255,0.03)_inset] backdrop-blur-2xl"
+              : "flex flex-col gap-2 px-1 py-3 min-h-[40px]",
           )}
         >
-          {isWorldModelEvent ? (
-            <div className="flex flex-col">
-              <div className="flex items-start gap-3 px-3.5 py-3.5">
-                <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-400/15 bg-emerald-400/10 text-emerald-300">
-                  <Globe className="h-4 w-4" />
-                </div>
+          {/* Subtle gradient overlay for depth */}
+          {isWorldModelEvent && (
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/[0.03] via-transparent to-black/[0.08]" />
+          )}
 
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="text-[13px] font-semibold leading-tight tracking-tight text-slate-50">
+          {isWorldModelEvent ? (
+            <div className="relative flex flex-col">
+              {/* Header section with icon and title */}
+              <div className="flex items-start gap-3.5 px-4 py-4">
+                {/* Animated icon with glow effect */}
+                <motion.div
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                  className="relative mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center"
+                >
+                  {/* Glow effect */}
+                  <div className="absolute inset-0 rounded-full bg-gradient-to-br from-emerald-400/20 to-teal-500/20 blur-md" />
+                  {/* Icon container */}
+                  <div className="relative flex h-10 w-10 items-center justify-center rounded-full border border-emerald-400/20 bg-gradient-to-br from-emerald-400/10 to-teal-500/10 shadow-inner">
+                    <Globe className="h-4.5 w-4.5 text-emerald-300" />
+                  </div>
+                  {/* Pulse ring */}
+                  <motion.div
+                    className="absolute inset-0 rounded-full border border-emerald-400/30"
+                    animate={{
+                      scale: [1, 1.3, 1],
+                      opacity: [0.5, 0, 0.5],
+                    }}
+                    transition={{
+                      duration: 2.5,
+                      repeat: Infinity,
+                      ease: "easeInOut",
+                    }}
+                  />
+                </motion.div>
+
+                {/* Title and metadata */}
+                <div className="min-w-0 flex-1 pt-0.5">
+                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+                    <span className="text-[13.5px] font-semibold leading-tight tracking-tight text-slate-50">
                       {worldModelTitle}
                     </span>
                     {worldModelSubtitle && (
-                      <span className="text-[11px] text-slate-400">
-                        {worldModelSubtitle}
-                      </span>
+                      <>
+                        <span className="text-slate-600">·</span>
+                        <span className="text-[11.5px] text-slate-400/90">
+                          {worldModelSubtitle}
+                        </span>
+                      </>
                     )}
                   </div>
 
                   {worldModelCounts && (
-                    <div className="mt-2 inline-flex items-center rounded-full border border-white/8 bg-white/4 px-2.5 py-1 text-[10.5px] font-mono text-slate-300/90">
+                    <motion.div
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.1 }}
+                      className="mt-2.5 inline-flex items-center gap-1.5 rounded-full border border-white/[0.06] bg-white/[0.03] px-3 py-1.5 text-[10.5px] font-mono text-slate-300/95 shadow-sm"
+                    >
+                      <Sparkles className="h-3 w-3 text-slate-400/70" />
                       {worldModelCounts}
-                    </div>
+                    </motion.div>
                   )}
                 </div>
               </div>
 
+              {/* __CONTINUE_PART5__ */}
+
+              {/* Timeline section with details */}
               {(worldModelRows.length > 0 || railState.details.length > 0) && (
-                <div className="border-t border-white/6 px-3.5 py-3">
-                  <div className="flex flex-col gap-1.5">
+                <div className="relative border-t border-white/[0.05] bg-black/10 px-4 py-3.5">
+                  {/* Vertical timeline line */}
+                  <div className="absolute left-[1.875rem] top-0 bottom-0 w-px bg-gradient-to-b from-slate-700/50 via-slate-600/30 to-transparent" />
+
+                  <div className="flex flex-col gap-2.5">
+                    {/* Status details with timeline nodes */}
                     <AnimatePresence mode="popLayout">
                       {railState.details.slice(-3).map((entry, index) => (
                         <motion.div
@@ -317,16 +418,25 @@ export function AIResponseStatusRail({
                           initial="initial"
                           animate="enter"
                           exit="exit"
-                          className="flex items-start gap-2 text-[11px] leading-relaxed text-slate-300/86"
+                          className="relative flex items-start gap-3 pl-0.5"
                         >
-                          <span className="mt-[0.24rem] text-[10px] font-semibold text-slate-500">
-                            {index === 0 ? "•" : "·"}
+                          {/* Timeline node */}
+                          <motion.div
+                            variants={TIMELINE_NODE_VARIANTS}
+                            className="relative z-10 mt-1.5 flex h-2 w-2 shrink-0 items-center justify-center"
+                          >
+                            <div className="h-1.5 w-1.5 rounded-full border border-slate-500/50 bg-slate-600/80 shadow-sm" />
+                          </motion.div>
+
+                          {/* Content */}
+                          <span className="min-w-0 flex-1 break-words pt-0.5 text-[11.5px] leading-relaxed text-slate-300/90">
+                            {entry.text}
                           </span>
-                          <span className="min-w-0 flex-1 break-words">{entry.text}</span>
                         </motion.div>
                       ))}
                     </AnimatePresence>
 
+                    {/* World model updates with colored timeline nodes */}
                     <AnimatePresence mode="popLayout">
                       {worldModelRows.map((row) => (
                         <motion.div
@@ -335,19 +445,36 @@ export function AIResponseStatusRail({
                           initial="initial"
                           animate="enter"
                           exit="exit"
-                          className="flex items-start gap-2 text-[11px] leading-relaxed text-slate-200/88"
+                          className="relative flex items-start gap-3 pl-0.5"
                         >
-                          <span
-                            className={cn(
-                              "mt-[0.24rem] text-[10px] font-semibold",
-                              row.tone === "emerald" && "text-emerald-300/80",
-                              row.tone === "sky" && "text-sky-300/80",
-                              row.tone === "amber" && "text-amber-300/80",
-                            )}
+                          {/* Colored timeline node */}
+                          <motion.div
+                            variants={TIMELINE_NODE_VARIANTS}
+                            className="relative z-10 mt-1.5 flex h-2 w-2 shrink-0 items-center justify-center"
                           >
-                            {row.label}
+                            <div
+                              className={cn(
+                                "h-2 w-2 rounded-full shadow-lg",
+                                row.tone === "emerald" && "border border-emerald-400/40 bg-emerald-400/90 shadow-emerald-400/50",
+                                row.tone === "sky" && "border border-sky-400/40 bg-sky-400/90 shadow-sky-400/50",
+                                row.tone === "amber" && "border border-amber-400/40 bg-amber-400/90 shadow-amber-400/50",
+                              )}
+                            />
+                            {/* Glow effect */}
+                            <div
+                              className={cn(
+                                "absolute inset-0 rounded-full blur-sm",
+                                row.tone === "emerald" && "bg-emerald-400/30",
+                                row.tone === "sky" && "bg-sky-400/30",
+                                row.tone === "amber" && "bg-amber-400/30",
+                              )}
+                            />
+                          </motion.div>
+
+                          {/* Content */}
+                          <span className="min-w-0 flex-1 break-words pt-0.5 text-[11.5px] leading-relaxed text-slate-200/95">
+                            {row.text}
                           </span>
-                          <span className="min-w-0 flex-1 break-words">{row.text}</span>
                         </motion.div>
                       ))}
                     </AnimatePresence>
@@ -355,6 +482,9 @@ export function AIResponseStatusRail({
                 </div>
               )}
 
+              {/* __CONTINUE_PART6__ */}
+
+              {/* Upstream request loader section */}
               <AnimatePresence>
                 {isUpstreamRequest && (
                   <motion.div
@@ -363,32 +493,34 @@ export function AIResponseStatusRail({
                     initial="initial"
                     animate="enter"
                     exit="exit"
-                    className="flex items-center gap-2.5 border-t border-white/6 px-3.5 py-2.5"
+                    className="flex items-center gap-3 border-t border-white/[0.05] bg-gradient-to-r from-blue-500/[0.03] to-transparent px-4 py-3"
                   >
                     <MathCurveLoader
                       curve="rose3"
-                      size={20}
+                      size={22}
                       particles={18}
                       trail={0.3}
                       loopMs={2400}
                       pulseMs={3200}
                       className="relative z-10"
                     />
-                    <span className="flex min-w-0 items-center gap-1.5 text-[10.5px] font-mono uppercase tracking-[0.1em] text-slate-400/90">
-                      <Clock3 className="h-3 w-3 shrink-0" />
-                      <span className="truncate">{upstreamLabel}</span>
-                    </span>
-                    <span className="flex items-center gap-1.5 text-[10.5px] font-mono text-slate-500/80">
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      <Clock3 className="h-3.5 w-3.5 shrink-0 text-slate-400/80" />
+                      <span className="truncate text-[11px] font-mono uppercase tracking-[0.08em] text-slate-400/95">
+                        {upstreamLabel}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10.5px] font-mono text-slate-500/90">
                       <ArrowRight className="h-3 w-3 shrink-0" />
                       <span>{upstreamHint ?? (String(upstreamElapsed) + "s")}</span>
-                    </span>
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>
             </div>
           ) : (
             <>
-              {/* Step label */}
+              {/* Simple mode (non-world-model) */}
               <motion.div variants={DETAIL_VARIANTS} className="flex items-center gap-2">
                 <span
                   className={
@@ -400,7 +532,6 @@ export function AIResponseStatusRail({
                 </span>
               </motion.div>
 
-              {/* World model goal */}
               {wmSummary?.goal && (
                 <motion.div
                   variants={DETAIL_VARIANTS}
@@ -410,7 +541,6 @@ export function AIResponseStatusRail({
                 </motion.div>
               )}
 
-              {/* World model summary chip */}
               {wmSummary && (wmSummary.facts > 0 || wmSummary.assumptions > 0 || wmSummary.unknowns > 0) && (
                 <motion.div
                   variants={DETAIL_VARIANTS}
@@ -440,7 +570,8 @@ export function AIResponseStatusRail({
                 </motion.div>
               )}
 
-              {/* World model update content snippets */}
+              {/* __CONTINUE_PART7__ */}
+
               {wmSummary && wmSummary.updateFacts.length > 0 && (
                 <motion.div variants={DETAIL_VARIANTS} className="mt-0.5 flex flex-col gap-0.5">
                   {wmSummary.updateFacts.map((fact, i) => (
@@ -454,7 +585,6 @@ export function AIResponseStatusRail({
                 </motion.div>
               )}
 
-              {/* Status detail lines */}
               <AnimatePresence mode="popLayout">
                 {railState.details.map((entry) => (
                   <motion.div
@@ -470,7 +600,6 @@ export function AIResponseStatusRail({
                 ))}
               </AnimatePresence>
 
-              {/* MathCurveLoader for upstream requests */}
               <AnimatePresence>
                 {isUpstreamRequest && (
                   <motion.div
