@@ -421,7 +421,7 @@ pub async fn execute_local_orchestrated_chat(
         })
         .flatten();
     let mut reused_existing_pool_binding = false;
-    let model_connection = match selection_mode {
+    let mut model_connection = match selection_mode {
         LocalModelSelectionMode::ExactProvider => {
             resolve_provider_model_connection(
                 app_state,
@@ -472,6 +472,11 @@ pub async fn execute_local_orchestrated_chat(
             }
         }
     };
+    if matches!(selection_mode, LocalModelSelectionMode::Pool)
+        && model_connection.failover_pool_key.is_none()
+    {
+        model_connection.failover_pool_key = model_connection.logical_model_key.clone();
+    }
     let provider_model_id = model_connection.provider_model_id.clone();
     let model_id = model_connection.model_id.clone();
     if !input.compare_only && input.persist_runtime_artifacts {

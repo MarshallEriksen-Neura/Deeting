@@ -2,12 +2,12 @@
 
 use super::bandit_selector::{
     is_in_cooldown, score_arm, score_epsilon_greedy, score_success_rate, score_thompson, score_ucb,
-    select_arm, BanditConfig, BanditStrategy,
+    select_arm, select_arm_excluding, BanditConfig, BanditStrategy,
 };
 use crate::modules::providers::types::BanditArmState;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 fn arm(arm_id: &str, alpha: f64, beta: f64, successes: i64, failures: i64) -> BanditArmState {
     BanditArmState {
@@ -164,6 +164,39 @@ fn select_arm_skips_cooldown_arms() {
         "2025-01-01T00:00:00Z",
     );
     assert_eq!(picked, Some(&"b".to_string()));
+}
+
+#[test]
+fn select_arm_can_reselect_next_best_after_round_exclusion() {
+    let failed = arm("failed", 100.0, 1.0, 99, 0);
+    let next_best = arm("next-best", 80.0, 1.0, 79, 0);
+    let weak = arm("weak", 1.0, 80.0, 0, 79);
+    let mut map: HashMap<String, &BanditArmState> = HashMap::new();
+    map.insert("failed".to_string(), &failed);
+    map.insert("next-best".to_string(), &next_best);
+    map.insert("weak".to_string(), &weak);
+
+    let candidates = vec![
+        "failed".to_string(),
+        "next-best".to_string(),
+        "weak".to_string(),
+    ];
+    let cfg = BanditConfig {
+        epsilon: 0.0,
+        ..BanditConfig::default()
+    };
+    let excluded = HashSet::from(["failed".to_string()]);
+    let picked = select_arm_excluding(
+        &candidates,
+        |id| id.clone(),
+        &map,
+        BanditStrategy::EpsilonGreedy,
+        &cfg,
+        "2025-01-01T00:00:00Z",
+        &excluded,
+    );
+
+    assert_eq!(picked, Some(&"next-best".to_string()));
 }
 
 #[test]

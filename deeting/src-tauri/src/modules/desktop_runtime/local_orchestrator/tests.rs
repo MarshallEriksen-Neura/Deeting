@@ -729,6 +729,7 @@ fn pool_request_matches_model_connection_checks_pool_key_model_id_and_provider_m
         model_id: "gpt-4o".to_string(),
         logical_model_key: Some("gpt-4o".to_string()),
         protocol_family: "openai".to_string(),
+        failover_pool_key: None,
     };
 
     assert!(pool_request_matches_model_connection("gpt-4o", &connection));

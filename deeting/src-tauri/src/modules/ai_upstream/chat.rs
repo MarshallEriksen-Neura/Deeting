@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::modules::ai_upstream::gateway_log_recorder::{
     build_gateway_log_meta, calculate_token_cost, extract_billing_amount_from_response,
@@ -15,6 +15,7 @@ use crate::modules::providers::request_runtime::{
     prepare_provider_request_from_canonical_request, send_prepared_json_request_with_retry,
     UpstreamRetryPolicy,
 };
+use crate::modules::providers::types::ProviderModel;
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
 use uuid::Uuid;
@@ -73,19 +74,14 @@ fn inject_runtime_metrics(
     }
 }
 
-fn normalize_model_pool_key(
-    model: &crate::modules::providers::types::ProviderModel,
-) -> Option<String> {
+fn normalize_model_pool_key(model: &ProviderModel) -> Option<String> {
     model
         .unified_model_id
         .clone()
         .or_else(|| (!model.model_id.trim().is_empty()).then(|| model.model_id.clone()))
 }
 
-fn model_matches_requested(
-    model: &crate::modules::providers::types::ProviderModel,
-    requested: &str,
-) -> bool {
+fn model_matches_requested(model: &ProviderModel, requested: &str) -> bool {
     if requested.is_empty() {
         return false;
     }
@@ -102,6 +98,10 @@ fn model_matches_requested(
             .as_deref()
             .map(|value| value.eq_ignore_ascii_case(requested))
             .unwrap_or(false)
+}
+
+fn selected_model_failover_pool_key(model: &ProviderModel) -> Option<String> {
+    normalize_model_pool_key(model)
 }
 
 pub(crate) async fn resolve_provider_model_connection(
@@ -150,12 +150,27 @@ pub(crate) async fn resolve_provider_model_connection(
             model.upstream_path.as_str(),
         )
         .to_string(),
+        failover_pool_key: None,
     })
 }
 
 pub(crate) async fn resolve_local_model_pool_connection(
     app_state: &AppState,
     requested_model: &str,
+) -> Result<LocalModelConnection, String> {
+    let excluded_provider_model_ids = HashSet::new();
+    resolve_local_model_pool_connection_excluding(
+        app_state,
+        requested_model,
+        &excluded_provider_model_ids,
+    )
+    .await
+}
+
+async fn resolve_local_model_pool_connection_excluding(
+    app_state: &AppState,
+    requested_model: &str,
+    excluded_provider_model_ids: &HashSet<String>,
 ) -> Result<LocalModelConnection, String> {
     let models = app_state
         .providers
@@ -180,30 +195,16 @@ pub(crate) async fn resolve_local_model_pool_connection(
         return Err(format!("requested model pool not found: {requested_model}"));
     }
 
-    let selected = if candidate_models.len() == 1 {
-        candidate_models[0].clone()
-    } else {
-        select_model_by_bandit(app_state, &candidate_models).await
-    };
-    Ok(LocalModelConnection {
-        provider_model_id: selected.id.to_string(),
-        model_id: selected.model_id.clone(),
-        logical_model_key: normalize_model_pool_key(&selected),
-        protocol_family: infer_protocol_family(
-            app_state
-                .providers
-                .store
-                .get_instance_connection(&selected.instance_id.to_string())
-                .await
-                .map_err(to_string)?
-                .ok_or_else(|| "provider instance connection not found".to_string())?
-                .protocol
-                .as_deref()
-                .unwrap_or("openai"),
-            selected.upstream_path.as_str(),
-        )
-        .to_string(),
-    })
+    let selected =
+        select_model_by_bandit_excluding(app_state, &candidate_models, excluded_provider_model_ids)
+            .await
+            .ok_or_else(|| format!("requested model pool exhausted: {requested_model}"))?;
+    local_model_connection_for_model(
+        app_state,
+        &selected,
+        selected_model_failover_pool_key(&selected),
+    )
+    .await
 }
 
 pub(crate) async fn resolve_local_model_connection(
@@ -239,56 +240,43 @@ pub(crate) async fn resolve_local_model_connection(
         } else {
             select_model_by_bandit(app_state, &candidate_models).await
         };
-        return Ok(LocalModelConnection {
-            provider_model_id: selected.id.to_string(),
-            model_id: selected.model_id.clone(),
-            logical_model_key: normalize_model_pool_key(&selected),
-            protocol_family: infer_protocol_family(
-                app_state
-                    .providers
-                    .store
-                    .get_instance_connection(&selected.instance_id.to_string())
-                    .await
-                    .map_err(to_string)?
-                    .ok_or_else(|| "provider instance connection not found".to_string())?
-                    .protocol
-                    .as_deref()
-                    .unwrap_or("openai"),
-                selected.upstream_path.as_str(),
-            )
-            .to_string(),
-        });
+        return local_model_connection_for_model(
+            app_state,
+            &selected,
+            selected_model_failover_pool_key(&selected),
+        )
+        .await;
     }
 
     let selected = select_model_by_bandit(app_state, &models).await;
-    Ok(LocalModelConnection {
-        provider_model_id: selected.id.to_string(),
-        model_id: selected.model_id.clone(),
-        logical_model_key: normalize_model_pool_key(&selected),
-        protocol_family: infer_protocol_family(
-            app_state
-                .providers
-                .store
-                .get_instance_connection(&selected.instance_id.to_string())
-                .await
-                .map_err(to_string)?
-                .ok_or_else(|| "provider instance connection not found".to_string())?
-                .protocol
-                .as_deref()
-                .unwrap_or("openai"),
-            selected.upstream_path.as_str(),
-        )
-        .to_string(),
-    })
+    local_model_connection_for_model(
+        app_state,
+        &selected,
+        selected_model_failover_pool_key(&selected),
+    )
+    .await
 }
 
-async fn select_model_by_bandit(
+async fn select_model_by_bandit(app_state: &AppState, models: &[ProviderModel]) -> ProviderModel {
+    let excluded_provider_model_ids = HashSet::new();
+    select_model_by_bandit_excluding(app_state, models, &excluded_provider_model_ids)
+        .await
+        .unwrap_or_else(|| models[0].clone())
+}
+
+async fn select_model_by_bandit_excluding(
     app_state: &AppState,
-    models: &[crate::modules::providers::types::ProviderModel],
-) -> crate::modules::providers::types::ProviderModel {
-    use crate::modules::providers::bandit_selector::{select_arm, BanditConfig, BanditStrategy};
+    models: &[ProviderModel],
+    excluded_provider_model_ids: &HashSet<String>,
+) -> Option<ProviderModel> {
+    use crate::modules::providers::bandit_selector::{
+        select_arm_excluding, BanditConfig, BanditStrategy,
+    };
     use crate::modules::providers::store::{BANDIT_DEFAULT_SCENE, BANDIT_DEFAULT_STRATEGY};
 
+    if models.is_empty() {
+        return None;
+    }
     let current_time_rfc3339 = now_rfc3339();
     let arms = app_state
         .providers
@@ -312,16 +300,43 @@ async fn select_model_by_bandit(
         ..BanditConfig::default()
     };
 
-    select_arm(
+    select_arm_excluding(
         models,
         |model| model.id.to_string(),
         &arm_map,
         strategy,
         &cfg,
         &current_time_rfc3339,
+        excluded_provider_model_ids,
     )
     .cloned()
-    .unwrap_or_else(|| models[0].clone())
+}
+
+async fn local_model_connection_for_model(
+    app_state: &AppState,
+    model: &ProviderModel,
+    failover_pool_key: Option<String>,
+) -> Result<LocalModelConnection, String> {
+    Ok(LocalModelConnection {
+        provider_model_id: model.id.to_string(),
+        model_id: model.model_id.clone(),
+        logical_model_key: normalize_model_pool_key(model),
+        protocol_family: infer_protocol_family(
+            app_state
+                .providers
+                .store
+                .get_instance_connection(&model.instance_id.to_string())
+                .await
+                .map_err(to_string)?
+                .ok_or_else(|| "provider instance connection not found".to_string())?
+                .protocol
+                .as_deref()
+                .unwrap_or("openai"),
+            model.upstream_path.as_str(),
+        )
+        .to_string(),
+        failover_pool_key,
+    })
 }
 
 pub(crate) async fn request_provider_chat_completion(
@@ -345,7 +360,38 @@ pub(crate) async fn request_provider_chat_completion(
         temperature,
         max_tokens,
         reasoning,
+        None,
         trace_id,
+        HashSet::new(),
+    )
+    .await
+}
+
+pub(crate) async fn request_provider_chat_completion_with_pool_failover(
+    app_state: &AppState,
+    provider_model_id: &str,
+    model_id: &str,
+    messages: Vec<LocalChatInputMessage>,
+    tools: Option<serde_json::Value>,
+    temperature: Option<f32>,
+    max_tokens: Option<u32>,
+    reasoning: ReasoningRequestConfig,
+    failover_pool_key: Option<&str>,
+    trace_id: Option<&str>,
+    _session_id: Option<&str>,
+) -> Result<serde_json::Value, String> {
+    request_provider_chat_completion_inner(
+        app_state,
+        provider_model_id,
+        model_id,
+        messages,
+        tools,
+        temperature,
+        max_tokens,
+        reasoning,
+        failover_pool_key,
+        trace_id,
+        HashSet::new(),
     )
     .await
 }
@@ -448,6 +494,72 @@ pub(crate) fn parse_structured_tool_arguments(
 }
 
 async fn request_provider_chat_completion_inner(
+    app_state: &AppState,
+    provider_model_id: &str,
+    model_id: &str,
+    messages: Vec<LocalChatInputMessage>,
+    tools: Option<serde_json::Value>,
+    temperature: Option<f32>,
+    max_tokens: Option<u32>,
+    reasoning: ReasoningRequestConfig,
+    failover_pool_key: Option<&str>,
+    trace_id: Option<&str>,
+    mut failed_provider_model_ids: HashSet<String>,
+) -> Result<serde_json::Value, String> {
+    let mut current_provider_model_id = provider_model_id.to_string();
+    let mut current_model_id = model_id.to_string();
+
+    loop {
+        match request_provider_chat_completion_attempt(
+            app_state,
+            &current_provider_model_id,
+            &current_model_id,
+            messages.clone(),
+            tools.clone(),
+            temperature,
+            max_tokens,
+            reasoning.clone(),
+            trace_id,
+        )
+        .await
+        {
+            Ok(response) => return Ok(response),
+            Err(err) => {
+                failed_provider_model_ids.insert(current_provider_model_id.clone());
+                let Some(pool_key) = failover_pool_key
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                else {
+                    return Err(err);
+                };
+                let Ok(next_connection) = resolve_local_model_pool_connection_excluding(
+                    app_state,
+                    pool_key,
+                    &failed_provider_model_ids,
+                )
+                .await
+                else {
+                    return Err(err);
+                };
+                let next_provider_model_id = next_connection.provider_model_id;
+                if next_provider_model_id == current_provider_model_id {
+                    return Err(err);
+                }
+                log::warn!(
+                    "provider pool failover after upstream failure pool_key={} failed_provider_model_id={} next_provider_model_id={} err={}",
+                    pool_key,
+                    current_provider_model_id,
+                    next_provider_model_id,
+                    err
+                );
+                current_provider_model_id = next_provider_model_id;
+                current_model_id = next_connection.model_id;
+            }
+        }
+    }
+}
+
+async fn request_provider_chat_completion_attempt(
     app_state: &AppState,
     provider_model_id: &str,
     model_id: &str,

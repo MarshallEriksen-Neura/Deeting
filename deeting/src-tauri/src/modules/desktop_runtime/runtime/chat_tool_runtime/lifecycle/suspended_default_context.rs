@@ -18,6 +18,7 @@ pub(super) fn fallback_chat_runtime_context_for_execution_graph(
             provider_model_id: "deeting-os".to_string(),
             logical_model_key: None,
             protocol_family: "openai_chat".to_string(),
+            failover_pool_key: None,
         },
         orchestrated_messages: Vec::new(),
         world_model_frame: None,

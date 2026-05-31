@@ -1293,6 +1293,7 @@ mod tests {
             model_id: "gpt-5.4".to_string(),
             logical_model_key: None,
             protocol_family: "openai_responses".to_string(),
+            failover_pool_key: None,
         };
 
         let (model, provider_model_id) =
@@ -1312,6 +1313,7 @@ mod tests {
             model_id: "gpt-5.4".to_string(),
             logical_model_key: None,
             protocol_family: "openai_responses".to_string(),
+            failover_pool_key: None,
         };
 
         let (model, provider_model_id) = resolve_custom_task_agent_model_selection(

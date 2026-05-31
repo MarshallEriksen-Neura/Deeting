@@ -6,7 +6,7 @@
 use log::warn;
 use rand::Rng;
 use rand_distr::{Beta, Distribution};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::modules::providers::types::BanditArmState;
 
@@ -160,6 +160,30 @@ pub fn select_arm<'a, T, F>(
 where
     F: Fn(&T) -> String,
 {
+    let excluded_arm_ids = HashSet::new();
+    select_arm_excluding(
+        candidates,
+        arm_id_of,
+        arm_map,
+        strategy,
+        cfg,
+        now_rfc3339,
+        &excluded_arm_ids,
+    )
+}
+
+pub fn select_arm_excluding<'a, T, F>(
+    candidates: &'a [T],
+    arm_id_of: F,
+    arm_map: &HashMap<String, &BanditArmState>,
+    strategy: BanditStrategy,
+    cfg: &BanditConfig,
+    now_rfc3339: &str,
+    excluded_arm_ids: &HashSet<String>,
+) -> Option<&'a T>
+where
+    F: Fn(&T) -> String,
+{
     if candidates.is_empty() {
         return None;
     }
@@ -167,8 +191,13 @@ where
     let mut best_idx: Option<usize> = None;
     let mut best_score = f64::NEG_INFINITY;
     let mut first_eligible: Option<usize> = None;
+    let mut first_not_excluded: Option<usize> = None;
     for (idx, candidate) in candidates.iter().enumerate() {
         let arm_id = arm_id_of(candidate);
+        if excluded_arm_ids.contains(arm_id.as_str()) {
+            continue;
+        }
+        first_not_excluded.get_or_insert(idx);
         let state = arm_map.get(arm_id.as_str()).copied();
         if let Some(s) = state {
             if is_in_cooldown(s, now_rfc3339) {
@@ -182,6 +211,6 @@ where
             best_idx = Some(idx);
         }
     }
-    let pick = best_idx.or(first_eligible).unwrap_or(0);
+    let pick = best_idx.or(first_eligible).or(first_not_excluded)?;
     Some(&candidates[pick])
 }

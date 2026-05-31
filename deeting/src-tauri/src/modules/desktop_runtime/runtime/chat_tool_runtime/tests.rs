@@ -327,6 +327,7 @@ fn world_model_update_prompt_mode_requires_delta_after_tool_results() {
             provider_model_id: "deepseek-v3.1".to_string(),
             logical_model_key: Some("deeting-os".to_string()),
             protocol_family: "openai_chat".to_string(),
+            failover_pool_key: None,
         },
         orchestrated_messages: Vec::new(),
         world_model_frame: Some(frame),
@@ -347,6 +348,7 @@ fn world_model_update_prompt_mode_requires_delta_after_tool_results() {
         runtime_transition_blocks: Vec::new(),
         realtime_emitter: LocalRealtimeToolTraceEmitter::new(None, Some("trace-wm-mode-1"), None),
         selected_knowledge_file_ids: Vec::new(),
+        session_discovered_tools: std::collections::HashSet::new(),
     };
 
     assert_eq!(
@@ -1182,6 +1184,7 @@ fn build_persisted_resume_assistant_meta_carries_runtime_metadata() {
         provider_model_id: "deepseek-v3.1".to_string(),
         logical_model_key: Some("deeting-os".to_string()),
         protocol_family: "openai_chat".to_string(),
+        failover_pool_key: None,
     };
 
     let meta = build_persisted_resume_assistant_meta(&response, &model_connection);
@@ -1400,6 +1403,7 @@ fn build_max_rounds_exceeded_response_appends_visible_notice() {
             provider_model_id: "deepseek-v3.1".to_string(),
             logical_model_key: Some("deeting-os".to_string()),
             protocol_family: "openai_chat".to_string(),
+            failover_pool_key: None,
         },
         orchestrated_messages: Vec::new(),
         world_model_frame: None,
@@ -1433,6 +1437,7 @@ fn build_max_rounds_exceeded_response_appends_visible_notice() {
             None,
         ),
         selected_knowledge_file_ids: Vec::new(),
+        session_discovered_tools: std::collections::HashSet::new(),
     };
 
     let response = build_max_rounds_exceeded_response(&state);
@@ -1490,6 +1495,7 @@ fn rewind_round_for_post_approval_continuation_does_not_consume_user_round_budge
             provider_model_id: "deepseek-v3.1".to_string(),
             logical_model_key: Some("deeting-os".to_string()),
             protocol_family: "openai_chat".to_string(),
+            failover_pool_key: None,
         },
         orchestrated_messages: Vec::new(),
         world_model_frame: None,
@@ -1514,6 +1520,7 @@ fn rewind_round_for_post_approval_continuation_does_not_consume_user_round_budge
             None,
         ),
         selected_knowledge_file_ids: Vec::new(),
+        session_discovered_tools: std::collections::HashSet::new(),
     };
 
     rewind_round_for_post_approval_continuation(&mut state);
@@ -1622,6 +1629,7 @@ fn suspended_execution_keeps_remaining_pending_approvals_after_one_is_approved()
             provider_model_id: "deepseek-v3.1".to_string(),
             logical_model_key: Some("deeting-os".to_string()),
             protocol_family: "openai_chat".to_string(),
+            failover_pool_key: None,
         },
         orchestrated_messages: Vec::new(),
         world_model_frame: None,
@@ -1759,6 +1767,7 @@ fn sync_remaining_pending_approvals_prefers_token_bound_graph_identity() {
             provider_model_id: "deeting-os".to_string(),
             logical_model_key: None,
             protocol_family: "openai_chat".to_string(),
+            failover_pool_key: None,
         },
         orchestrated_messages: Vec::new(),
         world_model_frame: None,
