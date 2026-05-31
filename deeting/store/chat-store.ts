@@ -216,6 +216,7 @@ interface ChatStore {
   // === 配置状态 ===
   config: ChatConfig
   streamEnabled: boolean
+  thoughtBlockDefaultOpen: boolean
   models: ModelInfo[]
 
   // === 状态信息 ===
@@ -271,6 +272,7 @@ interface ChatStore {
   clearPendingTakeover: () => void
   setConfig: (config: Partial<ChatConfig>) => void
   setStreamEnabled: (enabled: boolean) => void
+  setThoughtBlockDefaultOpen: (open: boolean) => void
   setModels: (models: ModelInfo[]) => void
   setIsLoading: (loading: boolean) => void
   setGlobalLoading: (loading: boolean) => void
@@ -329,6 +331,7 @@ export const useChatStore = create<ChatStore>()(
         reasoningEffort: 'medium',
       },
       streamEnabled: false,
+      thoughtBlockDefaultOpen: true,
       models: [],
 
       // === 状态信息初始值 ===
@@ -721,6 +724,7 @@ export const useChatStore = create<ChatStore>()(
         set((state) => ({ config: { ...state.config, ...newConfig } })),
 
       setStreamEnabled: (enabled) => set({ streamEnabled: enabled }),
+      setThoughtBlockDefaultOpen: (open) => set({ thoughtBlockDefaultOpen: open }),
 
       setModels: (models) =>
         set((state) => (areStoreValuesEqual(state.models, models) ? state : { models })),
@@ -881,11 +885,17 @@ export const useChatStore = create<ChatStore>()(
     }),
     {
       name: "deeting-chat-store",
+      version: 1,
       storage: createJSONStorage(resolveChatPersistStorage),
+      migrate: (persistedState) => ({
+        ...((persistedState as Partial<ChatStore> | undefined) ?? {}),
+        thoughtBlockDefaultOpen: true,
+      }),
       partialize: (state) => ({
         // 只持久化配置，不持久化会话数据
         config: state.config,
         streamEnabled: state.streamEnabled,
+        thoughtBlockDefaultOpen: state.thoughtBlockDefaultOpen,
       }),
       merge: (persistedState, currentState) => {
         const persisted = (persistedState as Partial<ChatStore> | undefined) ?? {}

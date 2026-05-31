@@ -32,6 +32,7 @@ import { resolveMemoryInjections } from "@/lib/chat/status-detail";
 import { MemoryInjectionBadge } from "@/components/chat/messages/ai-response-bubble/memory-injection-badge";
 import { WorldModelPanel } from "@/components/chat/messages/ai-response-bubble/world-model-panel";
 import { AssistantActivityTimeline } from "@/components/chat/messages/ai-response-bubble/assistant-activity-timeline";
+import { useChatStore } from "@/store/chat-store";
 
 const ViewBlock = dynamic(() => import("@/components/views/view-block"), {
   ssr: false,
@@ -154,6 +155,8 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
     statusCode = null,
     statusMeta = null,
   }) {
+    const thoughtBlockDefaultOpen = useChatStore((s) => s.thoughtBlockDefaultOpen);
+
     const hasContent = useMemo(
       () =>
         parts.some(
@@ -392,7 +395,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
                 if (part.type === "thought") {
                   return (
                     <AnimatedBlock key={`thought-${index}`}>
-                      <ThoughtBlock content={part.content} cost={part.cost} />
+                      <ThoughtBlock content={part.content} cost={part.cost} defaultOpen={thoughtBlockDefaultOpen} />
                     </AnimatedBlock>
                   );
                 }

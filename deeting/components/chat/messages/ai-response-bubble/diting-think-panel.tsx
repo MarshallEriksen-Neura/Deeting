@@ -16,6 +16,7 @@ import type { DitingThinkFrameBlock } from "@/lib/chat/message-protocol"
 import { useI18n } from "@/hooks/use-i18n"
 import { cn } from "@/lib/utils"
 import { MathCurveLoader } from "@/components/chat/visuals/math-curve-loader"
+import { useChatStore } from "@/store/chat-store"
 
 interface DitingThinkPanelProps {
   block: DitingThinkFrameBlock
@@ -193,7 +194,8 @@ function ProposedNextPhasePreview({ phase, t }: { phase: ProposedNextPhase; t: T
 export const DitingThinkPanel = memo<DitingThinkPanelProps>(
   function DitingThinkPanel({ block, contradicted = false }) {
     const t = useI18n("chat")
-    const [open, setOpen] = useState(false)
+    const thoughtBlockDefaultOpen = useChatStore((state) => state.thoughtBlockDefaultOpen)
+    const [open, setOpen] = useState(thoughtBlockDefaultOpen)
 
     const sections = useMemo(() => buildSections(block), [block])
     const filledCount = useMemo(() => countFilledSections(sections), [sections])

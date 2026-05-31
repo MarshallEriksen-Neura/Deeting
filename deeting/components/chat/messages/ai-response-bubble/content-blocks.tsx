@@ -37,9 +37,9 @@ export const TypingTextBlock = memo<{
   );
 });
 
-export const ThoughtBlock = memo<{ content?: string; cost?: string }>(
-  function ThoughtBlock({ content, cost }) {
-    const [isOpen, setIsOpen] = useState(false);
+export const ThoughtBlock = memo<{ content?: string; cost?: string; defaultOpen?: boolean }>(
+  function ThoughtBlock({ content, cost, defaultOpen = false }) {
+    const [isOpen, setIsOpen] = useState(defaultOpen);
     const t = useI18n("chat");
 
     return (
