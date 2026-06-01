@@ -3,8 +3,7 @@ use std::collections::{BTreeSet, HashSet};
 use serde_json::{json, Map, Value};
 
 use super::runtime_event_projection::projection::{
-    project_capability_exposure_decision_blocks,
-    CapabilityExposureProjectionInput,
+    project_capability_exposure_decision_blocks, CapabilityExposureProjectionInput,
 };
 use super::search_feedback::{
     compute_feedback_boost, historical_affinity_from_rows, query_affinity_from_rows,
@@ -482,7 +481,7 @@ fn build_search_result_payload(
                     "programmatic_path": "execute_code_plan",
                     "direct_callable_capability_count": direct_callable_capability_count,
                 },
-                "usage_hint": "Prefer direct host capabilities from capability_groups.skill_tools, capability_groups.user_mcp_tools, and capability_groups.core_tools. When the task is a bounded subtask better handled by a specialist local agent, inspect delegation_targets first and prefer delegate_task(agent_id=...) for a high-match target instead of manually chaining generic tools. If no single delegation target is clearly suitable, delegate_task without agent_id may let the runtime auto-select. For recipe_groups.skills, call activate_skill with the stable skill_id before relying on package-specific procedures, then use read_skill_resource for package-local references when needed. Use shell_execute only for actual host command execution. Use execute_code_plan only for multi-step program logic, loops, branching, or result aggregation.",
+                "usage_hint": "Prefer direct host capabilities from capability_groups.skill_tools, capability_groups.user_mcp_tools, and capability_groups.core_tools. When one bounded read-only subtask is better handled by a specialist local agent, inspect delegation_targets first and prefer start_delegate_agent(agent_id=...) for a high-match target. For 2 or more independent read-only subtasks, prefer start_delegate_many and then wait_delegations rather than serial delegation. For recipe_groups.skills, call activate_skill with the stable skill_id before relying on package-specific procedures, then use read_skill_resource for package-local references when needed. Use shell_execute only for actual host command execution. Use execute_code_plan only for multi-step program logic, loops, branching, or result aggregation.",
                 "availability": {
                     "enabled_assistant_count": enabled_assistant_count,
                     "read_path_mode": read_path_mode,
@@ -669,7 +668,7 @@ fn serialize_delegation_target(
         "invocation_kind": profile.invocation_kind.as_str(),
         "tags": profile.tags,
         "preferred_for_image_generation": profile.preferred_for_image_generation,
-        "recommended_tool": "delegate_task",
+        "recommended_tool": "start_delegate_agent",
         "discoverable": profile.discoverable,
         "is_enabled": profile.is_enabled,
         "bound_callable_count": callable_count,
@@ -2918,7 +2917,8 @@ fn matches_intent(intent: &str, text: &str, asset_type: &str, _source_type: &str
                     "智能体",
                     "代理",
                 ],
-            ) || (asset_type == "tool" && text.contains("delegate_task"))
+            ) || (asset_type == "tool"
+                && (text.contains("start_delegate_agent") || text.contains("start_delegate_many")))
         }
         "realtime_lookup" => {
             contains_any(text, &["实时", "today", "今日", "天气", "stock", "行情"])
@@ -3349,7 +3349,7 @@ mod tests {
                 "invocation_kind": "image_generation",
                 "tags": ["image", "art"],
                 "preferred_for_image_generation": true,
-                "recommended_tool": "delegate_task",
+                "recommended_tool": "start_delegate_agent",
                 "discoverable": true,
                 "is_enabled": true,
                 "bound_callable_count": 1
@@ -3368,7 +3368,7 @@ mod tests {
         );
         assert_eq!(
             summary["delegation_targets"][0]["recommended_tool"],
-            json!("delegate_task")
+            json!("start_delegate_agent")
         );
         assert!(summary["delegation_targets"][0]
             .get("callable_mcp_tool_ids")
@@ -3393,7 +3393,7 @@ mod tests {
                 "invocation_kind": "image_generation",
                 "tags": ["image", "art"],
                 "preferred_for_image_generation": true,
-                "recommended_tool": "delegate_task",
+                "recommended_tool": "start_delegate_agent",
                 "discoverable": true,
                 "is_enabled": true,
                 "bound_callable_count": 2,
@@ -3416,7 +3416,7 @@ mod tests {
         );
         assert_eq!(
             full["delegation_targets"][0]["recommended_tool"],
-            json!("delegate_task")
+            json!("start_delegate_agent")
         );
     }
 
@@ -3529,14 +3529,14 @@ mod tests {
     }
 
     #[test]
-    fn rank_registry_entry_prefers_delegate_task_for_delegation_queries() {
+    fn rank_registry_entry_prefers_start_delegate_agent_for_delegation_queries() {
         let profile = QueryProfile::from_query("帮我委派一个子任务给专门智能体处理");
 
         let delegate_entry = CapabilityRegistryEntry {
             asset: json!({
-                "id": "core.delegate_task",
-                "name": "delegate_task",
-                "description": "Delegate one bounded subtask to an enabled local custom task agent and return a canonical delegated_result object.",
+                "id": "core.start_delegate_agent",
+                "name": "start_delegate_agent",
+                "description": "Start one bounded read-only delegated child agent asynchronously and return batch metadata.",
                 "asset_type": "tool",
                 "source_type": "desktop_runtime_core",
                 "metadata": {
@@ -3612,13 +3612,12 @@ mod tests {
             &profile,
             &SearchFeedbackContext::default(),
             &retrieval_scores,
-        )
-        .expect("web rank")
-        .score;
+        );
 
+        assert!(delegate_rank > 0.0, "delegate={delegate_rank}");
         assert!(
-            delegate_rank > web_rank,
-            "delegate={delegate_rank}, web={web_rank}"
+            web_rank.is_none(),
+            "web tools should not satisfy delegation queries"
         );
     }
 

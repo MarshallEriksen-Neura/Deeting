@@ -750,37 +750,62 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
             example_arguments: json!({"skill_id": "official.skills.crawler", "path": "references/usage.md"}),
         },
         CoreToolContract {
-            name: "delegate_task",
-            description: "Delegate one bounded subtask to an enabled local custom task agent and return a canonical delegated_result object. Use this only when the task is separable, a specialist local agent is available, and the parent assistant can integrate the result afterward. Do not use it for simple direct answers or to avoid final responsibility.",
+            name: "start_delegate_agent",
+            description: "Start one bounded chat-side delegated child agent asynchronously and return a batch_id plus child handle immediately. Use this for one separable read-only subtask whose result the parent will later integrate through wait_delegations. The task text is parent-authored; child system prompts must come from an existing agent_id or a predefined agent_type template.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "agent_id": {
-                        "type": "string",
-                        "description": "Optional explicit custom task agent id discovered from search_sdk. If omitted, the runtime selects the best enabled discoverable agent."
-                    },
                     "task": {
                         "type": "string",
-                        "description": "Required bounded task for the delegated agent. Include only the subtask, not broad orchestration instructions."
+                        "description": "Required bounded read-only task for the child agent. Ask for findings, evidence, risks, and next actions; do not ask the child to edit workspace state."
                     },
-                    "context_refs": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "Optional concise references to current files, messages, assets, or evidence the child should consider."
+                    "agent_type": {
+                        "type": "string",
+                        "description": "Predefined or .claude/agents/{agent_type}.md template name. Required unless agent_id is provided."
                     },
-                    "constraints": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "Optional hard constraints, non-goals, or safety boundaries for the delegated subtask."
+                    "agent_id": {
+                        "type": "string",
+                        "description": "Existing registered custom task agent id. If provided, this takes precedence over agent_type."
                     },
-                    "expected_output": {
+                    "agent_spec": {
                         "type": "object",
-                        "description": "Optional expected output contract such as {kind, schema}."
+                        "description": "Optional runtime overrides for ephemeral agent configuration. system_prompt/task_prompt are forbidden.",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "callable_mcp_tool_ids": {"type": "array", "items": {"type": "string"}},
+                            "guidance_skill_ids": {"type": "array", "items": {"type": "string"}},
+                            "callable_skill_action_refs": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "skill_id": {"type": "string"},
+                                        "action_id": {"type": "string"}
+                                    },
+                                    "required": ["skill_id", "action_id"]
+                                }
+                            },
+                            "model_config": {"type": "object"},
+                            "thinking_level": {"type": "string"},
+                            "max_rounds": {"type": "integer"},
+                            "tags": {"type": "array", "items": {"type": "string"}}
+                        },
+                        "not": {
+                            "anyOf": [
+                                {"required": ["system_prompt"]},
+                                {"required": ["task_prompt"]}
+                            ]
+                        }
+                    },
+                    "write_scope": {
+                        "type": "string",
+                        "enum": ["read_only"],
+                        "description": "Canonical async delegation is read-only in this slice. Children return structured evidence and optional world_model_delta_candidate; parent owns all writes.",
+                        "default": "read_only"
                     },
                     "max_rounds": {
                         "type": "integer",
-                        "description": "Optional maximum child-agent tool rounds. If omitted, the child inherits the current per-task execution budget. Requested values are capped by the runtime budget.",
-                        "default": 150
+                        "description": "Optional per-child round cap. If omitted, agent_spec/template max_rounds or runtime budget is used."
                     }
                 },
                 "required": ["task"]
@@ -788,35 +813,26 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
             output_schema: json!({
                 "type": "object",
                 "properties": {
-                    "type": {"type": "string"},
-                    "schema_version": {"type": "integer"},
-                    "kind": {"type": "string"},
-                    "authoritative": {"type": "boolean"},
-                    "status": {"type": "string"},
-                    "execution_id": {"type": "string"},
-                    "target": {"type": "object"},
-                    "selection": {"type": "object"},
-                    "packet_receipt": {"type": "object"},
-                    "summary": {"type": ["string", "null"]},
-                    "primary_output": {"type": ["object", "null"]},
-                    "error": {"type": ["string", "null"]}
+                    "batch_id": {"type": "string"},
+                    "child_ids": {"type": "array", "items": {"type": "string"}},
+                    "children": {"type": "array"},
+                    "progress_events": {"type": "array"}
                 },
-                "required": ["type", "schema_version", "status", "execution_id", "target"]
+                "required": ["batch_id", "child_ids", "children"]
             }),
             permission_scope: &["local_runtime", "agent_delegation"],
             read_only: false,
             mutating: true,
             risk_level: "MEDIUM",
             example_arguments: json!({
-                "task": "Review this bounded implementation plan for missing runtime constraints.",
-                "constraints": ["Do not modify files", "Return findings and risks only"],
-                "expected_output": {"kind": "findings"},
-                "max_rounds": 150
+                "task": "Review this bounded implementation plan for missing runtime constraints. Return summary, evidence, risks, next_actions, and any world_model_delta_candidate.",
+                "agent_type": "architect",
+                "write_scope": "read_only"
             }),
         },
         CoreToolContract {
-            name: "delegate_agents_start",
-            description: "Start one or more delegated chat child agents. Use agent_id for an existing custom task agent, or agent_type for an ephemeral agent built from a predefined .claude/agents/{agent_type}.md template. The task text is written by the parent model; the child system prompt always comes from the selected agent_type template. Background children return immediately and later resume the parent runtime when completed.",
+            name: "start_delegate_many",
+            description: "Start multiple independent read-only delegated chat child agents asynchronously and return batch_id plus child handles immediately. Use this instead of repeated single delegation calls whenever there are 2 or more independent subtasks, then use wait_delegations to join results. The parent remains responsible for final judgment and all world-model/workspace writes.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -872,10 +888,11 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
                                     "type": "integer",
                                     "description": "Optional per-child round cap. If omitted, agent_spec/template max_rounds or runtime budget is used."
                                 },
-                                "run_in_background": {
-                                    "type": "boolean",
-                                    "description": "When true, start the child in the background and return running status immediately. Defaults to false.",
-                                    "default": false
+                                "write_scope": {
+                                    "type": "string",
+                                    "enum": ["read_only"],
+                                    "description": "Canonical async fan-out is read-only in this slice. Children return findings/evidence and optional world_model_delta_candidate; parent owns all writes.",
+                                    "default": "read_only"
                                 }
                             },
                             "required": ["task"]
@@ -887,7 +904,12 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
             output_schema: json!({
                 "type": "object",
                 "properties": {
-                    "delegation_batch_id": {"type": "string"},
+                    "batch_id": {"type": "string"},
+                    "child_ids": {"type": "array", "items": {"type": "string"}},
+                    "progress_events": {
+                        "type": "array",
+                        "description": "Delegation progress events for status rail projection. Events include batch/child identifiers, status, and aggregate counts when available."
+                    },
                     "children": {
                         "type": "array",
                         "items": {
@@ -900,8 +922,10 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
                                 "agent_name": {"type": "string"},
                                 "agent_source": {"type": "string"},
                                 "task": {"type": "string"},
+                                "write_scope": {"type": "string"},
                                 "status": {"type": "string"},
                                 "delegated_result": {"type": ["object", "null"]},
+                                "world_model_delta_candidate": {"type": ["object", "null"]},
                                 "started_at_ms": {"type": "integer"},
                                 "completed_at_ms": {"type": ["integer", "null"]}
                             },
@@ -909,34 +933,39 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
                         }
                     }
                 },
-                "required": ["delegation_batch_id", "children"]
+                "required": ["batch_id", "child_ids", "children"]
             }),
             permission_scope: &["local_runtime", "agent_delegation"],
             read_only: false,
             mutating: true,
             risk_level: "MEDIUM",
             example_arguments: json!({
-                "tasks": [{
-                    "task": "Find authentication-related files and summarize their purpose.",
-                    "agent_type": "explore",
-                    "run_in_background": true
-                }]
+                "tasks": [
+                    {
+                        "task": "Find authentication-related files and summarize their purpose.",
+                        "agent_type": "explore"
+                    },
+                    {
+                        "task": "Map the tests covering authentication delegation.",
+                        "agent_type": "explore"
+                    }
+                ]
             }),
         },
         CoreToolContract {
-            name: "delegate_agents_status",
-            description: "Query the in-memory status of a delegate_agents_start batch. Use as an auxiliary progress check; background completion is pushed through the runtime resume path when possible.",
+            name: "delegations_status",
+            description: "Query status for a start_delegate_agent/start_delegate_many batch without waiting. Use wait_delegations when you need an explicit join.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "delegation_batch_id": {"type": "string"},
+                    "batch_id": {"type": "string"},
                     "child_run_ids": {
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "Optional child run ids. Omit to return all children in original start order."
                     }
                 },
-                "required": ["delegation_batch_id"]
+                "required": ["batch_id"]
             }),
             output_schema: json!({
                 "type": "object",
@@ -950,27 +979,91 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
             read_only: true,
             mutating: false,
             risk_level: "LOW",
-            example_arguments: json!({"delegation_batch_id": "batch-uuid"}),
+            example_arguments: json!({"batch_id": "batch-uuid"}),
         },
         CoreToolContract {
-            name: "delegate_agents_stop",
-            description: "Stop running children in a delegate_agents_start batch. Running children are aborted and marked cancelled; completed children stay completed.",
+            name: "wait_delegations",
+            description: "Explicitly wait for delegated child agents from a start_delegate_agent/start_delegate_many batch. Supports all-terminal joins, success-only joins, first failure, any success/terminal, quorum, and child subset waits. Timeout returns the latest snapshot without cancelling children. If children returned world_model_delta_candidate values, the result includes a non-authoritative parent_world_model_merge_candidate for the parent model to review and submit through world_model_update.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "delegation_batch_id": {"type": "string"},
+                    "batch_id": {"type": "string"},
+                    "child_run_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional child run ids. Omit to wait on all children in the batch."
+                    },
+                    "wait_for": {
+                        "type": "string",
+                        "enum": ["all", "all_terminal", "all_success", "any", "any_success", "any_terminal", "first_failure", "quorum"],
+                        "description": "Join policy. all/all_terminal means every selected child has reached a terminal state. quorum requires min_success.",
+                        "default": "all"
+                    },
+                    "min_success": {
+                        "type": "integer",
+                        "description": "Required when wait_for is quorum."
+                    },
+                    "timeout_ms": {
+                        "type": "integer",
+                        "description": "Maximum wait duration. Defaults to 30000 and is capped at 600000."
+                    }
+                },
+                "required": ["batch_id"]
+            }),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "batch_id": {"type": "string"},
+                    "satisfied": {"type": "boolean"},
+                    "timed_out": {"type": "boolean"},
+                    "join": {"type": ["object", "null"]},
+                    "parent_world_model_merge_candidate": {
+                        "type": ["object", "null"],
+                        "description": "Non-authoritative aggregation of child world_model_delta_candidate values. The runtime does not apply this to the parent WorldModelFrame; the parent model must decide and call world_model_update."
+                    },
+                    "progress_events": {
+                        "type": "array",
+                        "description": "Join progress events for status rail projection, including aggregate child status counts."
+                    },
+                    "children": {"type": "array"}
+                },
+                "required": ["batch_id", "satisfied", "timed_out", "children"]
+            }),
+            permission_scope: &["local_runtime", "agent_delegation"],
+            read_only: true,
+            mutating: false,
+            risk_level: "LOW",
+            example_arguments: json!({
+                "batch_id": "batch-uuid",
+                "wait_for": "all",
+                "timeout_ms": 30000
+            }),
+        },
+        CoreToolContract {
+            name: "stop_delegations",
+            description: "Stop queued or running children in a start_delegate_agent/start_delegate_many batch. Active children are aborted and marked cancelled; completed children stay completed.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "batch_id": {"type": "string"},
                     "child_run_ids": {
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "Optional child run ids. Omit to stop all running children in the batch."
                     }
                 },
-                "required": ["delegation_batch_id"]
+                "required": ["batch_id"]
             }),
             output_schema: json!({
                 "type": "object",
                 "properties": {
                     "batch_id": {"type": "string"},
+                    "scheduled_child_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Child ids that were unlocked by the core scheduler and started after the stop request."
+                    },
+                    "progress_events": {"type": "array"},
                     "stopped_children": {
                         "type": "array",
                         "items": {
@@ -978,9 +1071,10 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
                             "properties": {
                                 "child_run_id": {"type": "string"},
                                 "status": {"type": "string"},
-                                "was_running": {"type": "boolean"}
+                                "was_running": {"type": "boolean"},
+                                "was_queued": {"type": "boolean"}
                             },
-                            "required": ["child_run_id", "status", "was_running"]
+                            "required": ["child_run_id", "status", "was_running", "was_queued"]
                         }
                     }
                 },
@@ -990,7 +1084,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
             read_only: false,
             mutating: true,
             risk_level: "MEDIUM",
-            example_arguments: json!({"delegation_batch_id": "batch-uuid"}),
+            example_arguments: json!({"batch_id": "batch-uuid"}),
         },
         CoreToolContract {
             name: "execute_code_plan",

@@ -11,7 +11,7 @@ use super::super::lifecycle::{
 use super::super::tool_meta::attach_graph_metadata_to_pending_tool_meta;
 
 #[allow(clippy::too_many_arguments)]
-pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) async fn persist_delegate_task_execution_graph_snapshot(
+pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) async fn persist_delegated_execution_graph_snapshot(
     store: &McpStore,
     session_id: &str,
     trace_id: &str,
@@ -35,7 +35,7 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) async fn per
         store,
         &execution_graph,
         session_id,
-        "desktop_local_chat_delegate_task",
+        "desktop_local_chat_delegated_execution",
         request_id,
         Some("complete"),
     )

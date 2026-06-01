@@ -1,8 +1,8 @@
 mod capability_search;
 mod code_tools;
 mod context_dispatch;
-mod delegated_task;
-mod delegation_batch;
+// Phase 8: stateless delegation batch backed by persisted multi-agent snapshots.
+mod delegation_batch_stateless;
 mod execution_support;
 mod onboarding_tools;
 mod policy_tools;
@@ -17,10 +17,9 @@ pub(super) use context_dispatch::{
     execute_context_runtime_tool, execute_terminal_context_runtime_tool,
     execute_workflow_plan_runtime_tool,
 };
-pub(super) use delegated_task::execute_delegate_task_tool;
-pub(super) use delegation_batch::{
-    execute_delegate_agents_start_tool, execute_delegate_agents_status_tool,
-    execute_delegate_agents_stop_tool,
+pub(super) use delegation_batch_stateless::{
+    execute_delegations_status_tool, execute_start_delegate_agent_tool,
+    execute_start_delegate_many_tool, execute_stop_delegations_tool, execute_wait_delegations_tool,
 };
 pub(super) use execution_support::{consult_task_policy_guidance, execute_code_mode_request};
 pub(super) use onboarding_tools::execute_sys_submit_onboarding_request_tool;

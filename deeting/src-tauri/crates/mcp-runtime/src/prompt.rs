@@ -13,7 +13,7 @@ const LOCAL_ROUTER_BASE_PROMPT_TEMPLATE: &str = concat!(
     "- `search_sdk` is a reserved capability-discovery primitive. Use the exact name `search_sdk`; do not substitute another tool just because its name also contains words like `search`, `find`, `lookup`, or `query`. Domain search tools (notes, docs, memory) search their own content and do not discover runtime tools.\n",
     "- At explicit decision gates, prefer `query_task_policy` over self-reflection for structured priors on discovery, capability_attach, execution, or verification.\n",
     "- Agent Skills Progressive Disclosure: when a relevant skill is surfaced, call `activate_skill` with its stable `skill_id` to load `SKILL.md`. Use `read_skill_resource` only for package-local references, examples, or scripts named by the activated skill. Use registered skill action tools for `llm-tool.yaml` actions. Use `shell_execute` only when the activated skill describes an actual CLI. Do not treat a recipe excerpt as the whole skill.\n",
-    "- Delegation Contract: Use `delegate_task` only when the work is separable, bounded, and a relevant local task agent is available. For parallel or temporary chat-side delegation, use `delegate_agents_start` with either an existing `agent_id` or a predefined `agent_type`; the task text is parent-authored, while child system prompts must come from `.claude/agents/{agent_type}.md` or built-in templates and must not be supplied through `agent_spec`. Background children push completion through the runtime resume path; `delegate_agents_status` is only an auxiliary progress check, and `delegate_agents_stop` cancels running children without rolling back completed ones. Do not delegate simple direct answers or final user communication. Treat delegated_result as structured subtask output you integrate, not the final authority. Do not recursively orchestrate or ask the delegated agent to spawn more agents.\n",
+    "- Delegation Contract: Use `start_delegate_agent` for one read-only bounded subtask and `start_delegate_many` for 2 or more independent read-only subtasks. Start tools are asynchronous by definition and return `batch_id` plus child handles immediately. Use `wait_delegations` when you need an explicit join over a batch or child subset, `delegations_status` only as an auxiliary progress check, and `stop_delegations` to cancel queued or running children without rolling back completed ones. The task text is parent-authored, while child system prompts must come from an existing `agent_id` or a predefined `agent_type` template and must not be supplied through `agent_spec`. Async fan-out in this slice is read-only: set `write_scope: \"read_only\"` and ask children to return summary, evidence, risks, next_actions, and optional `world_model_delta_candidate`. If `wait_delegations` returns `parent_world_model_merge_candidate`, treat it as non-authoritative input; the parent must decide and submit any real frame change through `world_model_update`. Do not delegate simple direct answers or final user communication. Treat delegated_result as structured subtask output you integrate, not the final authority. Do not recursively orchestrate or ask the delegated agent to spawn more agents.\n",
     "- Ground all facts in conversation context or tool outputs. Never fabricate file paths, command outputs, or system state.\n",
     "- Error Recovery: when a tool call fails, read the error message, adjust parameters, and retry once with a different approach. If it fails again, report the error to the user with a brief diagnosis and suggest an alternative. Do not retry the identical call more than twice.\n\n",
 
@@ -214,7 +214,13 @@ mod tests {
         );
 
         assert!(prompt.contains("Delegation Contract"));
-        assert!(prompt.contains("Use `delegate_task` only when the work is separable"));
+        assert!(prompt.contains("Use `start_delegate_agent` for one read-only bounded subtask"));
+        assert!(prompt.contains("`start_delegate_many` for 2 or more independent read-only subtasks"));
+        assert!(prompt.contains("Start tools are asynchronous by definition"));
+        assert!(prompt.contains("Use `wait_delegations` when you need an explicit join"));
+        assert!(prompt.contains("`delegations_status` only as an auxiliary progress check"));
+        assert!(prompt.contains("`stop_delegations` to cancel queued or running children"));
+        assert!(prompt.contains("world_model_delta_candidate"));
         assert!(prompt.contains("Do not delegate simple direct answers"));
         assert!(prompt.contains("Treat delegated_result as structured subtask output"));
         assert!(prompt.contains("Do not recursively orchestrate"));

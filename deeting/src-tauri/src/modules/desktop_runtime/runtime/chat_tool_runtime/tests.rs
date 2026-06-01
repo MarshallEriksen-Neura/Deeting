@@ -496,7 +496,7 @@ fn reversible_or_failed_tool_meta_does_not_append_committed_action() {
 }
 
 #[test]
-fn delegate_task_preflight_blocks_when_selected_agent_has_no_executable_surface() {
+fn start_delegate_agent_preflight_blocks_when_selected_agent_has_no_executable_surface() {
     let record = DelegatedExecutionRecord {
         execution_id: "exec-1".to_string(),
         kind: DelegatedExecutionKind::CustomTaskAgent,
@@ -531,7 +531,7 @@ fn delegate_task_preflight_blocks_when_selected_agent_has_no_executable_surface(
             status: "blocked".to_string(),
             worker_ref: Some("custom_task_agent:agent-1".to_string()),
             summary: Some("Delegation blocked before launch because the selected task agent has no executable tools or skill actions bound.".to_string()),
-            error: Some("The selected task agent only has prompt or guidance context. Bind at least one executable MCP tool or callable skill action before using delegate_task.".to_string()),
+            error: Some("The selected task agent only has prompt or guidance context. Bind at least one executable MCP tool or callable skill action before using start_delegate_agent.".to_string()),
             available_actions: vec![DelegatedExecutionAction {
                 kind: "reconfigure_agent".to_string(),
             }],
@@ -544,7 +544,7 @@ fn delegate_task_preflight_blocks_when_selected_agent_has_no_executable_surface(
             "callable_mcp_tool_ids": [],
             "callable_skill_action_refs": []
         })),
-        error: Some("delegate_task blocked: selected task agent has no executable surface".to_string()),
+        error: Some("start_delegate_agent blocked: selected task agent has no executable surface".to_string()),
         started_at_ms: 1,
         completed_at_ms: Some(2),
     };
@@ -566,7 +566,7 @@ fn delegate_task_preflight_blocks_when_selected_agent_has_no_executable_surface(
 }
 
 #[test]
-fn delegate_task_preflight_allows_empty_bound_surface_for_image_agent() {
+fn start_delegate_agent_preflight_allows_empty_bound_surface_for_image_agent() {
     let record = DelegatedExecutionRecord {
         execution_id: "exec-image-1".to_string(),
         kind: DelegatedExecutionKind::CustomTaskAgent,
