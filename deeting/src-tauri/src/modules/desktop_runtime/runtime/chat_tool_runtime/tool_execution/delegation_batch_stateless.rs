@@ -30,7 +30,8 @@ use crate::modules::desktop_runtime::runtime::worker_dispatch::{
     WorkerTaskPacketInput,
 };
 use crate::modules::desktop_runtime::runtime::{
-    load_execution_graph_runtime_context, persist_execution_graph_runtime_context,
+    ensure_execution_graph_run_row, load_execution_graph_runtime_context,
+    persist_execution_graph_runtime_context,
 };
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
 use crate::state::AppState;
@@ -326,9 +327,23 @@ async fn persist_batch_context(
         "progress_events": progress_events,
         "children": children_json,
     });
+    let execution_id = multi_agent_batch_execution_id(batch_id);
+    // Ensure a parent row exists in local_execution_graph_run before inserting into
+    // local_execution_graph_runtime_context, which has a FOREIGN KEY constraint.
+    ensure_execution_graph_run_row(
+        app_state.mcp.store.as_ref(),
+        execution_id.as_str(),
+        session_id.unwrap_or(""),
+        "delegation_batch",
+        "delegation",
+        "active",
+        "delegation_batch",
+    )
+    .await
+    .map_err(|err| err.to_string())?;
     persist_execution_graph_runtime_context(
         app_state.mcp.store.as_ref(),
-        multi_agent_batch_execution_id(batch_id).as_str(),
+        execution_id.as_str(),
         &context,
     )
     .await

@@ -751,7 +751,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
         },
         CoreToolContract {
             name: "start_delegate_agent",
-            description: "Start one bounded chat-side delegated child agent asynchronously and return a batch_id plus child handle immediately. Use this for one separable read-only subtask whose result the parent will later integrate through wait_delegations. The task text is parent-authored; child system prompts must come from an existing agent_id or a predefined agent_type template.",
+            description: "Start one bounded chat-side delegated child agent asynchronously and return a batch_id plus child handle immediately. Use this for one separable read-only subtask whose result the parent will later integrate through wait_delegations. The task text is parent-authored; child system prompts must come from an existing agent_id or a predefined agent_type template. PREFER agent_id for registered agents (use search_sdk to discover available delegation_targets with their agent_id values).",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -761,11 +761,11 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
                     },
                     "agent_type": {
                         "type": "string",
-                        "description": "Predefined or .claude/agents/{agent_type}.md template name. Required unless agent_id is provided."
+                        "description": "Built-in template name (explore, plan, implement, review) or .claude/agents/{agent_type}.md file. Use agent_id instead for registered agents."
                     },
                     "agent_id": {
                         "type": "string",
-                        "description": "Existing registered custom task agent id. If provided, this takes precedence over agent_type."
+                        "description": "Registered custom task agent UUID. PREFERRED for registered agents. Use search_sdk to discover available agent_id values from delegation_targets."
                     },
                     "agent_spec": {
                         "type": "object",
@@ -826,13 +826,13 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
             risk_level: "MEDIUM",
             example_arguments: json!({
                 "task": "Review this bounded implementation plan for missing runtime constraints. Return summary, evidence, risks, next_actions, and any world_model_delta_candidate.",
-                "agent_type": "architect",
+                "agent_id": "327b45df-05c7-46e6-be98-f7325f212b13",
                 "write_scope": "read_only"
             }),
         },
         CoreToolContract {
             name: "start_delegate_many",
-            description: "Start multiple independent read-only delegated chat child agents asynchronously and return batch_id plus child handles immediately. Use this instead of repeated single delegation calls whenever there are 2 or more independent subtasks, then use wait_delegations to join results. The parent remains responsible for final judgment and all world-model/workspace writes.",
+            description: "Start multiple independent read-only delegated chat child agents asynchronously and return batch_id plus child handles immediately. Use this instead of repeated single delegation calls whenever there are 2 or more independent subtasks, then use wait_delegations to join results. The parent remains responsible for final judgment and all world-model/workspace writes. PREFER agent_id for registered agents (use search_sdk to discover available delegation_targets with their agent_id values).",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -848,11 +848,11 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
                                 },
                                 "agent_type": {
                                     "type": "string",
-                                    "description": "Predefined or .claude/agents/{agent_type}.md template name. Required unless agent_id is provided."
+                                    "description": "Built-in template name (explore, plan, implement, review) or .claude/agents/{agent_type}.md file. Use agent_id instead for registered agents."
                                 },
                                 "agent_id": {
                                     "type": "string",
-                                    "description": "Existing registered custom task agent id. If provided, this takes precedence and agent_type/agent_spec are ignored."
+                                    "description": "Registered custom task agent UUID. PREFERRED for registered agents. Use search_sdk to discover available agent_id values from delegation_targets."
                                 },
                                 "agent_spec": {
                                     "type": "object",

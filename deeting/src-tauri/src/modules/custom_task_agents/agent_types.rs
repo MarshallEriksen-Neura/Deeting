@@ -345,7 +345,12 @@ fn load_builtin_template(agent_type: &str) -> Result<AgentTypeTemplate, String> 
             Some("high"),
             Some(12),
         ),
-        _ => return Err(format!("unknown agent_type '{agent_type}'")),
+        _ => {
+            return Err(format!(
+                "unknown agent_type '{agent_type}'. Available built-in agent_types: explore, plan, implement, review. \
+                 For registered agents (custom_task_agents), use agent_id instead of agent_type."
+            ))
+        }
     };
 
     Ok(AgentTypeTemplate {

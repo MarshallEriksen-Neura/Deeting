@@ -866,6 +866,50 @@ async fn persist_execution_graph_runtime_context_once(
     Ok(())
 }
 
+/// Ensure a parent row exists in `local_execution_graph_run` for the given execution_id.
+/// This is required before inserting into child tables (runtime_context, node, event)
+/// that have a FOREIGN KEY referencing `local_execution_graph_run(execution_id)`.
+///
+/// Used by delegation batch persistence where the execution_id is synthetic
+/// (e.g., `"multi_agent_batch:{batch_id}"`) and no full execution graph snapshot exists yet.
+pub(crate) async fn ensure_execution_graph_run_row(
+    store: &McpStore,
+    execution_id: &str,
+    session_id: &str,
+    route: &str,
+    plane: &str,
+    status: &str,
+    source_kind: &str,
+) -> Result<(), McpError> {
+    let normalized_execution_id = execution_id.trim();
+    if normalized_execution_id.is_empty() {
+        return Err(McpError::validation("execution_id is required"));
+    }
+    let now = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+    sqlx::query(
+        r#"
+        INSERT INTO local_execution_graph_run (
+          execution_id, session_id, route, plane, status, root_execution_id,
+          request_id, source_kind, graph_payload_json, created_at_unix_ms, updated_at_unix_ms
+        ) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, '{}', ?, ?)
+        ON CONFLICT(execution_id) DO UPDATE SET
+          updated_at_unix_ms = excluded.updated_at_unix_ms
+        "#,
+    )
+    .bind(normalized_execution_id)
+    .bind(session_id.trim())
+    .bind(route)
+    .bind(plane)
+    .bind(status)
+    .bind(source_kind)
+    .bind(now as i64)
+    .bind(now as i64)
+    .execute(&store.write_pool)
+    .await
+    .map_err(|err| McpError::Storage(err.to_string()))?;
+    Ok(())
+}
+
 pub(crate) async fn load_execution_graph_runtime_context(
     store: &McpStore,
     execution_id: &str,

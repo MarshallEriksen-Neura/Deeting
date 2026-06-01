@@ -59,10 +59,11 @@ pub(crate) use execution_graph::{
     GraphProjectionInput,
 };
 pub(crate) use execution_graph_store::{
-    delete_execution_graph_runtime_context, list_execution_graph_runtime_contexts,
-    list_execution_graph_snapshots_for_session, load_execution_graph_runtime_context,
-    load_execution_graph_snapshot, migrate_execution_graph_runtime_bootstrap,
-    persist_execution_graph_runtime_context, persist_execution_graph_snapshot,
+    delete_execution_graph_runtime_context, ensure_execution_graph_run_row,
+    list_execution_graph_runtime_contexts, list_execution_graph_snapshots_for_session,
+    load_execution_graph_runtime_context, load_execution_graph_snapshot,
+    migrate_execution_graph_runtime_bootstrap, persist_execution_graph_runtime_context,
+    persist_execution_graph_snapshot,
 };
 pub(crate) use execution_plane::{
     build_delegated_result_feedback_messages, run_local_runtime_composition_entrypoint,
