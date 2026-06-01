@@ -48,8 +48,7 @@ where
     let hook_store = request.app_state.mcp.store.clone();
     let runtime_event_store = DeetingRuntimeEventStore::default();
     let frame_resolution_policy = request.execution_policy.clone();
-    let app_state = request.app_state.clone();
-    let goal = super::user_input::latest_user_message(&request.messages)
+    let goal = super::user_input::latest_contiguous_user_messages(&request.messages)
         .map(|m| m.trim().to_string())
         .filter(|m| !m.is_empty())
         .unwrap_or_else(|| "local runtime request".to_string());
@@ -67,7 +66,7 @@ where
     let result = {
         let components = RuntimeComponents {
             bootstrap: DeetingBootstrapPrompt::new(request.clone(), task_id, hook_store.clone()),
-            validator: DeetingTier2Validator::new(app_state),
+            validator: DeetingTier2Validator::with_runtime_request(request.clone()),
             frame_generator: DeetingFrameArtifactGenerator::new(request.clone()),
             phase_proposal_generator: DeetingPhaseProposalGenerator::new(),
             phase_executor: DeetingRealPhaseExecutor::new(

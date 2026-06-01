@@ -14,6 +14,7 @@ pub mod execution_graph_store;
 pub mod execution_plane;
 pub mod posterior_signal;
 pub mod prompt_assets;
+pub mod prompt_definitions;
 pub mod prompt_plan;
 pub mod runtime_event_projection;
 pub mod search_feedback;

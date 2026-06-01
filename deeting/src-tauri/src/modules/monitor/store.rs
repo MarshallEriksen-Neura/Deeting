@@ -430,7 +430,7 @@ impl MonitorStore {
             Some(value) => Some(normalize_assistant_id(value)?),
             None => current.assistant_id.clone(),
         };
-        let assistant_id = assistant_id.ok_or_else(|| "assistant_id 不能为空".to_string())?;
+        let assistant_id = assistant_id.ok_or_else(|| "task_agent_id 不能为空".to_string())?;
         let now_iso = now_rfc3339();
         let now_ts = now_unix_timestamp();
         let (next_scheduled_run_ts, interval_minutes) =
@@ -1523,7 +1523,7 @@ fn normalize_desktop_execution_target(raw: Option<&str>) -> Result<String, Strin
 fn normalize_assistant_id(raw: String) -> Result<String, String> {
     let value = raw.trim().to_string();
     if value.is_empty() {
-        return Err("assistant_id 不能为空".to_string());
+        return Err("task_agent_id 不能为空".to_string());
     }
     Ok(value)
 }
@@ -1911,7 +1911,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_task_rejects_blank_assistant_id() {
+    async fn create_task_rejects_blank_task_agent_id() {
         let store = build_store().await;
 
         let error = store
@@ -1926,9 +1926,9 @@ mod tests {
                 execution_target: None,
             })
             .await
-            .expect_err("blank assistant_id should fail");
+            .expect_err("blank task_agent_id should fail");
 
-        assert_eq!(error, "assistant_id 不能为空");
+        assert_eq!(error, "task_agent_id 不能为空");
     }
 
     #[tokio::test]

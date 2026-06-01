@@ -24,6 +24,7 @@ pub mod llm_wiki;
 pub mod mcp;
 pub mod memory;
 pub mod monitor;
+pub mod prompt_surfaces;
 pub mod providers;
 pub mod rag_eval;
 pub mod relay;

@@ -803,6 +803,11 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
                         "description": "Canonical async delegation is read-only in this slice. Children return structured evidence and optional world_model_delta_candidate; parent owns all writes.",
                         "default": "read_only"
                     },
+                    "required_capabilities": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional explicit capabilities the selected child must have, such as web_search. The runtime fails fast with CAPABILITY_MISMATCH when the selected agent cannot satisfy them."
+                    },
                     "max_rounds": {
                         "type": "integer",
                         "description": "Optional per-child round cap. If omitted, agent_spec/template max_rounds or runtime budget is used."
@@ -816,6 +821,7 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
                     "batch_id": {"type": "string"},
                     "child_ids": {"type": "array", "items": {"type": "string"}},
                     "children": {"type": "array"},
+                    "failure_summary": {"type": "object"},
                     "progress_events": {"type": "array"}
                 },
                 "required": ["batch_id", "child_ids", "children"]
@@ -888,6 +894,11 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
                                     "type": "integer",
                                     "description": "Optional per-child round cap. If omitted, agent_spec/template max_rounds or runtime budget is used."
                                 },
+                                "required_capabilities": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "Optional explicit capabilities the selected child must have, such as web_search. The runtime fails fast with CAPABILITY_MISMATCH when the selected agent cannot satisfy them."
+                                },
                                 "write_scope": {
                                     "type": "string",
                                     "enum": ["read_only"],
@@ -924,6 +935,14 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
                                 "task": {"type": "string"},
                                 "write_scope": {"type": "string"},
                                 "status": {"type": "string"},
+                                "error": {"type": ["string", "null"]},
+                                "error_code": {"type": ["string", "null"]},
+                                "failure_stage": {"type": ["string", "null"]},
+                                "failure_reason": {"type": ["string", "null"]},
+                                "diagnostics": {
+                                    "type": ["object", "null"],
+                                    "description": "Failure diagnostics for failed/cancelled/lost children, including selection metadata and classified error details."
+                                },
                                 "delegated_result": {"type": ["object", "null"]},
                                 "world_model_delta_candidate": {"type": ["object", "null"]},
                                 "started_at_ms": {"type": "integer"},
@@ -971,6 +990,10 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
                 "type": "object",
                 "properties": {
                     "batch_id": {"type": "string"},
+                    "failure_summary": {
+                        "type": "object",
+                        "description": "Aggregated failure diagnostics with failure_count, error_codes, and representative child failures."
+                    },
                     "children": {"type": "array"}
                 },
                 "required": ["batch_id", "children"]
@@ -1017,6 +1040,10 @@ pub(crate) fn desktop_runtime_core_tools() -> Vec<CoreToolContract> {
                     "satisfied": {"type": "boolean"},
                     "timed_out": {"type": "boolean"},
                     "join": {"type": ["object", "null"]},
+                    "failure_summary": {
+                        "type": "object",
+                        "description": "Aggregated failure diagnostics with failure_count, error_codes, and representative child failures."
+                    },
                     "parent_world_model_merge_candidate": {
                         "type": ["object", "null"],
                         "description": "Non-authoritative aggregation of child world_model_delta_candidate values. The runtime does not apply this to the parent WorldModelFrame; the parent model must decide and call world_model_update."

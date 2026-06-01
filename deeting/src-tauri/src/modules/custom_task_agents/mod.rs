@@ -6,6 +6,7 @@ pub mod image_config;
 pub mod import;
 pub mod import_templates;
 pub mod indexing;
+pub mod prompt_definitions;
 pub mod runtime;
 pub mod service;
 pub mod skill_actions;

@@ -371,6 +371,7 @@ pub struct LocalMonitorLogsQuery {
 pub struct LocalMonitorTaskCreateRequest {
     pub title: String,
     pub objective: String,
+    #[serde(rename = "task_agent_id", alias = "assistant_id")]
     pub assistant_id: String,
     pub cron_expr: Option<String>,
     pub analysis_mode: Option<String>,
@@ -383,6 +384,7 @@ pub struct LocalMonitorTaskCreateRequest {
 pub struct LocalMonitorTaskUpdateRequest {
     pub title: Option<String>,
     pub objective: Option<String>,
+    #[serde(rename = "task_agent_id", alias = "assistant_id")]
     pub assistant_id: Option<String>,
     pub cron_expr: Option<String>,
     pub analysis_mode: Option<String>,
@@ -406,6 +408,7 @@ pub struct LocalMonitorCreateResponse {
     pub status: String,
     pub message: String,
     pub analysis_mode: String,
+    #[serde(rename = "task_agent_id")]
     pub assistant_id: Option<String>,
     pub execution_target: String,
 }
@@ -451,17 +454,29 @@ mod tests {
     use desktop_runtime_core::MonitorCheckpointPolicy;
 
     #[test]
-    fn create_request_requires_assistant_id_when_deserializing() {
+    fn create_request_requires_task_agent_id_when_deserializing() {
         let error = serde_json::from_value::<LocalMonitorTaskCreateRequest>(serde_json::json!({
             "title": "monitor",
             "objective": "watch this"
         }))
-        .expect_err("assistant_id should be required");
+        .expect_err("task_agent_id should be required");
 
         assert!(
-            error.to_string().contains("assistant_id"),
+            error.to_string().contains("task_agent_id"),
             "unexpected error: {error}"
         );
+    }
+
+    #[test]
+    fn create_request_accepts_legacy_assistant_id_alias() {
+        let request = serde_json::from_value::<LocalMonitorTaskCreateRequest>(serde_json::json!({
+            "title": "monitor",
+            "objective": "watch this",
+            "assistant_id": "agent-1"
+        }))
+        .expect("legacy assistant_id alias should deserialize");
+
+        assert_eq!(request.assistant_id, "agent-1");
     }
 
     #[test]

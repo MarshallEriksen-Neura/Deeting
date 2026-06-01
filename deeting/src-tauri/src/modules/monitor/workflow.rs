@@ -8,10 +8,10 @@ use crate::modules::desktop_runtime::local_orchestrator::{
 };
 
 use super::agent_runtime::{
-    build_monitor_task_agent_message_with_tools, effective_monitor_tool_names,
-    execute_monitor_task_agent,
+    effective_monitor_tool_names, execute_monitor_task_agent,
 };
 use super::output_contract::normalize_monitor_output;
+use super::prompt_definitions::{render_monitor_task_agent_message, MonitorTaskAgentPacket};
 use super::run_events::{build_run_event, build_run_terminal_event, project_tool_trace_run_events};
 use super::types::{LocalExecutionResult, LocalMonitorTask, MonitorRunEventKind};
 use super::{global_app_handle_required, global_app_state_required, MonitorState};
@@ -246,7 +246,8 @@ impl LocalWorkflowStep<MonitorWorkflowContext> for MonitorBuildPromptStep {
                 .as_ref()
                 .ok_or_else(|| "monitor task agent missing".to_string())?;
             let effective_tools = effective_monitor_tool_names(profile, &ctx.task.allowed_tools);
-            let prompt = build_monitor_task_agent_message_with_tools(&ctx.task, &effective_tools);
+            let packet = MonitorTaskAgentPacket::from_task(&ctx.task, &effective_tools);
+            let prompt = render_monitor_task_agent_message(&packet.prompt_input());
             ctx.prompt = Some(prompt);
             ctx.emit_status(
                 "evolve",

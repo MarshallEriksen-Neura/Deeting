@@ -1,5 +1,5 @@
 use super::prompt_assets::PromptAssets;
-use super::prompt_plan::build_local_prompt_plan;
+use super::prompt_plan::{build_local_prompt_plan_for_pipeline, PromptPipeline};
 use crate::modules::mcp::store::McpStore;
 use crate::modules::memory::service::MemoryService;
 use crate::modules::providers::embedding::EmbeddingService;
@@ -67,7 +67,12 @@ pub(crate) fn build_local_control_plane_result(
         runtime_discovery.as_ref(),
     );
     let prompt_assets = PromptAssets::from_system_messages(system_messages);
-    let prompt_plan = build_local_prompt_plan(&prompt_assets, Some(&execution_policy), locale);
+    let prompt_plan = build_local_prompt_plan_for_pipeline(
+        PromptPipeline::Chat,
+        &prompt_assets,
+        Some(&execution_policy),
+        locale,
+    );
     let status_meta = json!({
         "runtime_owner": "world_model_runtime_owner",
         "execution_policy": build_local_execution_policy_status_meta(&execution_policy),

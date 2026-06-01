@@ -12,6 +12,10 @@ use crate::modules::desktop_runtime::runtime::runtime_event_projection::projecti
     ExecutionObservationProjectionInput, FinalAnswerProjectionInput,
     ToolCallProposalProjectionInput, WorldModelFrameKind, WorldModelFrameProjectionInput,
 };
+use crate::modules::desktop_runtime::runtime::prompt_definitions::{
+    compact_replayed_system_prompt_content, render_desktop_execution_tools_injection_prompt,
+    render_world_model_system_context, WorldModelUpdatePromptMode,
+};
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
 use crate::modules::mcp::commands::support::*;
@@ -91,14 +95,6 @@ use tool_meta::{
     last_response_content_or_empty, record_query_affinity_from_tool_meta,
     tool_call_meta_with_resolved_ids,
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WorldModelUpdatePromptMode {
-    Off,
-    AllowedDelta,
-    RequiredDelta,
-    RequiredFull,
-}
 
 fn append_world_observations_from_tool_meta(
     frame: Option<&mut desktop_runtime_core::WorldModelFrame>,
@@ -322,14 +318,7 @@ fn messages_with_world_model_snapshot(
     };
     let snapshot =
         desktop_runtime_core::frame::snapshot_render::render_world_model_snapshot(frame, &config);
-    let runtime_context = render_world_model_runtime_context(prompt_mode);
-    let system_content = if runtime_context.trim().is_empty() {
-        format!("[System runtime context — not user input]\n{snapshot}\n[/System runtime context]")
-    } else {
-        format!(
-            "[System runtime context — not user input]\n{snapshot}\n\n{runtime_context}\n[/System runtime context]"
-        )
-    };
+    let system_content = render_world_model_system_context(&snapshot, prompt_mode);
     let mut output = messages.to_vec();
     output.insert(
         0,
@@ -343,50 +332,6 @@ fn messages_with_world_model_snapshot(
         },
     );
     output
-}
-
-fn render_world_model_runtime_context(prompt_mode: WorldModelUpdatePromptMode) -> String {
-    if matches!(prompt_mode, WorldModelUpdatePromptMode::Off) {
-        return "[WORLD MODEL UPDATE PROTOCOL]\nDo not call world_model_update for this response unless a later instruction in this request explicitly requires it.".to_string();
-    }
-
-    let (mode_hint, requirement, mode_instruction) = match prompt_mode {
-        WorldModelUpdatePromptMode::RequiredFull => (
-            "full",
-            "Required: call world_model_update tool in the same turn as your visible response.",
-            "Provide a complete assessment: all known facts, assumptions, unknowns, verification targets, rules, and execution_strategy.",
-        ),
-        WorldModelUpdatePromptMode::RequiredDelta => (
-            "delta",
-            "Required: call world_model_update tool in the same turn as your visible response because runtime state changed.",
-            "Only include NEW or CHANGED items since the last snapshot. Leave arrays empty if nothing changed.",
-        ),
-        WorldModelUpdatePromptMode::AllowedDelta => (
-            "delta",
-            "Optional: call world_model_update tool only if this response changes the task model.",
-            "Only include NEW or CHANGED items since the last snapshot. Omit the tool call when nothing changed.",
-        ),
-        WorldModelUpdatePromptMode::Off => unreachable!("off mode returned above"),
-    };
-
-    format!(
-        "[WORLD MODEL UPDATE PROTOCOL]\n\
-         {requirement}\n\
-         Mode: {mode}\n\
-         {mode_instruction}\n\n\
-         Tool: world_model_update\n\
-         This is a meta-protocol tool - you don't wait for a response. Call it in the same turn as your visible text response.\n\n\
-         Parameters:\n\
-         {{\n  \"facts\": [\"confirmed facts about the task/project\"],\n  \"assumptions\": [\"unverified beliefs\"],\n  \"resolved_unknowns\": [\"questions now answered\"],\n  \"new_unknowns\": [\"new questions discovered\"],\n  \"verification_targets\": [\"conditions that must be true when done\"],\n  \"rules\": [\"constraints to follow\"],\n  \"execution_strategy\": \"direct_iteration | delegated_workflow | delegated_agent | hybrid\",\n  \"proposed_next_phase\": {{ \"step_type\": \"...\", \"rationale\": \"...\" }}\n}}\n\n\
-         Rules:\n\
-         - execution_strategy: only include when you believe the current strategy should change.\n\
-         - proposed_next_phase: only include when you have a clear next step.\n\
-         - Write string values in the user's current conversation language when possible; keep JSON keys exactly as shown.\n\
-         - Keep entries concise. Each item should be one sentence.",
-        mode = mode_hint,
-        requirement = requirement,
-        mode_instruction = mode_instruction,
-    )
 }
 
 fn world_model_update_prompt_mode(
@@ -449,22 +394,6 @@ fn has_pending_tool_result_messages(messages: &[LocalChatInputMessage]) -> bool 
         }
     }
     false
-}
-
-fn compact_replayed_system_prompt_content(content: &str) -> Option<String> {
-    let trimmed = content.trim();
-    if trimmed.starts_with("<base_router_prompt>")
-        || trimmed.starts_with("<communication_style>")
-        || trimmed.starts_with("## Desktop Execution Tools")
-    {
-        return Some(
-            "[protocol_ref]\n\
-             desktop-local-runtime@v2, communication-style@v2, tool-capability-contract@v2, execution-tool-protocol@v2\n\
-             Static protocol text was provided earlier in this request. Continue following it. Dynamic tool allowlists, context manifests, skill candidates, and user messages below remain authoritative."
-                .to_string(),
-        );
-    }
-    None
 }
 
 fn messages_for_provider_round(
@@ -534,11 +463,7 @@ pub(crate) async fn run_local_chat_complete_with_tools(
     {
         orchestrated_messages.insert(0, LocalChatInputMessage {
             role: "system".to_string(),
-            content: concat!(
-                "## Desktop Execution Tools\n",
-                "- Environment: Deeting Desktop local runtime\n",
-                "- Follow the base Agent Skills Progressive Disclosure contract for skill discovery, activation, resource reading, and execution boundaries.\n",
-            ).to_string(),
+            content: render_desktop_execution_tools_injection_prompt(),
             reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,

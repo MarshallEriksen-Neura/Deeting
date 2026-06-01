@@ -42,7 +42,7 @@ use multi_agent_core::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::AppHandle;
@@ -111,8 +111,9 @@ fn child_json_from_snapshot(child: &ChildSnapshot, recovery_meta: Option<&Value>
     let completed_at_ms = recovery_meta
         .and_then(|m| m.get("completed_at_ms"))
         .and_then(Value::as_i64);
+    let failure = child_failure_diagnostics(child, recovery_meta);
 
-    json!({
+    let mut record = json!({
         "child_run_id": child.child_id,
         "execution_id": execution_id,
         "agent_id": agent_id,
@@ -126,7 +127,151 @@ fn child_json_from_snapshot(child: &ChildSnapshot, recovery_meta: Option<&Value>
         "world_model_delta_candidate": world_model_delta_candidate,
         "started_at_ms": started_at_ms,
         "completed_at_ms": completed_at_ms,
-    })
+    });
+    if let Some(failure) = failure {
+        if let Some(object) = record.as_object_mut() {
+            object.insert(
+                "error".to_string(),
+                failure
+                    .get("error")
+                    .cloned()
+                    .unwrap_or_else(|| Value::String("delegated child failed".to_string())),
+            );
+            object.insert(
+                "error_code".to_string(),
+                failure
+                    .get("error_code")
+                    .cloned()
+                    .unwrap_or_else(|| Value::String("CHILD_FAILED".to_string())),
+            );
+            object.insert(
+                "failure_stage".to_string(),
+                failure
+                    .get("failure_stage")
+                    .cloned()
+                    .unwrap_or_else(|| Value::String("runtime".to_string())),
+            );
+            object.insert(
+                "failure_reason".to_string(),
+                failure
+                    .get("failure_reason")
+                    .cloned()
+                    .unwrap_or_else(|| Value::String("delegated child failed".to_string())),
+            );
+            object.insert("diagnostics".to_string(), failure);
+        }
+    }
+    record
+}
+
+fn child_failure_diagnostics(child: &ChildSnapshot, recovery_meta: Option<&Value>) -> Option<Value> {
+    if !matches!(
+        child.state,
+        ChildState::Failed | ChildState::Blocked | ChildState::LostAfterRestart | ChildState::Cancelled
+    ) {
+        return None;
+    }
+    let raw_error = child
+        .error
+        .as_deref()
+        .or_else(|| child.result.as_ref().and_then(|value| value.get("error")).and_then(Value::as_str))
+        .or_else(|| {
+            child
+                .result
+                .as_ref()
+                .and_then(|value| value.pointer("/primary_output/message"))
+                .and_then(Value::as_str)
+        })
+        .unwrap_or("delegated child failed")
+        .trim();
+    let error = if raw_error.is_empty() {
+        "delegated child failed"
+    } else {
+        raw_error
+    };
+    let error_code = classify_child_failure_code(error, child, recovery_meta);
+    let failure_stage = classify_child_failure_stage(error, child, recovery_meta);
+    Some(json!({
+        "error": error,
+        "error_code": error_code,
+        "failure_stage": failure_stage,
+        "failure_reason": error,
+        "agent_source": recovery_meta
+            .and_then(|m| m.get("agent_source"))
+            .and_then(Value::as_str)
+            .unwrap_or("persisted_snapshot"),
+        "agent_id": recovery_meta
+            .and_then(|m| m.get("agent_id"))
+            .and_then(Value::as_str)
+            .or_else(|| child.spec.agent_id.as_deref())
+            .unwrap_or(""),
+        "agent_type": child.spec.agent_type.clone(),
+        "selection_reason": recovery_meta
+            .and_then(|m| m.get("selection_reason"))
+            .and_then(Value::as_str),
+        "selection_reason_codes": recovery_meta
+            .and_then(|m| m.get("selection_reason_codes"))
+            .cloned()
+            .unwrap_or_else(|| json!([])),
+        "callable_coverage_score": recovery_meta
+            .and_then(|m| m.get("callable_coverage_score"))
+            .cloned()
+            .unwrap_or(Value::Null),
+    }))
+}
+
+fn classify_child_failure_code(
+    error: &str,
+    child: &ChildSnapshot,
+    recovery_meta: Option<&Value>,
+) -> &'static str {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("not enabled for the current execution policy")
+        || lower.contains("local_tool_policy_blocked")
+        || lower.contains("policy blocked")
+    {
+        "TOOL_POLICY_BLOCKED"
+    } else if lower.contains("capability") || lower.contains("callable") || lower.contains("tool") {
+        "CAPABILITY_MISMATCH"
+    } else if lower.contains("upstream") || lower.contains("provider") || lower.contains("model") {
+        "UPSTREAM_FAILED"
+    } else if lower.contains("timeout") || lower.contains("timed out") {
+        "CHILD_TIMEOUT"
+    } else if lower.contains("cancel") {
+        "CHILD_CANCELLED"
+    } else if recovery_meta
+        .and_then(|m| m.get("agent_source"))
+        .and_then(Value::as_str)
+        == Some("ephemeral")
+        && child.spec.agent_type.as_deref() == Some("explore")
+    {
+        "EPHEMERAL_AGENT_FAILED"
+    } else {
+        "CHILD_FAILED"
+    }
+}
+
+fn classify_child_failure_stage(
+    error: &str,
+    _child: &ChildSnapshot,
+    _recovery_meta: Option<&Value>,
+) -> &'static str {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("background resume context") || lower.contains("persist") {
+        "launch"
+    } else if lower.contains("not enabled for the current execution policy")
+        || lower.contains("local_tool_policy_blocked")
+    {
+        "tool_policy"
+    } else if lower.contains("capability") || lower.contains("callable") || lower.contains("tool") {
+        "capability_resolution"
+    } else if lower.contains("upstream") || lower.contains("provider") || lower.contains("model") {
+        "upstream"
+    } else if lower.contains("timeout") || lower.contains("timed out") {
+        "timeout"
+    } else {
+        "runtime"
+    }
 }
 
 fn world_model_delta_candidate_from_result(result: &Value) -> Option<Value> {
@@ -578,6 +723,21 @@ fn build_recovery_index(
                     .and_then(|m| m.get("agent_source"))
                     .and_then(Value::as_str)
                     .unwrap_or("persisted_snapshot"),
+                "selection_reason": existing_meta
+                    .and_then(|m| m.get("selection_reason"))
+                    .cloned(),
+                "selection_reason_codes": existing_meta
+                    .and_then(|m| m.get("selection_reason_codes"))
+                    .cloned(),
+                "callable_coverage_score": existing_meta
+                    .and_then(|m| m.get("callable_coverage_score"))
+                    .cloned(),
+                "modality_fit_score": existing_meta
+                    .and_then(|m| m.get("modality_fit_score"))
+                    .cloned(),
+                "profile_prior_score": existing_meta
+                    .and_then(|m| m.get("profile_prior_score"))
+                    .cloned(),
                 "max_rounds": existing_meta
                     .and_then(|m| m.get("max_rounds"))
                     .and_then(Value::as_u64),
@@ -865,11 +1025,16 @@ async fn execute_start_delegations_tool(
         ));
         launch_index.push(prepared.launch_snapshot()?);
         recovery_index.push(json!({
-            "child_run_id": prepared.child_run_id,
-            "execution_id": prepared.execution_id,
-            "agent_id": prepared.profile.id,
-            "agent_name": prepared.profile.name,
-            "agent_source": prepared.agent_source,
+            "child_run_id": prepared.child_run_id.clone(),
+            "execution_id": prepared.execution_id.clone(),
+            "agent_id": prepared.profile.id.clone(),
+            "agent_name": prepared.profile.name.clone(),
+            "agent_source": prepared.agent_source.clone(),
+            "selection_reason": prepared.execution_selection.reason_text.clone(),
+            "selection_reason_codes": prepared.execution_selection.reason_codes.clone(),
+            "callable_coverage_score": prepared.execution_selection.callable_coverage_score,
+            "modality_fit_score": prepared.execution_selection.modality_fit_score,
+            "profile_prior_score": prepared.execution_selection.profile_prior_score,
             "max_rounds": prepared.max_rounds,
             "started_at_ms": now_unix_ms_i64(),
             "completed_at_ms": null,
@@ -932,9 +1097,11 @@ async fn execute_start_delegations_tool(
         .map(str::to_string)
         .collect::<Vec<_>>();
     let progress_events = build_start_progress_events(batch_id.as_str(), &children_json);
+    let failure_summary = delegation_failure_summary(&children_json);
     let result = json!({
         "batch_id": batch_id,
         "child_ids": child_ids,
+        "failure_summary": failure_summary,
         "progress_events": progress_events,
         "children": children_json,
     });
@@ -1029,9 +1196,11 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) async fn exe
     }
 
     let children_json = project_children_json(&ctx, child_run_ids.as_deref());
+    let failure_summary = delegation_failure_summary(&children_json);
     let progress_events = build_status_progress_events(batch_id.as_str(), &children_json);
     let result = json!({
         "batch_id": batch_id,
+        "failure_summary": failure_summary,
         "progress_events": progress_events,
         "children": children_json,
     });
@@ -1209,12 +1378,14 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) async fn exe
         &ctx.snapshot,
         ctx.recovery_index.as_ref(),
     );
+    let failure_summary = delegation_failure_summary(&children_json);
 
     let result = json!({
         "batch_id": batch_id,
         "satisfied": waited.satisfied,
         "timed_out": waited.timed_out,
         "join": waited.join,
+        "failure_summary": failure_summary,
         "progress_events": build_wait_progress_events(batch_id.as_str(), waited.satisfied, waited.timed_out, &children_json),
         "parent_world_model_merge_candidate": parent_world_model_merge_candidate,
         "children": children_json,
@@ -1364,7 +1535,7 @@ fn spawn_background_child(
                     child_run_id.as_str(),
                     ChildState::Failed,
                     failed_result,
-                    None,
+                    Some(err.as_str()),
                 )
                 .await;
                 return;
@@ -1654,6 +1825,7 @@ async fn prepare_child_run(
         "task",
         "delegation task item requires a non-empty task",
     )?;
+    let required_capabilities = required_capabilities_for_task(item, &task)?;
     let agent_id = item
         .get("agent_id")
         .and_then(Value::as_str)
@@ -1682,13 +1854,28 @@ async fn prepare_child_run(
         let selection = select_explicit_worker_custom_task_agent(app_state, Some(agent_id)).await?;
         let selection =
             selection.ok_or_else(|| format!("explicit task agent '{}' not found", agent_id))?;
+        ensure_selection_satisfies_required_capabilities(
+            item,
+            &task,
+            &required_capabilities,
+            &selection,
+            Some(agent_id.as_str()),
+            None,
+        )?;
         (selection, None, "registered".to_string(), None)
     } else {
-        let agent_type = agent_type
-            .ok_or_else(|| "delegation task item requires agent_type or agent_id".to_string())?;
+        let agent_type = agent_type.ok_or_else(|| delegation_identity_missing_error(index, item))?;
         let spec = parse_ephemeral_agent_spec(item.get("agent_spec"))?;
         let ephemeral = build_ephemeral_agent_profile(agent_type.as_str(), spec, batch_id, index)?;
         let selection = ephemeral_selection(ephemeral.profile.clone(), agent_type.as_str());
+        ensure_selection_satisfies_required_capabilities(
+            item,
+            &task,
+            &required_capabilities,
+            &selection,
+            None,
+            Some(agent_type.as_str()),
+        )?;
         (
             selection,
             Some(agent_type),
@@ -1761,6 +1948,152 @@ async fn prepare_child_run(
         background_resume_context: None,
         max_rounds,
     })
+}
+
+fn delegation_identity_missing_error(index: usize, item: &Value) -> String {
+    let received_keys = item
+        .as_object()
+        .map(|object| object.keys().cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+    json!({
+        "error_code": "DELEGATION_TASK_IDENTITY_MISSING",
+        "message": "delegation task item requires agent_type or agent_id",
+        "task_index": index,
+        "received_keys": received_keys,
+        "expected_one_of": ["agent_id", "agent_type"],
+        "example": {
+            "agent_id": "327b45df-05c7-46e6-be98-f7325f212b13",
+            "task": "Review this bounded subtask and return findings, evidence, risks, and next_actions.",
+            "write_scope": "read_only"
+        }
+    })
+    .to_string()
+}
+
+fn required_capabilities_for_task(item: &Value, task: &str) -> Result<Vec<String>, String> {
+    let mut capabilities = optional_string_array(item, "required_capabilities")?.unwrap_or_default();
+    if task_implies_web_search(task) && !capabilities.iter().any(|item| item == "web_search") {
+        capabilities.push("web_search".to_string());
+    }
+    capabilities.sort();
+    capabilities.dedup();
+    Ok(capabilities)
+}
+
+fn task_implies_web_search(task: &str) -> bool {
+    let lower = task.to_ascii_lowercase();
+    let web_terms = [
+        "web search",
+        "internet",
+        "online",
+        "reddit",
+        "youtube",
+        "bilibili",
+        "notebookcheck",
+        "techpowerup",
+        "video cardz",
+        "videocardz",
+        "anandtech",
+        "搜索",
+        "网络",
+        "网页",
+        "贴吧",
+        "论坛",
+        "b站",
+        "价格",
+        "行情",
+    ];
+    web_terms.iter().any(|term| lower.contains(term))
+}
+
+fn ensure_selection_satisfies_required_capabilities(
+    item: &Value,
+    task: &str,
+    required_capabilities: &[String],
+    selection: &WorkerTargetSelection,
+    agent_id: Option<&str>,
+    agent_type: Option<&str>,
+) -> Result<(), String> {
+    if required_capabilities.is_empty() {
+        return Ok(());
+    }
+    let has_web_search = child_has_web_search_capability(item, selection);
+    let has_any_callable_binding = child_has_any_callable_binding(item, selection);
+    if required_capabilities
+        .iter()
+        .any(|capability| capability == "web_search")
+        && !has_web_search
+        && !has_any_callable_binding
+    {
+        return Err(
+            json!({
+                "error_code": "CAPABILITY_MISMATCH",
+                "message": "delegated task requires web_search but the selected child agent has no web-search callable",
+                "failure_stage": "capability_resolution",
+                "required_capabilities": required_capabilities,
+                "agent_id": agent_id,
+                "agent_type": agent_type,
+                "agent_source": if agent_id.is_some() { "registered" } else { "ephemeral" },
+                "selection_reason": selection.reason.clone(),
+                "selection_reason_codes": selection.reason_codes.clone(),
+                "callable_coverage_score": selection.callable_coverage_score,
+                "task_preview": task.chars().take(160).collect::<String>(),
+            })
+            .to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn child_has_any_callable_binding(item: &Value, selection: &WorkerTargetSelection) -> bool {
+    let explicit_tool_count = item
+        .pointer("/agent_spec/callable_mcp_tool_ids")
+        .and_then(Value::as_array)
+        .map(|items| items.iter().filter_map(Value::as_str).count())
+        .unwrap_or(0);
+    let explicit_skill_count = item
+        .pointer("/agent_spec/guidance_skill_ids")
+        .and_then(Value::as_array)
+        .map(|items| items.iter().filter_map(Value::as_str).count())
+        .unwrap_or(0);
+    explicit_tool_count > 0
+        || explicit_skill_count > 0
+        || !selection.profile.callable_mcp_tool_ids.is_empty()
+        || !selection.profile.guidance_skill_ids.is_empty()
+        || !selection.profile.callable_skill_action_refs.is_empty()
+}
+
+fn child_has_web_search_capability(item: &Value, selection: &WorkerTargetSelection) -> bool {
+    let explicit_tool_ids = item
+        .pointer("/agent_spec/callable_mcp_tool_ids")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str);
+    let explicit_skill_ids = item
+        .pointer("/agent_spec/guidance_skill_ids")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str);
+    let bound_tool_ids = selection.profile.callable_mcp_tool_ids.iter().map(String::as_str);
+    let skill_ids = selection.profile.guidance_skill_ids.iter().map(String::as_str);
+    explicit_tool_ids
+        .chain(explicit_skill_ids)
+        .chain(bound_tool_ids)
+        .chain(skill_ids)
+        .any(is_web_search_capability_name)
+}
+
+fn is_web_search_capability_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.contains("firecrawl")
+        || lower.contains("tavily")
+        || lower.contains("web_search")
+        || lower.contains("web-search")
+        || lower.contains("browser")
+        || lower.contains("search")
+        || lower.contains("crawl")
 }
 
 fn ephemeral_selection(profile: CustomTaskAgentProfile, agent_type: &str) -> WorkerTargetSelection {
@@ -2010,6 +2343,7 @@ fn build_wait_progress_events(
         "satisfied": satisfied,
         "timed_out": timed_out,
         "counts": delegation_status_counts_from_json(records),
+        "failure_summary": delegation_failure_summary(records),
     })]
 }
 
@@ -2019,7 +2353,41 @@ fn build_status_progress_events(batch_id: &str, records: &[Value]) -> Vec<Value>
         "event": "batch_status",
         "batch_id": batch_id,
         "counts": delegation_status_counts_from_json(records),
+        "failure_summary": delegation_failure_summary(records),
     })]
+}
+
+fn delegation_failure_summary(records: &[Value]) -> Value {
+    let mut failures = Vec::new();
+    let mut error_codes: BTreeMap<String, usize> = BTreeMap::new();
+    for record in records {
+        if record.get("status").and_then(Value::as_str) != Some("failed") {
+            continue;
+        }
+        let error_code = record
+            .get("error_code")
+            .and_then(Value::as_str)
+            .unwrap_or("CHILD_FAILED")
+            .to_string();
+        *error_codes.entry(error_code.clone()).or_insert(0) += 1;
+        failures.push(json!({
+            "child_run_id": record.get("child_run_id").and_then(Value::as_str),
+            "execution_id": record.get("execution_id").and_then(Value::as_str),
+            "agent_id": record.get("agent_id").and_then(Value::as_str),
+            "agent_type": record.get("agent_type").and_then(Value::as_str),
+            "agent_name": record.get("agent_name").and_then(Value::as_str),
+            "agent_source": record.get("agent_source").and_then(Value::as_str),
+            "error_code": error_code,
+            "failure_stage": record.get("failure_stage").and_then(Value::as_str),
+            "failure_reason": record.get("failure_reason").and_then(Value::as_str)
+                .or_else(|| record.get("error").and_then(Value::as_str)),
+        }));
+    }
+    json!({
+        "failure_count": failures.len(),
+        "error_codes": error_codes,
+        "failures": failures.into_iter().take(5).collect::<Vec<_>>(),
+    })
 }
 
 fn build_stop_progress_events(batch_id: &str, stopped_children: &[Value]) -> Vec<Value> {

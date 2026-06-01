@@ -1,4 +1,4 @@
-use super::super::super::user_input::latest_user_message;
+use super::super::super::user_input::latest_contiguous_user_messages;
 use super::super::super::LocalExecutionRequest;
 use crate::modules::desktop_runtime::runtime::sovereign::{DecisionLocus, PolicyGuidance, Self_};
 use crate::modules::desktop_runtime::runtime::task_learning::{
@@ -17,7 +17,7 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) f
     task_id: &str,
 ) -> WorldModelFrame {
     let frame_version_id = format!("frame:{}:{}", request.session_id, task_id);
-    let goal = latest_user_message(&request.messages)
+    let goal = latest_contiguous_user_messages(&request.messages)
         .map(|message| message.trim().to_string())
         .filter(|message| !message.is_empty())
         .unwrap_or_else(|| "local runtime request".to_string());

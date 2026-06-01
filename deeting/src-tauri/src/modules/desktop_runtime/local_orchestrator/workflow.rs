@@ -37,6 +37,33 @@ pub(super) fn latest_user_message(messages: &[LocalChatInputMessage]) -> Option<
         })
 }
 
+pub(super) fn latest_contiguous_user_message(messages: &[LocalChatInputMessage]) -> Option<String> {
+    let mut parts = Vec::new();
+    let mut seen_latest_user = false;
+
+    for message in messages.iter().rev() {
+        if message.role == "user" {
+            seen_latest_user = true;
+            let trimmed = message.content.trim();
+            if !trimmed.is_empty() {
+                parts.push(trimmed.to_string());
+            }
+            continue;
+        }
+
+        if seen_latest_user {
+            break;
+        }
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        parts.reverse();
+        Some(parts.join("\n\n"))
+    }
+}
+
 pub(super) fn extract_explicit_skill_mentions(text: &str) -> Vec<String> {
     let sanitized = strip_code_spans_for_skill_mentions(text);
     let mut mentions = Vec::new();
@@ -305,10 +332,11 @@ pub(super) fn render_skill_recipe_prompt(
     let mut lines = vec![
         "## Installed Skills (candidate packages for this turn)".to_string(),
         "Activate via `activate_skill` with the stable `skill_id` before relying on package-specific procedures. Skill discipline lives in the base Tool & Capability Contract above — this section only lists candidates.".to_string(),
+        "This recipe preview is not the full skill: call `activate_skill` first, then use `read_skill_resource` for package files when needed. Do not treat recipe metadata, docs excerpts, bundle backends, or tools such as `shell_execute` as proof of actual host command execution unless the active runtime allowlist exposes that tool.".to_string(),
     ];
     if !explicit_mentions.is_empty() {
         lines.push(format!(
-            "User explicitly mentioned: {}. Prefer matching entries.",
+            "Explicit user skill mentions in this request: {}. Prefer matching entries.",
             explicit_mentions
                 .iter()
                 .map(|mention| format!("${mention}"))
@@ -794,7 +822,7 @@ impl LocalWorkflowContext {
         summary_text: Option<String>,
         event_tx: Option<UnboundedSender<String>>,
     ) -> Self {
-        let latest_user_query = latest_user_message(&messages).map(str::to_string);
+        let latest_user_query = latest_contiguous_user_message(&messages);
         Self {
             app_state,
             trace_id,

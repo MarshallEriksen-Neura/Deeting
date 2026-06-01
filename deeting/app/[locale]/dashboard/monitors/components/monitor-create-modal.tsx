@@ -208,7 +208,6 @@ export function MonitorCreateModal({
         const payload: MonitorTaskCreateInput = {
           title: title.trim(),
           objective: objective.trim(),
-          assistant_id: taskAgentId.trim(),
           task_agent_id: taskAgentId.trim(),
           cron_expr: cronExpr,
           analysis_mode: analysisMode,

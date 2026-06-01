@@ -503,6 +503,64 @@ fn build_local_prompt_plan_includes_code_orchestration_protocol_from_phase_polic
 }
 
 #[test]
+fn structured_control_prompt_plan_uses_only_router_capabilities_and_schema_lane() {
+    let mut policy = build_default_local_execution_policy();
+    policy.allowed_tool_names = vec!["search_sdk".to_string(), "execute_code_plan".to_string()];
+    policy.inject_execution_protocol = true;
+    policy.allow_worker_delegation = true;
+    let persona_message = LocalChatInputMessage {
+        role: "system".to_string(),
+        content: "<persona>chat persona must stay out of structured control</persona>".to_string(),
+        reasoning_content: None,
+        tool_calls: vec![],
+        tool_call_id: None,
+        name: None,
+    };
+
+    let rendered = crate::modules::desktop_runtime::runtime::prompt_plan::build_local_prelude_messages_for_pipeline(
+        crate::modules::desktop_runtime::runtime::prompt_plan::PromptPipeline::StructuredControl,
+        &PromptAssets::from_system_messages(&[persona_message]),
+        Some(&policy),
+    )
+    .iter()
+    .map(|message| message.content.as_str())
+    .collect::<Vec<_>>()
+    .join("\n\n");
+
+    assert!(rendered.contains("<base_router_prompt>"));
+    assert!(rendered.contains("<runtime_capability_contract>"));
+    assert!(rendered.contains("search_sdk"));
+    assert!(rendered.contains("execute_code_plan"));
+    assert!(!rendered.contains("<execution_tool_protocol>"));
+    assert!(!rendered.contains("<communication_style>"));
+    assert!(!rendered.contains("<persona>"));
+}
+
+#[test]
+fn chat_prompt_plan_keeps_chat_style_assets_on_chat_lane() {
+    let persona_message = LocalChatInputMessage {
+        role: "system".to_string(),
+        content: "<persona>chat persona belongs only to chat lane</persona>".to_string(),
+        reasoning_content: None,
+        tool_calls: vec![],
+        tool_call_id: None,
+        name: None,
+    };
+
+    let rendered = build_local_prelude_messages(
+        &PromptAssets::from_system_messages(&[persona_message]),
+        None,
+    )
+    .iter()
+    .map(|message| message.content.as_str())
+    .collect::<Vec<_>>()
+    .join("\n\n");
+
+    assert!(rendered.contains("<communication_style>"));
+    assert!(rendered.contains("<persona>chat persona belongs only to chat lane</persona>"));
+}
+
+#[test]
 fn control_plane_status_meta_marks_world_model_runtime_owner() {
     let mut policy = build_default_local_execution_policy();
     policy.allowed_tool_names = vec!["search_sdk".to_string()];

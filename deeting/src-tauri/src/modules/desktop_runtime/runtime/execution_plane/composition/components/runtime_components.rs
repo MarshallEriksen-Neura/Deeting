@@ -1,4 +1,4 @@
-use super::super::super::user_input::latest_user_message;
+use super::super::super::user_input::latest_contiguous_user_messages;
 use super::super::super::LocalExecutionRequest;
 use super::super::phase_step::{phase_step_for_strategy, phase_step_type_name};
 use super::frame_bootstrap;
@@ -10,6 +10,8 @@ use crate::modules::desktop_runtime::runtime::chat_completion::{
 use crate::modules::desktop_runtime::runtime::chat_tool_runtime::{
     apply_world_model_update_to_frame, ProposedPhase, WorldModelUpdate,
 };
+use crate::modules::desktop_runtime::runtime::control_plane::LocalExecutionPolicy;
+use crate::modules::desktop_runtime::runtime::prompt_plan::render_local_structured_control_prelude;
 use crate::modules::desktop_runtime::runtime::task_learning::ACTION_VERIFICATION_STRONGER_CHECKS;
 use crate::modules::mcp::store::McpStore;
 use crate::modules::providers::model_guard::resolve_local_secretary_model_connection;
@@ -21,6 +23,8 @@ use desktop_runtime_core::{
     RuntimeEvent, Tier2Validator, UserInput, UserInterruption, WorldModelFrame,
     WorldModelFrameStatus,
 };
+#[cfg(test)]
+use desktop_runtime_core::{Unknown, VerificationTarget};
 use mcp_core::types::LocalChatInputMessage;
 use serde_json::json;
 use std::collections::{HashMap, VecDeque};
@@ -173,7 +177,7 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) f
     UserInput {
         session_id: request.session_id.clone(),
         task_id,
-        content: latest_user_message(&request.messages).unwrap_or_default(),
+        content: latest_contiguous_user_messages(&request.messages).unwrap_or_default(),
         source: request.task_input_source.clone(),
     }
 }
@@ -216,15 +220,32 @@ impl desktop_runtime_core::BootstrapPrompt for DeetingBootstrapPrompt {
 
 pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) struct DeetingTier2Validator
 {
+    runtime_request: Option<LocalExecutionRequest>,
     app_state: Option<AppState>,
+    execution_policy: LocalExecutionPolicy,
 }
 
 impl DeetingTier2Validator {
     pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) fn new(
         app_state: AppState,
+        execution_policy: LocalExecutionPolicy,
     ) -> Self {
         Self {
+            runtime_request: None,
             app_state: Some(app_state),
+            execution_policy,
+        }
+    }
+
+    pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) fn with_runtime_request(
+        runtime_request: LocalExecutionRequest,
+    ) -> Self {
+        let app_state = runtime_request.app_state.clone();
+        let execution_policy = runtime_request.execution_policy.clone();
+        Self {
+            runtime_request: Some(runtime_request),
+            app_state: Some(app_state),
+            execution_policy,
         }
     }
 
@@ -287,13 +308,19 @@ impl DeetingTier2Validator {
         .unwrap_or_else(|| "[]".to_string())
     }
 
-    fn build_prompt(frame: &WorldModelFrame, plan: Option<&PlanArtifact>) -> String {
+    fn build_prompt(
+        execution_policy: &LocalExecutionPolicy,
+        frame: &WorldModelFrame,
+        plan: Option<&PlanArtifact>,
+    ) -> String {
+        let structured_prelude =
+            render_local_structured_control_prelude(Some(execution_policy), None);
         let template = if frame.goal.chars().any(|ch| ch.is_ascii_alphabetic()) {
             TIER2_VALIDATION_PROMPT_TEMPLATE_EN
         } else {
             TIER2_VALIDATION_PROMPT_TEMPLATE_ZH
         };
-        template
+        let prompt = template
             .replace("{goal}", &frame.goal)
             .replace(
                 "{assumptions}",
@@ -305,7 +332,10 @@ impl DeetingTier2Validator {
                 &Self::format_json_lines(&frame.verification_targets),
             )
             .replace("{committed_phases}", &Self::build_plan_summary(plan))
-            .replace("{status}", &format!("{:?}", frame.status))
+            .replace("{status}", &format!("{:?}", frame.status));
+        format!(
+            "{structured_prelude}\n\n<frame_validation_schema_instruction>\n{prompt}\n</frame_validation_schema_instruction>"
+        )
     }
 
     fn cache_get(frame_version_id: &str) -> Option<FrameValidation> {
@@ -364,6 +394,13 @@ impl DeetingTier2Validator {
         serde_json::from_value::<SecretaryValidationDecision>(response.clone()).ok()
     }
 
+    fn emit_validation_status(&self, state: &str, code: &str, meta: serde_json::Value) {
+        let Some(runtime_request) = self.runtime_request.as_ref() else {
+            return;
+        };
+        emit_world_model_frame_status(runtime_request, state, code, meta);
+    }
+
     async fn validate_frame_async(
         &self,
         frame: &WorldModelFrame,
@@ -409,6 +446,17 @@ impl DeetingTier2Validator {
                 plan,
                 Some("secretary_unavailable: app_state unavailable"),
             );
+            self.emit_validation_status(
+                "failed",
+                "world_model.frame_validation.failed",
+                json!({
+                    "frame_id": frame.frame_version_id.as_str(),
+                    "model_role": "secretary",
+                    "error_code": "SECRETARY_UNAVAILABLE",
+                    "error_kind": "app_state_unavailable",
+                    "fallback": "local_prior_validation",
+                }),
+            );
             Self::cache_put(frame.frame_version_id.clone(), validation.clone());
             return validation;
         };
@@ -421,12 +469,34 @@ impl DeetingTier2Validator {
                     plan,
                     Some(&format!("secretary_unavailable: {err}")),
                 );
+                self.emit_validation_status(
+                    "failed",
+                    "world_model.frame_validation.failed",
+                    json!({
+                        "frame_id": frame.frame_version_id.as_str(),
+                        "model_role": "secretary",
+                        "error_code": "SECRETARY_UNAVAILABLE",
+                        "error_kind": "secretary_model_unavailable",
+                        "error": err.to_string(),
+                        "fallback": "local_prior_validation",
+                    }),
+                );
                 Self::cache_put(frame.frame_version_id.clone(), validation.clone());
                 return validation;
             }
         };
 
-        let prompt = Self::build_prompt(frame, plan);
+        let prompt = Self::build_prompt(&self.execution_policy, frame, plan);
+        self.emit_validation_status(
+            "running",
+            "world_model.frame_validation.request",
+            json!({
+                "frame_id": frame.frame_version_id.as_str(),
+                "model_role": "secretary",
+                "provider_model_id": model_connection.provider_model_id.as_str(),
+                "model_id": model_connection.model_id.as_str(),
+            }),
+        );
         let response = request_provider_structured_tool_arguments(
             app_state,
             &model_connection.provider_model_id,
@@ -451,16 +521,60 @@ impl DeetingTier2Validator {
         .await;
 
         let validation = match response {
-            Ok(response) => Self::parse_secretary_validation_response(&response)
-                .map(Self::validation_from_secretary_decision)
-                .unwrap_or_else(|| {
+            Ok(response) => match Self::parse_secretary_validation_response(&response) {
+                Some(decision) => {
+                    let validation = Self::validation_from_secretary_decision(decision);
+                    self.emit_validation_status(
+                        "success",
+                        "world_model.frame_validation.validated",
+                        json!({
+                            "frame_id": frame.frame_version_id.as_str(),
+                            "model_role": "secretary",
+                            "provider_model_id": model_connection.provider_model_id.as_str(),
+                            "model_id": model_connection.model_id.as_str(),
+                            "is_valid": validation.is_valid,
+                        }),
+                    );
+                    validation
+                }
+                None => {
+                    self.emit_validation_status(
+                        "failed",
+                        "world_model.frame_validation.failed",
+                        json!({
+                            "frame_id": frame.frame_version_id.as_str(),
+                            "model_role": "secretary",
+                            "provider_model_id": model_connection.provider_model_id.as_str(),
+                            "model_id": model_connection.model_id.as_str(),
+                            "error_code": "SECRETARY_PARSE_FAILED",
+                            "error_kind": "structured_response_parse_failed",
+                            "fallback": "local_prior_validation",
+                        }),
+                    );
                     Self::local_prior_validation(frame, plan, Some("secretary_parse_failed"))
-                }),
-            Err(err) => Self::local_prior_validation(
-                frame,
-                plan,
-                Some(&format!("secretary_call_failed: {err}")),
-            ),
+                }
+            },
+            Err(err) => {
+                self.emit_validation_status(
+                    "failed",
+                    "world_model.frame_validation.failed",
+                    json!({
+                        "frame_id": frame.frame_version_id.as_str(),
+                        "model_role": "secretary",
+                        "provider_model_id": model_connection.provider_model_id.as_str(),
+                        "model_id": model_connection.model_id.as_str(),
+                        "error_code": "SECRETARY_CALL_FAILED",
+                        "error_kind": "upstream_request_failed",
+                        "error": err.to_string(),
+                        "fallback": "local_prior_validation",
+                    }),
+                );
+                Self::local_prior_validation(
+                    frame,
+                    plan,
+                    Some(&format!("secretary_call_failed: {err}")),
+                )
+            }
         };
 
         Self::cache_put(frame.frame_version_id.clone(), validation.clone());
@@ -688,8 +802,12 @@ async fn request_world_model_update(
     current_plan: Option<&PlanArtifact>,
     refresh_request: &FrameRefreshRequest,
 ) -> Result<Option<WorldModelUpdate>, String> {
-    let prompt =
-        build_world_model_update_refresh_prompt(current_frame, current_plan, refresh_request);
+    let prompt = build_world_model_update_refresh_prompt(
+        current_frame,
+        current_plan,
+        refresh_request,
+        runtime_request,
+    );
     let model_connection =
         match resolve_local_secretary_model_connection(&runtime_request.app_state).await {
             Ok(connection) => connection,
@@ -893,7 +1011,12 @@ fn build_world_model_update_refresh_prompt(
     current_frame: &WorldModelFrame,
     current_plan: Option<&PlanArtifact>,
     refresh_request: &FrameRefreshRequest,
+    runtime_request: &LocalExecutionRequest,
 ) -> String {
+    let structured_prelude = render_local_structured_control_prelude(
+        Some(&runtime_request.execution_policy),
+        None,
+    );
     let frame_json =
         serde_json::to_string_pretty(current_frame).unwrap_or_else(|_| "{}".to_string());
     let interruption = refresh_request
@@ -908,6 +1031,8 @@ fn build_world_model_update_refresh_prompt(
 
     format!(
         concat!(
+            "{structured_prelude}\n\n",
+            "<frame_schema_instruction>\n",
             "You are refreshing a world-model frame — a structured record of what the system ",
             "knows, assumes, and still needs to verify about the current task.\n\n",
             "Output a single JSON object matching this shape:\n",
@@ -936,8 +1061,10 @@ fn build_world_model_update_refresh_prompt(
             "Refresh reason:\n{reason}\n\n",
             "User interruption, if any:\n{interruption}\n\n",
             "Current plan:\n{plan_summary}\n\n",
-            "Current frame:\n{frame_json}\n"
+            "Current frame:\n{frame_json}\n",
+            "</frame_schema_instruction>\n"
         ),
+        structured_prelude = structured_prelude,
         reason = refresh_request.reason.as_str(),
         interruption = interruption,
         plan_summary = plan_summary,
@@ -1036,6 +1163,31 @@ impl PhaseProposalGenerator for DeetingPhaseProposalGenerator {
         plan: &PlanArtifact,
         _input: &UserInput,
     ) -> RuntimeCoreResult<Option<PhaseProposal>> {
+        if requires_user_intent_clarification(frame) {
+            return Ok(Some(PhaseProposal {
+                proposal_id: "proposal:clarify:user_intent".to_string(),
+                step_type: PhaseStepType::DirectChat,
+                payload: json!({
+                    "source": "world_model_clarification_gate",
+                    "clarification_required": true,
+                    "clarification_kind": "user_intent",
+                    "goal": frame.goal.clone(),
+                    "unknowns": frame
+                        .unknowns
+                        .iter()
+                        .map(|unknown| unknown.question.clone())
+                        .collect::<Vec<_>>(),
+                    "verification_targets": frame
+                        .verification_targets
+                        .iter()
+                        .map(|target| target.description.clone())
+                        .collect::<Vec<_>>(),
+                }),
+                rationale: "World-model frame requires user intent clarification before execution".to_string(),
+                proposed_at_frame_version: frame.frame_version_id.clone(),
+            }));
+        }
+
         // 0. Check if all verification targets are met
         if all_verification_targets_met(frame, plan) {
             return Ok(Some(PhaseProposal {
@@ -1113,6 +1265,33 @@ impl PhaseProposalGenerator for DeetingPhaseProposalGenerator {
             proposed_at_frame_version: frame.frame_version_id.clone(),
         }))
     }
+}
+
+fn requires_user_intent_clarification(frame: &WorldModelFrame) -> bool {
+    let goal = frame.goal.trim();
+    let goal_is_deictic = matches!(
+        goal,
+        "继续" | "继续。" | "继续吧" | "接着" | "接着做" | "go on" | "continue"
+    );
+    let unknown_requires_intent = frame.unknowns.iter().any(|unknown| {
+        let question = unknown.question.to_ascii_lowercase();
+        question.contains("original task")
+            || question.contains("user intent")
+            || question.contains("goal remains ambiguous")
+            || unknown.question.contains("用户意图")
+            || unknown.question.contains("原始任务")
+            || unknown.question.contains("目标不明确")
+    });
+    let target_requires_clarification = frame.verification_targets.iter().any(|target| {
+        let description = target.description.to_ascii_lowercase();
+        description.contains("user intent must be clarified")
+            || description.contains("goal remains ambiguous")
+            || target.description.contains("用户意图")
+            || target.description.contains("需要澄清")
+            || target.description.contains("目标不明确")
+    });
+
+    goal_is_deictic && (unknown_requires_intent || target_requires_clarification)
 }
 
 fn parse_phase_step_type(value: &str) -> Option<PhaseStepType> {
@@ -1263,7 +1442,11 @@ mod tests {
     }
 
     fn validator_without_app_state() -> DeetingTier2Validator {
-        DeetingTier2Validator { app_state: None }
+        DeetingTier2Validator {
+            runtime_request: None,
+            app_state: None,
+            execution_policy: crate::modules::desktop_runtime::runtime::control_plane::build_default_local_execution_policy(),
+        }
     }
 
     static TEST_VALIDATION_STATE_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
@@ -1467,6 +1650,54 @@ mod tests {
 
             assert_eq!(proposal.step_type, expected_step_type);
         }
+    }
+
+    #[test]
+    fn phase_proposal_requests_clarification_when_frame_says_user_intent_is_ambiguous() {
+        let mut frame = WorldModelFrame::new(
+            "frame-clarify",
+            "session-1",
+            "task-1",
+            "继续",
+            ExecutionStrategy::DirectIteration,
+            FrameProvenance::bootstrap("test"),
+        );
+        frame.unknowns.push(Unknown {
+            id: "unknown-original-task".to_string(),
+            question: "What was the original task before it stalled?".to_string(),
+        });
+        frame.verification_targets.push(VerificationTarget {
+            id: "verify-user-intent".to_string(),
+            description: "User intent must be clarified if goal remains ambiguous".to_string(),
+        });
+        let plan = PlanArtifact::from_frame("plan-clarify", &frame);
+        let input = UserInput {
+            session_id: "session-1".to_string(),
+            task_id: "task-1".to_string(),
+            content: "继续".to_string(),
+            source: Default::default(),
+        };
+
+        let proposal = DeetingPhaseProposalGenerator::new()
+            .propose_next_phase(&frame, &plan, &input)
+            .expect("proposal")
+            .expect("some proposal");
+
+        assert_eq!(proposal.step_type, PhaseStepType::DirectChat);
+        assert_eq!(
+            proposal
+                .payload
+                .get("clarification_required")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            proposal
+                .payload
+                .get("clarification_kind")
+                .and_then(serde_json::Value::as_str),
+            Some("user_intent")
+        );
     }
 
     #[test]

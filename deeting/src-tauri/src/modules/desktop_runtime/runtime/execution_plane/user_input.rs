@@ -17,6 +17,33 @@ pub(super) fn latest_user_message(messages: &[LocalChatInputMessage]) -> Option<
         .map(|message| message.content.clone())
 }
 
+pub(super) fn latest_contiguous_user_messages(messages: &[LocalChatInputMessage]) -> Option<String> {
+    let mut parts = Vec::new();
+    let mut seen_latest_user = false;
+
+    for message in messages.iter().rev() {
+        if message.role.eq_ignore_ascii_case("user") {
+            seen_latest_user = true;
+            let trimmed = message.content.trim();
+            if !trimmed.is_empty() {
+                parts.push(trimmed.to_string());
+            }
+            continue;
+        }
+
+        if seen_latest_user {
+            break;
+        }
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        parts.reverse();
+        Some(parts.join("\n\n"))
+    }
+}
+
 pub(super) fn latest_user_image_input(messages: &[LocalChatInputMessage]) -> LatestUserImageInput {
     let Some(message) = messages
         .iter()
@@ -104,8 +131,47 @@ pub(super) fn latest_user_image_input(messages: &[LocalChatInputMessage]) -> Lat
 
 #[cfg(test)]
 mod tests {
-    use super::{latest_user_image_input, LatestUserImageInput};
+    use super::{
+        latest_contiguous_user_messages, latest_user_image_input, LatestUserImageInput,
+    };
     use mcp_core::types::LocalChatInputMessage;
+
+    fn message(role: &str, content: &str) -> LocalChatInputMessage {
+        LocalChatInputMessage {
+            role: role.to_string(),
+            content: content.to_string(),
+            reasoning_content: None,
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
+        }
+    }
+
+    #[test]
+    fn latest_contiguous_user_messages_combines_consecutive_user_turns() {
+        let combined = latest_contiguous_user_messages(&[
+            message("user", "old task"),
+            message("assistant", "old reply"),
+            message("user", "first current sentence"),
+            message("user", "second current sentence"),
+        ]);
+
+        assert_eq!(
+            combined.as_deref(),
+            Some("first current sentence\n\nsecond current sentence")
+        );
+    }
+
+    #[test]
+    fn latest_contiguous_user_messages_stops_at_assistant_boundary() {
+        let combined = latest_contiguous_user_messages(&[
+            message("user", "do not include this"),
+            message("assistant", "boundary"),
+            message("user", "include this"),
+        ]);
+
+        assert_eq!(combined.as_deref(), Some("include this"));
+    }
 
     #[test]
     fn latest_user_image_input_reads_structured_text_and_images() {

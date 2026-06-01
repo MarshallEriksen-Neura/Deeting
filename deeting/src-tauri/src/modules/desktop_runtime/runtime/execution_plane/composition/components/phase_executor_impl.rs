@@ -86,7 +86,7 @@ where
             tokio::runtime::Handle::current().block_on(async {
                 match step_type {
                     PhaseStepType::DirectChat => {
-                        execute_direct_chat_phase(request, self.emit_status).await
+                        execute_direct_chat_phase(request, phase, self.emit_status).await
                     }
                     PhaseStepType::DelegatedWorker | PhaseStepType::DelegatedWorkflow => {
                         execute_delegated_worker_phase(
@@ -97,9 +97,10 @@ where
                         )
                         .await
                     }
-                    PhaseStepType::ToolCall
-                    | PhaseStepType::CapabilityAdmit
-                    | PhaseStepType::VerifyFinal => {
+                    PhaseStepType::ToolCall | PhaseStepType::CapabilityAdmit => {
+                        reject_unsupported_phase_adapter(request, step_type, self.emit_status).await
+                    }
+                    PhaseStepType::VerifyFinal => {
                         execute_fallback_chat_phase(request, step_type, self.emit_status).await
                     }
                 }
@@ -127,12 +128,86 @@ fn phase_requires_world_model_frame_refresh(phase: &Phase) -> bool {
 
 async fn execute_direct_chat_phase<F>(
     request: LocalExecutionRequest,
+    phase: &Phase,
     emit_status: &mut F,
 ) -> Result<LocalExecutionOutcome, String>
 where
     F: FnMut(&str, Option<&str>, &str, &str, Option<Value>),
 {
+    if phase
+        .payload
+        .get("clarification_required")
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        return Ok(build_clarification_required_outcome(request, phase, emit_status));
+    }
     run_policy_scoped_chat_completion(request.into(), None, emit_status).await
+}
+
+fn build_clarification_required_outcome<F>(
+    request: LocalExecutionRequest,
+    phase: &Phase,
+    emit_status: &mut F,
+) -> LocalExecutionOutcome
+where
+    F: FnMut(&str, Option<&str>, &str, &str, Option<Value>),
+{
+    let question = phase
+        .payload
+        .get("clarification_question")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("你想让我继续哪一个具体任务？请补充目标或上一轮任务上下文。");
+    emit_status(
+        "evolve",
+        Some("phase_executor"),
+        "blocked",
+        "runtime.phase_executor.clarification_required",
+        Some(json!({
+            "phase_id": phase.phase_id.clone(),
+            "phase_step_type": phase_step_type_name(phase.step_type),
+            "clarification_kind": phase
+                .payload
+                .get("clarification_kind")
+                .and_then(Value::as_str)
+                .unwrap_or("user_intent"),
+            "reason": "world_model_requires_user_intent_clarification",
+            "goal": phase.payload.get("goal").cloned().unwrap_or(Value::Null),
+        })),
+    );
+
+    let execution_graph = json!({
+        "metadata": {
+            "execution_id": request.root_execution_id.clone(),
+            "frame_version_id": request.world_model_frame.as_ref().map(|frame| frame.frame_version_id.clone()),
+            "phase_id": phase.phase_id.clone(),
+            "clarification_required": true,
+        },
+        "events": []
+    });
+    let response_json = json!({
+        "content": question,
+        "status": "blocked",
+        "finish_reason": "requires_clarification",
+        "clarification_required": true,
+        "clarification_kind": phase
+            .payload
+            .get("clarification_kind")
+            .and_then(Value::as_str)
+            .unwrap_or("user_intent"),
+        "error_code": "USER_INTENT_CLARIFICATION_REQUIRED",
+        "execution_graph": execution_graph.clone(),
+    });
+
+    LocalExecutionOutcome {
+        delegated_execution: None,
+        execution_graph,
+        response_json,
+        captured_world_model_update: None,
+        world_model_frame: request.world_model_frame,
+    }
 }
 
 async fn execute_fallback_chat_phase<F>(
@@ -155,6 +230,31 @@ where
     );
 
     run_policy_scoped_chat_completion(request.into(), None, emit_status).await
+}
+
+async fn reject_unsupported_phase_adapter<F>(
+    _request: LocalExecutionRequest,
+    step_type: PhaseStepType,
+    emit_status: &mut F,
+) -> Result<LocalExecutionOutcome, String>
+where
+    F: FnMut(&str, Option<&str>, &str, &str, Option<Value>),
+{
+    emit_status(
+        "evolve",
+        Some("phase_executor"),
+        "failed",
+        "runtime.phase_executor.unsupported_phase_adapter",
+        Some(json!({
+            "phase_step_type": phase_step_type_name(step_type),
+            "error_code": "PHASE_EXECUTOR_UNSUPPORTED",
+            "reason": "phase_step_requires_dedicated_executor",
+        })),
+    );
+    Err(format!(
+        "PHASE_EXECUTOR_UNSUPPORTED: {} requires a dedicated executor and cannot fallback to chat completion",
+        phase_step_type_name(step_type)
+    ))
 }
 
 async fn execute_delegated_worker_phase<F>(
@@ -552,6 +652,14 @@ fn response_error_summary(response_json: &Value) -> Option<String> {
 }
 
 fn response_has_hard_failure_signal(response_json: &Value) -> bool {
+    if response_json
+        .get("clarification_required")
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        return true;
+    }
+
     if response_error_summary(response_json).is_some() {
         return true;
     }
@@ -569,7 +677,7 @@ fn response_has_hard_failure_signal(response_json: &Value) -> bool {
 
     if matches!(
         extract_finish_reason(response_json).as_deref(),
-        Some("error")
+        Some("error") | Some("requires_clarification")
     ) {
         return true;
     }
@@ -695,6 +803,22 @@ mod tests {
         assert_eq!(observation.summary, "result truncated");
         assert!(!observation.goal_satisfied);
         assert!(observation.frame_still_valid);
+    }
+
+    #[test]
+    fn phase_observation_marks_clarification_required_unsatisfied_and_invalid() {
+        let phase = test_phase("phase-clarify", PhaseStepType::DirectChat);
+        let outcome = test_outcome(json!({
+            "content": "你想让我继续哪一个具体任务？",
+            "finish_reason": "requires_clarification",
+            "clarification_required": true,
+            "error_code": "USER_INTENT_CLARIFICATION_REQUIRED"
+        }));
+
+        let observation = phase_observation_from_outcome(&phase, &outcome);
+
+        assert!(!observation.goal_satisfied);
+        assert!(!observation.frame_still_valid);
     }
 
     #[test]

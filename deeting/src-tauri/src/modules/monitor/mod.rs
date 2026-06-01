@@ -2,6 +2,7 @@ pub mod agent_runtime;
 pub mod commands;
 mod delivery;
 pub mod output_contract;
+mod prompt_definitions;
 mod run_events;
 pub mod store;
 pub mod types;
@@ -998,7 +999,7 @@ mod tests {
         assert_eq!(
             materialized,
             vec![
-                "skill_action__system-monitor__sys_create_monitor".to_string(),
+                "skill_action__system_monitor__sys_create_monitor".to_string(),
                 "tool.search".to_string(),
             ]
         );

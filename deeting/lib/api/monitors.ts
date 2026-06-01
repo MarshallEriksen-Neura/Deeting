@@ -147,8 +147,7 @@ export interface MonitorDeliveryStateList {
 export interface MonitorTaskCreateInput {
   title: string
   objective: string
-  assistant_id: string
-  task_agent_id?: string
+  task_agent_id: string
   cron_expr?: string
   analysis_mode?: "concise" | "deep" | "alert_first"
   notify_config?: MonitorNotifyConfig
@@ -159,7 +158,6 @@ export interface MonitorTaskCreateInput {
 export interface MonitorTaskUpdateInput {
   title?: string
   objective?: string
-  assistant_id?: string
   task_agent_id?: string
   cron_expr?: string
   analysis_mode?: "concise" | "deep" | "alert_first"
@@ -228,26 +226,19 @@ export interface MonitorTaskCreateResponse {
   execution_target?: MonitorExecutionTarget
 }
 
-function withTaskAgentAliases<T extends { assistant_id?: string | null; assistant_name?: string | null }>(
+function withTaskAgentAliases<T extends {
+  assistant_id?: string | null
+  assistant_name?: string | null
+  task_agent_id?: string | null
+  task_agent_name?: string | null
+}>(
   value: T,
 ): T & { task_agent_id: string | null; task_agent_name: string | null } {
   return {
     ...value,
-    task_agent_id: value.assistant_id ?? null,
-    task_agent_name: value.assistant_name ?? null,
+    task_agent_id: value.task_agent_id ?? value.assistant_id ?? null,
+    task_agent_name: value.task_agent_name ?? value.assistant_name ?? null,
   }
-}
-
-function normalizeMonitorTaskInput<T extends { assistant_id?: string; task_agent_id?: string }>(
-  value: T,
-): T {
-  if (value.task_agent_id && !value.assistant_id) {
-    return {
-      ...value,
-      assistant_id: value.task_agent_id,
-    }
-  }
-  return value
 }
 
 // =====================
@@ -319,18 +310,17 @@ export async function fetchMonitorTask(taskId: string): Promise<MonitorTask> {
 export async function createMonitorTask(
   data: MonitorTaskCreateInput
 ): Promise<MonitorTaskCreateResponse> {
-  const normalized = normalizeMonitorTaskInput(data)
   if (isTauriRuntime()) {
     return withTaskAgentAliases(
       await invokeTauri<MonitorTaskCreateResponse>("create_local_monitor_task", {
-        payload: normalized,
+        payload: data,
       }),
     )
   }
   return withTaskAgentAliases(await request<MonitorTaskCreateResponse>({
     url: MONITORS_BASE,
     method: "POST",
-    data: normalized,
+    data,
   }))
 }
 
@@ -338,17 +328,16 @@ export async function updateMonitorTask(
   taskId: string,
   data: MonitorTaskUpdateInput
 ): Promise<MonitorTask> {
-  const normalized = normalizeMonitorTaskInput(data)
   if (isTauriRuntime()) {
     return withTaskAgentAliases(await invokeTauri<MonitorTask>("update_local_monitor_task", {
       taskId,
-      payload: normalized,
+      payload: data,
     }))
   }
   return withTaskAgentAliases(await request<MonitorTask>({
     url: `${MONITORS_BASE}/${taskId}`,
     method: "PATCH",
-    data: normalized,
+    data,
   }))
 }
 

@@ -413,7 +413,7 @@ mod tests {
 
     #[test]
     fn disambiguates_duplicate_provider_names_within_length_limit() {
-        let long_safe_name = "a23456789012345678901234567890123456789012345678901234567890123";
+        let long_safe_name = "a234567890123456789012345678901234567890123456789012345678901234";
         assert_eq!(long_safe_name.len(), PROVIDER_MAX_TOOL_NAME_LEN);
 
         let mcp_tools =
