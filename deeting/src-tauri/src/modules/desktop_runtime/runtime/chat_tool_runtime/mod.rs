@@ -5,16 +5,16 @@ use crate::modules::ai_upstream::{
     request_provider_chat_completion_with_pool_failover, ReasoningRequestConfig,
 };
 use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUNDS_CONFIG_KEY};
+use crate::modules::desktop_runtime::runtime::prompt_definitions::{
+    compact_replayed_system_prompt_content, render_desktop_execution_tools_injection_prompt,
+    render_world_model_system_context, WorldModelUpdatePromptMode,
+};
 use crate::modules::desktop_runtime::runtime::runtime_event_projection::projection::{
     attach_runtime_transition_blocks_to_response, project_execution_observation_decision_blocks,
     project_final_answer_decision_blocks, project_tool_call_proposal_decision_blocks,
     project_tool_execution_correlation_blocks, project_world_model_frame_decision_block,
     ExecutionObservationProjectionInput, FinalAnswerProjectionInput,
     ToolCallProposalProjectionInput, WorldModelFrameKind, WorldModelFrameProjectionInput,
-};
-use crate::modules::desktop_runtime::runtime::prompt_definitions::{
-    compact_replayed_system_prompt_content, render_desktop_execution_tools_injection_prompt,
-    render_world_model_system_context, WorldModelUpdatePromptMode,
 };
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
@@ -461,14 +461,17 @@ pub(crate) async fn run_local_chat_complete_with_tools(
             .map(|m| m.role == "system")
             .unwrap_or(false)
     {
-        orchestrated_messages.insert(0, LocalChatInputMessage {
-            role: "system".to_string(),
-            content: render_desktop_execution_tools_injection_prompt(),
-            reasoning_content: None,
-            tool_calls: vec![],
-            tool_call_id: None,
-            name: None,
-        });
+        orchestrated_messages.insert(
+            0,
+            LocalChatInputMessage {
+                role: "system".to_string(),
+                content: render_desktop_execution_tools_injection_prompt(),
+                reasoning_content: None,
+                tool_calls: vec![],
+                tool_call_id: None,
+                name: None,
+            },
+        );
     }
 
     let state = LocalChatToolRuntimeState {
@@ -548,9 +551,11 @@ async fn continue_local_chat_complete_with_tools(
         let effective_allowed_tool_names = state
             .execution_policy
             .effective_allowed_tool_names(state.last_capability_snapshot.as_ref());
+        let include_bootstrap_tools = state.round == 1;
         let tools = build_local_runtime_tools_with_allowlist(
             &effective_allowed_tool_names,
             state.last_capability_snapshot.as_ref(),
+            include_bootstrap_tools,
         );
         let effective_tool_call_meta = build_state_effective_tool_call_meta(&state);
         let provider_messages =

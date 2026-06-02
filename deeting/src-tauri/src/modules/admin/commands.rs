@@ -434,6 +434,19 @@ pub async fn list_local_gateway_logs(
 }
 
 #[tauri::command]
+pub async fn delete_local_gateway_logs(
+    state: State<'_, AppState>,
+    query: Option<LocalGatewayLogQuery>,
+) -> Result<i64, String> {
+    state
+        .mcp
+        .store
+        .delete_local_gateway_logs(query.unwrap_or_default())
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
 pub async fn create_local_gateway_log(
     state: State<'_, AppState>,
     payload: LocalGatewayLogItem,

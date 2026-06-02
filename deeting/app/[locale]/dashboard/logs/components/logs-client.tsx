@@ -5,7 +5,10 @@ import { useLocale, useTranslations } from "next-intl"
 import { GitCompareArrows, ShieldCheck, Terminal } from "lucide-react"
 
 import { Button } from "@/components/ui/shadcn/button"
-import type { LocalFramePhaseAlignmentReadiness } from "@/lib/api/admin-dashboard"
+import {
+  deleteAdminGatewayLogs,
+  type LocalFramePhaseAlignmentReadiness,
+} from "@/lib/api/admin-dashboard"
 import {
   useGatewayLogs,
   useGatewayLogStats,
@@ -46,6 +49,7 @@ export function LogsClient() {
   const [desktopRuntime, setDesktopRuntime] = useState(false)
   const [cursor, setCursor] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [resetting, setResetting] = useState(false)
 
   useEffect(() => {
     setDesktopRuntime(isFramePhaseAlignmentReadinessRuntime())
@@ -123,7 +127,6 @@ export function LogsClient() {
       <div className="flex min-h-0 flex-1 flex-col">
         <LogsFilterBar
           value={filters}
-          activeCount={activeFilterCount}
           onChange={(next) => {
             setFilters(next)
             setCursor(null)
@@ -133,11 +136,20 @@ export function LogsClient() {
             void Promise.all([mutate(), mutateStats()])
           }}
           onReset={() => {
-            setFilters(INITIAL_FILTERS)
-            setCursor(null)
-            setSelectedId(null)
+            const resetQuery = toGatewayLogResetQuery(query)
+            setResetting(true)
+            void deleteAdminGatewayLogs(resetQuery)
+              .then(() => {
+                setFilters(INITIAL_FILTERS)
+                setCursor(null)
+                setSelectedId(null)
+                setReadinessWindow(getFramePhaseAlignmentReadinessWindow())
+                return Promise.all([mutate(), mutateStats()])
+              })
+              .finally(() => setResetting(false))
           }}
           refreshing={isValidating || (desktopRuntime && readinessValidating)}
+          resetting={resetting}
         />
 
         {desktopRuntime ? (
@@ -424,4 +436,18 @@ function toIsoString(value: string) {
   if (Number.isNaN(date.getTime())) return undefined
 
   return date.toISOString()
+}
+
+function toGatewayLogResetQuery(query: GatewayLogQuery): Omit<GatewayLogQuery, "cursor" | "size"> {
+  return {
+    start_time: query.start_time,
+    end_time: query.end_time,
+    user_id: query.user_id,
+    api_key_id: query.api_key_id,
+    preset_id: query.preset_id,
+    model: query.model,
+    status_code: query.status_code,
+    is_cached: query.is_cached,
+    error_code: query.error_code,
+  }
 }

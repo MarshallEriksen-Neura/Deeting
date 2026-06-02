@@ -23,8 +23,8 @@ use super::{
 };
 use crate::modules::desktop_runtime::context_orchestrator::is_context_tool;
 use crate::modules::desktop_runtime::runtime::{
-    extract_chat_tool_calls, resolve_provider_tool_name_for_execution,
-    LocalCapabilityActivationState,
+    extract_chat_tool_calls, resolve_local_runtime_tool_availability,
+    resolve_provider_tool_name_for_execution, LocalCapabilityActivationState,
 };
 use crate::state::AppState;
 use tauri::AppHandle;
@@ -58,6 +58,11 @@ pub(crate) async fn process_chat_tool_calls(
     let captured_world_model_update: Option<WorldModelUpdate> =
         state.captured_world_model_update.clone();
     let mut runtime_transition_blocks = Vec::new();
+    let include_bootstrap_tools = state.round == 1;
+    let mut available_tool_names = effective_allowed_tool_names.to_vec();
+    available_tool_names.extend(state.session_discovered_tools.iter().cloned());
+    let tool_availability =
+        resolve_local_runtime_tool_availability(&available_tool_names, include_bootstrap_tools);
 
     for (call_index, call) in tool_calls.into_iter().enumerate() {
         let requested_tool_name = call.name.trim().to_lowercase();
@@ -65,6 +70,7 @@ pub(crate) async fn process_chat_tool_calls(
             &requested_tool_name,
             effective_allowed_tool_names,
             state.last_capability_snapshot.as_ref(),
+            include_bootstrap_tools,
         )
         .unwrap_or(requested_tool_name);
         let tool_name =
@@ -75,11 +81,7 @@ pub(crate) async fn process_chat_tool_calls(
         let meta_len_before = tool_call_meta.len();
         let approval_count_before = approval_tokens.len();
 
-        if !effective_allowed_tool_names
-            .iter()
-            .any(|item| item == &tool_name)
-            && !state.session_discovered_tools.contains(&tool_name)
-        {
+        if !tool_availability.contains(&tool_name) {
             synthesized = true;
             state
                 .realtime_emitter

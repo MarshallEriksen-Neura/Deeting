@@ -736,6 +736,82 @@ async fn gateway_log_retention_cleanup_deletes_expired_rows_and_keeps_recent_one
 }
 
 #[tokio::test]
+async fn delete_local_gateway_logs_deletes_matching_rows_only() {
+    let store = create_test_store("gateway-log-delete-filtered").await;
+    store.init().await.expect("init store");
+
+    store
+        .create_local_gateway_log(
+            Some("trace-delete"),
+            Some("user-a"),
+            Some("cred-a"),
+            Some("preset-a"),
+            "gpt-4o",
+            500,
+            100,
+            Some(50),
+            Some("https://example.com/v1/chat/completions"),
+            0,
+            10,
+            20,
+            30,
+            0.01,
+            0.02,
+            false,
+            Some("UPSTREAM_ERROR"),
+            None,
+        )
+        .await
+        .expect("insert matching gateway log");
+
+    store
+        .create_local_gateway_log(
+            Some("trace-keep"),
+            Some("user-b"),
+            Some("cred-b"),
+            Some("preset-b"),
+            "gpt-4o-mini",
+            200,
+            120,
+            Some(60),
+            Some("https://example.com/v1/chat/completions"),
+            0,
+            4,
+            6,
+            10,
+            0.005,
+            0.01,
+            true,
+            None,
+            None,
+        )
+        .await
+        .expect("insert non-matching gateway log");
+
+    let deleted = store
+        .delete_local_gateway_logs(LocalGatewayLogQuery {
+            model: Some("gpt-4o".to_string()),
+            status_code: Some(500),
+            error_code: Some("UPSTREAM_ERROR".to_string()),
+            ..Default::default()
+        })
+        .await
+        .expect("delete matching gateway logs");
+
+    assert_eq!(deleted, 1);
+
+    let remaining_trace_ids: Vec<String> =
+        sqlx::query("SELECT trace_id FROM gateway_log ORDER BY created_at DESC, id DESC;")
+            .fetch_all(&store.pool)
+            .await
+            .expect("list remaining gateway logs")
+            .into_iter()
+            .map(|row| row.try_get("trace_id").expect("trace_id"))
+            .collect();
+    assert_eq!(remaining_trace_ids, vec!["trace-keep".to_string()]);
+}
+
+#[tokio::test]
 async fn record_tool_execution_persists_successful_events() {
     let store = create_test_store("tool-execution-history").await;
     store.init().await.expect("init store");

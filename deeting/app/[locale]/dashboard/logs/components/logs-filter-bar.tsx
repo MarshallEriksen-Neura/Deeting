@@ -25,11 +25,11 @@ export type LogsFilters = {
 
 interface LogsFilterBarProps {
   value: LogsFilters
-  activeCount: number
   onChange: (next: LogsFilters) => void
   onRefresh: () => void
   onReset: () => void
   refreshing: boolean
+  resetting: boolean
 }
 
 const STATUS_OPTIONS = ["all", "200", "400", "401", "403", "404", "429", "500", "502", "503", "504"] as const
@@ -38,11 +38,11 @@ const BRUTAL_INPUT = "h-8 rounded-none border border-[var(--hairline)] bg-transp
 
 export function LogsFilterBar({
   value,
-  activeCount,
   onChange,
   onRefresh,
   onReset,
   refreshing,
+  resetting,
 }: LogsFilterBarProps) {
   const t = useTranslations("logs")
 
@@ -115,10 +115,10 @@ export function LogsFilterBar({
             variant="ghost"
             size="sm"
             className="h-8 rounded-none border border-[var(--hairline)] bg-transparent px-3 text-[10px] font-bold text-[var(--ink-3)] hover:bg-[var(--panel-bg-inset)] hover:text-[var(--ink)] uppercase shadow-none"
-            disabled={activeCount === 0}
+            disabled={resetting || refreshing}
             onClick={onReset}
           >
-            <RotateCcw className="mr-1 size-3" />
+            <RotateCcw className={resetting ? "mr-1 size-3 animate-spin" : "mr-1 size-3"} />
             {t("filters.reset")}
           </Button>
           <Button
@@ -126,7 +126,7 @@ export function LogsFilterBar({
             variant="ghost"
             size="sm"
             className="h-8 rounded-none border border-[var(--ok-border)] bg-[var(--ok-soft)] px-3 text-[10px] font-bold text-[var(--ok)] hover:bg-[var(--ok)] hover:text-white uppercase shadow-none"
-            disabled={refreshing}
+            disabled={refreshing || resetting}
             onClick={onRefresh}
           >
             <RefreshCw className={refreshing ? "mr-1 size-3 animate-spin" : "mr-1 size-3"} />

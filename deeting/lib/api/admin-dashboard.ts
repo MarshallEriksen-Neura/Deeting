@@ -912,6 +912,42 @@ export async function fetchAdminGatewayLogs(params?: GatewayLogFilterParams & {
   return GatewayLogListSchema.parse(data)
 }
 
+export async function deleteAdminGatewayLogs(params?: GatewayLogFilterParams): Promise<number> {
+  if (isTauriRuntime()) {
+    const deleted = await invokeTauri<unknown>("delete_local_gateway_logs", {
+      query: {
+        start_time: params?.start_time,
+        end_time: params?.end_time,
+        user_id: params?.user_id,
+        api_key_id: params?.api_key_id,
+        preset_id: params?.preset_id,
+        model: params?.model,
+        status_code: params?.status_code,
+        is_cached: params?.is_cached,
+        error_code: params?.error_code,
+      },
+    })
+    return z.number().int().nonnegative().parse(deleted)
+  }
+
+  const deleted = await request<unknown>({
+    url: `${ADMIN_BASE}/gateway-logs`,
+    method: "DELETE",
+    params: {
+      start_time: params?.start_time,
+      end_time: params?.end_time,
+      user_id: params?.user_id,
+      api_key_id: params?.api_key_id,
+      preset_id: params?.preset_id,
+      model: params?.model,
+      status_code: params?.status_code,
+      is_cached: params?.is_cached,
+      error_code: params?.error_code,
+    },
+  })
+  return z.number().int().nonnegative().parse(deleted)
+}
+
 const GatewayLogStatsBucketSchema = z.object({
   key: z.string(),
   count: z.number().int().nonnegative(),

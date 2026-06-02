@@ -2,6 +2,7 @@ import {
   approveAdminPluginReview,
   archiveAdminConversation,
   closeAdminConversation,
+  deleteAdminGatewayLogs,
   fetchAdminConversation,
   fetchAdminConversations,
   fetchAdminConversationMessages,
@@ -621,6 +622,37 @@ describe("admin dashboard api", () => {
         error_contains: "timeout",
       },
     })
+  })
+
+  it("deletes gateway logs via tauri command", async () => {
+    process.env.NEXT_PUBLIC_IS_TAURI = "true"
+    windowWithTauri.__TAURI__ = {}
+    mockInvoke.mockResolvedValue(3)
+
+    const deleted = await deleteAdminGatewayLogs({
+      start_time: "2026-03-01T00:00:00.000Z",
+      end_time: "2026-03-04T00:00:00.000Z",
+      model: "gpt-4o",
+      status_code: 500,
+      is_cached: false,
+      error_code: "UPSTREAM_ERROR",
+    })
+
+    expect(deleted).toBe(3)
+    expect(mockInvoke).toHaveBeenCalledWith("delete_local_gateway_logs", {
+      query: {
+        start_time: "2026-03-01T00:00:00.000Z",
+        end_time: "2026-03-04T00:00:00.000Z",
+        user_id: undefined,
+        api_key_id: undefined,
+        preset_id: undefined,
+        model: "gpt-4o",
+        status_code: 500,
+        is_cached: false,
+        error_code: "UPSTREAM_ERROR",
+      },
+    })
+    expect(mockRequest).not.toHaveBeenCalled()
   })
 
   it("throws for local summary admin api outside tauri runtime", async () => {

@@ -2578,6 +2578,61 @@ impl McpStore {
             .await
     }
 
+    pub async fn delete_local_gateway_logs(
+        &self,
+        query: LocalGatewayLogQuery,
+    ) -> Result<i64, McpError> {
+        let (
+            start_time,
+            end_time,
+            user_id,
+            api_key_id,
+            preset_id,
+            model,
+            status_code,
+            is_cached,
+            error_code,
+        ) = normalize_gateway_log_query(query);
+
+        let result = sqlx::query(
+            r#"
+            DELETE FROM gateway_log
+            WHERE (? IS NULL OR user_id = ?)
+              AND (? IS NULL OR api_key_id = ?)
+              AND (? IS NULL OR preset_id = ?)
+              AND (? IS NULL OR model = ?)
+              AND (? IS NULL OR status_code = ?)
+              AND (? IS NULL OR is_cached = ?)
+              AND (? IS NULL OR error_code = ?)
+              AND (? IS NULL OR julianday(created_at) >= julianday(?))
+              AND (? IS NULL OR julianday(created_at) <= julianday(?));
+            "#,
+        )
+        .bind(user_id.as_deref())
+        .bind(user_id.as_deref())
+        .bind(api_key_id.as_deref())
+        .bind(api_key_id.as_deref())
+        .bind(preset_id.as_deref())
+        .bind(preset_id.as_deref())
+        .bind(model.as_deref())
+        .bind(model.as_deref())
+        .bind(status_code)
+        .bind(status_code)
+        .bind(is_cached)
+        .bind(is_cached)
+        .bind(error_code.as_deref())
+        .bind(error_code.as_deref())
+        .bind(start_time.as_deref())
+        .bind(start_time.as_deref())
+        .bind(end_time.as_deref())
+        .bind(end_time.as_deref())
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        Ok(i64::try_from(result.rows_affected()).unwrap_or(i64::MAX))
+    }
+
     pub async fn list_local_gateway_logs(
         &self,
         query: LocalGatewayLogQuery,
