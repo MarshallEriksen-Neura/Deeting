@@ -1052,6 +1052,7 @@
       "dislike": "Dislike",
       "copy": "Copy",
       "copied": "Copied",
+      "delete": "Delete",
       "saveToWiki": "Save to LLM Wiki"
     },
     "feedback": {

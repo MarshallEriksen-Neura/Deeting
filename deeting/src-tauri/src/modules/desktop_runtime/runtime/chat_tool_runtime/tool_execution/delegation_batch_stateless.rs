@@ -1542,7 +1542,47 @@ fn spawn_background_child(
             }
         };
 
-        create_run_record(&app_state, &prepared, &execution_config).await;
+        if let Err(err) = ensure_child_execution_graph_run_row(
+            &app_state,
+            &audit_context,
+            &prepared,
+        )
+        .await
+        {
+            let failed_result = queued_child_failed_result(&prepared, err.as_str());
+            drop(permit);
+            let _ = complete_child_and_schedule_next(
+                &app_handle,
+                &app_state,
+                &execution_config,
+                &audit_context,
+                batch_id.as_str(),
+                child_run_id.as_str(),
+                ChildState::Failed,
+                failed_result,
+                Some(err.as_str()),
+            )
+            .await;
+            return;
+        }
+
+        if let Err(err) = create_run_record(&app_state, &prepared, &execution_config).await {
+            let failed_result = queued_child_failed_result(&prepared, err.as_str());
+            drop(permit);
+            let _ = complete_child_and_schedule_next(
+                &app_handle,
+                &app_state,
+                &execution_config,
+                &audit_context,
+                batch_id.as_str(),
+                child_run_id.as_str(),
+                ChildState::Failed,
+                failed_result,
+                Some(err.as_str()),
+            )
+            .await;
+            return;
+        }
         if let Err(err) = persist_background_resume_context(&app_state, &prepared).await {
             let failed_result = queued_child_failed_result(&prepared, err.as_str());
             drop(permit);
@@ -1661,12 +1701,30 @@ fn spawn_scheduled_children(
     }
 }
 
+async fn ensure_child_execution_graph_run_row(
+    app_state: &AppState,
+    audit_context: &AuditContext,
+    prepared: &PreparedChildRun,
+) -> Result<(), String> {
+    ensure_execution_graph_run_row(
+        app_state.mcp.store.as_ref(),
+        prepared.execution_id.as_str(),
+        audit_context.session_id.as_str(),
+        "delegation_child",
+        "delegation",
+        "running",
+        "delegated_custom_task_agent",
+    )
+    .await
+    .map_err(|err| err.to_string())
+}
+
 async fn create_run_record(
     app_state: &AppState,
     prepared: &PreparedChildRun,
     execution_config: &ChildExecutionConfig,
-) {
-    if let Err(err) = create_custom_task_agent_run(
+) -> Result<(), String> {
+    create_custom_task_agent_run(
         app_state.mcp.store.as_ref(),
         prepared.child_run_id.as_str(),
         prepared.profile.id.as_str(),
@@ -1688,13 +1746,8 @@ async fn create_run_record(
         }),
     )
     .await
-    {
-        log::warn!(
-            "create_custom_task_agent_run failed run_id={} err={}",
-            prepared.child_run_id,
-            err
-        );
-    }
+    .map(|_| ())
+    .map_err(|err| err.to_string())
 }
 
 async fn run_prepared_child(

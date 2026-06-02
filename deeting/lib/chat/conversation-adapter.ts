@@ -350,6 +350,7 @@ export function normalizeConversationMessages(
       id: messageId,
       role: normalizedRole as MessageRole,
       content: resolvedContent,
+      ...(typeof msg.turn_index === "number" ? { turnIndex: msg.turn_index } : {}),
       attachments: parsed.attachments.length ? parsed.attachments : undefined,
       createdAt: resolveCreatedAt(msg, index, total),
       metaInfo,

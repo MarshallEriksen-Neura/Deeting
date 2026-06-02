@@ -43,6 +43,8 @@ export function ChatContent({ agent }: ChatContentProps) {
   const setMessages = useChatStore((state) => state.setMessages)
   const {
     regenerateMessage,
+    regenerateUserMessage,
+    deleteUserMessage,
     compareWithModel,
     finalizeCompareWinner,
   } = useChatMessagingService()
@@ -190,6 +192,8 @@ export function ChatContent({ agent }: ChatContentProps) {
         statusCode={statusCode}
         statusMeta={statusMeta}
         onRegenerate={regenerateMessage}
+        onRegenerateUserMessage={regenerateUserMessage}
+        onDeleteUserMessage={deleteUserMessage}
         onLike={(id, payload?: ChatFeedbackReasonPayload) => sendFeedback(id, 1, payload)}
         onDislike={(id, payload?: ChatFeedbackReasonPayload) => sendFeedback(id, -1, payload)}
         onCompareWithModel={compareWithModel}

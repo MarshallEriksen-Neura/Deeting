@@ -58,6 +58,8 @@ interface ChatMessageListProps {
   statusCode: string | null
   statusMeta: Record<string, unknown> | null
   onRegenerate?: (messageId: string) => void
+  onRegenerateUserMessage?: (messageId: string) => void
+  onDeleteUserMessage?: (messageId: string) => void
   onLike?: (messageId: string, payload?: ChatFeedbackReasonPayload) => void | Promise<void>
   onDislike?: (messageId: string, payload?: ChatFeedbackReasonPayload) => void | Promise<void>
   onCompareWithModel?: (messageId: string, modelValue: string) => void
@@ -111,6 +113,8 @@ export function ChatMessageList({
   statusCode,
   statusMeta,
   onRegenerate,
+  onRegenerateUserMessage,
+  onDeleteUserMessage,
   onLike,
   onDislike,
   onCompareWithModel,
@@ -353,6 +357,8 @@ export function ChatMessageList({
           lastAssistantId={lastAssistantId}
           isTyping={isTyping}
           onRegenerate={onRegenerate}
+          onRegenerateUserMessage={onRegenerateUserMessage}
+          onDeleteUserMessage={onDeleteUserMessage}
           onLike={onLike}
           onDislike={onDislike}
           onCompareWithModel={onCompareWithModel}
@@ -371,6 +377,8 @@ export function ChatMessageList({
       statusCode,
       statusMeta,
       onRegenerate,
+      onRegenerateUserMessage,
+      onDeleteUserMessage,
       onLike,
       onDislike,
       onCompareWithModel,

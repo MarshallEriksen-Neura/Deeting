@@ -66,6 +66,8 @@ export interface Message {
   id: string
   role: MessageRole
   content: string
+  /** Persisted local conversation turn index. Required for durable per-message actions. */
+  turnIndex?: number
   attachments?: ChatAttachment[]
   createdAt: number
   metaInfo?: MessageMetaInfo

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { RefreshCw, ThumbsUp, ThumbsDown, Copy, Check, Bot, BookMarked } from "lucide-react"
+import { RefreshCw, ThumbsUp, ThumbsDown, Copy, Check, Bot, BookMarked, Trash2 } from "lucide-react"
 import { Button } from "@/ui/shadcn/button"
 import {
   Dialog,
@@ -355,3 +355,103 @@ export const MessageActions = React.memo<MessageActionsProps>(
 )
 
 MessageActions.displayName = "MessageActions"
+
+interface UserMessageActionsProps {
+  messageId: string
+  content?: string
+  onRegenerate?: (messageId: string) => void
+  onDelete?: (messageId: string) => void
+  onCopy?: (messageId: string) => void
+  disabled?: boolean
+  className?: string
+}
+
+export const UserMessageActions = React.memo<UserMessageActionsProps>(
+  ({
+    messageId,
+    content,
+    onRegenerate,
+    onDelete,
+    onCopy,
+    disabled = false,
+    className,
+  }) => {
+    const t = useI18n("chat")
+    const [copied, setCopied] = React.useState(false)
+
+    const handleRegenerate = React.useCallback(() => {
+      onRegenerate?.(messageId)
+    }, [messageId, onRegenerate])
+
+    const handleDelete = React.useCallback(() => {
+      onDelete?.(messageId)
+    }, [messageId, onDelete])
+
+    const handleCopy = React.useCallback(async () => {
+      if (!content) return
+
+      const success = await copyContent(content, false)
+      if (success) {
+        setCopied(true)
+        onCopy?.(messageId)
+        setTimeout(() => setCopied(false), 2000)
+      }
+    }, [content, messageId, onCopy])
+
+    return (
+      <div className={cn("flex items-center gap-1 mt-1 ml-1", className)}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={handleRegenerate}
+          disabled={disabled || !onRegenerate}
+          className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-muted/50"
+          title={t("actions.regenerate")}
+        >
+          <RefreshCw size={14} />
+          <span className="sr-only">{t("actions.regenerate")}</span>
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={handleDelete}
+          disabled={disabled || !onDelete}
+          className="h-7 w-7 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10"
+          title={t("actions.delete")}
+        >
+          <Trash2 size={14} />
+          <span className="sr-only">{t("actions.delete")}</span>
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={handleCopy}
+          disabled={disabled || !content}
+          className={cn(
+            "h-7 w-7 hover:bg-muted/50",
+            copied
+              ? "text-green-500 hover:text-green-600"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+          title={copied ? t("actions.copied") : t("actions.copy")}
+        >
+          {copied ? <Check size={14} /> : <Copy size={14} />}
+          <span className="sr-only">
+            {copied ? t("actions.copied") : t("actions.copy")}
+          </span>
+        </Button>
+      </div>
+    )
+  },
+  (prevProps, nextProps) =>
+    prevProps.messageId === nextProps.messageId &&
+    prevProps.content === nextProps.content &&
+    prevProps.disabled === nextProps.disabled &&
+    prevProps.onRegenerate === nextProps.onRegenerate &&
+    prevProps.onDelete === nextProps.onDelete &&
+    prevProps.onCopy === nextProps.onCopy
+)
+
+UserMessageActions.displayName = "UserMessageActions"

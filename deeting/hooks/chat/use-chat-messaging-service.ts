@@ -35,7 +35,10 @@ export function resolveChatRequestContext({
 }
 import { resolveSessionIdFromBrowser } from "@/lib/chat/session-storage"
 import { buildChatPageContextSystemPrompt } from "@/lib/browser/page-context"
-import type { ConversationMessage } from "@/lib/api/conversations"
+import {
+  deleteConversationMessage,
+  type ConversationMessage,
+} from "@/lib/api/conversations"
 import {
   useChatStore,
   type CompareCandidate,
@@ -133,6 +136,73 @@ function buildChatMessages(history: Message[], systemPrompt?: string): ChatMessa
   }
 
   return mapped
+}
+
+function sameMessageForTurnIndexMerge(left: Message, right: Message) {
+  if (left.role !== right.role) return false
+  if (left.role === "user") {
+    return left.content === right.content
+  }
+  return true
+}
+
+function mergeTurnIndexesFromHistory(current: Message[], history: Message[]): Message[] {
+  if (current.length === 0 || history.length === 0) return current
+
+  let historyIndex = 0
+  let changed = false
+  const next = current.map((message) => {
+    if (typeof message.turnIndex === "number") return message
+
+    for (; historyIndex < history.length; historyIndex += 1) {
+      const candidate = history[historyIndex]
+      if (typeof candidate?.turnIndex !== "number") continue
+      if (!sameMessageForTurnIndexMerge(message, candidate)) continue
+
+      historyIndex += 1
+      changed = true
+      return {
+        ...message,
+        turnIndex: candidate.turnIndex,
+      }
+    }
+
+    return message
+  })
+
+  return changed ? next : current
+}
+
+function getMessageTurnIndex(message: Message, sessionId?: string | null): number | null {
+  if (typeof message.turnIndex === "number" && Number.isInteger(message.turnIndex)) {
+    return message.turnIndex
+  }
+
+  const prefix = sessionId?.trim()
+  if (!prefix || !message.id.startsWith(`${prefix}-`)) return null
+  const parsed = Number(message.id.slice(prefix.length + 1))
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null
+}
+
+async function loadPersistedTurnIndexes(
+  sessionId: string,
+  predicate: (turnIndex: number) => boolean,
+  isTauriRuntime: boolean
+) {
+  const page = await loadConversationHistoryPage(sessionId, {
+    limit: 500,
+    idPrefix: sessionId,
+    isTauriRuntime,
+  })
+  return Array.from(
+    new Set(
+      page.messages
+        .map((message) => message.turnIndex)
+        .filter((turnIndex): turnIndex is number =>
+          typeof turnIndex === "number" && predicate(turnIndex)
+        )
+    )
+  ).sort((left, right) => left - right)
 }
 
 function buildKnowledgeSelectionMetadata(selectedKnowledgeFileIds: string[]) {
@@ -1195,6 +1265,21 @@ export function useChatMessagingService() {
     }
   }, [locale, streamEnabled, t])
 
+  const syncTurnIndexesFromHistory = useCallback(async (resolvedSessionId: string | null | undefined) => {
+    if (!isTauriRuntime || !resolvedSessionId) return
+    try {
+      const page = await loadConversationHistoryPage(resolvedSessionId, {
+        limit: 100,
+        idPrefix: resolvedSessionId,
+        isTauriRuntime,
+      })
+      const currentMessages = useChatStore.getState().messages
+      setMessages(mergeTurnIndexesFromHistory(currentMessages, page.messages))
+    } catch (error) {
+      console.warn("sync_turn_indexes_from_history_failed", error)
+    }
+  }, [isTauriRuntime, setMessages])
+
   const replaceAssistantMessage = useCallback((targetMessageId: string, replacement: Message) => {
     const currentMessages = useChatStore.getState().messages
     setMessages(
@@ -1493,6 +1578,7 @@ export function useChatMessagingService() {
         activeAssistantMessageIdRef.current = null
       }
       interruptedMessageIdsRef.current.delete(assistantMessageId)
+      void syncTurnIndexesFromHistory(resolvedSessionId)
     }
     return dispatchedToConversation
   }, [
@@ -1514,6 +1600,7 @@ export function useChatMessagingService() {
     setInterruptedMessageId,
     resolveCurrentSessionId,
     runStreamedRequest,
+    syncTurnIndexesFromHistory,
     updateUsage,
     composerMatchesDraft,
     clearComposer,
@@ -1801,6 +1888,7 @@ export function useChatMessagingService() {
         activeAssistantMessageIdRef.current = null
       }
       interruptedMessageIdsRef.current.delete(assistantMessageId)
+      void syncTurnIndexesFromHistory(resolvedSessionId)
     }
   }, [
     config,
@@ -1822,6 +1910,255 @@ export function useChatMessagingService() {
     clearAllCompareStates,
     resolveCurrentSessionId,
     runStreamedRequest,
+    syncTurnIndexesFromHistory,
+    updateUsage,
+  ])
+
+  const deleteUserMessage = useCallback(async (targetMessageId: string) => {
+    if (!isTauriRuntime) return
+    if (useChatRuntimeStore.getState().isLoading) {
+      await cancelActiveRequest()
+    }
+
+    const { sessionStorageKey } = resolveChatRequestContext({ isTauriRuntime })
+    const resolvedSessionId = resolveCurrentSessionId(sessionStorageKey)
+    if (!resolvedSessionId) {
+      setErrorMessage("Session not found")
+      return
+    }
+
+    const currentMessages = useChatStore.getState().messages
+    const targetIndex = currentMessages.findIndex(
+      (message) => message.id === targetMessageId && message.role === "user"
+    )
+    if (targetIndex < 0) return
+
+    const targetTurnIndex = getMessageTurnIndex(currentMessages[targetIndex], resolvedSessionId)
+    if (!targetTurnIndex) {
+      setErrorMessage("Message is not persisted yet")
+      return
+    }
+
+    const turnIndexes = await loadPersistedTurnIndexes(
+      resolvedSessionId,
+      (turnIndex) => turnIndex >= targetTurnIndex,
+      isTauriRuntime
+    )
+    if (turnIndexes.length === 0) {
+      setErrorMessage("Message is not persisted yet")
+      return
+    }
+
+    try {
+      for (const turnIndex of turnIndexes) {
+        await deleteConversationMessage(resolvedSessionId, turnIndex)
+      }
+      setMessages(currentMessages.slice(0, targetIndex))
+      clearAllCompareStates()
+      clearStatus()
+      setActiveMessageId(null)
+      await syncTurnIndexesFromHistory(resolvedSessionId)
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : "Delete failed"
+      setErrorMessage(message)
+    }
+  }, [
+    cancelActiveRequest,
+    clearAllCompareStates,
+    clearStatus,
+    isTauriRuntime,
+    resolveCurrentSessionId,
+    setActiveMessageId,
+    setErrorMessage,
+    setMessages,
+    syncTurnIndexesFromHistory,
+  ])
+
+  const regenerateUserMessage = useCallback(async (targetMessageId: string) => {
+    if (!isTauriRuntime) return
+    if (useChatRuntimeStore.getState().isLoading) {
+      await cancelActiveRequest()
+    }
+
+    const currentMessages = useChatStore.getState().messages
+    const targetIndex = currentMessages.findIndex(
+      (message) => message.id === targetMessageId && message.role === "user"
+    )
+    if (targetIndex < 0) return
+
+    const selectedModel =
+      models.find((model) => matchesChatModelSelectionValue(model, config.model)) ??
+      models[0]
+    const modelSelectionMode = isDesktopLocalModel(selectedModel) ? ("pool" as const) : undefined
+    if (!selectedModel) return
+
+    const { sessionStorageKey } = resolveChatRequestContext({ isTauriRuntime })
+    const resolvedSessionId = resolveCurrentSessionId(sessionStorageKey)
+    if (!resolvedSessionId) {
+      setErrorMessage("Session not found")
+      return
+    }
+
+    const targetMessage = currentMessages[targetIndex]
+    const targetTurnIndex = getMessageTurnIndex(targetMessage, resolvedSessionId)
+    if (!targetTurnIndex) {
+      setErrorMessage("Message is not persisted yet")
+      return
+    }
+
+    const messagesThroughTarget = currentMessages.slice(0, targetIndex + 1)
+    const turnIndexesAfterTarget = await loadPersistedTurnIndexes(
+      resolvedSessionId,
+      (turnIndex) => turnIndex > targetTurnIndex,
+      isTauriRuntime
+    )
+
+    try {
+      for (const turnIndex of turnIndexesAfterTarget) {
+        await deleteConversationMessage(resolvedSessionId, turnIndex)
+      }
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : "Regenerate failed"
+      setErrorMessage(message)
+      return
+    }
+
+    const assistantMessageId = createMessageId()
+    const newAssistantMessage: Message = {
+      id: assistantMessageId,
+      role: "assistant",
+      content: "",
+      createdAt: Date.now(),
+    }
+    activeAssistantMessageIdRef.current = assistantMessageId
+    setInterruptedMessageId(null)
+    clearAllCompareStates()
+
+    setMessages([...messagesThroughTarget, newAssistantMessage])
+    setIsLoading(true)
+    setActiveMessageId(assistantMessageId)
+    clearStatus()
+
+    try {
+      const displayInput =
+        typeof targetMessage.metaInfo?.display_content === "string"
+          ? targetMessage.metaInfo.display_content.trim()
+          : ""
+      const explicitTaskAgentId = displayInput
+        ? await resolveExplicitTaskAgentIdForInput(displayInput)
+        : undefined
+      const payload = {
+        model: selectedModel.id,
+        model_selection_mode: modelSelectionMode,
+        provider_model_id: selectedModel.provider_model_id ?? undefined,
+        explicit_task_agent_id: explicitTaskAgentId,
+        messages: buildChatMessages(messagesThroughTarget),
+        temperature: config.temperatureEnabled ? config.temperature : undefined,
+        max_tokens: undefined,
+        reasoning_enabled: config.reasoningEnabled,
+        reasoning_effort: config.reasoningEnabled ? config.reasoningEffort : undefined,
+        request_id: createRequestId(),
+        session_id: resolvedSessionId,
+        regenerate: true,
+        metadata: buildRequestMetadata(selectedKnowledgeFileIds),
+      }
+      requestIdRef.current = payload.request_id ?? null
+      activeRequestRouteRef.current = "local_gateway"
+
+      await runStreamedRequest({
+        payload,
+        trackActiveRequest: true,
+        errorBlockIdBase: assistantMessageId,
+        onBlocks: (blocks) => {
+          appendActivityTimelineEvents(assistantMessageId, activityEventsFromBlocks(assistantMessageId, blocks))
+          appendMessageBlocks(assistantMessageId, blocks)
+          const latestMessage = useChatStore
+            .getState()
+            .messages.find((message) => message.id === assistantMessageId)
+          const workflowRunId = latestMessage
+            ? extractWorkflowRunIdFromMessage(latestMessage)
+            : extractWorkflowRunIdFromBlocks(blocks)
+          if (workflowRunId) {
+            openWorkflowRun(workflowRunId)
+          }
+        },
+        onTraceId: (traceId) => mergeMessageMeta(assistantMessageId, { trace_id: traceId }),
+        onSessionResolved: (nextSessionId) => setSessionId(nextSessionId),
+        onStatusEvent: (status) => {
+          const activityEvent = activityEventFromStatus({ ...status, messageId: assistantMessageId })
+          if (activityEvent) {
+            appendActivityTimelineEvents(assistantMessageId, [activityEvent])
+          }
+          setStatus({ ...status, messageId: assistantMessageId })
+          if (status.code === "knowledge.context.loaded" && status.meta) {
+            mergeMessageMeta(assistantMessageId, {
+              knowledge_context_status: {
+                code: status.code,
+                meta: status.meta,
+              },
+            })
+          }
+          if (status.code === "upstream.response" && status.meta) {
+            mergeMessageMeta(assistantMessageId, { runtime_metrics: status.meta })
+          }
+        },
+        onUsage: (usage) => {
+          updateUsage(assistantMessageId, usage)
+        },
+        getCurrentBlocks: () => {
+          const latest = useChatStore.getState().messages.find((message) => message.id === assistantMessageId)
+          return Array.isArray(latest?.blocks) ? (latest.blocks as MessageBlock[]) : []
+        },
+        onRequestError: (message, errorCode) => {
+          setErrorMessage(formatChatRuntimeErrorMessage(t, message, errorCode))
+        },
+      })
+    } catch (error) {
+      if (interruptedMessageIdsRef.current.has(assistantMessageId)) {
+        return
+      }
+      const message = error instanceof Error && error.message ? error.message : "Request failed"
+      appendMessageBlocks(assistantMessageId, [createErrorBlock(assistantMessageId, message)])
+      setErrorMessage(message)
+    } finally {
+      if (activeAssistantMessageIdRef.current === assistantMessageId) {
+        setIsLoading(false)
+        syncAssistantActivityStatus({
+          assistantMessageId,
+          setStatus,
+          clearStatus,
+          setActiveMessageId,
+        })
+        cancelRef.current = null
+        requestIdRef.current = null
+        activeRequestRouteRef.current = null
+        activeAssistantMessageIdRef.current = null
+      }
+      interruptedMessageIdsRef.current.delete(assistantMessageId)
+      void syncTurnIndexesFromHistory(resolvedSessionId)
+    }
+  }, [
+    appendMessageBlocks,
+    cancelActiveRequest,
+    clearAllCompareStates,
+    clearStatus,
+    config,
+    isTauriRuntime,
+    mergeMessageMeta,
+    models,
+    openWorkflowRun,
+    resolveCurrentSessionId,
+    runStreamedRequest,
+    selectedKnowledgeFileIds,
+    setActiveMessageId,
+    setErrorMessage,
+    setInterruptedMessageId,
+    setIsLoading,
+    setMessages,
+    setSessionId,
+    setStatus,
+    syncTurnIndexesFromHistory,
+    t,
     updateUsage,
   ])
 
@@ -2221,6 +2558,8 @@ export function useChatMessagingService() {
     markPendingTakeoverForDeferredSend,
     cancelPendingTakeover,
     regenerateMessage,
+    regenerateUserMessage,
+    deleteUserMessage,
     compareWithModel,
     finalizeCompareWinner,
     loadHistoryBySession,

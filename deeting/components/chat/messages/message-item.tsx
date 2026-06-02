@@ -7,7 +7,7 @@ import dynamic from "next/dynamic"
 import { cn } from "@/lib/utils"
 import { AIResponseBubble } from "./ai-response-bubble"
 import { CompareResponseShell } from "./compare-response-shell"
-import { MessageActions } from "./message-actions"
+import { MessageActions, UserMessageActions } from "./message-actions"
 import { WikiCrystallizationCard } from "./ai-response-bubble/wiki-crystallization-card"
 import { MarkdownViewer } from "@/components/chat/markdown-viewer"
 import { useChatStore, type Message, type ChatAssistant } from "@/store/chat-store"
@@ -36,6 +36,8 @@ interface MessageItemProps {
   lastAssistantId?: string
   isTyping?: boolean
   onRegenerate?: (messageId: string) => void
+  onRegenerateUserMessage?: (messageId: string) => void
+  onDeleteUserMessage?: (messageId: string) => void
   onLike?: (messageId: string, payload?: ChatFeedbackReasonPayload) => void | Promise<void>
   onDislike?: (messageId: string, payload?: ChatFeedbackReasonPayload) => void | Promise<void>
   onCopy?: (messageId: string) => void
@@ -106,7 +108,10 @@ export const MessageItem = React.memo<MessageItemProps>(
     statusCode = null,
     statusMeta = null,
     lastAssistantId,
+    isTyping = false,
     onRegenerate,
+    onRegenerateUserMessage,
+    onDeleteUserMessage,
     onLike,
     onDislike,
     onCopy,
@@ -242,6 +247,11 @@ export const MessageItem = React.memo<MessageItemProps>(
       return modelKey ? [modelKey] : []
     }, [compareState, messageMetaInfo])
     const isFocusedMessage = focusedMessageId === message.id
+    const canShowUserActions =
+      message.role === "user" &&
+      !isActive &&
+      typeof message.turnIndex === "number" &&
+      (Boolean(onRegenerateUserMessage) || Boolean(onDeleteUserMessage) || userDisplayContent.trim().length > 0)
     const itemRef = React.useRef<HTMLDivElement | null>(null)
 
     React.useEffect(() => {
@@ -384,6 +394,17 @@ export const MessageItem = React.memo<MessageItemProps>(
                 minute: "2-digit",
               })}
             </div>
+            {canShowUserActions ? (
+              <UserMessageActions
+                messageId={message.id}
+                content={userDisplayContent}
+                onRegenerate={onRegenerateUserMessage}
+                onDelete={onDeleteUserMessage}
+                onCopy={onCopy}
+                disabled={isActive || isTyping}
+                className="mt-0 ml-0"
+              />
+            ) : null}
           </div>
         )}
       </div>
@@ -399,6 +420,7 @@ export const MessageItem = React.memo<MessageItemProps>(
     const messageUnchanged =
       prevProps.message.id === nextProps.message.id &&
       assistantContentUnchanged &&
+      prevProps.message.turnIndex === nextProps.message.turnIndex &&
       prevProps.message.metaInfo?.display_content ===
         nextProps.message.metaInfo?.display_content &&
       (prevProps.message.metaInfo as Record<string, unknown> | undefined)?.page_context ===
@@ -442,6 +464,8 @@ export const MessageItem = React.memo<MessageItemProps>(
     // 回调未变化
     const callbacksUnchanged =
       prevProps.onRegenerate === nextProps.onRegenerate &&
+      prevProps.onRegenerateUserMessage === nextProps.onRegenerateUserMessage &&
+      prevProps.onDeleteUserMessage === nextProps.onDeleteUserMessage &&
       prevProps.onLike === nextProps.onLike &&
       prevProps.onDislike === nextProps.onDislike &&
       prevProps.onCopy === nextProps.onCopy &&
