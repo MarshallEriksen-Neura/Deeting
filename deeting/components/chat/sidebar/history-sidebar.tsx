@@ -10,6 +10,8 @@ import {
   Archive,
   RotateCcw,
   PencilLine,
+  Pin,
+  PinOff,
 } from 'lucide-react';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -31,7 +33,7 @@ import {
 } from '@/ui/shadcn/dialog';
 import { Label } from '@/ui/shadcn/label';
 import { useConversationSessions } from '@/lib/swr/use-conversation-sessions';
-import { archiveConversation, createConversation, unarchiveConversation, renameConversation } from '@/lib/api/conversations';
+import { archiveConversation, createConversation, unarchiveConversation, renameConversation, pinConversation, unpinConversation } from '@/lib/api/conversations';
 import { useI18n } from '@/hooks/use-i18n';
 import { useChatStore } from '@/store/chat-store';
 import { useChatRuntimeStore } from '@/store/chat-runtime-store';
@@ -233,6 +235,24 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
         await archiveConversation(targetSessionId);
       } else {
         await unarchiveConversation(targetSessionId);
+      }
+      await mutate();
+    } finally {
+      setActionSessionId(null);
+    }
+  }, [actionSessionId, mutate]);
+
+  const handlePinToggle = useCallback(async (
+    targetSessionId: string,
+    isPinned: boolean
+  ) => {
+    if (actionSessionId) return;
+    setActionSessionId(targetSessionId);
+    try {
+      if (isPinned) {
+        await unpinConversation(targetSessionId);
+      } else {
+        await pinConversation(targetSessionId);
       }
       await mutate();
     } finally {
@@ -448,6 +468,9 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
                                     <span className="text-sm text-slate-700 dark:text-white/70 truncate flex-1 font-medium">
                                       {title}
                                     </span>
+                                    {session.is_pinned && (
+                                      <Pin className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400 shrink-0" />
+                                    )}
                                   </Button>
                                   <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
@@ -467,6 +490,27 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
                                         <PencilLine className="mr-2 h-4 w-4" />
                                         {t('history.rename')}
                                       </DropdownMenuItem>
+                                      {!showArchived && (
+                                        <DropdownMenuItem
+                                          onSelect={(event) => {
+                                            event.preventDefault();
+                                            void handlePinToggle(session.session_id, session.is_pinned || false);
+                                          }}
+                                          disabled={actionSessionId === session.session_id}
+                                        >
+                                          {session.is_pinned ? (
+                                            <>
+                                              <PinOff className="mr-2 h-4 w-4" />
+                                              {t('history.unpin')}
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Pin className="mr-2 h-4 w-4" />
+                                              {t('history.pin')}
+                                            </>
+                                          )}
+                                        </DropdownMenuItem>
+                                      )}
                                       {showArchived ? (
                                         <DropdownMenuItem
                                           onSelect={(event) => {

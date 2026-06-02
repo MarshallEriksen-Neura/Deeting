@@ -1,4 +1,4 @@
-use crate::modules::ai_upstream::request_provider_chat_completion;
+use crate::modules::ai_upstream::request_provider_chat_completion_with_pool_failover;
 use crate::modules::providers::model_guard::resolve_local_secretary_model_connection;
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
@@ -164,7 +164,7 @@ pub(crate) async fn generate_proposal(
         },
     ];
 
-    let response = request_provider_chat_completion(
+    let response = request_provider_chat_completion_with_pool_failover(
         app_state,
         &model_connection.provider_model_id,
         &model_connection.model_id,
@@ -173,6 +173,7 @@ pub(crate) async fn generate_proposal(
         Some(0.3),
         Some(2048),
         crate::modules::ai_upstream::ReasoningRequestConfig::default(),
+        model_connection.failover_pool_key.as_deref(),
         None,
         None,
     )

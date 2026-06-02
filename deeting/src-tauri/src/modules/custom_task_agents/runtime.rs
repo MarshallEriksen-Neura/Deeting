@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::modules::ai_upstream::{
-    request_provider_chat_completion, resolve_local_model_connection,
+    request_provider_chat_completion_with_pool_failover, resolve_local_model_connection,
 };
 use crate::modules::chat_assets::resolve_chat_assets_dir;
 use crate::modules::custom_task_agents::image_config::resolve_custom_task_agent_image_config;
@@ -327,7 +327,7 @@ pub(crate) async fn preview_custom_task_agent_with_parent_model(
         .unwrap_or(MAX_CUSTOM_TASK_AGENT_TOOL_ROUNDS);
 
     for round in 0..max_rounds {
-        let response = request_provider_chat_completion(
+        let response = request_provider_chat_completion_with_pool_failover(
             app_state,
             &model_connection.provider_model_id,
             &model_connection.model_id,
@@ -336,6 +336,7 @@ pub(crate) async fn preview_custom_task_agent_with_parent_model(
             request.temperature,
             request.max_tokens,
             crate::modules::ai_upstream::ReasoningRequestConfig::default(),
+            model_connection.failover_pool_key.as_deref(),
             None,
             None,
         )

@@ -255,6 +255,8 @@
       "viewActive": "查看进行中",
       "archive": "归档",
       "unarchive": "取消归档",
+      "pin": "保留",
+      "unpin": "取消保留",
       "rename": "重命名",
       "renameTitle": "重命名会话",
       "renameLabel": "新标题",

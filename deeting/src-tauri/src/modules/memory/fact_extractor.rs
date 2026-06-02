@@ -82,6 +82,7 @@ pub(crate) async fn extract_and_store_facts(
     conversation_text: &str,
     session_id: &str,
     capability_id: Option<&str>,
+    failover_pool_key: Option<&str>,
 ) -> Result<FactExtractionOutcome, String> {
     let trimmed = conversation_text.trim();
     if trimmed.is_empty() || trimmed.len() < 50 {
@@ -102,6 +103,7 @@ pub(crate) async fn extract_and_store_facts(
             &prompt,
             Some(1024),
             Some(session_id),
+            failover_pool_key,
         )
         .await
         {
@@ -261,6 +263,7 @@ pub(crate) async fn extract_and_store_facts_with_secretary_model(
         conversation_text,
         session_id,
         capability_id,
+        model_connection.failover_pool_key.as_deref(),
     )
     .await
 }

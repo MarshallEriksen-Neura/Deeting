@@ -491,6 +491,7 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
           pinned_binding_source TEXT,
           first_message_at TEXT,
           last_active_at TEXT NOT NULL,
+          is_pinned INTEGER NOT NULL DEFAULT 0,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
@@ -499,6 +500,16 @@ pub(crate) async fn init_conversation_tables(store: &McpStore) -> Result<(), Mcp
     .execute(&store.write_pool)
     .await
     .map_err(|err| McpError::Storage(err.to_string()))?;
+
+    // Migration: Add is_pinned column if it doesn't exist (for existing databases)
+    let _ = sqlx::query(
+        r#"
+        ALTER TABLE conversation_session ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0;
+        "#,
+    )
+    .execute(&store.write_pool)
+    .await;
+    // Ignore error if column already exists
 
     sqlx::query(
         r#"
@@ -1866,13 +1877,14 @@ impl McpStore {
                   cs.message_count AS message_count,
                   cs.first_message_at AS first_message_at,
                   cs.last_active_at AS last_active_at,
+                  cs.is_pinned AS is_pinned,
                   sm.summary_text AS summary_text
                 FROM conversation_session cs
                 LEFT JOIN conversation_summary sm
                   ON sm.session_id = cs.id
                  AND sm.version = cs.last_summary_version
                 WHERE cs.status = ? AND cs.assistant_id = ?
-                ORDER BY cs.last_active_at DESC, cs.id DESC
+                ORDER BY cs.is_pinned DESC, cs.last_active_at DESC, cs.id DESC
                 LIMIT ? OFFSET ?;
                 "#,
             )
@@ -1892,13 +1904,14 @@ impl McpStore {
                   cs.message_count AS message_count,
                   cs.first_message_at AS first_message_at,
                   cs.last_active_at AS last_active_at,
+                  cs.is_pinned AS is_pinned,
                   sm.summary_text AS summary_text
                 FROM conversation_session cs
                 LEFT JOIN conversation_summary sm
                   ON sm.session_id = cs.id
                  AND sm.version = cs.last_summary_version
                 WHERE cs.status = ?
-                ORDER BY cs.last_active_at DESC, cs.id DESC
+                ORDER BY cs.is_pinned DESC, cs.last_active_at DESC, cs.id DESC
                 LIMIT ? OFFSET ?;
                 "#,
             )
@@ -1919,6 +1932,7 @@ impl McpStore {
                 message_count: row.try_get::<i64, _>("message_count").unwrap_or(0),
                 first_message_at: row.try_get("first_message_at")?,
                 last_active_at: row.try_get("last_active_at")?,
+                is_pinned: row.try_get::<i64, _>("is_pinned").unwrap_or(0) != 0,
             });
         }
 
@@ -2079,6 +2093,40 @@ impl McpStore {
         Ok(LocalConversationArchiveResponse {
             session_id: session_id.to_string(),
             status,
+        })
+    }
+
+    pub async fn update_local_conversation_pin_status(
+        &self,
+        session_id: &str,
+        is_pinned: bool,
+    ) -> Result<LocalConversationPinResponse, McpError> {
+        let now = now_rfc3339()?;
+        let pin_value = if is_pinned { 1 } else { 0 };
+        let result = sqlx::query(
+            r#"
+            UPDATE conversation_session
+            SET is_pinned = ?, last_active_at = ?, updated_at = ?
+            WHERE id = ?;
+            "#,
+        )
+        .bind(pin_value)
+        .bind(&now)
+        .bind(&now)
+        .bind(session_id)
+        .execute(&self.write_pool)
+        .await
+        .map_err(|err| McpError::Storage(err.to_string()))?;
+
+        if result.rows_affected() == 0 {
+            return Err(McpError::NotFound(
+                "conversation session not found".to_string(),
+            ));
+        }
+
+        Ok(LocalConversationPinResponse {
+            session_id: session_id.to_string(),
+            is_pinned,
         })
     }
 

@@ -3,7 +3,8 @@ use super::summary_format::{
 };
 use super::text_utils::{extract_text_from_chat_completion_response, truncate_text_chars};
 use crate::modules::desktop_runtime::runtime::chat_completion::{
-    request_provider_chat_completion, request_provider_structured_tool_arguments,
+    request_provider_chat_completion_with_pool_failover,
+    request_provider_structured_tool_arguments_with_failover,
 };
 use crate::modules::providers::model_guard::resolve_local_secretary_model_connection;
 use crate::state::AppState;
@@ -214,8 +215,9 @@ pub(crate) async fn request_local_auxiliary_text(
     prompt: &str,
     max_tokens: Option<u32>,
     session_id: Option<&str>,
+    failover_pool_key: Option<&str>,
 ) -> Result<Option<String>, String> {
-    let response = request_provider_chat_completion(
+    let response = request_provider_chat_completion_with_pool_failover(
         app_state,
         provider_model_id,
         model_id,
@@ -231,6 +233,7 @@ pub(crate) async fn request_local_auxiliary_text(
         Some(LOCAL_CONVERSATION_AUXILIARY_TEMPERATURE),
         max_tokens,
         crate::modules::ai_upstream::ReasoningRequestConfig::default(),
+        failover_pool_key,
         None,
         session_id,
     )
@@ -248,8 +251,9 @@ async fn request_local_auxiliary_structured_arguments(
     input_schema: serde_json::Value,
     max_tokens: Option<u32>,
     session_id: Option<&str>,
+    failover_pool_key: Option<&str>,
 ) -> Result<serde_json::Value, String> {
-    request_provider_structured_tool_arguments(
+    request_provider_structured_tool_arguments_with_failover(
         app_state,
         provider_model_id,
         model_id,
@@ -269,6 +273,8 @@ async fn request_local_auxiliary_structured_arguments(
         crate::modules::ai_upstream::ReasoningRequestConfig::default(),
         None,
         session_id,
+        None,
+        failover_pool_key,
     )
     .await
 }
@@ -305,6 +311,7 @@ pub(crate) async fn generate_local_conversation_title_with_model(
     model_id: &str,
     first_message: &str,
     session_id: Option<&str>,
+    failover_pool_key: Option<&str>,
 ) -> Result<Option<String>, String> {
     let normalized_first_message = first_message.trim();
     if normalized_first_message.is_empty() {
@@ -322,6 +329,7 @@ pub(crate) async fn generate_local_conversation_title_with_model(
         conversation_title_tool_schema(),
         Some(LOCAL_CONVERSATION_TOPIC_NAMING_MAX_TOKENS),
         session_id,
+        failover_pool_key,
     )
     .await?;
     let generated = arguments
@@ -347,6 +355,7 @@ pub(crate) async fn generate_local_conversation_title_with_secretary_model(
         &model_connection.model_id,
         first_message,
         session_id,
+        model_connection.failover_pool_key.as_deref(),
     )
     .await
 }
@@ -357,6 +366,7 @@ pub(crate) async fn generate_local_conversation_summary_with_model(
     model_id: &str,
     messages: &[LocalConversationHistoryMessage],
     session_id: Option<&str>,
+    failover_pool_key: Option<&str>,
 ) -> Result<Option<String>, String> {
     let conversation = build_local_summary_prompt_input(messages);
     if conversation.trim().is_empty() {
@@ -374,6 +384,7 @@ pub(crate) async fn generate_local_conversation_summary_with_model(
         conversation_summary_tool_schema(),
         Some(LOCAL_CONVERSATION_SUMMARY_MAX_TOKENS),
         session_id,
+        failover_pool_key,
     )
     .await?;
     let generated = arguments
@@ -400,6 +411,7 @@ pub(crate) async fn generate_local_conversation_summary_with_secretary_model(
         &model_id,
         messages,
         session_id,
+        model_connection.failover_pool_key.as_deref(),
     )
     .await?;
 

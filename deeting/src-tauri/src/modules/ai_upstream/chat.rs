@@ -141,16 +141,21 @@ pub(crate) async fn resolve_provider_model_connection(
         .await
         .map_err(to_string)?
         .ok_or_else(|| "provider instance connection not found".to_string())?;
+    // Even when the caller pins an explicit provider_model_id (e.g. the secretary
+    // model or a fixed task-agent model), carry the pool key so downstream callers
+    // can fail over to sibling models in the same pool when this one errors or
+    // returns a non-conforming response. The pinned model is always tried first.
+    let pool_key = normalize_model_pool_key(&model);
     Ok(LocalModelConnection {
         provider_model_id: model.id.to_string(),
         model_id: model.model_id.clone(),
-        logical_model_key: normalize_model_pool_key(&model),
+        logical_model_key: pool_key.clone(),
         protocol_family: infer_protocol_family(
             connection.protocol.as_deref().unwrap_or("openai"),
             model.upstream_path.as_str(),
         )
         .to_string(),
-        failover_pool_key: None,
+        failover_pool_key: pool_key,
     })
 }
 
@@ -443,6 +448,50 @@ pub(crate) async fn request_provider_structured_tool_arguments_with_choice(
     session_id: Option<&str>,
     tool_choice: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, String> {
+    request_provider_structured_tool_arguments_with_failover(
+        app_state,
+        provider_model_id,
+        model_id,
+        messages,
+        tool_name,
+        tool_description,
+        input_schema,
+        temperature,
+        max_tokens,
+        reasoning,
+        trace_id,
+        session_id,
+        tool_choice,
+        None,
+    )
+    .await
+}
+
+/// Structured tool-call request that fails over across a model pool.
+///
+/// Unlike plain chat failover (which only retries on transport errors), this
+/// also fails over when the upstream returns a 200 OK response that does NOT
+/// contain the required structured tool call — the exact failure mode that
+/// breaks world-model frame refresh/validation with weaker pool members. The
+/// pinned `provider_model_id` is always attempted first; siblings in
+/// `failover_pool_key` are tried in bandit order only after it fails.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn request_provider_structured_tool_arguments_with_failover(
+    app_state: &AppState,
+    provider_model_id: &str,
+    model_id: &str,
+    messages: Vec<LocalChatInputMessage>,
+    tool_name: &str,
+    tool_description: &str,
+    input_schema: serde_json::Value,
+    temperature: Option<f32>,
+    max_tokens: Option<u32>,
+    reasoning: ReasoningRequestConfig,
+    trace_id: Option<&str>,
+    session_id: Option<&str>,
+    tool_choice: Option<serde_json::Value>,
+    failover_pool_key: Option<&str>,
+) -> Result<serde_json::Value, String> {
     let mut tools_payload = serde_json::json!({
         "tools": [{
             "name": tool_name,
@@ -453,20 +502,62 @@ pub(crate) async fn request_provider_structured_tool_arguments_with_choice(
     if let Some(tool_choice) = tool_choice {
         tools_payload["tool_choice"] = tool_choice;
     }
-    let response = request_provider_chat_completion(
-        app_state,
-        provider_model_id,
-        model_id,
-        messages,
-        Some(tools_payload),
-        temperature,
-        max_tokens,
-        reasoning,
-        trace_id,
-        session_id,
-    )
-    .await?;
-    parse_structured_tool_arguments(&response, tool_name)
+
+    let mut current_provider_model_id = provider_model_id.to_string();
+    let mut current_model_id = model_id.to_string();
+    let mut failed_provider_model_ids: HashSet<String> = HashSet::new();
+
+    loop {
+        let attempt = request_provider_chat_completion(
+            app_state,
+            &current_provider_model_id,
+            &current_model_id,
+            messages.clone(),
+            Some(tools_payload.clone()),
+            temperature,
+            max_tokens,
+            reasoning.clone(),
+            trace_id,
+            session_id,
+        )
+        .await
+        .and_then(|response| parse_structured_tool_arguments(&response, tool_name));
+
+        let err = match attempt {
+            Ok(arguments) => return Ok(arguments),
+            Err(err) => err,
+        };
+
+        failed_provider_model_ids.insert(current_provider_model_id.clone());
+        let Some(pool_key) = failover_pool_key
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            return Err(err);
+        };
+        let Ok(next_connection) = resolve_local_model_pool_connection_excluding(
+            app_state,
+            pool_key,
+            &failed_provider_model_ids,
+        )
+        .await
+        else {
+            return Err(err);
+        };
+        if next_connection.provider_model_id == current_provider_model_id {
+            return Err(err);
+        }
+        log::warn!(
+            "structured tool-call pool failover tool={} pool_key={} failed_provider_model_id={} next_provider_model_id={} err={}",
+            tool_name,
+            pool_key,
+            current_provider_model_id,
+            next_connection.provider_model_id,
+            err
+        );
+        current_provider_model_id = next_connection.provider_model_id;
+        current_model_id = next_connection.model_id;
+    }
 }
 
 pub(crate) fn parse_structured_tool_arguments(

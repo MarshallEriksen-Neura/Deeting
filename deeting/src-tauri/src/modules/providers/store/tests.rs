@@ -384,6 +384,48 @@ async fn update_user_secretary_persists_provider_model_id() {
 }
 
 #[tokio::test]
+async fn update_user_secretary_can_clear_provider_model_id() {
+    let store = init_store().await;
+
+    // First, set a provider_model_id
+    let updated = store
+        .update_user_secretary(
+            crate::modules::providers::types::UserSecretaryUpdateRequest {
+                model_name: Some(Some("gpt-4o-mini".to_string())),
+                provider_model_id: Some(Some("22222222-2222-4222-8222-222222222222".to_string())),
+            },
+        )
+        .await
+        .expect("update secretary with provider_model_id");
+
+    assert_eq!(
+        updated.provider_model_id.as_deref(),
+        Some("22222222-2222-4222-8222-222222222222")
+    );
+
+    // Now clear the provider_model_id by sending Some(None)
+    let cleared = store
+        .update_user_secretary(
+            crate::modules::providers::types::UserSecretaryUpdateRequest {
+                model_name: Some(Some("deepseek-v4-flash".to_string())),
+                provider_model_id: Some(None),
+            },
+        )
+        .await
+        .expect("clear provider_model_id");
+
+    assert_eq!(cleared.model_name.as_deref(), Some("deepseek-v4-flash"));
+    assert_eq!(cleared.provider_model_id, None);
+
+    // Verify it persisted
+    let reloaded = store
+        .get_or_create_user_secretary()
+        .await
+        .expect("reload secretary");
+    assert_eq!(reloaded.provider_model_id, None);
+}
+
+#[tokio::test]
 async fn init_migrates_legacy_provider_models_before_index_creation() {
     let store = ProviderStore::new("sqlite::memory:")
         .await

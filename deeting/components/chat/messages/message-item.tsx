@@ -389,22 +389,26 @@ export const MessageItem = React.memo<MessageItemProps>(
                   </span>
                 </div>
               ) : null}
-              {new Date(message.createdAt).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
+              <div className="flex items-center gap-1.5">
+                <span>
+                  {new Date(message.createdAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+                {canShowUserActions ? (
+                  <UserMessageActions
+                    messageId={message.id}
+                    content={userDisplayContent}
+                    onRegenerate={onRegenerateUserMessage}
+                    onDelete={onDeleteUserMessage}
+                    onCopy={onCopy}
+                    disabled={isActive || isTyping}
+                    className="-my-1 ml-1 mt-0"
+                  />
+                ) : null}
+              </div>
             </div>
-            {canShowUserActions ? (
-              <UserMessageActions
-                messageId={message.id}
-                content={userDisplayContent}
-                onRegenerate={onRegenerateUserMessage}
-                onDelete={onDeleteUserMessage}
-                onCopy={onCopy}
-                disabled={isActive || isTyping}
-                className="mt-0 ml-0"
-              />
-            ) : null}
           </div>
         )}
       </div>

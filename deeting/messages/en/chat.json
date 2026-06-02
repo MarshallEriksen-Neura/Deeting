@@ -255,6 +255,8 @@
     "viewActive": "View active",
     "archive": "Archive",
     "unarchive": "Unarchive",
+    "pin": "Pin",
+    "unpin": "Unpin",
     "rename": "Rename",
     "renameTitle": "Rename conversation",
     "renameLabel": "New title",

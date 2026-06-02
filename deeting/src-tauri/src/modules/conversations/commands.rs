@@ -7,8 +7,9 @@ use mcp_session::conversation::{
     LocalConversationCreateResponse, LocalConversationDeleteResponse,
     LocalConversationExecutionRoot, LocalConversationExecutionTreeResponse,
     LocalConversationHistoryMessage, LocalConversationHistoryQuery,
-    LocalConversationHistoryResponse, LocalConversationRenameRequest,
-    LocalConversationRenameResponse, LocalConversationSessionPage, LocalConversationSessionsQuery,
+    LocalConversationHistoryResponse, LocalConversationPinResponse,
+    LocalConversationRenameRequest, LocalConversationRenameResponse,
+    LocalConversationSessionPage, LocalConversationSessionsQuery,
     LocalConversationStatus, LocalConversationWindowResponse,
 };
 use serde_json::Value;
@@ -225,6 +226,48 @@ pub async fn archive_local_conversation_session(
         }
     });
     Ok(response)
+}
+
+#[tauri::command]
+pub async fn pin_local_conversation(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<LocalConversationPinResponse, String> {
+    pin_local_conversation_session(state, session_id).await
+}
+
+#[tauri::command]
+pub async fn pin_local_conversation_session(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<LocalConversationPinResponse, String> {
+    state
+        .mcp
+        .store
+        .update_local_conversation_pin_status(&session_id, true)
+        .await
+        .map_err(to_string)
+}
+
+#[tauri::command]
+pub async fn unpin_local_conversation(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<LocalConversationPinResponse, String> {
+    unpin_local_conversation_session(state, session_id).await
+}
+
+#[tauri::command]
+pub async fn unpin_local_conversation_session(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<LocalConversationPinResponse, String> {
+    state
+        .mcp
+        .store
+        .update_local_conversation_pin_status(&session_id, false)
+        .await
+        .map_err(to_string)
 }
 
 #[tauri::command]

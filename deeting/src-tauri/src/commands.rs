@@ -113,6 +113,8 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::conversations::commands::archive_local_conversation,
         crate::modules::conversations::commands::close_local_conversation,
         crate::modules::conversations::commands::unarchive_local_conversation,
+        crate::modules::conversations::commands::pin_local_conversation,
+        crate::modules::conversations::commands::unpin_local_conversation,
         crate::modules::conversations::commands::rename_local_conversation,
         crate::modules::conversations::commands::list_local_conversation_history,
         crate::modules::conversations::commands::get_local_conversation_window,

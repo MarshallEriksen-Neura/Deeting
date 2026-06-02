@@ -3,10 +3,7 @@ use super::super::super::LocalExecutionRequest;
 use super::super::phase_step::{phase_step_for_strategy, phase_step_type_name};
 use super::frame_bootstrap;
 use crate::modules::ai_upstream::ReasoningRequestConfig;
-use crate::modules::desktop_runtime::runtime::chat_completion::{
-    request_provider_structured_tool_arguments,
-    request_provider_structured_tool_arguments_with_choice,
-};
+use crate::modules::desktop_runtime::runtime::chat_completion::request_provider_structured_tool_arguments_with_failover;
 use crate::modules::desktop_runtime::runtime::chat_tool_runtime::{
     apply_world_model_update_to_frame, ProposedPhase, WorldModelUpdate,
 };
@@ -497,7 +494,7 @@ impl DeetingTier2Validator {
                 "model_id": model_connection.model_id.as_str(),
             }),
         );
-        let response = request_provider_structured_tool_arguments(
+        let response = request_provider_structured_tool_arguments_with_failover(
             app_state,
             &model_connection.provider_model_id,
             &model_connection.model_id,
@@ -517,6 +514,8 @@ impl DeetingTier2Validator {
             crate::modules::ai_upstream::ReasoningRequestConfig::default(),
             None,
             Some(&frame.session_id),
+            None,
+            model_connection.failover_pool_key.as_deref(),
         )
         .await;
 
@@ -840,7 +839,7 @@ async fn request_world_model_update(
             "model_id": model_connection.model_id.as_str(),
         }),
     );
-    let response = match request_provider_structured_tool_arguments_with_choice(
+    let response = match request_provider_structured_tool_arguments_with_failover(
         &runtime_request.app_state,
         &model_connection.provider_model_id,
         &model_connection.model_id,
@@ -867,6 +866,7 @@ async fn request_world_model_update(
             "type": "function",
             "function": { "name": WORLD_MODEL_REFRESH_TOOL_NAME }
         })),
+        model_connection.failover_pool_key.as_deref(),
     )
     .await
     {
@@ -1035,7 +1035,11 @@ fn build_world_model_update_refresh_prompt(
             "<frame_schema_instruction>\n",
             "You are refreshing a world-model frame — a structured record of what the system ",
             "knows, assumes, and still needs to verify about the current task.\n\n",
-            "Output a single JSON object matching this shape:\n",
+            "REQUIRED ACTION: You MUST call the `{tool_name}` tool to submit your answer. ",
+            "Do not reply with plain text, prose, or a markdown code block — the only ",
+            "acceptable response is a `{tool_name}` tool call. A response without this tool ",
+            "call is treated as a failure.\n\n",
+            "Call `{tool_name}` with a single argument object matching this shape:\n",
             "{{\"world_model_update\":{{\n",
             "  \"intent\": \"one-sentence summary of the current goal\",\n",
             "  \"facts\": [\"confirmed facts\"],\n",
@@ -1061,10 +1065,12 @@ fn build_world_model_update_refresh_prompt(
             "Refresh reason:\n{reason}\n\n",
             "User interruption, if any:\n{interruption}\n\n",
             "Current plan:\n{plan_summary}\n\n",
-            "Current frame:\n{frame_json}\n",
+            "Current frame:\n{frame_json}\n\n",
+            "Remember: respond ONLY by calling the `{tool_name}` tool.\n",
             "</frame_schema_instruction>\n"
         ),
         structured_prelude = structured_prelude,
+        tool_name = WORLD_MODEL_REFRESH_TOOL_NAME,
         reason = refresh_request.reason.as_str(),
         interruption = interruption,
         plan_summary = plan_summary,

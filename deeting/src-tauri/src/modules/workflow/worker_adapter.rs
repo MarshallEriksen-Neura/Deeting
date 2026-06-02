@@ -1,5 +1,5 @@
 use crate::modules::ai_upstream::{
-    request_provider_chat_completion, resolve_local_model_connection,
+    request_provider_chat_completion_with_pool_failover, resolve_local_model_connection,
 };
 use crate::modules::custom_task_agents::runtime::preview_custom_task_agent;
 use crate::modules::custom_task_agents::types::{
@@ -165,7 +165,7 @@ async fn execute_via_direct_llm(
     ];
 
     let trace_id = format!("workflow:{}:{}", input.run_id, input.phase_id);
-    let response = request_provider_chat_completion(
+    let response = request_provider_chat_completion_with_pool_failover(
         app_state,
         &model_connection.provider_model_id,
         &model_connection.model_id,
@@ -174,6 +174,7 @@ async fn execute_via_direct_llm(
         input.temperature.or(Some(0.3)),
         input.max_tokens.or(Some(4096)),
         crate::modules::ai_upstream::ReasoningRequestConfig::default(),
+        model_connection.failover_pool_key.as_deref(),
         Some(trace_id.as_str()),
         None,
     )

@@ -40,6 +40,8 @@ pub struct LocalConversationSessionItem {
     pub message_count: i64,
     pub first_message_at: Option<String>,
     pub last_active_at: Option<String>,
+    #[serde(default)]
+    pub is_pinned: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,6 +67,12 @@ pub struct LocalConversationCreateResponse {
 pub struct LocalConversationArchiveResponse {
     pub session_id: String,
     pub status: LocalConversationStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalConversationPinResponse {
+    pub session_id: String,
+    pub is_pinned: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

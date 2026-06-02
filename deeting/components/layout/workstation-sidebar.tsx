@@ -115,7 +115,6 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "knowledge", href: "/knowledge", labelKey: "nav.knowledge", icon: BookMarked },
       { id: "llm-wiki", href: "/llm-wiki", labelKey: "nav.llmWiki", icon: ListTree },
       { id: "memory", href: "/memory", labelKey: "nav.memory", icon: BrainCircuit },
-      { id: "ecosystem", href: "/dashboard/ecosystem", labelKey: "nav.ecosystemSignals", icon: Orbit },
       { id: "scan-reviews", href: "/scan-reviews", labelKey: "nav.scanReviews", icon: ScanSearch },
     ],
   },

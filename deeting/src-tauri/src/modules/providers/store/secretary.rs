@@ -51,10 +51,18 @@ impl ProviderStore {
         payload: UserSecretaryUpdateRequest,
     ) -> Result<UserSecretary, ProviderError> {
         let current = self.get_or_create_user_secretary().await?;
-        let model_name = payload.model_name.unwrap_or(current.model_name);
-        let provider_model_id = payload
-            .provider_model_id
-            .unwrap_or(current.provider_model_id);
+        // Handle Option<Option<T>> correctly:
+        // - None means "don't update this field"
+        // - Some(None) means "clear this field"
+        // - Some(Some(value)) means "update to new value"
+        let model_name = match payload.model_name {
+            Some(new_value) => new_value,
+            None => current.model_name,
+        };
+        let provider_model_id = match payload.provider_model_id {
+            Some(new_value) => new_value,
+            None => current.provider_model_id,
+        };
         let now = now_rfc3339()?;
         sqlx::query(
             "UPDATE user_secretary
@@ -129,12 +137,18 @@ impl ProviderStore {
         payload: UserEmbeddingConfigUpdateRequest,
     ) -> Result<UserEmbeddingConfig, ProviderError> {
         let current = self.get_or_create_user_embedding_config().await?;
-        let provider_model_id = payload
-            .provider_model_id
-            .unwrap_or(current.provider_model_id);
-        let multimodal_provider_model_id = payload
-            .multimodal_provider_model_id
-            .unwrap_or(current.multimodal_provider_model_id);
+        // Handle Option<Option<T>> correctly:
+        // - None means "don't update this field"
+        // - Some(None) means "clear this field"
+        // - Some(Some(value)) means "update to new value"
+        let provider_model_id = match payload.provider_model_id {
+            Some(new_value) => new_value,
+            None => current.provider_model_id,
+        };
+        let multimodal_provider_model_id = match payload.multimodal_provider_model_id {
+            Some(new_value) => new_value,
+            None => current.multimodal_provider_model_id,
+        };
         let now = now_rfc3339()?;
         sqlx::query(
             "UPDATE user_embedding_config

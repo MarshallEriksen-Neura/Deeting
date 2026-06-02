@@ -486,6 +486,7 @@ export const ConversationSessionItemSchema = z.object({
   message_count: z.number().int().optional().default(0),
   first_message_at: z.string().nullable().optional(),
   last_active_at: z.string().nullable().optional(),
+  is_pinned: z.boolean().optional().default(false),
 })
 
 export const ConversationSessionPageSchema = z.object({
@@ -517,6 +518,13 @@ export const ConversationArchiveResponseSchema = z.object({
 })
 
 export type ConversationArchiveResponse = z.infer<typeof ConversationArchiveResponseSchema>
+
+export const ConversationPinResponseSchema = z.object({
+  session_id: z.string(),
+  is_pinned: z.boolean(),
+})
+
+export type ConversationPinResponse = z.infer<typeof ConversationPinResponseSchema>
 
 export const ConversationRenameResponseSchema = z.object({
   session_id: z.string(),
@@ -606,6 +614,22 @@ export async function unarchiveConversation(sessionId: string): Promise<Conversa
     sessionId,
   })
   return ConversationArchiveResponseSchema.parse(data)
+}
+
+export async function pinConversation(sessionId: string): Promise<ConversationPinResponse> {
+  assertTauriConversationRuntime()
+  const data = await invokeTauri<ConversationPinResponse>("pin_local_conversation", {
+    sessionId,
+  })
+  return ConversationPinResponseSchema.parse(data)
+}
+
+export async function unpinConversation(sessionId: string): Promise<ConversationPinResponse> {
+  assertTauriConversationRuntime()
+  const data = await invokeTauri<ConversationPinResponse>("unpin_local_conversation", {
+    sessionId,
+  })
+  return ConversationPinResponseSchema.parse(data)
 }
 
 export async function renameConversation(
