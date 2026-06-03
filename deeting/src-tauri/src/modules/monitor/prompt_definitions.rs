@@ -102,4 +102,4 @@ fn normalize_policy_state(policy_state: &Value) -> Value {
     } else {
         json!({})
     }
-}
+}

@@ -215,5 +215,3 @@ export const ActivityTimelinePlaceholder = memo(function ActivityTimelinePlaceho
     </motion.div>
   );
 });
-
-
