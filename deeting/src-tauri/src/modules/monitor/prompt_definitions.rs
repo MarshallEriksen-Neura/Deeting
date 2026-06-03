@@ -19,10 +19,7 @@ pub(crate) struct MonitorTaskAgentPacketTask {
 }
 
 impl MonitorTaskAgentPacket {
-    pub(crate) fn from_task(
-        task: &LocalMonitorTask,
-        effective_tool_names: &[String],
-    ) -> Self {
+    pub(crate) fn from_task(task: &LocalMonitorTask, effective_tool_names: &[String]) -> Self {
         Self {
             task: MonitorTaskAgentPacketTask {
                 title: task.title.clone(),

@@ -215,7 +215,9 @@ mod tests {
 
         assert!(prompt.contains("Delegation Contract"));
         assert!(prompt.contains("Use `start_delegate_agent` for one read-only bounded subtask"));
-        assert!(prompt.contains("`start_delegate_many` for 2 or more independent read-only subtasks"));
+        assert!(
+            prompt.contains("`start_delegate_many` for 2 or more independent read-only subtasks")
+        );
         assert!(prompt.contains("Start tools are asynchronous by definition"));
         assert!(prompt.contains("Use `wait_delegations` when you need an explicit join"));
         assert!(prompt.contains("`delegations_status` only as an auxiliary progress check"));

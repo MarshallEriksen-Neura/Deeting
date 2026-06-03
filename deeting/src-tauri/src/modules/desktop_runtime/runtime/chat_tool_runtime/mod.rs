@@ -16,6 +16,7 @@ use crate::modules::desktop_runtime::runtime::runtime_event_projection::projecti
     ExecutionObservationProjectionInput, FinalAnswerProjectionInput,
     ToolCallProposalProjectionInput, WorldModelFrameKind, WorldModelFrameProjectionInput,
 };
+use crate::modules::desktop_runtime::runtime::tool_catalog::WORLD_MODEL_UPDATE_TOOL_NAME;
 use crate::modules::mcp::commands::common_impl::to_string;
 use crate::modules::mcp::commands::common_impl::LocalModelConnection;
 use crate::modules::mcp::commands::support::*;
@@ -58,14 +59,14 @@ pub(crate) use lifecycle::{
     serialize_delegated_workflow_runtime_context_with_task_input_source,
 };
 #[cfg(test)]
-pub(crate) use lifecycle::{
-    serialize_delegated_runtime_context, serialize_delegated_workflow_runtime_context,
-};
-#[cfg(test)]
 use lifecycle::{build_structured_tool_replay_messages, serialize_tool_replay_content};
 pub(crate) use lifecycle::{
     recover_inflight_local_execution_state, resume_delegated_runtime_after_custom_task_agent_run,
     wake_delegated_runtime_for_workflow_run,
+};
+#[cfg(test)]
+pub(crate) use lifecycle::{
+    serialize_delegated_runtime_context, serialize_delegated_workflow_runtime_context,
 };
 #[cfg(test)]
 pub(crate) use lifecycle::{serialize_inflight_runtime_context, InFlightExecutionStage};
@@ -85,10 +86,9 @@ use streaming::LocalRealtimeToolTraceEmitter;
 use tool_execution::process_chat_tool_calls;
 #[cfg(test)]
 use tool_meta::{
-    apply_rejected_tool_result_to_execution_graph_value,
-    apply_approved_tool_result_to_execution_graph, canonicalize_tool_name_for_allowed_list,
-    mark_approval_gate_approving, resolve_local_tool_call_id,
-    strip_stale_resume_response_metadata,
+    apply_approved_tool_result_to_execution_graph,
+    apply_rejected_tool_result_to_execution_graph_value, canonicalize_tool_name_for_allowed_list,
+    mark_approval_gate_approving, resolve_local_tool_call_id, strip_stale_resume_response_metadata,
 };
 use tool_meta::{
     build_state_effective_tool_call_meta, canonicalize_tool_call_meta_via_graph,
@@ -169,6 +169,61 @@ fn append_world_observations_from_tool_meta(
             }
         }
     }
+}
+
+fn is_world_model_update_tool_name(name: &str) -> bool {
+    name.trim()
+        .eq_ignore_ascii_case(WORLD_MODEL_UPDATE_TOOL_NAME)
+}
+
+fn tool_calls_are_only_world_model_update(
+    tool_calls: &[mcp_core::types::LocalChatToolCall],
+) -> bool {
+    !tool_calls.is_empty()
+        && tool_calls
+            .iter()
+            .all(|call| is_world_model_update_tool_name(&call.name))
+}
+
+fn json_tool_call_name(tool_call: &Value) -> Option<&str> {
+    tool_call.get("name").and_then(Value::as_str).or_else(|| {
+        tool_call
+            .get("function")
+            .and_then(|function| function.get("name"))
+            .and_then(Value::as_str)
+    })
+}
+
+fn strip_world_model_update_tool_calls_from_object(object: &mut serde_json::Map<String, Value>) {
+    let remove_tool_calls = object
+        .get_mut("tool_calls")
+        .and_then(Value::as_array_mut)
+        .map(|tool_calls| {
+            tool_calls.retain(|tool_call| {
+                !json_tool_call_name(tool_call).is_some_and(is_world_model_update_tool_name)
+            });
+            tool_calls.is_empty()
+        })
+        .unwrap_or(false);
+    if remove_tool_calls {
+        object.remove("tool_calls");
+    }
+}
+
+fn strip_world_model_update_tool_calls(mut response: Value) -> Value {
+    if let Some(object) = response.as_object_mut() {
+        strip_world_model_update_tool_calls_from_object(object);
+    }
+
+    if let Some(choices) = response.get_mut("choices").and_then(Value::as_array_mut) {
+        for choice in choices {
+            if let Some(message) = choice.get_mut("message").and_then(Value::as_object_mut) {
+                strip_world_model_update_tool_calls_from_object(message);
+            }
+        }
+    }
+
+    response
 }
 
 fn append_committed_actions_from_tool_meta(
@@ -617,6 +672,7 @@ async fn continue_local_chat_complete_with_tools(
         state.runtime_metrics.observe_response(&response);
 
         let tool_calls = extract_chat_tool_calls(&response);
+        let world_model_only_tool_calls = tool_calls_are_only_world_model_update(&tool_calls);
         if tool_calls.is_empty() {
             let effective_tool_call_meta = build_state_effective_tool_call_meta(&state);
             state
@@ -659,29 +715,31 @@ async fn continue_local_chat_complete_with_tools(
             });
         }
 
-        // Stream reasoning content as a thought block immediately,
-        // so the user sees thinking during intermediate tool-call rounds.
-        if let Some(reasoning) = response
-            .get("reasoning_content")
-            .and_then(|v| v.as_str())
-            .map(str::trim)
-            .filter(|v| !v.is_empty())
-        {
-            state.realtime_emitter.emit_thought(reasoning);
-        }
+        if !world_model_only_tool_calls {
+            // Stream reasoning content as a thought block immediately,
+            // so the user sees thinking during intermediate tool-call rounds.
+            if let Some(reasoning) = response
+                .get("reasoning_content")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+            {
+                state.realtime_emitter.emit_thought(reasoning);
+            }
 
-        // Stream the assistant's visible content for this intermediate round as a
-        // text block, emitted after the thought and before the tool-call blocks so
-        // the UI renders thought -> text -> tool_call in chronological order.
-        // Final-round content is handled by the orchestrator's terminal text block,
-        // so this only covers content that shares a turn with tool calls.
-        if let Some(content) = response
-            .get("content")
-            .and_then(|v| v.as_str())
-            .map(str::trim)
-            .filter(|v| !v.is_empty())
-        {
-            state.realtime_emitter.emit_text(content);
+            // Stream the assistant's visible content for this intermediate round as a
+            // text block, emitted after the thought and before the tool-call blocks so
+            // the UI renders thought -> text -> tool_call in chronological order.
+            // Final-round content is handled by the orchestrator's terminal text block,
+            // so this only covers content that shares a turn with tool calls.
+            if let Some(content) = response
+                .get("content")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+            {
+                state.realtime_emitter.emit_text(content);
+            }
         }
 
         state
@@ -768,6 +826,8 @@ async fn continue_local_chat_complete_with_tools(
                     &canonical_tool_call_meta,
                 )
                 .await;
+                let response_without_internal_tool_calls =
+                    strip_world_model_update_tool_calls(response.clone());
                 if !synthesized {
                     let mut current_tool_call_meta = build_state_effective_tool_call_meta(&state);
                     current_tool_call_meta.extend(canonical_tool_call_meta.clone());
@@ -776,7 +836,7 @@ async fn continue_local_chat_complete_with_tools(
                         world_model_frame: state.world_model_frame.clone(),
                         response: attach_runtime_transition_events(
                             enrich_response_with_tool_trace(
-                                response,
+                                response_without_internal_tool_calls,
                                 &current_tool_call_meta,
                                 state.realtime_emitter.emitted_any,
                                 &state.runtime_metrics,
@@ -790,13 +850,13 @@ async fn continue_local_chat_complete_with_tools(
                     &mut state.orchestrated_messages,
                     &state.model_connection.protocol_family,
                     state.round,
-                    &response,
+                    &response_without_internal_tool_calls,
                     &canonical_tool_call_meta,
                     &results,
                 );
                 state.last_response = Some(attach_runtime_transition_events(
                     enrich_response_with_tool_trace(
-                        response,
+                        response_without_internal_tool_calls,
                         &canonical_tool_call_meta,
                         state.realtime_emitter.emitted_any,
                         &state.runtime_metrics,

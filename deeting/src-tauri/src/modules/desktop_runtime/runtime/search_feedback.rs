@@ -17,11 +17,7 @@ pub(crate) struct SearchFeedbackBoost {
     pub(crate) reasons: Vec<String>,
 }
 
-const SEARCH_META_TOOLS: &[&str] = &[
-    "search_sdk",
-    "get_tool_schema",
-    "execute_code_plan",
-];
+const SEARCH_META_TOOLS: &[&str] = &["search_sdk", "get_tool_schema", "execute_code_plan"];
 const HISTORICAL_HALF_LIFE_MS: f64 = 7.0 * 24.0 * 60.0 * 60.0 * 1000.0;
 const QUERY_AFFINITY_HALF_LIFE_MS: f64 = 14.0 * 24.0 * 60.0 * 60.0 * 1000.0;
 const RECENT_EXACT_TOOL_BOOST: f64 = 18.0;

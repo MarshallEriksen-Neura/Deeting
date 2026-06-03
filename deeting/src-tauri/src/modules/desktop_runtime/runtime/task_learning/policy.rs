@@ -1,8 +1,7 @@
 use super::fingerprint::build_task_fingerprint;
 use super::types::{
-    is_legacy_route_control_delta, TaskPolicyHint, TaskPolicyHintItem,
-    DECISION_POINT_DISCOVERY, DECISION_POINT_EXECUTION,
-    DECISION_POINT_VERIFICATION, DECISION_POINT_WORKER_SELECTION,
+    is_legacy_route_control_delta, TaskPolicyHint, TaskPolicyHintItem, DECISION_POINT_DISCOVERY,
+    DECISION_POINT_EXECUTION, DECISION_POINT_VERIFICATION, DECISION_POINT_WORKER_SELECTION,
 };
 
 const PRIOR_HALF_LIFE_MS: f64 = 21.0 * 24.0 * 60.0 * 60.0 * 1000.0;

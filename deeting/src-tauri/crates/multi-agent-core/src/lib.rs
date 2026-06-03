@@ -351,9 +351,10 @@ fn running_count(snapshot: &MultiAgentSnapshot) -> usize {
 }
 
 fn can_schedule(snapshot: &MultiAgentSnapshot, scope: &WriteScope) -> bool {
-    let running_non_read_only = snapshot.children.values().any(|child| {
-        child.state == ChildState::Running && !child.spec.write_scope.is_read_only()
-    });
+    let running_non_read_only = snapshot
+        .children
+        .values()
+        .any(|child| child.state == ChildState::Running && !child.spec.write_scope.is_read_only());
     if scope.is_read_only() {
         !running_non_read_only
     } else {
@@ -544,7 +545,11 @@ mod tests {
         let (snapshot, commands) = start(MultiAgentPlan::new(
             "batch-1",
             2,
-            vec![task("task-1", "child-1"), task("task-2", "child-2"), task("task-3", "child-3")],
+            vec![
+                task("task-1", "child-1"),
+                task("task-2", "child-2"),
+                task("task-3", "child-3"),
+            ],
         ));
 
         assert_eq!(spawn_child_ids(&commands), vec!["child-1", "child-2"]);
@@ -608,7 +613,11 @@ mod tests {
         let (snapshot, _) = start(MultiAgentPlan::new(
             "batch-1",
             2,
-            vec![task("task-1", "child-1"), task("task-2", "child-2"), task("task-3", "child-3")],
+            vec![
+                task("task-1", "child-1"),
+                task("task-2", "child-2"),
+                task("task-3", "child-3"),
+            ],
         ));
         let (snapshot, _) = apply_event(
             snapshot,
@@ -628,7 +637,12 @@ mod tests {
         .expect("selected child is terminal");
         assert_eq!(outcome.status, JoinStatus::Succeeded);
 
-        assert!(try_join(&snapshot, &JoinSelection::default(), JoinPolicy::AllTerminal).is_none());
+        assert!(try_join(
+            &snapshot,
+            &JoinSelection::default(),
+            JoinPolicy::AllTerminal
+        )
+        .is_none());
     }
 
     #[test]

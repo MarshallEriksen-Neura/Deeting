@@ -96,6 +96,109 @@ fn inline_world_model_update_strips_response_content() {
 }
 
 #[test]
+fn world_model_update_tool_calls_are_internal_protocol_only() {
+    let response = serde_json::json!({
+        "content": "answer",
+        "tool_calls": [{
+            "id": "wm-1",
+            "function": {
+                "name": "world_model_update",
+                "arguments": "{\"facts\":[\"observed\"]}"
+            }
+        }]
+    });
+
+    assert!(tool_calls_are_only_world_model_update(
+        &extract_chat_tool_calls(&response)
+    ));
+
+    let mixed = serde_json::json!({
+        "content": "I need a file first.",
+        "tool_calls": [
+            {
+                "id": "wm-1",
+                "function": {
+                    "name": "world_model_update",
+                    "arguments": "{\"facts\":[\"observed\"]}"
+                }
+            },
+            {
+                "id": "read-1",
+                "function": {
+                    "name": "read_file",
+                    "arguments": "{\"path\":\"README.md\"}"
+                }
+            }
+        ]
+    });
+
+    assert!(!tool_calls_are_only_world_model_update(
+        &extract_chat_tool_calls(&mixed)
+    ));
+}
+
+#[test]
+fn strip_world_model_update_tool_calls_preserves_external_calls() {
+    let response = serde_json::json!({
+        "content": "answer",
+        "tool_calls": [
+            {
+                "id": "wm-1",
+                "function": {
+                    "name": "world_model_update",
+                    "arguments": "{\"facts\":[\"observed\"]}"
+                }
+            },
+            {
+                "id": "read-1",
+                "function": {
+                    "name": "read_file",
+                    "arguments": "{\"path\":\"README.md\"}"
+                }
+            }
+        ],
+        "choices": [{
+            "message": {
+                "content": "answer",
+                "tool_calls": [{
+                    "id": "wm-choice-1",
+                    "function": {
+                        "name": "world_model_update",
+                        "arguments": "{}"
+                    }
+                }]
+            }
+        }]
+    });
+
+    let stripped = strip_world_model_update_tool_calls(response);
+
+    assert_eq!(
+        stripped["tool_calls"].as_array().expect("tool_calls").len(),
+        1
+    );
+    assert_eq!(
+        stripped["tool_calls"][0]["function"]["name"],
+        serde_json::json!("read_file")
+    );
+    assert!(stripped["choices"][0]["message"]
+        .get("tool_calls")
+        .is_none());
+
+    let only_internal = strip_world_model_update_tool_calls(serde_json::json!({
+        "content": "answer",
+        "tool_calls": [{
+            "id": "wm-1",
+            "function": {
+                "name": "world_model_update",
+                "arguments": "{}"
+            }
+        }]
+    }));
+    assert!(only_internal.get("tool_calls").is_none());
+}
+
+#[test]
 fn world_model_snapshot_renders_four_sections_and_new_directive() {
     let mut frame = desktop_runtime_core::WorldModelFrame::new(
         "frame-1",

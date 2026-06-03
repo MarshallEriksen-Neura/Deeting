@@ -119,10 +119,7 @@ pub(super) async fn record_query_affinity_from_tool_meta(
         };
         if matches!(
             tool_name,
-            "search_sdk"
-                | "get_tool_schema"
-                | "execute_code_plan"
-                | "run_local_code_snippet"
+            "search_sdk" | "get_tool_schema" | "execute_code_plan" | "run_local_code_snippet"
         ) {
             continue;
         }

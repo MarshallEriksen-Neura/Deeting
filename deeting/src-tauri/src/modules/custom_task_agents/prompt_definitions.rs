@@ -58,7 +58,8 @@ pub(crate) fn render_custom_task_agent_system_prompt(
         );
         system_lines.push("Treat the startup preview below as read-only orientation. Run a fresh corpus search before making or editing wiki content.".to_string());
 
-        if let Some(preview) = input.maintainer_corpus_preview
+        if let Some(preview) = input
+            .maintainer_corpus_preview
             .map(str::trim)
             .filter(|value| !value.is_empty())
         {

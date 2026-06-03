@@ -7,9 +7,8 @@ use mcp_session::conversation::{
     LocalConversationCreateResponse, LocalConversationDeleteResponse,
     LocalConversationExecutionRoot, LocalConversationExecutionTreeResponse,
     LocalConversationHistoryMessage, LocalConversationHistoryQuery,
-    LocalConversationHistoryResponse, LocalConversationPinResponse,
-    LocalConversationRenameRequest, LocalConversationRenameResponse,
-    LocalConversationSessionPage, LocalConversationSessionsQuery,
+    LocalConversationHistoryResponse, LocalConversationPinResponse, LocalConversationRenameRequest,
+    LocalConversationRenameResponse, LocalConversationSessionPage, LocalConversationSessionsQuery,
     LocalConversationStatus, LocalConversationWindowResponse,
 };
 use serde_json::Value;

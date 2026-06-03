@@ -242,20 +242,21 @@ async fn audit_after_phase_with_model(
         "workflow_plan_audit:{}:{}",
         snapshot.run_id, completed_phase.phase_id
     );
-    let response = crate::modules::ai_upstream::request_provider_chat_completion_with_pool_failover(
-        app_state,
-        &model_connection.provider_model_id,
-        &model_connection.model_id,
-        messages,
-        None,
-        Some(0.1),
-        Some(2048),
-        crate::modules::ai_upstream::ReasoningRequestConfig::default(),
-        model_connection.failover_pool_key.as_deref(),
-        Some(trace_id.as_str()),
-        None,
-    )
-    .await?;
+    let response =
+        crate::modules::ai_upstream::request_provider_chat_completion_with_pool_failover(
+            app_state,
+            &model_connection.provider_model_id,
+            &model_connection.model_id,
+            messages,
+            None,
+            Some(0.1),
+            Some(2048),
+            crate::modules::ai_upstream::ReasoningRequestConfig::default(),
+            model_connection.failover_pool_key.as_deref(),
+            Some(trace_id.as_str()),
+            None,
+        )
+        .await?;
     let content = extract_chat_response_content(&response);
     parse_model_audit_decision(snapshot, completed_phase, &content)
 }

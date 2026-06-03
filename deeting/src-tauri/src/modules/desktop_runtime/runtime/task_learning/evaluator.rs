@@ -1,8 +1,7 @@
 use super::types::{
     EvaluatedOutcome, PolicyDelta, TaskAttribution, TaskFingerprint,
     TaskLearningDelegatedExecution, TaskLearningEvaluation, TaskLearningSignals,
-    ACTION_DISCOVERY_SEARCH_EARLY, ACTION_EXECUTE_CODE_PLAN,
-    ACTION_VERIFICATION_STRONGER_CHECKS,
+    ACTION_DISCOVERY_SEARCH_EARLY, ACTION_EXECUTE_CODE_PLAN, ACTION_VERIFICATION_STRONGER_CHECKS,
     DECISION_POINT_DISCOVERY, DECISION_POINT_EXECUTION, DECISION_POINT_VERIFICATION,
     DECISION_POINT_WORKER_SELECTION,
 };
@@ -746,10 +745,7 @@ mod tests {
         assert!(evaluation.policy_delta.as_ref().is_none_or(|delta| {
             matches!(
                 delta.decision_point.as_str(),
-                "worker_selection"
-                    | "discovery"
-                    | "execution"
-                    | "verification"
+                "worker_selection" | "discovery" | "execution" | "verification"
             )
         }));
     }

@@ -17,7 +17,9 @@ pub(super) fn latest_user_message(messages: &[LocalChatInputMessage]) -> Option<
         .map(|message| message.content.clone())
 }
 
-pub(super) fn latest_contiguous_user_messages(messages: &[LocalChatInputMessage]) -> Option<String> {
+pub(super) fn latest_contiguous_user_messages(
+    messages: &[LocalChatInputMessage],
+) -> Option<String> {
     let mut parts = Vec::new();
     let mut seen_latest_user = false;
 
@@ -131,9 +133,7 @@ pub(super) fn latest_user_image_input(messages: &[LocalChatInputMessage]) -> Lat
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        latest_contiguous_user_messages, latest_user_image_input, LatestUserImageInput,
-    };
+    use super::{latest_contiguous_user_messages, latest_user_image_input, LatestUserImageInput};
     use mcp_core::types::LocalChatInputMessage;
 
     fn message(role: &str, content: &str) -> LocalChatInputMessage {

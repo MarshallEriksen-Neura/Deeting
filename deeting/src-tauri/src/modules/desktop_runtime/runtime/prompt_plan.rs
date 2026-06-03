@@ -1,9 +1,9 @@
 use super::control_plane::LocalExecutionPolicy;
 use super::prompt_assets::PromptAssets;
-use super::prompt_definitions::with_communication_style_message;
 #[cfg(test)]
 pub(crate) use super::prompt_definitions::render_local_communication_style_prompt;
 pub(crate) use super::prompt_definitions::render_local_runtime_system_prompt;
+use super::prompt_definitions::with_communication_style_message;
 use crate::modules::code_mode::prompt::{
     render_execution_tool_prompt, render_runtime_capability_prompt,
 };
@@ -116,8 +116,8 @@ pub(crate) fn build_local_prompt_plan_for_pipeline(
         (pipeline.includes_execution_tool_protocol()
             && policy.inject_execution_protocol
             && !tool_names.is_empty())
-            .then(|| render_execution_tool_prompt(&tool_names))
-            .filter(|prompt| !prompt.trim().is_empty())
+        .then(|| render_execution_tool_prompt(&tool_names))
+        .filter(|prompt| !prompt.trim().is_empty())
     });
     let local_context = router_prompt_local_context();
     let response_language = locale
@@ -181,8 +181,8 @@ pub(crate) fn build_local_prelude_messages_for_pipeline(
         (pipeline.includes_execution_tool_protocol()
             && policy.inject_execution_protocol
             && !tool_names.is_empty())
-            .then(|| render_execution_tool_prompt(&tool_names))
-            .filter(|prompt| !prompt.trim().is_empty())
+        .then(|| render_execution_tool_prompt(&tool_names))
+        .filter(|prompt| !prompt.trim().is_empty())
     });
     let local_context = router_prompt_local_context();
     let response_language = router_prompt_default_response_language();

@@ -896,18 +896,36 @@ async fn request_world_model_update(
         Ok(update) => {
             let goal = current_frame.goal.clone();
             fn truncate_ellipsis(s: &str, max_chars: usize) -> String {
-                if s.chars().count() <= max_chars { return s.to_string(); }
+                if s.chars().count() <= max_chars {
+                    return s.to_string();
+                }
                 let truncated: String = s.chars().take(max_chars).collect();
                 format!("{truncated}…")
             }
-            let update_facts: Vec<String> = update.facts.iter().take(3)
-                .map(|s| truncate_ellipsis(s, 80)).collect();
-            let update_assumptions: Vec<String> = update.assumptions.iter().take(3)
-                .map(|s| truncate_ellipsis(s, 80)).collect();
-            let update_unknowns: Vec<String> = update.new_unknowns.iter().take(3)
-                .map(|s| truncate_ellipsis(s, 80)).collect();
-            let update_vts: Vec<String> = update.verification_targets.iter().take(3)
-                .map(|s| truncate_ellipsis(s, 80)).collect();
+            let update_facts: Vec<String> = update
+                .facts
+                .iter()
+                .take(3)
+                .map(|s| truncate_ellipsis(s, 80))
+                .collect();
+            let update_assumptions: Vec<String> = update
+                .assumptions
+                .iter()
+                .take(3)
+                .map(|s| truncate_ellipsis(s, 80))
+                .collect();
+            let update_unknowns: Vec<String> = update
+                .new_unknowns
+                .iter()
+                .take(3)
+                .map(|s| truncate_ellipsis(s, 80))
+                .collect();
+            let update_vts: Vec<String> = update
+                .verification_targets
+                .iter()
+                .take(3)
+                .map(|s| truncate_ellipsis(s, 80))
+                .collect();
             emit_world_model_frame_status(
                 runtime_request,
                 "success",
@@ -1026,10 +1044,8 @@ fn build_world_model_update_refresh_prompt(
     refresh_request: &FrameRefreshRequest,
     runtime_request: &LocalExecutionRequest,
 ) -> String {
-    let structured_prelude = render_local_structured_control_prelude(
-        Some(&runtime_request.execution_policy),
-        None,
-    );
+    let structured_prelude =
+        render_local_structured_control_prelude(Some(&runtime_request.execution_policy), None);
     let frame_json =
         serde_json::to_string_pretty(current_frame).unwrap_or_else(|_| "{}".to_string());
     let interruption = refresh_request
@@ -1202,7 +1218,8 @@ impl PhaseProposalGenerator for DeetingPhaseProposalGenerator {
                         .map(|target| target.description.clone())
                         .collect::<Vec<_>>(),
                 }),
-                rationale: "World-model frame requires user intent clarification before execution".to_string(),
+                rationale: "World-model frame requires user intent clarification before execution"
+                    .to_string(),
                 proposed_at_frame_version: frame.frame_version_id.clone(),
             }));
         }

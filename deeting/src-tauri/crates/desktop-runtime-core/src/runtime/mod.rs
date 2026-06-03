@@ -743,10 +743,7 @@ mod tests {
         // forced a redundant *second* refresh here (parent would have been "frame-1:refreshed"
         // and the commit "frame-1:refreshed:refreshed") — a new user directive must not drive a
         // world-model refresh, so a single interruption refresh is the correct behavior.
-        assert_eq!(
-            result.frame.parent_frame_id.as_deref(),
-            Some("frame-1")
-        );
+        assert_eq!(result.frame.parent_frame_id.as_deref(), Some("frame-1"));
         assert_eq!(
             result.plan.committed_phases[0].committed_at_frame_version,
             "frame-1:refreshed"

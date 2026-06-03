@@ -204,7 +204,9 @@ mod tests {
         let surface = surface_by_id("custom_task_agents.worker_packet");
 
         assert_eq!(surface.owner, "custom_task_agents::prompt_definitions");
-        assert!(surface.entrypoint.contains("render_worker_task_packet_system_prompt"));
+        assert!(surface
+            .entrypoint
+            .contains("render_worker_task_packet_system_prompt"));
         assert_boundaries(surface, &[PromptDataBoundary::RuntimeGeneratedPacket]);
     }
 

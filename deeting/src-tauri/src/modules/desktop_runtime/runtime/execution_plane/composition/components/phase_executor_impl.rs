@@ -140,7 +140,11 @@ where
         .and_then(Value::as_bool)
         == Some(true)
     {
-        return Ok(build_clarification_required_outcome(request, phase, emit_status));
+        return Ok(build_clarification_required_outcome(
+            request,
+            phase,
+            emit_status,
+        ));
     }
     run_policy_scoped_chat_completion(request.into(), None, emit_status).await
 }

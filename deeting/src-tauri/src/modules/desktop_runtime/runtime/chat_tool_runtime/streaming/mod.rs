@@ -156,7 +156,9 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn build_run
 mod tests {
     use super::*;
 
-    fn drain_blocks(rx: &mut tokio::sync::mpsc::UnboundedReceiver<String>) -> Vec<serde_json::Value> {
+    fn drain_blocks(
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<String>,
+    ) -> Vec<serde_json::Value> {
         let mut blocks = Vec::new();
         while let Ok(payload) = rx.try_recv() {
             let value: serde_json::Value =
@@ -210,7 +212,10 @@ mod tests {
         assert_eq!(blocks.len(), 3);
         assert_eq!(blocks[0]["type"], serde_json::json!("thought"));
         assert_eq!(blocks[1]["type"], serde_json::json!("text"));
-        assert_eq!(blocks[1]["content"], serde_json::json!("收到主人！傻妞马上帮你分析～"));
+        assert_eq!(
+            blocks[1]["content"],
+            serde_json::json!("收到主人！傻妞马上帮你分析～")
+        );
         assert_eq!(blocks[2]["type"], serde_json::json!("tool_call"));
         assert_eq!(blocks[2]["callId"], serde_json::json!("call_abc"));
     }

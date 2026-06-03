@@ -81,14 +81,13 @@ pub(super) use inflight::{
     clear_execution_graph_runtime_context, now_unix_ms_i64, persistable_inflight_context_from_value,
 };
 pub(super) use inflight_chat_runtime_context::PersistedChatToolRuntimeContext;
+#[cfg(test)]
+pub(crate) use inflight_delegated_serialization::{
+    serialize_delegated_runtime_context, serialize_delegated_workflow_runtime_context,
+};
 pub(crate) use inflight_delegated_serialization::{
     serialize_delegated_runtime_context_with_task_input_source,
     serialize_delegated_workflow_runtime_context_with_task_input_source,
-};
-#[cfg(test)]
-pub(crate) use inflight_delegated_serialization::{
-    serialize_delegated_runtime_context,
-    serialize_delegated_workflow_runtime_context,
 };
 pub(super) use inflight_delegation_wait::PersistedDelegationWait;
 pub(super) use inflight_execution_context::PersistedInFlightExecutionContext;

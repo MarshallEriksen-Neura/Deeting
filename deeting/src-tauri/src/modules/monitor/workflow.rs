@@ -7,9 +7,7 @@ use crate::modules::desktop_runtime::local_orchestrator::{
     LocalOrchestrationEngine, LocalWorkflowStep, StepResult, StepResultContext,
 };
 
-use super::agent_runtime::{
-    effective_monitor_tool_names, execute_monitor_task_agent,
-};
+use super::agent_runtime::{effective_monitor_tool_names, execute_monitor_task_agent};
 use super::output_contract::normalize_monitor_output;
 use super::prompt_definitions::{render_monitor_task_agent_message, MonitorTaskAgentPacket};
 use super::run_events::{build_run_event, build_run_terminal_event, project_tool_trace_run_events};

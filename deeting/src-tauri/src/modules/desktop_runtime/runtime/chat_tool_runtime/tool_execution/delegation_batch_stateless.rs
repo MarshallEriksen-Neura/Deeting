@@ -164,17 +164,29 @@ fn child_json_from_snapshot(child: &ChildSnapshot, recovery_meta: Option<&Value>
     record
 }
 
-fn child_failure_diagnostics(child: &ChildSnapshot, recovery_meta: Option<&Value>) -> Option<Value> {
+fn child_failure_diagnostics(
+    child: &ChildSnapshot,
+    recovery_meta: Option<&Value>,
+) -> Option<Value> {
     if !matches!(
         child.state,
-        ChildState::Failed | ChildState::Blocked | ChildState::LostAfterRestart | ChildState::Cancelled
+        ChildState::Failed
+            | ChildState::Blocked
+            | ChildState::LostAfterRestart
+            | ChildState::Cancelled
     ) {
         return None;
     }
     let raw_error = child
         .error
         .as_deref()
-        .or_else(|| child.result.as_ref().and_then(|value| value.get("error")).and_then(Value::as_str))
+        .or_else(|| {
+            child
+                .result
+                .as_ref()
+                .and_then(|value| value.get("error"))
+                .and_then(Value::as_str)
+        })
         .or_else(|| {
             child
                 .result
@@ -1542,12 +1554,8 @@ fn spawn_background_child(
             }
         };
 
-        if let Err(err) = ensure_child_execution_graph_run_row(
-            &app_state,
-            &audit_context,
-            &prepared,
-        )
-        .await
+        if let Err(err) =
+            ensure_child_execution_graph_run_row(&app_state, &audit_context, &prepared).await
         {
             let failed_result = queued_child_failed_result(&prepared, err.as_str());
             drop(permit);
@@ -1917,7 +1925,8 @@ async fn prepare_child_run(
         )?;
         (selection, None, "registered".to_string(), None)
     } else {
-        let agent_type = agent_type.ok_or_else(|| delegation_identity_missing_error(index, item))?;
+        let agent_type =
+            agent_type.ok_or_else(|| delegation_identity_missing_error(index, item))?;
         let spec = parse_ephemeral_agent_spec(item.get("agent_spec"))?;
         let ephemeral = build_ephemeral_agent_profile(agent_type.as_str(), spec, batch_id, index)?;
         let selection = ephemeral_selection(ephemeral.profile.clone(), agent_type.as_str());
@@ -2024,7 +2033,8 @@ fn delegation_identity_missing_error(index: usize, item: &Value) -> String {
 }
 
 fn required_capabilities_for_task(item: &Value, task: &str) -> Result<Vec<String>, String> {
-    let mut capabilities = optional_string_array(item, "required_capabilities")?.unwrap_or_default();
+    let mut capabilities =
+        optional_string_array(item, "required_capabilities")?.unwrap_or_default();
     if task_implies_web_search(task) && !capabilities.iter().any(|item| item == "web_search") {
         capabilities.push("web_search".to_string());
     }
@@ -2129,8 +2139,16 @@ fn child_has_web_search_capability(item: &Value, selection: &WorkerTargetSelecti
         .into_iter()
         .flatten()
         .filter_map(Value::as_str);
-    let bound_tool_ids = selection.profile.callable_mcp_tool_ids.iter().map(String::as_str);
-    let skill_ids = selection.profile.guidance_skill_ids.iter().map(String::as_str);
+    let bound_tool_ids = selection
+        .profile
+        .callable_mcp_tool_ids
+        .iter()
+        .map(String::as_str);
+    let skill_ids = selection
+        .profile
+        .guidance_skill_ids
+        .iter()
+        .map(String::as_str);
     explicit_tool_ids
         .chain(explicit_skill_ids)
         .chain(bound_tool_ids)
