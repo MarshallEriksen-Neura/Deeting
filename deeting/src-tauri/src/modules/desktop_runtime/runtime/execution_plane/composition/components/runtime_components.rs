@@ -14,11 +14,11 @@ use crate::modules::mcp::store::McpStore;
 use crate::modules::providers::model_guard::resolve_local_secretary_model_connection;
 use crate::state::AppState;
 use desktop_runtime_core::{
-    ConfidenceLevel, EventStore, FrameArtifactGenerator, FrameBootstrapOutput, FrameProvenance,
-    FrameRefreshArtifact, FrameRefreshRequest, FrameValidation, InterruptionChannel, PhaseProposal,
-    PhaseProposalGenerator, PhaseStepType, PlanArtifact, RuntimeCoreError, RuntimeCoreResult,
-    RuntimeEvent, Tier2Validator, UserInput, UserInterruption, WorldModelFrame,
-    WorldModelFrameStatus,
+    ConfidenceLevel, EventStore, ExecutionStrategy, FrameArtifactGenerator, FrameBootstrapOutput,
+    FrameProvenance, FrameRefreshArtifact, FrameRefreshRequest, FrameValidation,
+    InterruptionChannel, PhaseProposal, PhaseProposalGenerator, PhaseStepType, PlanArtifact,
+    RuntimeCoreError, RuntimeCoreResult, RuntimeEvent, Tier2Validator, UserInput, UserInterruption,
+    WorldModelFrame, WorldModelFrameStatus,
 };
 #[cfg(test)]
 use desktop_runtime_core::{Unknown, VerificationTarget};
@@ -928,6 +928,18 @@ async fn request_world_model_update(
                     "update_unknowns": update_unknowns,
                     "update_verification_targets": update_vts,
                     "resolved_unknowns": update.resolved_unknowns.len(),
+                    "execution_strategy": update.execution_strategy,
+                    "proposed_next_phase": update.proposed_next_phase.as_ref().map(|phase| {
+                        json!({
+                            "step_type": phase.step_type.as_str(),
+                            "rationale": phase.rationale.as_str(),
+                            "verification_target_refs": phase.verification_target_refs.clone(),
+                        })
+                    }),
+                    "proposed_next_phase_step_type": update
+                        .proposed_next_phase
+                        .as_ref()
+                        .map(|phase| phase.step_type.as_str()),
                 }),
             );
             Ok(Some(update))
@@ -1239,15 +1251,21 @@ impl PhaseProposalGenerator for DeetingPhaseProposalGenerator {
         // 1. Check if frame contains a proposed_next_phase from world_model_update
         if let Some(proposed_value) = &frame.proposed_next_phase {
             if let Ok(proposed) = serde_json::from_value::<ProposedPhase>(proposed_value.clone()) {
-                let step_type =
-                    parse_phase_step_type(&proposed.step_type).unwrap_or(PhaseStepType::ToolCall);
+                let parsed_step_type = parse_phase_step_type(&proposed.step_type);
+                let admission =
+                    admit_proposed_phase_step(parsed_step_type, frame.execution_strategy);
                 return Ok(Some(PhaseProposal {
                     proposal_id: format!("proposal:world_model_update:{}", proposed.step_type),
-                    step_type,
+                    step_type: admission.step_type,
                     payload: json!({
                         "source": "world_model_update_proposal",
                         "verification_target_refs": proposed.verification_target_refs,
                         "frame_version": frame.frame_version_id.clone(),
+                        "frame_strategy": frame.execution_strategy,
+                        "requested_phase_step_type": proposed.step_type.as_str(),
+                        "parsed_phase_step_type": parsed_step_type.map(phase_step_type_name),
+                        "admitted_phase_step_type": phase_step_type_name(admission.step_type),
+                        "phase_step_admission": admission.reason,
                     }),
                     rationale: proposed.rationale.clone(),
                     proposed_at_frame_version: frame.frame_version_id.clone(),
@@ -1256,7 +1274,7 @@ impl PhaseProposalGenerator for DeetingPhaseProposalGenerator {
         }
 
         // 2. Fallback: deterministic mapping from execution_strategy
-        let step_type = phase_step_for_strategy(frame.execution_strategy, PhaseStepType::ToolCall);
+        let step_type = executable_phase_step_for_strategy(frame.execution_strategy);
         Ok(Some(PhaseProposal {
             proposal_id: format!("proposal:fallback:{}", phase_step_type_name(step_type)),
             step_type,
@@ -1265,6 +1283,8 @@ impl PhaseProposalGenerator for DeetingPhaseProposalGenerator {
                 "phase_step_type": phase_step_type_name(step_type),
                 "frame_strategy": frame.execution_strategy,
                 "goal": frame.goal.clone(),
+                "admitted_phase_step_type": phase_step_type_name(step_type),
+                "phase_step_admission": "strategy_derived_executable_phase_step",
             }),
             rationale: "phase derived from world model frame execution strategy (fallback)"
                 .to_string(),
@@ -1312,6 +1332,51 @@ fn parse_phase_step_type(value: &str) -> Option<PhaseStepType> {
         "verify_final" | "verifyfinal" | "final" => Some(PhaseStepType::VerifyFinal),
         _ => None,
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PhaseStepAdmission {
+    step_type: PhaseStepType,
+    reason: &'static str,
+}
+
+fn admit_proposed_phase_step(
+    candidate: Option<PhaseStepType>,
+    frame_strategy: ExecutionStrategy,
+) -> PhaseStepAdmission {
+    match candidate {
+        Some(step_type) if is_executable_phase_step(step_type) => PhaseStepAdmission {
+            step_type,
+            reason: "accepted_executable_phase_step",
+        },
+        Some(_) => PhaseStepAdmission {
+            step_type: executable_phase_step_for_strategy(frame_strategy),
+            reason: "unsupported_phase_step_normalized_to_strategy",
+        },
+        None => PhaseStepAdmission {
+            step_type: executable_phase_step_for_strategy(frame_strategy),
+            reason: "unknown_phase_step_normalized_to_strategy",
+        },
+    }
+}
+
+fn executable_phase_step_for_strategy(strategy: ExecutionStrategy) -> PhaseStepType {
+    let candidate = phase_step_for_strategy(strategy, PhaseStepType::DirectChat);
+    if is_executable_phase_step(candidate) {
+        candidate
+    } else {
+        PhaseStepType::DirectChat
+    }
+}
+
+fn is_executable_phase_step(step_type: PhaseStepType) -> bool {
+    matches!(
+        step_type,
+        PhaseStepType::DirectChat
+            | PhaseStepType::DelegatedWorker
+            | PhaseStepType::DelegatedWorkflow
+            | PhaseStepType::VerifyFinal
+    )
 }
 
 fn all_verification_targets_met(frame: &WorldModelFrame, plan: &PlanArtifact) -> bool {
@@ -1629,7 +1694,7 @@ mod tests {
                 ExecutionStrategy::DelegatedAgent,
                 PhaseStepType::DelegatedWorker,
             ),
-            (ExecutionStrategy::Hybrid, PhaseStepType::ToolCall),
+            (ExecutionStrategy::Hybrid, PhaseStepType::DirectChat),
         ];
 
         for (strategy, expected_step_type) in cases {
@@ -1655,7 +1720,140 @@ mod tests {
                 .expect("some proposal");
 
             assert_eq!(proposal.step_type, expected_step_type);
+            assert_ne!(proposal.step_type, PhaseStepType::ToolCall);
         }
+    }
+
+    #[test]
+    fn phase_proposal_accepts_executable_world_model_phase() {
+        let mut frame = WorldModelFrame::new(
+            "frame-proposed-direct",
+            "session-1",
+            "task-1",
+            "answer the user",
+            ExecutionStrategy::Hybrid,
+            FrameProvenance::bootstrap("test"),
+        );
+        frame.proposed_next_phase = Some(json!({
+            "step_type": "direct_chat",
+            "rationale": "The answer can be produced directly."
+        }));
+        let plan = PlanArtifact::from_frame("plan-proposed-direct", &frame);
+        let input = UserInput {
+            session_id: "session-1".to_string(),
+            task_id: "task-1".to_string(),
+            content: "answer the user".to_string(),
+            source: Default::default(),
+        };
+
+        let proposal = DeetingPhaseProposalGenerator::new()
+            .propose_next_phase(&frame, &plan, &input)
+            .expect("proposal")
+            .expect("some proposal");
+
+        assert_eq!(proposal.step_type, PhaseStepType::DirectChat);
+        assert_eq!(
+            proposal
+                .payload
+                .get("phase_step_admission")
+                .and_then(serde_json::Value::as_str),
+            Some("accepted_executable_phase_step")
+        );
+    }
+
+    #[test]
+    fn phase_proposal_normalizes_tool_call_world_model_phase() {
+        let mut frame = WorldModelFrame::new(
+            "frame-proposed-tool-call",
+            "session-1",
+            "task-1",
+            "coordinate the task",
+            ExecutionStrategy::DelegatedWorkflow,
+            FrameProvenance::bootstrap("test"),
+        );
+        frame.proposed_next_phase = Some(json!({
+            "step_type": "tool_call",
+            "rationale": "The model tried to enter a tool phase."
+        }));
+        let plan = PlanArtifact::from_frame("plan-proposed-tool-call", &frame);
+        let input = UserInput {
+            session_id: "session-1".to_string(),
+            task_id: "task-1".to_string(),
+            content: "coordinate the task".to_string(),
+            source: Default::default(),
+        };
+
+        let proposal = DeetingPhaseProposalGenerator::new()
+            .propose_next_phase(&frame, &plan, &input)
+            .expect("proposal")
+            .expect("some proposal");
+
+        assert_eq!(proposal.step_type, PhaseStepType::DelegatedWorkflow);
+        assert_eq!(
+            proposal
+                .payload
+                .get("requested_phase_step_type")
+                .and_then(serde_json::Value::as_str),
+            Some("tool_call")
+        );
+        assert_eq!(
+            proposal
+                .payload
+                .get("admitted_phase_step_type")
+                .and_then(serde_json::Value::as_str),
+            Some("delegated_workflow")
+        );
+        assert_eq!(
+            proposal
+                .payload
+                .get("phase_step_admission")
+                .and_then(serde_json::Value::as_str),
+            Some("unsupported_phase_step_normalized_to_strategy")
+        );
+    }
+
+    #[test]
+    fn phase_proposal_normalizes_unknown_world_model_phase() {
+        let mut frame = WorldModelFrame::new(
+            "frame-proposed-unknown",
+            "session-1",
+            "task-1",
+            "answer the user",
+            ExecutionStrategy::DirectIteration,
+            FrameProvenance::bootstrap("test"),
+        );
+        frame.proposed_next_phase = Some(json!({
+            "step_type": "inspect_repository",
+            "rationale": "The model used a non-runtime phase label."
+        }));
+        let plan = PlanArtifact::from_frame("plan-proposed-unknown", &frame);
+        let input = UserInput {
+            session_id: "session-1".to_string(),
+            task_id: "task-1".to_string(),
+            content: "answer the user".to_string(),
+            source: Default::default(),
+        };
+
+        let proposal = DeetingPhaseProposalGenerator::new()
+            .propose_next_phase(&frame, &plan, &input)
+            .expect("proposal")
+            .expect("some proposal");
+
+        assert_eq!(proposal.step_type, PhaseStepType::DirectChat);
+        assert!(
+            proposal.payload.get("parsed_phase_step_type").is_none()
+                || proposal
+                    .payload
+                    .get("parsed_phase_step_type")
+                    .is_some_and(serde_json::Value::is_null)
+        );
+        assert_eq!(
+            proposal
+                .payload
+                .get("phase_step_admission")
+                .and_then(serde_json::Value::as_str),
+            Some("unknown_phase_step_normalized_to_strategy")
+        );
     }
 
     #[test]
