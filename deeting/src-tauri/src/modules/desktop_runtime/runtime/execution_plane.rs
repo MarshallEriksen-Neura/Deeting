@@ -7,12 +7,16 @@ mod request;
 mod user_input;
 
 pub(crate) use delegation::{
-    build_custom_task_agent_delegated_execution_session, build_delegated_result_feedback_messages,
-    build_workflow_delegated_execution_session, DelegatedExecutionAction,
-    DelegatedExecutionChildRecord, DelegatedExecutionKind, DelegatedExecutionPacketReceipt,
-    DelegatedExecutionRecord, DelegatedExecutionSelection, DelegatedExecutionSession,
-    DelegatedExecutionStatus, DelegatedExecutionTarget, DELEGATED_RESULT_SCHEMA_VERSION,
-    EXECUTION_TREE_SCHEMA_VERSION,
+    build_custom_task_agent_delegated_execution_session,
+    build_workflow_delegated_execution_session, DelegatedExecutionKind,
+    DelegatedExecutionPacketReceipt, DelegatedExecutionSelection, DelegatedExecutionSession,
+    DelegatedExecutionStatus,
+};
+#[cfg(test)]
+pub(crate) use delegation::{
+    build_delegated_result_feedback_messages, DelegatedExecutionAction,
+    DelegatedExecutionChildRecord, DelegatedExecutionRecord, DelegatedExecutionTarget,
+    DELEGATED_RESULT_SCHEMA_VERSION,
 };
 pub(crate) use dispatch::run_local_runtime_composition_entrypoint;
 pub(crate) use request::{LocalExecutionOutcome, LocalExecutionRequest};

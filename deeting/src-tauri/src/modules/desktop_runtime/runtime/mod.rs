@@ -29,9 +29,7 @@ pub mod tool_trace;
 pub mod worker_dispatch;
 
 pub(crate) use crate::modules::skills::onboarding::install_local_skill_from_onboarding_request;
-pub(crate) use activation::{
-    resolve_local_capability_activation_state, LocalCapabilityActivationState,
-};
+pub(crate) use activation::LocalCapabilityActivationState;
 pub(crate) use assistant_persistence::{
     mark_local_assistant_postprocess_completed, persist_local_assistant_turn,
 };
@@ -49,7 +47,6 @@ pub(crate) use chat_tool_runtime::{
 };
 #[cfg(test)]
 pub(crate) use chat_tool_runtime::{serialize_inflight_runtime_context, InFlightExecutionStage};
-pub(crate) use consult::LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION;
 pub(crate) use control_plane::{
     apply_desktop_execution_policy_overrides, build_default_local_execution_policy,
     build_local_control_plane_result, build_runtime_discovery_bundle_with_runtime_query_vector,
@@ -67,10 +64,12 @@ pub(crate) use execution_graph_store::{
     persist_execution_graph_snapshot,
 };
 pub(crate) use execution_plane::{
-    build_delegated_result_feedback_messages, run_local_runtime_composition_entrypoint,
-    DelegatedExecutionKind, DelegatedExecutionPacketReceipt, DelegatedExecutionRecord,
-    DelegatedExecutionSelection, DelegatedExecutionStatus, DelegatedExecutionTarget,
-    LocalExecutionRequest, EXECUTION_TREE_SCHEMA_VERSION,
+    run_local_runtime_composition_entrypoint, DelegatedExecutionSelection, LocalExecutionRequest,
+};
+#[cfg(test)]
+pub(crate) use execution_plane::{
+    DelegatedExecutionKind, DelegatedExecutionRecord, DelegatedExecutionStatus,
+    DelegatedExecutionTarget,
 };
 pub(crate) use posterior_signal::{
     resolve_posterior_signal, resolve_posterior_signal_ingress, should_apply_posterior_signal,

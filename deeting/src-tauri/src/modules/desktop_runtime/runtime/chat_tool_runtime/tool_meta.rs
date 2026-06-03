@@ -356,7 +356,7 @@ pub(super) fn last_response_content_or_empty(
 
 pub(super) fn canonicalize_tool_call_meta_via_graph(
     session_id: &str,
-    execution_policy: &LocalExecutionPolicy,
+    _execution_policy: &LocalExecutionPolicy,
     response: &serde_json::Value,
     tool_call_meta: &[serde_json::Value],
 ) -> Vec<serde_json::Value> {

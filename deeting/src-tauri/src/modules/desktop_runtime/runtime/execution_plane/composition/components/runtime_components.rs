@@ -223,6 +223,7 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) s
 }
 
 impl DeetingTier2Validator {
+    #[allow(dead_code)]
     pub(in crate::modules::desktop_runtime::runtime::execution_plane::composition) fn new(
         app_state: AppState,
         execution_policy: LocalExecutionPolicy,

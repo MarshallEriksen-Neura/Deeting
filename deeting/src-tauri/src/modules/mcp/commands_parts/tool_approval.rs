@@ -126,14 +126,6 @@ pub(crate) async fn reject_mcp_tool_payload(
     .await
 }
 
-#[cfg(test)]
-pub(crate) async fn list_pending_mcp_approvals_inner(
-    pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,
-    session_id: Option<&str>,
-) -> Vec<Value> {
-    list_pending_mcp_approvals_with_graph_inner(None, pending_tool_calls, session_id).await
-}
-
 pub(crate) async fn list_pending_mcp_approvals_with_graph_inner(
     store: Option<&crate::modules::mcp::store::McpStore>,
     _pending_tool_calls: &tokio::sync::RwLock<

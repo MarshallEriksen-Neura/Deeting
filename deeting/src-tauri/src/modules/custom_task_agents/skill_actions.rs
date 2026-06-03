@@ -373,7 +373,7 @@ fn build_command_for_entry(
 }
 
 async fn resolve_skill_action_env(
-    app_state: &AppState,
+    _app_state: &AppState,
     action: &ResolvedSkillAction,
 ) -> Result<HashMap<String, String>, String> {
     let mut env = HashMap::new();

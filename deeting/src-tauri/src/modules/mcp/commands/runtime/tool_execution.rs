@@ -2692,6 +2692,7 @@ pub(crate) async fn reject_mcp_tool_inner(
     .unwrap_or(false)
 }
 
+#[cfg(test)]
 pub(crate) async fn reject_mcp_tool_inner_with_mode(
     store: Option<&crate::modules::mcp::store::McpStore>,
     pending_tool_calls: &tokio::sync::RwLock<HashMap<String, crate::modules::mcp::PendingToolCall>>,

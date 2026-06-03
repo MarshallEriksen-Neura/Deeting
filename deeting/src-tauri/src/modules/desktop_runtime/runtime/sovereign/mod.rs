@@ -19,9 +19,6 @@
 #![allow(dead_code)]
 
 pub(crate) mod ingress;
-
-#[cfg(test)]
-pub(crate) use ingress::ExternalIngress;
 pub(crate) use ingress::{PosteriorSignalIngress, TaskExecutionIngress, UserActionIngress};
 
 use serde::{Deserialize, Serialize};

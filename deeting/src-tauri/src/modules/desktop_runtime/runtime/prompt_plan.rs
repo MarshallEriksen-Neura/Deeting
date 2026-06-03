@@ -1,14 +1,15 @@
 use super::control_plane::LocalExecutionPolicy;
 use super::prompt_assets::PromptAssets;
 use super::prompt_definitions::with_communication_style_message;
-pub(crate) use super::prompt_definitions::{
-    render_local_communication_style_prompt, render_local_runtime_system_prompt,
-};
+#[cfg(test)]
+pub(crate) use super::prompt_definitions::render_local_communication_style_prompt;
+pub(crate) use super::prompt_definitions::render_local_runtime_system_prompt;
 use crate::modules::code_mode::prompt::{
     render_execution_tool_prompt, render_runtime_capability_prompt,
 };
 #[cfg(target_os = "windows")]
 use crate::utils::configure_background_std_command;
+#[cfg(test)]
 use mcp_core::types::LocalChatInputMessage;
 #[cfg(test)]
 use mcp_runtime::prompt::build_local_prelude_messages as build_local_prelude_messages_inner;
@@ -71,19 +72,6 @@ pub(crate) fn router_prompt_local_context() -> RouterPromptLocalContext {
 
 pub(crate) fn router_prompt_default_response_language() -> &'static str {
     router_prompt_response_language_for_locale_pref(crate::tray::desktop_prefers_zh())
-}
-
-pub(crate) fn build_local_prompt_plan(
-    prompt_assets: &PromptAssets,
-    execution_policy: Option<&LocalExecutionPolicy>,
-    locale: Option<&str>,
-) -> PromptPlan {
-    build_local_prompt_plan_for_pipeline(
-        PromptPipeline::Chat,
-        prompt_assets,
-        execution_policy,
-        locale,
-    )
 }
 
 pub(crate) fn build_local_structured_control_prompt_plan(
@@ -174,17 +162,6 @@ pub(crate) fn build_local_prelude_messages(
     execution_policy: Option<&LocalExecutionPolicy>,
 ) -> Vec<LocalChatInputMessage> {
     build_local_prelude_messages_for_pipeline(PromptPipeline::Chat, prompt_assets, execution_policy)
-}
-
-#[cfg(test)]
-pub(crate) fn build_local_structured_control_prelude_messages(
-    execution_policy: Option<&LocalExecutionPolicy>,
-) -> Vec<LocalChatInputMessage> {
-    build_local_prelude_messages_for_pipeline(
-        PromptPipeline::StructuredControl,
-        &PromptAssets::default(),
-        execution_policy,
-    )
 }
 
 #[cfg(test)]

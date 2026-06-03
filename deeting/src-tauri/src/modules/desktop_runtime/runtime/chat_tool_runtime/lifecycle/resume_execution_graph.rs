@@ -6,7 +6,7 @@ use crate::modules::desktop_runtime::runtime::{
 pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn attach_execution_graph_to_response(
     response: &mut serde_json::Value,
     session_id: &str,
-    execution_policy: &LocalExecutionPolicy,
+    _execution_policy: &LocalExecutionPolicy,
     root_execution_id: Option<&str>,
     force_rebuild: bool,
 ) {

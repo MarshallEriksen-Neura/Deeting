@@ -22,21 +22,6 @@ use super::LocalOrchestratorInput;
 const LOCAL_DELTA_CHUNK_CHARS: usize = 64;
 const DESKTOP_PERSONA_PROMPT_KEY: &str = "chat.persona_prompt";
 
-pub(super) fn latest_user_message(messages: &[LocalChatInputMessage]) -> Option<&str> {
-    messages
-        .iter()
-        .rev()
-        .find(|message| message.role == "user")
-        .and_then(|message| {
-            let trimmed = message.content.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed)
-            }
-        })
-}
-
 pub(super) fn latest_contiguous_user_message(messages: &[LocalChatInputMessage]) -> Option<String> {
     let mut parts = Vec::new();
     let mut seen_latest_user = false;

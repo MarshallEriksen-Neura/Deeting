@@ -43,7 +43,6 @@ pub(crate) use frame_tools::{
 use lifecycle::finalize_tool_round;
 #[cfg(test)]
 use lifecycle::mark_delegated_wait_event_consumed;
-use lifecycle::runtime_state_from_persisted_context;
 #[cfg(test)]
 use lifecycle::PersistedPendingApproval;
 pub(crate) use lifecycle::SuspendedChatToolExecution;
@@ -54,40 +53,42 @@ use lifecycle::{
 };
 pub(crate) use lifecycle::{
     build_persisted_chat_runtime_context_from_execution_request,
-    collect_waiting_approval_tokens_from_graph, derive_pending_approvals_from_graph,
-    list_canonical_pending_local_approval_snapshots, load_suspended_chat_tool_execution_for_resume,
-    materialize_pending_local_approval_from_runtime_context,
-    persist_suspended_execution_graph_runtime, serialize_delegated_runtime_context,
+    list_canonical_pending_local_approval_snapshots,
     serialize_delegated_runtime_context_with_task_input_source,
-    serialize_delegated_workflow_runtime_context,
     serialize_delegated_workflow_runtime_context_with_task_input_source,
+};
+#[cfg(test)]
+pub(crate) use lifecycle::{
+    serialize_delegated_runtime_context, serialize_delegated_workflow_runtime_context,
 };
 #[cfg(test)]
 use lifecycle::{build_structured_tool_replay_messages, serialize_tool_replay_content};
 pub(crate) use lifecycle::{
-    project_local_chat_approval_state_payload, recover_inflight_local_execution_state,
-    recover_local_chat_execution_from_action, resume_delegated_runtime_after_custom_task_agent_run,
-    resume_suspended_chat_tool_execution_after_approval, wake_delegated_runtime_for_workflow_run,
+    recover_inflight_local_execution_state, resume_delegated_runtime_after_custom_task_agent_run,
+    wake_delegated_runtime_for_workflow_run,
 };
+#[cfg(test)]
 pub(crate) use lifecycle::{serialize_inflight_runtime_context, InFlightExecutionStage};
 use runtime_metrics::RuntimeMetricsAccumulator;
 #[cfg(test)]
 use runtime_state::classify_local_tool_execution_error_code;
+#[cfg(test)]
+use runtime_state::resolve_child_agent_max_rounds;
+#[cfg(test)]
+use runtime_state::rewind_round_for_post_approval_continuation;
 use runtime_state::{
-    build_max_rounds_exceeded_response, clone_runtime_state_for_tool_execution,
-    extract_initial_task_query, resolve_child_agent_max_rounds,
-    rewind_round_for_post_approval_continuation, LocalChatCompleteWithToolsOutput,
-    LocalChatToolRuntimeOutput, LocalChatToolRuntimeState, LocalToolCallProcessingOutcome,
+    build_max_rounds_exceeded_response, extract_initial_task_query,
+    LocalChatCompleteWithToolsOutput, LocalChatToolRuntimeOutput, LocalChatToolRuntimeState,
+    LocalToolCallProcessingOutcome,
 };
 use streaming::LocalRealtimeToolTraceEmitter;
 use tool_execution::process_chat_tool_calls;
 #[cfg(test)]
 use tool_meta::{
+    apply_rejected_tool_result_to_execution_graph_value,
     apply_approved_tool_result_to_execution_graph, canonicalize_tool_name_for_allowed_list,
-    resolve_local_tool_call_id, strip_stale_resume_response_metadata,
-};
-pub(crate) use tool_meta::{
-    apply_rejected_tool_result_to_execution_graph_value, mark_approval_gate_approving,
+    mark_approval_gate_approving, resolve_local_tool_call_id,
+    strip_stale_resume_response_metadata,
 };
 use tool_meta::{
     build_state_effective_tool_call_meta, canonicalize_tool_call_meta_via_graph,
@@ -513,6 +514,7 @@ pub(crate) async fn run_local_chat_complete_with_tools(
         .await
         .map(|output| LocalChatCompleteWithToolsOutput {
             response_json: output.response,
+            captured_world_model_update: output.captured_world_model_update,
             world_model_frame: output.world_model_frame,
         })
 }

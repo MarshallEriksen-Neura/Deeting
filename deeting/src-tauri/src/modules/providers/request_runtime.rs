@@ -4043,6 +4043,7 @@ mod tests {
 
         assert_eq!(prepared.body["reasoning"]["effort"], json!("low"));
     }
+    #[test]
     fn prepare_provider_request_openai_chat_stringifies_structured_content_when_model_requests_it()
     {
         let preset = mock_preset();

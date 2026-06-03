@@ -1,3 +1,4 @@
+#[cfg(test)]
 pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn serialize_tool_replay_content(
     item: &serde_json::Value,
 ) -> String {

@@ -1,5 +1,6 @@
 use super::super::super::LocalExecutionPolicy;
 use crate::modules::ai_upstream::types::LocalModelConnection;
+use crate::modules::desktop_runtime::runtime::chat_tool_runtime::WorldModelUpdate;
 use desktop_runtime_core::WorldModelFrame;
 use mcp_core::types::LocalChatInputMessage;
 use serde_json::Value;
@@ -38,6 +39,8 @@ pub(in crate::modules::desktop_runtime::runtime::execution_plane) struct ChatCom
 
 pub(in crate::modules::desktop_runtime::runtime::execution_plane) struct ChatCompletionPureResult {
     pub(in crate::modules::desktop_runtime::runtime::execution_plane) response_json: Value,
+    pub(in crate::modules::desktop_runtime::runtime::execution_plane) captured_world_model_update:
+        Option<WorldModelUpdate>,
     pub(in crate::modules::desktop_runtime::runtime::execution_plane) world_model_frame:
         Option<WorldModelFrame>,
 }

@@ -8,9 +8,8 @@ use crate::modules::desktop_runtime::runtime::execution_plane::{
 use crate::modules::desktop_runtime::runtime::LOCAL_TOOL_CALL_NOT_INSTALLED_OR_DISABLED_CODE;
 use crate::modules::desktop_runtime::runtime::{
     build_default_local_execution_policy, build_local_tool_call_install_gate_error_meta,
-    CapabilityExecutionContract, DelegatedExecutionKind, DelegatedExecutionPacketReceipt,
-    DelegatedExecutionRecord, DelegatedExecutionSelection, DelegatedExecutionStatus,
-    DelegatedExecutionTarget,
+    CapabilityExecutionContract, DelegatedExecutionKind, DelegatedExecutionRecord,
+    DelegatedExecutionSelection, DelegatedExecutionStatus, DelegatedExecutionTarget,
 };
 use desktop_runtime_core::snapshot_render::{render_world_model_snapshot, SnapshotRenderConfig};
 

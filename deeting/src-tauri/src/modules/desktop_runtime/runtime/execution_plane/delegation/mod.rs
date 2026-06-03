@@ -17,10 +17,13 @@ pub(super) use delegated_result::{
 };
 pub(crate) use feedback::build_delegated_result_feedback_messages;
 pub(crate) use model::{
-    DelegatedExecutionAction, DelegatedExecutionChildRecord, DelegatedExecutionKind,
+    DelegatedExecutionAction, DelegatedExecutionKind,
     DelegatedExecutionPacketReceipt, DelegatedExecutionRecord, DelegatedExecutionSelection,
     DelegatedExecutionSession, DelegatedExecutionStatus, DelegatedExecutionTarget,
-    DELEGATED_RESULT_SCHEMA_VERSION, EXECUTION_TREE_SCHEMA_VERSION,
+};
+#[cfg(test)]
+pub(crate) use model::{
+    DelegatedExecutionChildRecord, DELEGATED_RESULT_SCHEMA_VERSION,
 };
 pub(super) use pure::{
     build_custom_task_agent_preview_request, build_delegated_workflow_request,

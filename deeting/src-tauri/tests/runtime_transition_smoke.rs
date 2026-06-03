@@ -15,6 +15,8 @@ pub mod execution_graph {
 }
 
 pub mod runtime_event_projection {
+    #![allow(dead_code)]
+
     pub mod artifact {
         include!("../src/modules/desktop_runtime/runtime/runtime_event_projection/artifact.rs");
     }

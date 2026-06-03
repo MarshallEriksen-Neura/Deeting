@@ -85,6 +85,7 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) struct Local
 
 pub(crate) struct LocalChatCompleteWithToolsOutput {
     pub(crate) response_json: serde_json::Value,
+    pub(crate) captured_world_model_update: Option<WorldModelUpdate>,
     pub(crate) world_model_frame: Option<WorldModelFrame>,
 }
 
@@ -191,6 +192,7 @@ pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn rewind_ro
     state.round = state.round.saturating_sub(1);
 }
 
+#[cfg(test)]
 pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) fn resolve_child_agent_max_rounds(
     arguments: &serde_json::Value,
     runtime_max_rounds: usize,

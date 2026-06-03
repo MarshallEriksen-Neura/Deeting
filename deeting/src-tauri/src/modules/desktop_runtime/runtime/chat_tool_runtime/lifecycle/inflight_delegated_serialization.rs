@@ -3,6 +3,7 @@ use super::inflight_delegation_context::build_persisted_delegation_wait;
 use super::{InFlightExecutionStage, PersistedChatToolRuntimeContext};
 use serde_json::Value;
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn serialize_delegated_runtime_context(
     current_node: Option<String>,
@@ -82,6 +83,7 @@ pub(crate) fn serialize_delegated_runtime_context_with_task_input_source(
     )
 }
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn serialize_delegated_workflow_runtime_context(
     current_node: Option<String>,

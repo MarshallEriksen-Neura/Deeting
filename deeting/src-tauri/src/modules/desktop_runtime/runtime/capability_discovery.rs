@@ -2,9 +2,6 @@ use std::collections::{BTreeSet, HashSet};
 
 use serde_json::{json, Map, Value};
 
-use super::runtime_event_projection::projection::{
-    project_capability_exposure_decision_blocks, CapabilityExposureProjectionInput,
-};
 use super::search_feedback::{
     compute_feedback_boost, historical_affinity_from_rows, query_affinity_from_rows,
     SearchFeedbackContext,
@@ -873,38 +870,6 @@ fn capability_dedupe_key(value: &Value) -> Option<String> {
         .map(str::trim)
         .filter(|item| !item.is_empty())
         .map(|item| item.to_lowercase())
-}
-
-fn capability_change_added_refs(full_payload: &Value) -> Vec<String> {
-    full_payload
-        .get("capabilities")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|capability| is_admittable_capability_change(capability))
-        .filter_map(capability_admit_ref)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
-}
-
-fn is_admittable_capability_change(capability: &Value) -> bool {
-    capability
-        .get("status")
-        .and_then(|status| status.get("callable"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-        && capability.get("asset_namespace").and_then(Value::as_str) != Some("core")
-}
-
-fn capability_admit_ref(capability: &Value) -> Option<String> {
-    capability
-        .get("capability_id")
-        .and_then(Value::as_str)
-        .or_else(|| capability.get("name").and_then(Value::as_str))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
 }
 
 fn rank_registry_entry_with_feedback(

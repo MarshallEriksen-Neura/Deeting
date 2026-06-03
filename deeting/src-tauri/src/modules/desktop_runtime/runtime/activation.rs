@@ -8,6 +8,7 @@ pub(crate) struct LocalCapabilityActivationState {
     pub(crate) capability_summary: String,
 }
 
+#[allow(dead_code)]
 pub(crate) async fn resolve_local_capability_activation_state(
     store: &McpStore,
     capability_id: &str,

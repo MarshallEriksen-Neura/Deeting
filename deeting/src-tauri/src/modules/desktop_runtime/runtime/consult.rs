@@ -1,3 +1,4 @@
+#[cfg(test)]
 pub(crate) const LOCAL_ASSISTANT_ACTIVATION_FORMAT_VERSION: &str = "capability_activation.v1";
 
 #[cfg(test)]

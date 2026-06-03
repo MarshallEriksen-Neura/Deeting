@@ -147,6 +147,7 @@ where
         completion.response_json,
         delegated_execution,
     );
+    outcome.captured_world_model_update = completion.captured_world_model_update;
     outcome.world_model_frame = completion.world_model_frame;
     Ok(outcome)
 }
@@ -207,6 +208,7 @@ impl ChatCompletionProviderClient for DeetingChatCompletionProviderClient {
             .await?;
             Ok(ChatCompletionPureResult {
                 response_json: output.response_json,
+                captured_world_model_update: output.captured_world_model_update,
                 world_model_frame: output.world_model_frame,
             })
         })

@@ -26,7 +26,6 @@ mod tests {
     };
     use crate::modules::mcp::commands::runtime::{
         config::{hash_config, read_local_mcp_config},
-        tool_execution::execute_or_queue_mcp_tool_call,
         tool_resolution::{
             build_desktop_mcp_tool_view, build_desktop_mcp_tool_views, DesktopMcpToolIndexStatus,
             ToolAvailabilityClass,
@@ -40,7 +39,6 @@ mod tests {
     use crate::modules::mcp::commands::tool_management_impl::{
         start_mcp_tool_inner, stop_mcp_tool_inner,
     };
-    use crate::modules::skill_runtime::resolve_local_tool_env;
     use crate::modules::skills::onboarding::{
         derive_skill_name_from_repo_url, parse_skill_onboarding_payload,
     };
@@ -67,15 +65,9 @@ mod tests {
     use std::collections::{HashMap, HashSet};
     use std::path::Path;
     use std::path::PathBuf;
-    use std::sync::{Mutex, OnceLock};
     use std::time::Duration;
     use tokio::net::TcpListener;
     use tokio::sync::RwLock;
-
-    fn env_lock() -> &'static Mutex<()> {
-        static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        ENV_LOCK.get_or_init(|| Mutex::new(()))
-    }
 
     async fn create_test_store(test_name: &str) -> crate::modules::mcp::store::McpStore {
         let mut db_path = std::env::temp_dir();

@@ -76,17 +76,19 @@ pub(super) use approval_pending_filter::filter_pending_approvals_by_graph;
 pub(crate) use approval_pending_materialize::materialize_pending_local_approval_from_runtime_context;
 pub(crate) use approval_pending_snapshot::list_canonical_pending_local_approval_snapshots;
 pub(crate) use approval_runtime_lookup::list_canonical_waiting_approval_contexts;
-pub(crate) use delegated_wait_marker::consume_delegated_wait_event_marker;
 pub(super) use delegated_wait_marker::mark_delegated_wait_event_consumed;
 pub(super) use inflight::{
     clear_execution_graph_runtime_context, now_unix_ms_i64, persistable_inflight_context_from_value,
 };
 pub(super) use inflight_chat_runtime_context::PersistedChatToolRuntimeContext;
 pub(crate) use inflight_delegated_serialization::{
-    serialize_delegated_runtime_context,
     serialize_delegated_runtime_context_with_task_input_source,
-    serialize_delegated_workflow_runtime_context,
     serialize_delegated_workflow_runtime_context_with_task_input_source,
+};
+#[cfg(test)]
+pub(crate) use inflight_delegated_serialization::{
+    serialize_delegated_runtime_context,
+    serialize_delegated_workflow_runtime_context,
 };
 pub(super) use inflight_delegation_wait::PersistedDelegationWait;
 pub(super) use inflight_execution_context::PersistedInFlightExecutionContext;
@@ -112,15 +114,17 @@ pub(crate) use approval_state_projection::project_local_chat_approval_state_payl
 pub(crate) use inflight_recovery::recover_inflight_local_execution_state;
 pub(crate) use recovery_action::recover_local_chat_execution_from_action;
 pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) use resume_execution_graph::attach_execution_graph_to_response;
-pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) use resume_assistant_blocks::{
-    build_persisted_resume_assistant_blocks, build_persisted_resume_assistant_meta,
-};
+#[cfg(test)]
+pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) use resume_assistant_blocks::build_persisted_resume_assistant_blocks;
+pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) use resume_assistant_blocks::build_persisted_resume_assistant_meta;
 pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) use resume_continuation_blocks::build_local_chat_resume_continuation_blocks;
 pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) use resume_response_text::extract_resume_response_text;
 pub(in crate::modules::desktop_runtime::runtime::chat_tool_runtime) use resumed_assistant_persistence::persist_resumed_local_chat_assistant_message;
 
 pub(super) use replay::finalize_tool_round;
+#[cfg(test)]
 pub(super) use replay_content::serialize_tool_replay_content;
+#[cfg(test)]
 pub(super) use replay_structured_messages::build_structured_tool_replay_messages;
 
 pub(crate) use suspended::SuspendedChatToolExecution;
