@@ -28,6 +28,7 @@ pub(crate) enum WriteGuardScopeMode {
     #[allow(dead_code)]
     Global,
     PayloadFilters,
+    CorpusFilters,
 }
 
 #[derive(Debug, Clone)]
@@ -110,7 +111,7 @@ pub(crate) fn policy_for_profile(profile: WriteGuardProfile) -> WriteGuardPolicy
             max_ratio: 0.98,
             allow_auto_merge: true,
             protected_noop_threshold: 0.99,
-            scope_mode: WriteGuardScopeMode::PayloadFilters,
+            scope_mode: WriteGuardScopeMode::CorpusFilters,
         },
         WriteGuardProfile::WikiPromotion => WriteGuardPolicy {
             base_update_threshold: 0.89,
@@ -126,7 +127,7 @@ pub(crate) fn policy_for_profile(profile: WriteGuardProfile) -> WriteGuardPolicy
 
 pub(crate) fn decide_write_guard(
     profile: WriteGuardProfile,
-    _payload: &CreateLocalMemoryRequest,
+    payload: &CreateLocalMemoryRequest,
     candidates: &[WriteGuardCandidate],
     now: time::OffsetDateTime,
 ) -> WriteGuardDecisionDetail {
@@ -169,6 +170,26 @@ pub(crate) fn decide_write_guard(
 
     let protected_existing = protection.is_protected;
     let selected_existing_id = Some(top1.id.clone());
+
+    if matches!(profile, WriteGuardProfile::AutoExtractedFact) {
+        if let Some(canonical_match) = candidates
+            .iter()
+            .find(|candidate| auto_fact_canonical_duplicate(&payload.content, &candidate.content))
+        {
+            return WriteGuardDecisionDetail {
+                action: WriteGuardCoreAction::Noop,
+                reason: "auto_fact_canonical_duplicate".to_string(),
+                top1_score: Some(top1_score),
+                top2_score,
+                score_gap,
+                score_ratio,
+                effective_update_threshold,
+                effective_noop_threshold,
+                protected_existing,
+                selected_existing_id: Some(canonical_match.id.clone()),
+            };
+        }
+    }
 
     if top1_score < effective_update_threshold {
         return WriteGuardDecisionDetail {
@@ -414,6 +435,97 @@ fn metadata_importance(meta: Option<&Value>) -> Option<f32> {
         .map(|value| value.clamp(0.0, 1.0))
 }
 
+fn auto_fact_canonical_duplicate(incoming: &str, existing: &str) -> bool {
+    match (
+        auto_fact_canonical_key(incoming),
+        auto_fact_canonical_key(existing),
+    ) {
+        (Some(incoming_key), Some(existing_key)) => incoming_key == existing_key,
+        _ => false,
+    }
+}
+
+fn auto_fact_canonical_key(value: &str) -> Option<String> {
+    let normalized = normalize_claim_text(value);
+    if normalized.is_empty() {
+        return None;
+    }
+
+    if normalized.contains("用户")
+        && normalized.contains("助手")
+        && (normalized.contains("称呼") || normalized.contains("昵称"))
+    {
+        if let Some(nickname) = extract_quoted_fact_value(value) {
+            let nickname_key = normalize_claim_text(&nickname);
+            if !nickname_key.is_empty() {
+                return Some(format!("assistant_nickname:{}", nickname_key));
+            }
+        }
+    }
+
+    None
+}
+
+fn extract_quoted_fact_value(value: &str) -> Option<String> {
+    const PAIRS: [(char, char); 4] = [('“', '”'), ('"', '"'), ('\'', '\''), ('「', '」')];
+
+    for (open, close) in PAIRS {
+        let mut chars = value.char_indices();
+        while let Some((start_index, ch)) = chars.next() {
+            if ch != open {
+                continue;
+            }
+            let content_start = start_index + ch.len_utf8();
+            if let Some((end_offset, _)) = value[content_start..]
+                .char_indices()
+                .find(|(_, candidate)| *candidate == close)
+            {
+                let content = value[content_start..content_start + end_offset].trim();
+                if !content.is_empty() {
+                    return Some(content.to_string());
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn normalize_claim_text(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| {
+            !ch.is_whitespace()
+                && !matches!(
+                    ch,
+                    '。' | '，'
+                        | ','
+                        | '.'
+                        | '！'
+                        | '!'
+                        | '？'
+                        | '?'
+                        | '；'
+                        | ';'
+                        | ':'
+                        | '：'
+                        | '"'
+                        | '\''
+                        | '`'
+                        | '“'
+                        | '”'
+                        | '「'
+                        | '」'
+                        | '（'
+                        | '）'
+                        | '('
+                        | ')'
+                )
+        })
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
 fn metadata_bool(meta: Option<&Value>, paths: &[&str]) -> bool {
     paths.iter().any(|path| {
         metadata_value(meta, &[path])
@@ -436,7 +548,7 @@ fn metadata_value<'a>(meta: Option<&'a Value>, paths: &[&str]) -> Option<&'a Val
 mod tests {
     use super::{
         decide_write_guard, policy_for_profile, WriteGuardCandidate, WriteGuardCoreAction,
-        WriteGuardProfile,
+        WriteGuardProfile, WriteGuardScopeMode,
     };
     use serde_json::json;
 
@@ -483,6 +595,52 @@ mod tests {
         let policy = policy_for_profile(WriteGuardProfile::ManualMemory);
         assert!(policy.base_update_threshold > 0.9);
         assert!(policy.base_noop_threshold > policy.base_update_threshold);
+    }
+
+    #[test]
+    fn auto_fact_profile_dedupes_across_sessions_within_corpus() {
+        let policy = policy_for_profile(WriteGuardProfile::AutoExtractedFact);
+        assert_eq!(policy.scope_mode, WriteGuardScopeMode::CorpusFilters);
+    }
+
+    #[test]
+    fn auto_fact_assistant_nickname_rewrites_are_canonical_duplicates() {
+        let now = time::OffsetDateTime::parse(
+            "2026-04-14T00:00:00Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .expect("parse time");
+        let mut existing = candidate(
+            "existing",
+            0.42,
+            None,
+            Some(0.4),
+            Some("2026-04-01T00:00:00Z"),
+        );
+        existing.source = Some("auto_extraction".to_string());
+
+        let detail = decide_write_guard(
+            WriteGuardProfile::AutoExtractedFact,
+            &crate::modules::memory::types::CreateLocalMemoryRequest {
+                content: "用户使用“傻妞”作为助手称呼。".to_string(),
+                session_id: Some("session-b".to_string()),
+                capability_id: None,
+                meta_info: None,
+                category: Some("fact".to_string()),
+                source: Some("auto_extraction".to_string()),
+                tags: None,
+            },
+            &[WriteGuardCandidate {
+                content: "用户使用昵称“傻妞”来称呼AI助手。".to_string(),
+                session_id: Some("session-a".to_string()),
+                ..existing
+            }],
+            now,
+        );
+
+        assert_eq!(detail.action, WriteGuardCoreAction::Noop);
+        assert_eq!(detail.reason, "auto_fact_canonical_duplicate");
+        assert_eq!(detail.selected_existing_id.as_deref(), Some("existing"));
     }
 
     #[test]

@@ -467,6 +467,24 @@ impl MemoryService {
                     .filter(|candidate| !candidate_is_superseded(candidate.meta_info.as_ref()))
                     .collect())
             }
+            WriteGuardScopeMode::CorpusFilters => {
+                let candidates = self
+                    .store
+                    .search_memories_for_write_guard(
+                        embedding,
+                        4,
+                        None,
+                        None,
+                        payload.category.as_deref(),
+                        payload.source.as_deref(),
+                        payload.tags.as_deref(),
+                    )
+                    .await?;
+                Ok(candidates
+                    .into_iter()
+                    .filter(|candidate| !candidate_is_superseded(candidate.meta_info.as_ref()))
+                    .collect())
+            }
         }
     }
 
@@ -1546,6 +1564,49 @@ mod tests {
         let content = candidate.content.clone();
         assert!(!id.is_empty());
         assert_eq!(content, "workspace one stable conclusion");
+    }
+
+    #[tokio::test]
+    async fn auto_extracted_fact_candidate_search_ignores_session_boundary() {
+        let service = create_service_with_snapshots().await;
+        service
+            .store
+            .append_with_embedding(
+                CreateLocalMemoryRequest {
+                    content: "用户使用昵称“傻妞”来称呼AI助手。".into(),
+                    session_id: Some("session-a".into()),
+                    capability_id: Some("assistant-a".into()),
+                    meta_info: Some(serde_json::json!({"source": "auto_extraction"})),
+                    category: Some("fact".into()),
+                    source: Some("auto_extraction".into()),
+                    tags: None,
+                },
+                test_embedding(),
+                Some("test".into()),
+            )
+            .await
+            .expect("insert auto fact");
+
+        let candidates = service
+            .find_candidates_for_write_guard(
+                &CreateLocalMemoryRequest {
+                    content: "用户使用“傻妞”作为助手称呼。".into(),
+                    session_id: Some("session-b".into()),
+                    capability_id: Some("assistant-b".into()),
+                    meta_info: Some(serde_json::json!({"source": "auto_extraction"})),
+                    category: Some("fact".into()),
+                    source: Some("auto_extraction".into()),
+                    tags: None,
+                },
+                test_embedding(),
+                policy_for_profile(WriteGuardProfile::AutoExtractedFact).scope_mode,
+            )
+            .await
+            .expect("auto fact corpus search");
+
+        let candidate = candidates.first().expect("matching auto fact candidate");
+        assert_eq!(candidate.content, "用户使用昵称“傻妞”来称呼AI助手。");
+        assert_eq!(candidate.session_id.as_deref(), Some("session-a"));
     }
 
     #[test]
