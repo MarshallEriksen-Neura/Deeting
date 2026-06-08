@@ -138,6 +138,14 @@ export const MessageItem = React.memo<MessageItemProps>(
       if (message.role !== "assistant") return []
       return message.blocks ?? []
     }, [message.blocks, message.role])
+    const isAssistantTimelineOnly = React.useMemo(() => {
+      if (message.role !== "assistant" || assistantParts.length === 0) return false
+      const hasTimeline = assistantParts.some((part) => part.type === "activity_timeline")
+      if (!hasTimeline) return false
+      return assistantParts.every(
+        (part) => part.type === "activity_timeline" || part.type === "execution_section"
+      )
+    }, [assistantParts, message.role])
     useMessageToolApproval(message.role === "assistant" ? message.id : null, assistantParts, {
       fromHistory: Boolean(message.fromHistory),
     })
@@ -267,6 +275,14 @@ export const MessageItem = React.memo<MessageItemProps>(
       }, 2200)
       return () => window.clearTimeout(timer)
     }, [focusMessage, isFocusedMessage, message.id])
+
+    if (
+      isAssistantTimelineOnly &&
+      !compareState &&
+      (!message.attachments || message.attachments.length === 0)
+    ) {
+      return null
+    }
 
     return (
       <div

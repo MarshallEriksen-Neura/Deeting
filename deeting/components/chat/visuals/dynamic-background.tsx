@@ -17,25 +17,14 @@ import { memo } from 'react';
 function DynamicBackground() {
   return (
     <div className="absolute inset-0 pointer-events-none overflow-hidden">
-      {/* 
-        Light Mode: Ambient Orbs on White 
-        Dark Mode: Hidden or Subtle
-      */}
-      <div className="absolute inset-0 bg-[#F7F9FB] dark:bg-black transition-colors duration-500">
-        
-        {/* Orb 1: Top Left (Purple/Blue) */}
-        <div className="absolute -top-[10%] -left-[10%] w-[50vw] h-[50vw] bg-purple-200/25 dark:bg-purple-900/10 rounded-full blur-[80px] animate-pulse-slow mix-blend-multiply dark:mix-blend-normal" />
-        
-        {/* Orb 2: Bottom Right (Cyan/Teal) */}
-        <div className="absolute -bottom-[10%] -right-[10%] w-[45vw] h-[45vw] bg-cyan-200/25 dark:bg-cyan-900/10 rounded-full blur-[100px] animate-pulse-slower mix-blend-multiply dark:mix-blend-normal" />
-
-        {/* Orb 3: Center (Pink/Warm) - Moving */}
-        <div className="absolute top-[30%] left-[30%] w-[30vw] h-[30vw] bg-pink-200/20 dark:bg-pink-900/5 rounded-full blur-[60px] animate-blob mix-blend-multiply dark:mix-blend-normal" />
-        
+      <div className="absolute inset-0 bg-[#fbfdff] transition-colors duration-500 dark:bg-zinc-950">
+        <div className="absolute inset-0 bg-[linear-gradient(115deg,rgba(231,244,255,0.62)_0%,rgba(255,255,255,0.9)_38%,rgba(248,245,255,0.62)_69%,rgba(255,250,253,0.76)_100%)] dark:bg-[linear-gradient(115deg,rgba(23,23,23,0.98),rgba(28,25,39,0.92))]" />
+        <div className="absolute inset-x-[10%] top-[8%] h-[40%] bg-[linear-gradient(90deg,rgba(154,203,255,0.1),rgba(146,118,229,0.08),rgba(255,255,255,0))] blur-[74px] dark:opacity-25" />
+        <div className="absolute inset-x-[18%] bottom-[0%] h-[42%] bg-[linear-gradient(90deg,rgba(255,255,255,0),rgba(198,226,255,0.16),rgba(239,219,255,0.12),rgba(255,255,255,0))] blur-[88px] dark:opacity-20" />
       </div>
       
       {/* Gradient Overlay to soften edges */}
-      <div className="absolute inset-0 bg-white/20 dark:bg-black/20 backdrop-blur-[1px]" />
+      <div className="absolute inset-0 bg-white/18 backdrop-blur-[1px] dark:bg-zinc-950/20" />
     </div>
   );
 }

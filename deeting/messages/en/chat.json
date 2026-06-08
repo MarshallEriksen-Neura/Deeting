@@ -375,6 +375,7 @@
       },
       "menu": {
         "home": "Home",
+        "exit": "Exit",
         "dashboard": "OS Dashboard",
         "registry": "Registry",
         "preferences": "Preferences",
@@ -448,7 +449,33 @@
       "switchToWorkflow": "Switch to orchestration",
       "immersiveCollapse": "Collapse composer",
       "immersiveExpand": "Expand composer",
-      "placeholder": "Type a message...",
+      "welcomeHeading": "Hi, what can I help you do?",
+      "welcomeSubtitle": "An intelligent assistant, ready whenever you need help",
+      "welcomeTryTitle": "You can try these",
+      "modeDefault": "Default",
+      "welcomeSuggestions": {
+        "draftEmail": {
+          "title": "Draft an email",
+          "description": "Write a formal business email",
+          "prompt": "Draft an email"
+        },
+        "explainConcept": {
+          "title": "Explain a concept",
+          "description": "Make a complex idea easy to understand",
+          "prompt": "Explain a complex concept"
+        },
+        "analyzeCode": {
+          "title": "Analyze this code",
+          "description": "Find issues and suggest improvements",
+          "prompt": "Analyze this code"
+        },
+        "workPlan": {
+          "title": "Create a work plan",
+          "description": "Build a detailed execution plan",
+          "prompt": "Create a work plan"
+        }
+      },
+      "placeholder": "Type a message or @ mention, Shift + Enter for a new line",
       "workflowPlaceholder": "Describe a new task to break down...",
       "workflowContextPlaceholder": "Ask about or revise the current plan...",
       "menu": "Actions",

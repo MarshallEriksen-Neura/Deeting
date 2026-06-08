@@ -15,6 +15,9 @@ import {
 import { cn } from "@/lib/utils";
 import { useTerminalPanelStore } from "@/store/terminal-panel-store";
 import { TerminalPanel } from "@/components/terminal/terminal-panel";
+import { useChatStore } from "@/store/chat-store";
+import { ChatWelcome, ChatWelcomeHeading } from "./chat-welcome";
+import { ChatHomeRail } from "./chat-home-rail";
 
 // `PanelImperativeHandle` is re-exported solely so external callers (none
 // today, but anticipated) can share the same handle type without depending
@@ -38,6 +41,9 @@ const TERMINAL_MIN_SIZE = "25%";
 const TERMINAL_MAX_SIZE = "60%";
 /** Smallest chat-main width — prevents the chat column from being squeezed. */
 const CHAT_MAIN_MIN_SIZE = "40%";
+/** Fixed desktop sidebar width plus outer gutter. */
+const CHAT_SIDEBAR_OFFSET = "lg:pl-[352px]";
+const CHAT_SIDEBAR_LEFT = "lg:left-[352px]";
 
 /**
  * Wraps the main chat interaction layer in a horizontal splitter. The left
@@ -63,6 +69,8 @@ export function ChatTerminalSplitView({
   const isOpen = useTerminalPanelStore((state) => state.isOpen);
   const open = useTerminalPanelStore((state) => state.open);
   const close = useTerminalPanelStore((state) => state.close);
+  const isEmpty = useChatStore((state) => state.messages.length === 0);
+  const setInput = useChatStore((state) => state.setInput);
 
   // `usePanelRef` is the v4 convenience hook — returns a typed RefObject
   // matching what `<ResizablePanel panelRef={...} />` expects.
@@ -115,11 +123,16 @@ export function ChatTerminalSplitView({
       className="relative z-10 h-full w-full"
     >
       <ResizablePanel id="chat-main" defaultSize="100%" minSize={CHAT_MAIN_MIN_SIZE}>
-        <div className="grid h-full w-full grid-rows-[auto_minmax(0,1fr)_auto]">
+        <div className="relative grid h-full w-full grid-rows-[auto_minmax(0,1fr)_auto]">
+          <ChatHomeRail />
+
           {/* Heads-Up Display (Top Center) */}
           <div
             data-chat-hud
-            className="flex justify-center pt-6 pointer-events-none"
+            className={cn(
+              "pointer-events-none flex justify-center pt-4",
+              CHAT_SIDEBAR_OFFSET,
+            )}
           >
             <div className="pointer-events-auto">{hud}</div>
           </div>
@@ -127,18 +140,41 @@ export function ChatTerminalSplitView({
           {/* Chat content */}
           <div
             data-chat-scroll
-            className="relative min-h-0 overflow-y-auto overflow-x-hidden"
+            className={cn(
+              "relative min-h-0 overflow-y-auto overflow-x-hidden",
+              !isEmpty && CHAT_SIDEBAR_OFFSET,
+            )}
           >
+            {isEmpty && (
+              <div className={cn("absolute inset-y-0 left-0 right-0 z-0", CHAT_SIDEBAR_LEFT)}>
+                <ChatWelcome onSuggestion={setInput} />
+              </div>
+            )}
             <div className="flex min-h-0 h-full w-full">{children}</div>
           </div>
 
-          {/* Controls / Morphing Bar (Bottom Center) */}
+          {/* Controls / Morphing Bar — centered overlay when empty, bottom otherwise */}
           {controls ? (
             <div
               data-chat-controls
-              className="flex justify-center pb-8 pointer-events-none"
+              className={cn(
+                "pointer-events-none",
+                isEmpty
+                  ? cn("absolute left-0 right-0 top-[47%] z-10 flex -translate-y-1/2 justify-center px-4", CHAT_SIDEBAR_LEFT)
+                  : cn("flex justify-center pb-8", CHAT_SIDEBAR_OFFSET),
+              )}
             >
-              <div className="pointer-events-auto w-full max-w-5xl 2xl:max-w-6xl px-4">
+              <div
+                className={cn(
+                  "pointer-events-auto w-full",
+                  isEmpty ? "max-w-[1120px]" : "max-w-5xl px-4 2xl:max-w-6xl",
+                )}
+              >
+                {isEmpty && (
+                  <div className="mb-7 flex justify-center lg:px-4">
+                    <ChatWelcomeHeading />
+                  </div>
+                )}
                 {controls}
               </div>
             </div>

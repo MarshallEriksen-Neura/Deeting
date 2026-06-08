@@ -5,7 +5,6 @@ import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import { GhostCursor } from "@/components/chat/visuals/status-visuals";
 import type {
-  ActivityTimelineBlock,
   MessageBlock,
   UIBlock as MessageUIBlock,
   ToolCallBlock as MessageToolCallBlock,
@@ -31,7 +30,6 @@ import { DitingThinkPanel } from "@/components/chat/messages/ai-response-bubble/
 import { resolveMemoryInjections } from "@/lib/chat/status-detail";
 import { MemoryInjectionBadge } from "@/components/chat/messages/ai-response-bubble/memory-injection-badge";
 import { WorldModelPanel } from "@/components/chat/messages/ai-response-bubble/world-model-panel";
-import { AssistantActivityTimeline } from "@/components/chat/messages/ai-response-bubble/assistant-activity-timeline";
 import { useChatStore } from "@/store/chat-store";
 
 const ViewBlock = dynamic(() => import("@/components/views/view-block"), {
@@ -200,14 +198,10 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       return { resultMap: map, pairedResultIndices: paired };
     }, [parts]);
 
-    const activityTimelineBlock = useMemo<ActivityTimelineBlock | null>(() => {
-      for (const part of parts) {
-        if (part.type === "activity_timeline") {
-          return part;
-        }
-      }
-      return null;
-    }, [parts]);
+    const hasActivityTimelineBlock = useMemo(
+      () => parts.some((part) => part.type === "activity_timeline"),
+      [parts],
+    );
 
     const dittingFrameBlock = useMemo(() => {
       for (const part of parts) {
@@ -353,7 +347,7 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       >
         <div className="pl-4 pr-1 py-2 min-w-0 overflow-hidden">
           <AIResponseStatusRail
-            isActive={isActive && !activityTimelineBlock}
+            isActive={isActive && !hasActivityTimelineBlock}
             hasContent={hasAnswerContent}
             hasToolActivity={hasToolActivity}
             statusStage={statusStage}
@@ -362,13 +356,6 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
             streamEnabled={streamEnabled}
             shouldRevealCallChain={shouldRevealCallChain}
           />
-
-          {activityTimelineBlock ? (
-            <AssistantActivityTimeline
-              block={activityTimelineBlock}
-              isActive={isActive}
-            />
-          ) : null}
 
           {dittingFrameBlock ? (
             <DitingThinkPanel

@@ -581,6 +581,7 @@
       },
       "menu": {
         "home": "首页",
+        "exit": "退出",
         "dashboard": "系统面板",
         "registry": "注册中心",
         "preferences": "偏好设置",
@@ -654,7 +655,33 @@
       "switchToWorkflow": "转为编排",
       "immersiveCollapse": "收起输入框",
       "immersiveExpand": "展开输入框",
-      "placeholder": "输入消息...",
+      "welcomeHeading": "你好，有什么我能帮你做的？",
+      "welcomeSubtitle": "智能助手，随时为你提供帮助",
+      "welcomeTryTitle": "你可以尝试这些",
+      "modeDefault": "默认",
+      "welcomeSuggestions": {
+        "draftEmail": {
+          "title": "帮我起草一封邮件",
+          "description": "撰写正式的商务邮件",
+          "prompt": "帮我起草一封邮件"
+        },
+        "explainConcept": {
+          "title": "解释一个复杂概念",
+          "description": "用简单易懂的方式解释",
+          "prompt": "解释一个复杂概念"
+        },
+        "analyzeCode": {
+          "title": "分析这段代码",
+          "description": "找出问题并优化建议",
+          "prompt": "分析这段代码"
+        },
+        "workPlan": {
+          "title": "制定工作计划",
+          "description": "创建详细的执行计划",
+          "prompt": "制定工作计划"
+        }
+      },
+      "placeholder": "输入消息或 @ 提及，Shift + Enter 换行",
       "workflowPlaceholder": "描述要拆解的新任务...",
       "workflowContextPlaceholder": "询问或修改右侧当前计划...",
       "menu": "更多功能",

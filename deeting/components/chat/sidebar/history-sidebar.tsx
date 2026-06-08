@@ -1,6 +1,5 @@
 'use client';
 
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
   MessageSquare,
@@ -13,7 +12,7 @@ import {
   Pin,
   PinOff,
 } from 'lucide-react';
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
@@ -43,22 +42,23 @@ import { cn } from '@/lib/utils';
 import type { ConversationSessionItem } from '@/lib/api/conversations';
 
 interface HistorySidebarProps {
-  isOpen: boolean;
-  onClose: () => void;
+  className?: string;
 }
 
-export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
+export function HistorySidebar({ className }: HistorySidebarProps) {
   const t = useI18n('chat');
   const router = useRouter();
   const searchParams = useSearchParams();
   const [search, setSearch] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [actionSessionId, setActionSessionId] = useState<string | null>(null);
+  const [openMenuSessionId, setOpenMenuSessionId] = useState<string | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameSessionId, setRenameSessionId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [renameError, setRenameError] = useState<string | null>(null);
   const [renameSaving, setRenameSaving] = useState(false);
+  const suppressFreshMenuSelectUntilRef = useRef(0);
   const [isDocumentVisible, setIsDocumentVisible] = useState(() =>
     typeof document === 'undefined' ? true : document.visibilityState === 'visible'
   );
@@ -178,8 +178,7 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
     }
     await loadHistoryBySession(targetSessionId);
     router.replace(buildChatUrl(targetSessionId));
-    onClose();
-  }, [loadHistoryBySession, router, buildChatUrl, onClose, items]);
+  }, [loadHistoryBySession, router, buildChatUrl, items]);
 
   const handleResetSession = useCallback(async () => {
     resetSession();
@@ -305,22 +304,12 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
   }, []);
 
   useEffect(() => {
-    if (!isOpen) {
-      setRenameOpen(false);
-      setRenameSessionId(null);
-      setRenameValue('');
-      setRenameError(null);
-      setRenameSaving(false);
-    }
-  }, [isOpen]);
-
-  useEffect(() => {
     if (typeof document === 'undefined') return;
 
     const handleVisibilityChange = () => {
       const visible = document.visibilityState === 'visible';
       setIsDocumentVisible(visible);
-      if (visible && isOpen) {
+      if (visible) {
         void mutate();
       }
     };
@@ -329,10 +318,10 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [isOpen, mutate]);
+  }, [mutate]);
 
   useEffect(() => {
-    if (!isOpen || !isDocumentVisible) return;
+    if (!isDocumentVisible) return;
     void mutate();
     const refreshIntervalMs = isGenerating ? 3000 : 12000;
     const timer = window.setInterval(() => {
@@ -342,65 +331,55 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
     return () => {
       window.clearInterval(timer);
     };
-  }, [isDocumentVisible, isGenerating, isOpen, mutate]);
+  }, [isDocumentVisible, isGenerating, mutate]);
 
   const handleToggleArchived = useCallback(() => {
     setShowArchived((prev) => !prev);
   }, []);
 
+  const armFreshMenuSelectGuard = useCallback(() => {
+    suppressFreshMenuSelectUntilRef.current = Date.now() + 350;
+  }, []);
+
+  const shouldSuppressFreshMenuSelect = useCallback(() => {
+    return Date.now() < suppressFreshMenuSelectUntilRef.current;
+  }, []);
+
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          {/* Backdrop (Click to close) */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 z-[60] bg-black/10 backdrop-blur-[2px]"
-          />
+    <>
+      <div className={cn("flex min-h-0 flex-1 flex-col overflow-hidden", className)}>
+        <div className="px-4 pb-3 pt-1">
+          <h2 className="text-sm font-semibold tracking-tight text-slate-800 dark:text-white/80">
+            {t('history.title')}
+          </h2>
+        </div>
 
-          {/* Sidebar Panel */}
-          <motion.div
-            initial={{ x: -320, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: -320, opacity: 0 }}
-            transition={{ type: "spring", damping: 25, stiffness: 200 }}
-            className="fixed top-4 bottom-4 left-4 w-80 z-[70] flex flex-col"
+        <div className="px-4 pb-3">
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-10 w-full justify-start gap-2 rounded-2xl border border-slate-200/70 bg-white/60 px-3 text-sm font-semibold text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)] transition-colors hover:bg-white/90 hover:text-slate-900 dark:border-white/10 dark:bg-white/[0.05] dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
+            onClick={() => {
+              void handleResetSession();
+            }}
           >
-            {/* Glass Container */}
-            <div className="h-full w-full bg-white/92 dark:bg-[#121212]/90 backdrop-blur-2xl border border-slate-200/70 dark:border-white/5 rounded-3xl shadow-2xl flex flex-col overflow-hidden">
-              
-              {/* Header */}
-              <div className="p-4 border-b border-slate-200/70 dark:border-white/5 flex items-center justify-between">
-                <h2 className="text-sm font-bold text-slate-800 dark:text-white/80 tracking-wide">{t('history.title')}</h2>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="rounded-full text-slate-600 dark:text-white/50 hover:text-slate-900 dark:hover:text-white"
-                  onClick={() => {
-                    handleResetSession();
-                    onClose();
-                  }}
-                >
-                  <Plus className="w-4 h-4" />
-                </Button>
-              </div>
+            <Plus className="h-4 w-4" />
+            {t('header.newChat')}
+          </Button>
+        </div>
 
-              {/* Search */}
-              <div className="px-4 py-2">
-                <div className="relative group">
-                  <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400 dark:text-white/30 group-hover:text-slate-600 dark:group-hover:text-white/50 transition-colors" />
-                  <Input
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder={t('history.searchPlaceholder')}
-                    className="w-full bg-slate-100/80 dark:bg-white/5 border border-transparent focus:border-slate-200 dark:focus:border-white/10 rounded-xl py-2 pl-9 pr-3 text-sm outline-none transition-all placeholder:text-slate-500 dark:placeholder:text-white/30 text-slate-800 dark:text-white/80"
-                  />
-                </div>
-              </div>
+        {/* Search */}
+        <div className="px-4 pb-3">
+          <div className="relative group">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 transition-colors group-hover:text-slate-600 dark:text-white/30 dark:group-hover:text-white/50" />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder={t('history.searchPlaceholder')}
+              className="w-full rounded-2xl border border-transparent bg-slate-100/75 py-2 pl-9 pr-3 text-sm text-slate-800 outline-none transition-all placeholder:text-slate-500 focus:border-slate-200 dark:bg-white/5 dark:text-white/80 dark:placeholder:text-white/30 dark:focus:border-white/10"
+            />
+          </div>
+        </div>
 
               {/* Scrollable List */}
               <div className="flex-1 overflow-hidden px-2 pb-2">
@@ -472,18 +451,43 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
                                       <Pin className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400 shrink-0" />
                                     )}
                                   </Button>
-                                  <DropdownMenu>
+                                  <DropdownMenu
+                                    open={openMenuSessionId === session.session_id}
+                                    onOpenChange={(open) => {
+                                      if (open) {
+                                        armFreshMenuSelectGuard();
+                                      }
+                                      setOpenMenuSessionId(open ? session.session_id : null);
+                                    }}
+                                  >
                                     <DropdownMenuTrigger asChild>
                                       <button
                                         type="button"
                                         className="shrink-0 p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-white/40 dark:hover:text-white/70 dark:hover:bg-white/10 transition-colors"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          armFreshMenuSelectGuard();
+                                          setOpenMenuSessionId((current) =>
+                                            current === session.session_id ? null : session.session_id
+                                          );
+                                        }}
+                                        onPointerDown={(event) => {
+                                          event.preventDefault();
+                                          event.stopPropagation();
+                                          armFreshMenuSelectGuard();
+                                        }}
                                       >
                                         <MoreHorizontal className="w-4 h-4" />
                                       </button>
                                     </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end" className="w-36">
+                                    <DropdownMenuContent align="end" sideOffset={8} className="w-36">
                                       <DropdownMenuItem
-                                        onSelect={() => {
+                                        onSelect={(event) => {
+                                          if (shouldSuppressFreshMenuSelect()) {
+                                            event.preventDefault();
+                                            return;
+                                          }
+                                          setOpenMenuSessionId(null);
                                           openRenameDialog(session);
                                         }}
                                       >
@@ -493,6 +497,10 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
                                       {!showArchived && (
                                         <DropdownMenuItem
                                           onSelect={(event) => {
+                                            if (shouldSuppressFreshMenuSelect()) {
+                                              event.preventDefault();
+                                              return;
+                                            }
                                             event.preventDefault();
                                             void handlePinToggle(session.session_id, session.is_pinned || false);
                                           }}
@@ -514,6 +522,10 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
                                       {showArchived ? (
                                         <DropdownMenuItem
                                           onSelect={(event) => {
+                                            if (shouldSuppressFreshMenuSelect()) {
+                                              event.preventDefault();
+                                              return;
+                                            }
                                             event.preventDefault();
                                             void handleArchiveToggle(session.session_id, "active");
                                           }}
@@ -525,6 +537,10 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
                                       ) : (
                                         <DropdownMenuItem
                                           onSelect={(event) => {
+                                            if (shouldSuppressFreshMenuSelect()) {
+                                              event.preventDefault();
+                                              return;
+                                            }
                                             event.preventDefault();
                                             void handleArchiveToggle(session.session_id, "archived");
                                           }}
@@ -560,60 +576,57 @@ export function HistorySidebar({ isOpen, onClose }: HistorySidebarProps) {
                 </Button>
               </div>
 
-            </div>
-          </motion.div>
+      </div>
 
-          <Dialog open={renameOpen} onOpenChange={handleRenameOpenChange}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>{t('history.renameTitle')}</DialogTitle>
-              </DialogHeader>
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void handleRenameSubmit();
+      <Dialog open={renameOpen} onOpenChange={handleRenameOpenChange}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('history.renameTitle')}</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleRenameSubmit();
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-2">
+              <Label htmlFor="conversation-rename-input">
+                {t('history.renameLabel')}
+              </Label>
+              <Input
+                id="conversation-rename-input"
+                value={renameValue}
+                onChange={(event) => {
+                  setRenameValue(event.target.value);
+                  if (renameError) {
+                    setRenameError(null);
+                  }
                 }}
-                className="space-y-4"
+                placeholder={t('history.renamePlaceholder')}
+              />
+              {renameError ? (
+                <p className="text-xs text-red-500">{renameError}</p>
+              ) : null}
+            </div>
+            <DialogFooter className="gap-2 sm:gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleRenameOpenChange(false)}
               >
-                <div className="space-y-2">
-                  <Label htmlFor="conversation-rename-input">
-                    {t('history.renameLabel')}
-                  </Label>
-                  <Input
-                    id="conversation-rename-input"
-                    value={renameValue}
-                    onChange={(event) => {
-                      setRenameValue(event.target.value);
-                      if (renameError) {
-                        setRenameError(null);
-                      }
-                    }}
-                    placeholder={t('history.renamePlaceholder')}
-                  />
-                  {renameError ? (
-                    <p className="text-xs text-red-500">{renameError}</p>
-                  ) : null}
-                </div>
-                <DialogFooter className="gap-2 sm:gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => handleRenameOpenChange(false)}
-                  >
-                    {t('history.renameCancel')}
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={renameSaving || !renameValue.trim()}
-                  >
-                    {renameSaving ? t('history.renameSaving') : t('history.renameConfirm')}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </>
-      )}
-    </AnimatePresence>
+                {t('history.renameCancel')}
+              </Button>
+              <Button
+                type="submit"
+                disabled={renameSaving || !renameValue.trim()}
+              >
+                {renameSaving ? t('history.renameSaving') : t('history.renameConfirm')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

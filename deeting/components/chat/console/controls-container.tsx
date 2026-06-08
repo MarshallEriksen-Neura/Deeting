@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertCircle, ArrowUp, Bot, Check, ChevronsDown, ChevronsUp, CircleDashed, FileText, Globe, ListChecks, Loader2, MessageSquarePlus, PanelRightOpen, Paperclip, PencilLine, Play, Presentation, RotateCcw, Search, Sliders, Square, X } from 'lucide-react';
+import { AlertCircle, ArrowUp, Bot, Check, ChevronsDown, ChevronsUp, CircleDashed, FileText, Globe, Image as ImageIcon, ListChecks, Loader2, MessageSquarePlus, PanelRightOpen, Paperclip, PencilLine, Play, Plus, Presentation, RotateCcw, Search, SendHorizontal, Sliders, Square, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useMemo, useRef, useState, useCallback, useEffect, memo } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
@@ -21,6 +21,10 @@ import { Switch } from '@/ui/shadcn/switch';
 import { BrowserModeConfirmationBar } from '@/components/chat/browser-mode/browser-mode-confirmation-bar';
 import { TakeoverPendingBar } from '@/components/chat/takeover/takeover-pending-bar';
 import { RecoveryActionBar } from '@/components/chat/recovery/recovery-action-bar';
+import {
+  ChatImmersiveComposer,
+  type ComposerContextBarItem,
+} from '@/components/chat/console/chat-immersive-composer';
 import Image from 'next/image';
 import { Popover, PopoverContent, PopoverTrigger } from '@/ui/shadcn/popover';
 import { Slider } from '@/ui/shadcn/slider';
@@ -408,7 +412,7 @@ function ControlsContainer() {
     };
   }, [workflowRun, workflowSteps]);
   const contextBarItems = useMemo(() => {
-    const items: Array<{ key: string; tone: 'default' | 'warning' | 'danger' | 'active'; label: string; title?: string }> = [];
+    const items: ComposerContextBarItem[] = [];
     if (recoveryPrompt) {
       items.push({ key: 'recovery', tone: 'warning', label: t('controls.contextBar.recovery') });
     }
@@ -1045,6 +1049,8 @@ function ControlsContainer() {
     t,
   ]);
 
+  const isEmpty = messages.length === 0;
+
   return (
     <div className="relative">
       <AnimatePresence initial={false} mode="wait">
@@ -1055,65 +1061,46 @@ function ControlsContainer() {
             animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
             exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 46, scale: 0.97, filter: 'blur(12px)' }}
             transition={composerTransition}
-            className="relative flex flex-col gap-2 overflow-visible rounded-[28px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-bg)] p-2.5 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.38)] backdrop-blur-2xl supports-[backdrop-filter]:bg-[color:var(--ios-shell-bg)]"
+            className={cn(
+              "relative flex flex-col overflow-visible border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-bg)] p-2.5 backdrop-blur-2xl supports-[backdrop-filter]:bg-[color:var(--ios-shell-bg)]",
+              isEmpty
+                ? "min-h-[178px] gap-0 rounded-[36px] border-[#d7daf9]/90 bg-white/76 px-5 py-4 shadow-[0_22px_70px_-58px_rgba(87,93,176,0.52),inset_0_1px_0_rgba(255,255,255,0.9)] ring-1 ring-white/60"
+                : "gap-2 rounded-[28px] shadow-[0_24px_60px_-34px_rgba(15,23,42,0.38)]",
+            )}
           >
-            <div className="pointer-events-none absolute inset-x-8 top-0 h-16 rounded-full bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.72),transparent_70%)] opacity-70 dark:opacity-40" />
+            <div
+              className={cn(
+                "pointer-events-none absolute inset-x-8 top-0 h-16 rounded-full bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.72),transparent_70%)] opacity-70 dark:opacity-40",
+                isEmpty && "inset-x-12 h-14 opacity-72",
+              )}
+            />
             <BrowserModeConfirmationBar />
 
       {/* 1. Main Input Area */}
-      <motion.div
-        layout="position"
-        transition={{ layout: composerLayoutTransition }}
-        className="relative pt-0.5"
+      <ChatImmersiveComposer
+        isEmpty={isEmpty}
+        isBridgeFlashing={isBridgeFlashing}
+        layoutTransition={composerLayoutTransition}
+        contextBarItems={contextBarItems}
+        beforeInput={(
+          <div className="pointer-events-none absolute bottom-full left-0 z-20 mb-2 flex flex-col gap-2">
+            <RecoveryActionBar
+              recovery={recoveryPrompt}
+              disabled={isLoading || isApprovalFlowActive}
+              onContinue={handleRecoveryContinue}
+              onRetry={handleRecoveryRetry}
+              onAbandon={handleRecoveryAbandon}
+            />
+            <TakeoverPendingBar
+              pendingTakeover={pendingTakeover}
+              requestedAction={pendingTakeoverRequestedAction}
+              onImmediateStop={() => void stopAndSendPendingTakeover()}
+              onSendAfterStep={() => void markPendingTakeoverForDeferredSend()}
+              onCancel={() => void cancelPendingTakeover()}
+            />
+          </div>
+        )}
       >
-        <div className="pointer-events-none absolute bottom-full left-0 z-20 mb-2 flex flex-col gap-2">
-          <RecoveryActionBar
-            recovery={recoveryPrompt}
-            disabled={isLoading || isApprovalFlowActive}
-            onContinue={handleRecoveryContinue}
-            onRetry={handleRecoveryRetry}
-            onAbandon={handleRecoveryAbandon}
-          />
-          <TakeoverPendingBar
-            pendingTakeover={pendingTakeover}
-            requestedAction={pendingTakeoverRequestedAction}
-            onImmediateStop={() => void stopAndSendPendingTakeover()}
-            onSendAfterStep={() => void markPendingTakeoverForDeferredSend()}
-            onCancel={() => void cancelPendingTakeover()}
-          />
-        </div>
-        {contextBarItems.length > 0 ? (
-          <motion.div
-            layout="position"
-            transition={{ layout: composerLayoutTransition }}
-            className="mb-2 flex flex-wrap items-center gap-1.5 px-1"
-          >
-            {contextBarItems.map((item) => (
-              <span
-                key={item.key}
-                title={item.title}
-                className={cn(
-                  "inline-flex h-6 items-center rounded-full border px-2 text-[11px] font-medium",
-                  item.tone === 'danger'
-                    ? "border-red-200 bg-red-50 text-red-700 dark:border-red-400/25 dark:bg-red-500/10 dark:text-red-200"
-                    : item.tone === 'warning'
-                      ? "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-400/25 dark:bg-amber-500/10 dark:text-amber-200"
-                      : item.tone === 'active'
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-400/25 dark:bg-emerald-500/10 dark:text-emerald-200"
-                        : "border-slate-200 bg-slate-50 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-white/65"
-                )}
-              >
-                {item.label}
-              </span>
-            ))}
-          </motion.div>
-        ) : null}
-        <div
-          className={cn(
-            "relative flex items-end rounded-[22px] border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]",
-            isBridgeFlashing && "terminal-bridge-flash",
-          )}
-        >
               {showTaskAgentMentionPicker ? (
                 <div className="absolute bottom-[calc(100%+8px)] left-0 z-20 w-full max-w-[720px] overflow-hidden rounded-[24px] border border-slate-200/80 bg-white/95 p-2 shadow-[0_24px_60px_-34px_rgba(15,23,42,0.65)] backdrop-blur-2xl dark:border-white/10 dark:bg-[#151515]/95">
                   <div className="px-3 pb-1.5 pt-1 text-[11px] font-semibold text-slate-500 dark:text-white/45">
@@ -1168,13 +1155,16 @@ function ControlsContainer() {
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
                 rows={1}
-                className="max-h-[220px] min-h-[44px] w-full resize-none overflow-y-hidden border-0 bg-transparent px-0 py-[9px] text-[15px] font-normal leading-7 text-slate-800 shadow-none focus-visible:ring-0 focus-visible:border-transparent dark:text-white/80 placeholder:text-slate-500 dark:placeholder:text-white/30"
+                className={cn(
+                  "max-h-[220px] min-h-[44px] w-full resize-none overflow-y-hidden border-0 bg-transparent px-0 py-[9px] pr-[108px] text-[15px] font-medium leading-7 text-slate-800 shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:text-white/80 placeholder:text-slate-500 dark:placeholder:text-white/30",
+                  isEmpty && "min-h-[68px] text-[15px] font-medium leading-7 placeholder:text-slate-500/78",
+                )}
                 placeholder={composerPlaceholder}
                 aria-label={composerPlaceholder}
                 autoFocus
                 onFocus={handleInputFocus}
               />
-              <div className="ml-3 flex shrink-0 items-end gap-2 self-end">
+              <div className="absolute right-3 top-3 flex shrink-0 items-center gap-2">
                 <Button
                   type="button"
                   variant="ghost"
@@ -1312,8 +1302,7 @@ function ControlsContainer() {
                   </PopoverContent>
                 </Popover>
               </div>
-        </div>
-      </motion.div>
+      </ChatImmersiveComposer>
 
       {attachments.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2 px-1">
@@ -1529,9 +1518,26 @@ function ControlsContainer() {
       <motion.div
         layout="position"
         transition={{ layout: composerLayoutTransition }}
-        className="flex flex-wrap items-center justify-between gap-2.5"
+        className={cn(
+          "flex flex-wrap items-center justify-between gap-2.5",
+          isEmpty && "absolute bottom-4 left-5 right-5",
+        )}
       >
-        <div className="flex flex-wrap items-center gap-2">
+        <div className={cn("flex flex-wrap items-center gap-2", isEmpty && "gap-2.5")}>
+          {isEmpty ? (
+            <GlassButton
+              type="button"
+              variant="secondary"
+              size="icon"
+              aria-label={t("input.image.add")}
+              onClick={handleFileInputClick}
+              className="order-1 min-h-[48px] min-w-[48px] cursor-pointer rounded-[15px] border-white/70 bg-white/72 text-slate-700 shadow-[0_13px_28px_-26px_rgba(83,91,132,0.48)] hover:bg-white/90"
+              disabled={isLoading}
+            >
+              <ImageIcon className="h-[21px] w-[21px]" />
+            </GlassButton>
+          ) : null}
+
           {/* New Chat Button */}
           <GlassButton
              type="button"
@@ -1539,9 +1545,12 @@ function ControlsContainer() {
              size="icon"
              onClick={handleNewChat}
              aria-label={t("header.newChat")}
-             className="min-h-[44px] min-w-[44px] cursor-pointer"
+             className={cn(
+               "min-h-[44px] min-w-[44px] cursor-pointer",
+               isEmpty && "order-5 min-h-[48px] min-w-[48px] rounded-[15px] border-white/70 bg-white/72 text-slate-700 shadow-[0_13px_28px_-26px_rgba(83,91,132,0.48)] hover:bg-white/90",
+             )}
           >
-             <MessageSquarePlus className="w-5 h-5" />
+             {isEmpty ? <Plus className="h-[22px] w-[22px]" /> : <MessageSquarePlus className="h-5 w-5" />}
           </GlassButton>
 
           {isTauriRuntime ? (
@@ -1552,10 +1561,13 @@ function ControlsContainer() {
                   variant="secondary"
                   size="icon"
                   aria-label={t("controls.knowledge")}
-                  className="min-h-[44px] min-w-[44px] cursor-pointer"
+                  className={cn(
+                    "min-h-[44px] min-w-[44px] cursor-pointer",
+                    isEmpty && "order-2 min-h-[48px] min-w-[48px] rounded-[15px] border-white/70 bg-white/72 text-slate-700 shadow-[0_13px_28px_-26px_rgba(83,91,132,0.48)] hover:bg-white/90",
+                  )}
                   disabled={isLoading}
                 >
-                  <FileText className="w-5 h-5" />
+                  <FileText className={cn(isEmpty ? "h-[21px] w-[21px]" : "h-5 w-5")} />
                 </GlassButton>
               </PopoverTrigger>
               <PopoverContent
@@ -1808,7 +1820,10 @@ function ControlsContainer() {
                 void handleGeneratePlan();
               }}
               aria-label={t("controls.generatePlan")}
-              className="h-10 px-4 text-xs cursor-pointer"
+              className={cn(
+                "h-10 px-4 text-xs cursor-pointer",
+                isEmpty && "order-3 min-h-[48px] rounded-[15px] border-white/70 bg-white/72 text-slate-700 shadow-[0_13px_28px_-26px_rgba(83,91,132,0.48)] hover:bg-white/90",
+              )}
               disabled={!canGeneratePlan}
             >
               {isPlanningWorkflow ? (
@@ -1826,10 +1841,13 @@ function ControlsContainer() {
             size="icon"
             aria-label={t("input.attachment.add")}
             onClick={handleFileInputClick}
-            className="min-h-[44px] min-w-[44px] cursor-pointer"
+            className={cn(
+              "min-h-[44px] min-w-[44px] cursor-pointer",
+              isEmpty && "order-4 min-h-[48px] min-w-[48px] rounded-[15px] border-white/70 bg-white/72 text-slate-700 shadow-[0_13px_28px_-26px_rgba(83,91,132,0.48)] hover:bg-white/90",
+            )}
             disabled={isLoading}
           >
-            <Paperclip className="w-5 h-5" />
+            <Paperclip className={cn(isEmpty ? "h-[21px] w-[21px]" : "h-5 w-5")} />
           </GlassButton>
         </div>
 
@@ -1843,8 +1861,9 @@ function ControlsContainer() {
             size="icon-lg"
             className={cn(
               "min-h-[46px] min-w-[46px] rounded-full",
+              isEmpty && "!h-[54px] !w-[54px] border-0 bg-[#b9b5ef] text-white shadow-[0_18px_34px_-25px_rgba(90,86,190,0.55)] hover:bg-[#aca6ea]",
               isApprovalBusy ? "cursor-wait opacity-85" : undefined,
-              sendButtonDisabled && !isGenerating && !canQueuePendingTakeover && !canContinueGeneration
+              sendButtonDisabled && !isEmpty && !isGenerating && !canQueuePendingTakeover && !canContinueGeneration
                 ? "opacity-55"
                 : "cursor-pointer",
             )}
@@ -1864,6 +1883,8 @@ function ControlsContainer() {
               <Loader2 className="w-5 h-5 animate-spin" />
             ) : canContinueGeneration ? (
               <Play className="w-5 h-5" />
+            ) : isEmpty ? (
+              <SendHorizontal className="h-[22px] w-[22px]" strokeWidth={1.9} />
             ) : (
               <ArrowUp className="w-5 h-5" />
             )}
@@ -1897,7 +1918,7 @@ function ControlsContainer() {
               onClick={handleImmersiveComposerToggle}
               whileHover={prefersReducedMotion ? undefined : { y: -1, scale: 1.02 }}
               whileTap={prefersReducedMotion ? undefined : { scale: 0.96 }}
-              className="group relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] text-slate-500 shadow-[0_14px_28px_-22px_rgba(15,23,42,0.6)] backdrop-blur-xl transition-colors hover:bg-white/88 hover:text-slate-700 dark:text-white/55 dark:hover:bg-white/[0.08] dark:hover:text-white/85"
+              className="group relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--ios-shell-border)] bg-[color:var(--ios-shell-subtle)] text-slate-500 shadow-[0_14px_28px_-22px_rgba(15,23,42,0.6)] backdrop-blur-xl transition-colors hover:bg-white/90 hover:text-slate-700 dark:text-white/55 dark:hover:bg-white/[0.08] dark:hover:text-white/85"
             >
               <ChevronsUp className="h-4 w-4" />
               {hasComposerContent ? (
