@@ -49,7 +49,7 @@ import { useChatRuntimeStore } from "@/store/chat-runtime-store"
 import { useTerminalPanelStore } from "@/store/terminal-panel-store"
 import { useWorkflowStore } from "@/store/workflow-store"
 import { useWorkspaceStore, isWorkflowCanvasView } from "@/store/workspace-store"
-import type { HtmlRuntimeRefreshSpec, MessageBlock } from "@/lib/chat/message-protocol"
+import type { BlockType, HtmlRuntimeRefreshSpec, MessageBlock } from "@/lib/chat/message-protocol"
 import { extractAssistantTextFromBlocks } from "@/lib/chat/message-blocks"
 import {
   buildExecutionLifecycleBlocksFromMessage,
@@ -385,11 +385,32 @@ async function resolveExplicitTaskAgentIdForInput(input: string) {
   return resolvedMention?.agent?.id?.trim() || undefined
 }
 
+const MESSAGE_BLOCK_TYPES = new Set<BlockType>([
+  "text",
+  "thought",
+  "tool_call",
+  "tool_result",
+  "console_log",
+  "execution_section",
+  "flight_offer",
+  "file_preview",
+  "error",
+  "ui",
+  "activity_timeline",
+  "diting_think_frame",
+  "world_model_snapshot",
+])
+
 function isValidBlock(block: unknown): block is MessageBlock {
+  const blockType =
+    block && typeof block === "object"
+      ? (block as Record<string, unknown>).type
+      : null
   return Boolean(
     block &&
       typeof block === "object" &&
-      "type" in (block as Record<string, unknown>)
+      typeof blockType === "string" &&
+      MESSAGE_BLOCK_TYPES.has(blockType as BlockType)
   )
 }
 
@@ -712,6 +733,15 @@ export function filterFinalResponseBlocks({
   let nextBlocks = responseBlocks
 
   const currentText = extractAssistantTextFromBlocks(currentBlocks).trim()
+  if (currentText) {
+    nextBlocks = nextBlocks.filter((block) => {
+      if (block.type !== "text") return true
+      return block.content.trim() !== currentText
+    })
+  }
+
+  if (nextBlocks.length === 0) return []
+
   const responseText = extractAssistantTextFromBlocks(responseBlocks).trim()
   if (responseText && currentText === responseText) {
     const currentBlockKeys = new Set(currentBlocks.map(finalResponseBlockKey))

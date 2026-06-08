@@ -253,6 +253,8 @@
       "untitled": "未命名会话",
       "viewArchived": "查看归档",
       "viewActive": "查看进行中",
+      "collapseSidebar": "收起侧边栏",
+      "expandSidebar": "展开侧边栏",
       "archive": "归档",
       "unarchive": "取消归档",
       "pin": "保留",

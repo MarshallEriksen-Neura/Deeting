@@ -91,6 +91,22 @@ describe("local chat stream dedupe helpers", () => {
     ])
   })
 
+  it("drops repeated final text blocks while preserving late narrative blocks", () => {
+    expect(
+      filterFinalResponseBlocks({
+        currentBlocks: [{ type: "text", content: "final answer" } as MessageBlock],
+        responseBlocks: [
+          { type: "thought", content: "provider reasoning" } as MessageBlock,
+          { type: "text", content: "final answer" } as MessageBlock,
+          { type: "text", content: "final answer" } as MessageBlock,
+        ],
+        receivedStructuredBlocks: true,
+      })
+    ).toEqual([
+      { type: "thought", content: "provider reasoning" },
+    ])
+  })
+
   it("keeps late terminal thought after a streamed final answer", () => {
     expect(
       filterFinalResponseBlocks({
@@ -102,6 +118,35 @@ describe("local chat stream dedupe helpers", () => {
       })
     ).toEqual([
       { type: "thought", content: "provider reasoning" },
+    ])
+  })
+
+  it("ignores runtime-internal blocks from final meta blocks", () => {
+    expect(
+      extractAssistantResponseBlocks({
+        choices: [
+          {
+            message: {
+              content: "final answer",
+              meta_info: {
+                blocks: [
+                  { type: "thought", content: "provider reasoning" },
+                  {
+                    type: "runtime_transition_decision",
+                    payload: {
+                      decision_id: "runtime-transition:final-answer:demo",
+                    },
+                  },
+                  { type: "text", content: "final answer" },
+                ],
+              },
+            },
+          },
+        ],
+      })
+    ).toEqual([
+      { type: "thought", content: "provider reasoning" },
+      { type: "text", content: "final answer" },
     ])
   })
 

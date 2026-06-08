@@ -4,6 +4,8 @@ import { useCallback, useState } from "react"
 import {
   Loader2,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
   UserRound,
 } from "lucide-react"
 import Image from "next/image"
@@ -36,7 +38,15 @@ import {
 } from "@/ui/shadcn/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/ui/shadcn/avatar"
 
-export function ChatHomeRail() {
+interface ChatHomeRailProps {
+  isCollapsed: boolean
+  onCollapsedChange: (collapsed: boolean) => void
+}
+
+export function ChatHomeRail({
+  isCollapsed,
+  onCollapsedChange,
+}: ChatHomeRailProps) {
   const t = useI18n("chat")
   const isTauriRuntime = detectTauriRuntime()
   const profile = useUserStore((state) => state.profile)
@@ -47,6 +57,8 @@ export function ChatHomeRail() {
   const [isPersonaSaving, setIsPersonaSaving] = useState(false)
   const profileName = profile?.username || profile?.email || "User"
   const avatarUrl = profile?.avatar_url ?? undefined
+  const collapseRailLabel = t("history.collapseSidebar")
+  const expandRailLabel = t("history.expandSidebar")
 
   const handleOpenPersonaDialog = useCallback(async () => {
     if (!isTauriRuntime || isPersonaLoading) return
@@ -101,29 +113,46 @@ export function ChatHomeRail() {
     <>
       <aside
         aria-label="Chat navigation"
+        aria-hidden={isCollapsed}
+        inert={isCollapsed ? true : undefined}
         className={cn(
           "pointer-events-auto absolute bottom-2 left-2 top-2 z-30 hidden w-[328px] select-none flex-col overflow-hidden rounded-[22px]",
           "border border-white/70 bg-white/90 px-0 py-4 shadow-[0_18px_48px_-42px_rgba(69,78,135,0.34)] backdrop-blur-2xl",
           "ring-1 ring-white/60 dark:border-white/10 dark:bg-zinc-950/60 dark:ring-white/10",
+          "transform-gpu transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
+          isCollapsed && "pointer-events-none -translate-x-[calc(100%+1rem)] opacity-0",
           "lg:flex",
         )}
       >
-        <div className="flex items-center gap-3 px-4 pb-5">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-[14px] border border-slate-200/80 bg-white shadow-[0_12px_28px_-24px_rgba(92,72,203,0.58)]">
-            <Image
-              src="/web-app-manifest-192x192.png"
-              alt=""
-              width={36}
-              height={36}
-              className="h-full w-full object-cover"
-              priority
-            />
+        <div className="flex items-center justify-between gap-3 px-4 pb-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-[14px] border border-slate-200/80 bg-white shadow-[0_12px_28px_-24px_rgba(92,72,203,0.58)]">
+              <Image
+                src="/web-app-manifest-192x192.png"
+                alt=""
+                width={36}
+                height={36}
+                className="h-full w-full object-cover"
+                priority
+              />
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-[15px] font-semibold tracking-tight text-slate-800 dark:text-white/85">
+                Deeting
+              </p>
+            </div>
           </div>
-          <div className="min-w-0">
-            <p className="truncate text-[15px] font-semibold tracking-tight text-slate-800 dark:text-white/85">
-              Deeting
-            </p>
-          </div>
+          <button
+            type="button"
+            aria-label={collapseRailLabel}
+            title={collapseRailLabel}
+            aria-expanded={!isCollapsed}
+            onClick={() => onCollapsedChange(true)}
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-xl border border-slate-200/75 bg-white/70 text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.86)] transition-colors hover:border-slate-300 hover:bg-white hover:text-slate-800 active:scale-[0.98] dark:border-white/10 dark:bg-white/[0.05] dark:text-white/45 dark:hover:bg-white/10 dark:hover:text-white/80"
+          >
+            <PanelLeftClose className="size-4" strokeWidth={2} />
+            <span className="sr-only">{collapseRailLabel}</span>
+          </button>
         </div>
 
         <HistorySidebar className="min-h-0 flex-1" />
@@ -183,6 +212,23 @@ export function ChatHomeRail() {
           </DropdownMenu>
         </div>
       </aside>
+
+      <button
+        type="button"
+        aria-label={expandRailLabel}
+        title={expandRailLabel}
+        aria-expanded={!isCollapsed}
+        onClick={() => onCollapsedChange(false)}
+        className={cn(
+          "pointer-events-auto absolute left-3 top-5 z-30 hidden size-11 items-center justify-center rounded-2xl border border-white/70 bg-white/90 text-slate-600 shadow-[0_18px_44px_-28px_rgba(15,23,42,0.34)] backdrop-blur-2xl transition-[opacity,transform,color,border-color,background-color] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:border-slate-300 hover:bg-white hover:text-slate-900 active:scale-[0.98] dark:border-white/10 dark:bg-zinc-950/70 dark:text-white/60 dark:hover:bg-zinc-900 dark:hover:text-white",
+          isCollapsed
+            ? "translate-x-0 opacity-100 lg:inline-flex"
+            : "pointer-events-none -translate-x-3 opacity-0 lg:inline-flex",
+        )}
+      >
+        <PanelLeftOpen className="size-4" strokeWidth={2} />
+        <span className="sr-only">{expandRailLabel}</span>
+      </button>
 
       <Dialog open={isPersonaDialogOpen} onOpenChange={handlePersonaDialogOpenChange}>
         <DialogContent className="border-white/20 bg-white/80 backdrop-blur-2xl dark:border-white/10 dark:bg-gray-900/90 sm:max-w-lg">

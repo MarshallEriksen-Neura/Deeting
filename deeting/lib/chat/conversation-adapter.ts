@@ -22,47 +22,58 @@ const isToolCallArray = (value: unknown): value is ToolCall[] =>
 const isBlockArray = (value: unknown): value is MessageBlock[] =>
   Array.isArray(value) && value.every((item) => item && typeof item === "object" && "type" in item)
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+const isRenderableBlock = (block: MessageBlock) => {
+  if (block.type === "text") {
+    return typeof block.content === "string" && block.content.trim().length > 0
+  }
+  if (block.type === "thought") {
+    return true
+  }
+  if (block.type === "tool_call") {
+    return Boolean(block.toolName || block.toolArgs || block.status)
+  }
+  if (block.type === "tool_result") {
+    return Boolean(block.callId || block.toolName || block.result !== undefined)
+  }
+  if (block.type === "error") {
+    return typeof block.message === "string" && block.message.trim().length > 0
+  }
+  if (block.type === "ui") {
+    return typeof block.viewType === "string" && block.viewType.trim().length > 0
+  }
+  if (block.type === "execution_section") {
+    return typeof block.title === "string" && block.title.trim().length > 0
+  }
+  if (block.type === "console_log") {
+    return typeof block.content === "string" && block.content.trim().length > 0
+  }
+  if (block.type === "flight_offer" || block.type === "file_preview") {
+    return true
+  }
+  if (block.type === "diting_think_frame") {
+    if (typeof block.intent === "string" && block.intent.trim().length > 0) return true
+    const hasItems = (value: unknown) => Array.isArray(value) && value.some((entry) => typeof entry === "string" && entry.trim().length > 0)
+    return (
+      hasItems(block.facts) ||
+      hasItems(block.assumptions) ||
+      hasItems(block.verificationTargets) ||
+      hasItems(block.rules)
+    )
+  }
+  return false
+}
+
 const hasRenderableBlocks = (blocks: MessageBlock[]) =>
-  blocks.some((block) => {
-    if (block.type === "text") {
-      return typeof block.content === "string" && block.content.trim().length > 0
-    }
-    if (block.type === "thought") {
-      return true
-    }
-    if (block.type === "tool_call") {
-      return Boolean(block.toolName || block.toolArgs || block.status)
-    }
-    if (block.type === "tool_result") {
-      return Boolean(block.callId || block.toolName || block.result !== undefined)
-    }
-    if (block.type === "error") {
-      return typeof block.message === "string" && block.message.trim().length > 0
-    }
-    if (block.type === "ui") {
-      return typeof block.viewType === "string" && block.viewType.trim().length > 0
-    }
-    if (block.type === "execution_section") {
-      return typeof block.title === "string" && block.title.trim().length > 0
-    }
-    if (block.type === "console_log") {
-      return typeof block.content === "string" && block.content.trim().length > 0
-    }
-    if (block.type === "flight_offer" || block.type === "file_preview") {
-      return true
-    }
-    if (block.type === "diting_think_frame") {
-      if (typeof block.intent === "string" && block.intent.trim().length > 0) return true
-      const hasItems = (value: unknown) => Array.isArray(value) && value.some((entry) => typeof entry === "string" && entry.trim().length > 0)
-      return (
-        hasItems(block.facts) ||
-        hasItems(block.assumptions) ||
-        hasItems(block.verificationTargets) ||
-        hasItems(block.rules)
-      )
-    }
-    return false
-  })
+  blocks.some(isRenderableBlock)
+
+const hasRenderableNonThoughtBlocks = (blocks: MessageBlock[]) =>
+  blocks.some((block) => block.type !== "thought" && isRenderableBlock(block))
+
+const isThoughtOnlyBlockList = (blocks: MessageBlock[]) =>
+  blocks.length > 0 && blocks.every((block) => block.type === "thought")
 
 const isPendingApprovalAssistantMessage = (message: Message) => {
   if (message.role !== "assistant" || !Array.isArray(message.blocks) || message.blocks.length === 0) {
@@ -121,6 +132,12 @@ const decodeEscapedNewlines = (text: string) => {
 
 const normalizeTextValue = (value: string) =>
   decodeEscapedNewlines(normalizeLineBreaks(value))
+
+const normalizeNonEmptyText = (value: unknown): string | null => {
+  if (typeof value !== "string") return null
+  const normalized = normalizeTextValue(value).trim()
+  return normalized.length > 0 ? normalized : null
+}
 
 const buildExecutionLifecycleFallbackBlock = (
   metaInfo: MessageMetaInfo | undefined,
@@ -282,6 +299,89 @@ const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBloc
   })
 }
 
+const readFinalAnswerFromExecutionGraph = (value: unknown): string | null => {
+  if (!isRecord(value)) return null
+
+  const summary = value.summary
+  if (isRecord(summary)) {
+    const finalAnswer = normalizeNonEmptyText(summary.final_answer ?? summary.finalAnswer)
+    if (finalAnswer) return finalAnswer
+  }
+
+  if (!Array.isArray(value.nodes)) return null
+
+  for (const node of value.nodes) {
+    if (!isRecord(node)) continue
+    const nodeType =
+      typeof node.node_type === "string"
+        ? node.node_type
+        : typeof node.nodeType === "string"
+          ? node.nodeType
+          : ""
+    if (nodeType !== "finalize") continue
+
+    const output = normalizeNonEmptyText(node.output_payload ?? node.outputPayload)
+    if (output) return output
+  }
+
+  return null
+}
+
+const readAssistantFinalAnswer = (metaInfo: MessageMetaInfo | undefined): string | null => {
+  if (!metaInfo) return null
+
+  const direct = normalizeNonEmptyText(metaInfo.final_answer ?? metaInfo.finalAnswer)
+  if (direct) return direct
+
+  if (isRecord(metaInfo.summary)) {
+    const summaryAnswer = normalizeNonEmptyText(
+      metaInfo.summary.final_answer ?? metaInfo.summary.finalAnswer
+    )
+    if (summaryAnswer) return summaryAnswer
+  }
+
+  return readFinalAnswerFromExecutionGraph(
+    metaInfo.execution_graph ?? metaInfo.executionGraph
+  )
+}
+
+const buildAssistantFinalTextBlock = (
+  messageId: string,
+  content: string,
+): MessageBlock => ({
+  type: "text",
+  id: `${messageId}-final-answer`,
+  streamState: "completed",
+  displayMode: "bubble",
+  content,
+})
+
+const resolveAssistantBlocks = (
+  metaInfo: MessageMetaInfo | undefined,
+  messageId: string,
+): MessageBlock[] => {
+  const finalAnswer = readAssistantFinalAnswer(metaInfo)
+
+  if (isBlockArray(metaInfo?.blocks)) {
+    const blocks = canonicalizeMessageBlockOrder(normalizeBlocks(metaInfo.blocks, messageId))
+    if (!hasRenderableBlocks(blocks)) {
+      return finalAnswer ? [buildAssistantFinalTextBlock(messageId, finalAnswer)] : []
+    }
+    if (isThoughtOnlyBlockList(blocks) || !hasRenderableNonThoughtBlocks(blocks)) {
+      return finalAnswer ? [buildAssistantFinalTextBlock(messageId, finalAnswer)] : []
+    }
+    return blocks
+  }
+
+  const fallback = buildExecutionLifecycleFallbackBlock(metaInfo, messageId)
+  if (fallback) {
+    const blocks = [fallback]
+    return hasRenderableBlocks(blocks) ? blocks : []
+  }
+
+  return finalAnswer ? [buildAssistantFinalTextBlock(messageId, finalAnswer)] : []
+}
+
 const readContentCandidate = (message: ConversationMessage): unknown => {
   if (message.content !== undefined && message.content !== null) {
     return message.content
@@ -332,18 +432,8 @@ export function normalizeConversationMessages(
     const toolCallId =
       typeof metaInfo?.tool_call_id === "string" ? metaInfo.tool_call_id : undefined
     const messageId = `${options.idPrefix ?? "conv"}-${msg.turn_index ?? index}`
-    const assistantBlocks = isBlockArray(metaInfo?.blocks)
-      ? canonicalizeMessageBlockOrder(normalizeBlocks(metaInfo.blocks, messageId))
-      : (() => {
-          const fallback = buildExecutionLifecycleFallbackBlock(metaInfo, messageId)
-          return fallback ? [fallback] : []
-        })()
-    const resolvedAssistantBlocks =
-      assistantBlocks.length > 0 && hasRenderableBlocks(assistantBlocks)
-        ? assistantBlocks
-        : []
     const resolvedBlocks =
-      normalizedRole === "assistant" ? resolvedAssistantBlocks : undefined
+      normalizedRole === "assistant" ? resolveAssistantBlocks(metaInfo, messageId) : undefined
     const resolvedContent =
       normalizedRole === "assistant" ? "" : normalizedText
     return {

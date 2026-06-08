@@ -253,6 +253,8 @@
     "untitled": "Untitled conversation",
     "viewArchived": "View archived",
     "viewActive": "View active",
+    "collapseSidebar": "Collapse sidebar",
+    "expandSidebar": "Expand sidebar",
     "archive": "Archive",
     "unarchive": "Unarchive",
     "pin": "Pin",

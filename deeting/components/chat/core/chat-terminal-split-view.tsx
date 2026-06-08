@@ -71,6 +71,7 @@ export function ChatTerminalSplitView({
   const close = useTerminalPanelStore((state) => state.close);
   const isEmpty = useChatStore((state) => state.messages.length === 0);
   const setInput = useChatStore((state) => state.setInput);
+  const [isRailCollapsed, setIsRailCollapsed] = React.useState(false);
 
   // `usePanelRef` is the v4 convenience hook — returns a typed RefObject
   // matching what `<ResizablePanel panelRef={...} />` expects.
@@ -124,14 +125,17 @@ export function ChatTerminalSplitView({
     >
       <ResizablePanel id="chat-main" defaultSize="100%" minSize={CHAT_MAIN_MIN_SIZE}>
         <div className="relative grid h-full w-full grid-rows-[auto_minmax(0,1fr)_auto]">
-          <ChatHomeRail />
+          <ChatHomeRail
+            isCollapsed={isRailCollapsed}
+            onCollapsedChange={setIsRailCollapsed}
+          />
 
           {/* Heads-Up Display (Top Center) */}
           <div
             data-chat-hud
             className={cn(
-              "pointer-events-none flex justify-center pt-4",
-              CHAT_SIDEBAR_OFFSET,
+              "pointer-events-none flex justify-center pt-4 transition-[padding] duration-300",
+              !isRailCollapsed && CHAT_SIDEBAR_OFFSET,
             )}
           >
             <div className="pointer-events-auto">{hud}</div>
@@ -141,12 +145,17 @@ export function ChatTerminalSplitView({
           <div
             data-chat-scroll
             className={cn(
-              "relative min-h-0 overflow-y-auto overflow-x-hidden",
-              !isEmpty && CHAT_SIDEBAR_OFFSET,
+              "relative min-h-0 overflow-y-auto overflow-x-hidden transition-[padding] duration-300",
+              !isEmpty && !isRailCollapsed && CHAT_SIDEBAR_OFFSET,
             )}
           >
             {isEmpty && (
-              <div className={cn("absolute inset-y-0 left-0 right-0 z-0", CHAT_SIDEBAR_LEFT)}>
+              <div
+                className={cn(
+                  "absolute inset-y-0 left-0 right-0 z-0 transition-[left] duration-300",
+                  !isRailCollapsed && CHAT_SIDEBAR_LEFT,
+                )}
+              >
                 <ChatWelcome onSuggestion={setInput} />
               </div>
             )}
@@ -160,8 +169,14 @@ export function ChatTerminalSplitView({
               className={cn(
                 "pointer-events-none",
                 isEmpty
-                  ? cn("absolute left-0 right-0 top-[47%] z-10 flex -translate-y-1/2 justify-center px-4", CHAT_SIDEBAR_LEFT)
-                  : cn("flex justify-center pb-8", CHAT_SIDEBAR_OFFSET),
+                  ? cn(
+                      "absolute left-0 right-0 top-[47%] z-10 flex -translate-y-1/2 justify-center px-4 transition-[left] duration-300",
+                      !isRailCollapsed && CHAT_SIDEBAR_LEFT,
+                    )
+                  : cn(
+                      "flex justify-center pb-8 transition-[padding] duration-300",
+                      !isRailCollapsed && CHAT_SIDEBAR_OFFSET,
+                    ),
               )}
             >
               <div

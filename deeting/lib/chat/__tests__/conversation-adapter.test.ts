@@ -57,6 +57,76 @@ describe("normalizeConversationMessages", () => {
     expect(message?.content).toBe("")
   })
 
+  it("recovers final answer from execution graph instead of replaying thought-only history blocks", () => {
+    const messages = [
+      {
+        role: "assistant",
+        content: null,
+        turn_index: 20,
+        meta_info: {
+          blocks: [
+            { type: "thought", content: "主人" },
+            { type: "thought", content: "洋洋" },
+            { type: "thought", content: "哥哥想做一个对标" },
+          ],
+          execution_graph: {
+            summary: {
+              final_answer: "正式回答第一行\\n正式回答第二行",
+            },
+            nodes: [
+              {
+                node_type: "finalize",
+                output_payload: "should not override summary",
+              },
+            ],
+          },
+        },
+      },
+    ]
+
+    const [message] = normalizeConversationMessages(
+      messages as unknown as Parameters<typeof normalizeConversationMessages>[0],
+      {
+        includeRoles: ["assistant"],
+      }
+    )
+
+    expect(message?.content).toBe("")
+    expect(message?.blocks).toEqual([
+      expect.objectContaining({
+        type: "text",
+        content: "正式回答第一行\n正式回答第二行",
+      }),
+    ])
+    expect(message?.blocks?.some((block) => block.type === "thought")).toBe(false)
+  })
+
+  it("drops thought-only history blocks when no final assistant answer exists", () => {
+    const messages = [
+      {
+        role: "assistant",
+        content: null,
+        turn_index: 21,
+        meta_info: {
+          blocks: [
+            { type: "thought", content: "private reasoning chunk" },
+            { type: "thought", content: "more private reasoning" },
+          ],
+        },
+      },
+    ]
+
+    const [message] = normalizeConversationMessages(
+      messages as unknown as Parameters<typeof normalizeConversationMessages>[0],
+      {
+        includeRoles: ["assistant"],
+      }
+    )
+
+    expect(message?.content).toBe("")
+    expect(message?.blocks).toEqual([])
+  })
+
   it("normalizes escaped newlines in assistant text blocks", () => {
     const messages = [
       {
