@@ -3067,8 +3067,7 @@ impl McpStore {
             .unwrap_or_else(|| estimate_token_count(content.as_deref().unwrap_or("")));
 
         let mut tx = self
-            .pool
-            .begin()
+            .begin_write()
             .await
             .map_err(|err| storage_step_error("begin_tx", err))?;
 
@@ -3302,8 +3301,7 @@ impl McpStore {
             .map_err(|err| update_assistant_meta_step_error("serialize_meta_info", err))?;
 
         let mut tx = self
-            .pool
-            .begin()
+            .begin_write()
             .await
             .map_err(|err| update_assistant_meta_step_error("begin_tx", err))?;
 

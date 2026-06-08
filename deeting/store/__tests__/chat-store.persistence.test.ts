@@ -22,8 +22,9 @@ describe("useChatStore persistence storage", () => {
             maxTokens: null,
           },
           streamEnabled: true,
+          thoughtBlockDefaultOpen: true,
         },
-        version: 0,
+        version: 1,
       })
     )
 
@@ -37,6 +38,7 @@ describe("useChatStore persistence storage", () => {
         maxTokens: null,
       })
       expect(useChatStore.getState().streamEnabled).toBe(true)
+      expect(useChatStore.getState().thoughtBlockDefaultOpen).toBe(false)
       expect(sessionStorage.getItem(storageKey)).toBeNull()
     })
   })
@@ -53,8 +55,9 @@ describe("useChatStore persistence storage", () => {
             maxTokens: null,
           },
           streamEnabled: false,
+          thoughtBlockDefaultOpen: true,
         },
-        version: 0,
+        version: 1,
       })
     )
 
@@ -67,6 +70,7 @@ describe("useChatStore persistence storage", () => {
         topP: 0.9,
         maxTokens: null,
       })
+      expect(useChatStore.getState().thoughtBlockDefaultOpen).toBe(false)
       expect(localStorage.getItem(storageKey)).toBeNull()
     })
   })

@@ -990,7 +990,26 @@ fn parse_secretary_world_model_update_response(
     let update = response
         .get("world_model_update")
         .ok_or_else(|| "missing world_model_update field".to_string())?;
-    serde_json::from_value::<WorldModelUpdate>(update.clone()).map_err(|err| err.to_string())
+    parse_secretary_world_model_update_value(update)
+}
+
+fn parse_secretary_world_model_update_value(
+    update: &serde_json::Value,
+) -> Result<WorldModelUpdate, String> {
+    let update = match update {
+        // Some provider adapters preserve the forced tool call but stringify a nested
+        // object argument. This is still structured tool-argument normalization, not
+        // freeform content scraping.
+        serde_json::Value::String(raw) => {
+            let parsed = serde_json::from_str::<serde_json::Value>(raw.trim()).map_err(|err| {
+                format!("world_model_update field string is not valid JSON: {err}")
+            })?;
+            parsed.get("world_model_update").cloned().unwrap_or(parsed)
+        }
+        _ => update.clone(),
+    };
+
+    serde_json::from_value::<WorldModelUpdate>(update).map_err(|err| err.to_string())
 }
 
 fn world_model_update_tool_schema() -> serde_json::Value {
@@ -1984,6 +2003,34 @@ mod tests {
         assert_eq!(
             update.facts,
             vec!["secretary returned structured JSON".to_string()]
+        );
+
+        let string_encoded = parse_secretary_world_model_update_response(&json!({
+            "world_model_update": serde_json::to_string(&json!({
+                "intent": "refresh frame from string-encoded tool field",
+                "facts": ["secretary string-encoded the nested object"],
+                "assumptions": ["tool call arguments were still present"],
+                "resolved_unknowns": [],
+                "new_unknowns": [],
+                "verification_targets": ["world_model_update is accepted"],
+                "rules": [],
+                "execution_strategy": "direct_iteration"
+            }))
+            .expect("serialize string-encoded update")
+        }))
+        .expect("string-encoded world model update");
+
+        assert_eq!(
+            string_encoded.intent.as_deref(),
+            Some("refresh frame from string-encoded tool field")
+        );
+        assert_eq!(
+            string_encoded.facts,
+            vec!["secretary string-encoded the nested object".to_string()]
+        );
+        assert_eq!(
+            string_encoded.execution_strategy,
+            Some(ExecutionStrategy::DirectIteration)
         );
 
         let text_wrapped = parse_secretary_world_model_update_response(&json!({

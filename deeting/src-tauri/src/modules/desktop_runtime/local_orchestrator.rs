@@ -624,6 +624,10 @@ pub async fn execute_local_orchestrated_chat(
         .get("tool_trace_streamed")
         .and_then(|value| value.as_bool())
         .unwrap_or(false);
+    let provider_streamed = response_json
+        .get("provider_streamed")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
     if let Some(execution) = delegated_execution.as_ref() {
         if !execution.trace_blocks.is_empty() {
             ctx.emit_blocks(execution.trace_blocks.clone());
@@ -739,7 +743,9 @@ pub async fn execute_local_orchestrated_chat(
         }
     }
 
-    ctx.emit_stream_delta_chunks(&response_text);
+    if !provider_streamed {
+        ctx.emit_stream_delta_chunks(&response_text);
+    }
     if !response_text.trim().is_empty() {
         let text_block = json!({
             "type": "text",

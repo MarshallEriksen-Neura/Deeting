@@ -1,11 +1,16 @@
 use std::collections::BTreeMap;
 
+use futures_util::StreamExt;
 use handlebars::Handlebars;
 use reqwest::{Client, Method, Url};
 use serde_json::{json, Map, Value};
 
 use crate::modules::providers::protocols::{
-    build_canonical_request_from_value, build_protocol_profile, CanonicalRequest,
+    build_canonical_request_from_value, build_protocol_profile, CanonicalRequest, RuntimeHook,
+};
+use crate::modules::providers::streaming::{
+    decode_provider_stream_frame, ProviderStreamDecodeState, ProviderStreamEvent,
+    ProviderStreamResponseState, SseFramer,
 };
 use crate::modules::providers::types::{ProviderInstance, ProviderModel, ProviderPreset};
 
@@ -24,6 +29,7 @@ pub struct PreparedProviderRequest {
     pub body: Value,
     pub template_engine: String,
     pub response_decoder: String,
+    pub stream_decoder: Option<RuntimeHook>,
     pub response_transform: Value,
     pub async_config: Value,
 }
@@ -272,6 +278,7 @@ pub fn prepare_provider_request_from_canonical_request(
     );
     let template_engine = protocol_profile.request.template_engine.clone();
     let response_decoder = protocol_profile.response.decoder.name.clone();
+    let stream_decoder = protocol_profile.stream.stream_decoder.clone();
     let request_template = protocol_profile.request.request_template.clone();
     let response_transform = protocol_profile.response.response_template.clone();
     let async_config = effective_config
@@ -353,6 +360,7 @@ pub fn prepare_provider_request_from_canonical_request(
         body: drop_none_fields(rendered_body),
         template_engine,
         response_decoder,
+        stream_decoder,
         response_transform,
         async_config,
     })
@@ -365,6 +373,93 @@ pub async fn send_prepared_json_request(
     execute_prepared_json_request(client, prepared)
         .await
         .map_err(|err| err.to_string())
+}
+
+pub async fn send_prepared_stream_request<F>(
+    client: &Client,
+    prepared: &PreparedProviderRequest,
+    mut on_event: F,
+) -> Result<ProviderStreamResponseState, String>
+where
+    F: FnMut(ProviderStreamEvent) -> Result<(), String>,
+{
+    let stream_decoder = prepared
+        .stream_decoder
+        .as_ref()
+        .ok_or_else(|| "prepared provider request is missing stream decoder".to_string())?;
+    let method = Method::from_bytes(prepared.method.as_bytes()).unwrap_or(Method::POST);
+    let mut request = client.request(method, prepared.url.as_str());
+    if !prepared.query_params.is_empty() {
+        request = request.query(&prepared.query_params);
+    }
+    for (key, value) in &prepared.headers {
+        request = request.header(key, value);
+    }
+
+    let response = request
+        .json(&prepared.body)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("provider stream request failed: {}", status));
+    }
+    let headers = response
+        .headers()
+        .iter()
+        .filter_map(|(key, value)| {
+            value
+                .to_str()
+                .ok()
+                .map(|value| (key.as_str().to_string(), value.to_string()))
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    let decoder_name = stream_decoder.name.as_str();
+    let mut decode_state = ProviderStreamDecodeState::new(decoder_name);
+    let mut framer = SseFramer::new();
+    let mut body = response.bytes_stream();
+
+    while let Some(chunk) = body.next().await {
+        let chunk = chunk.map_err(|err| err.to_string())?;
+        for frame in framer.push_chunk(chunk.as_ref()) {
+            for event in decode_provider_stream_frame(decoder_name, &frame, &mut decode_state)
+                .map_err(|err| err.message)?
+            {
+                decode_state.record_event(&event);
+                let stream_error = match &event {
+                    ProviderStreamEvent::Error { message, .. } => Some(message.clone()),
+                    _ => None,
+                };
+                on_event(event)?;
+                if let Some(message) = stream_error {
+                    return Err(message);
+                }
+            }
+        }
+    }
+
+    if let Some(frame) = framer.finish() {
+        for event in decode_provider_stream_frame(decoder_name, &frame, &mut decode_state)
+            .map_err(|err| err.message)?
+        {
+            decode_state.record_event(&event);
+            let stream_error = match &event {
+                ProviderStreamEvent::Error { message, .. } => Some(message.clone()),
+                _ => None,
+            };
+            on_event(event)?;
+            if let Some(message) = stream_error {
+                return Err(message);
+            }
+        }
+    }
+
+    let mut response_state = decode_state.finish(0);
+    response_state.status_code = status.as_u16();
+    response_state.headers = headers;
+    Ok(response_state)
 }
 
 pub async fn send_prepared_request_raw(
@@ -2599,16 +2694,20 @@ mod tests {
         calculate_retry_backoff_ms, deep_merge_json, normalize_root_schema_for_provider_compat,
         prepare_provider_request, prepare_provider_request_from_canonical_request,
         resolve_auth_for_protocol, responses_input_from_messages_or_items_builder,
-        send_prepared_json_request_with_retry, should_retry_upstream_status,
-        PreparedProviderRequest, UpstreamRetryPolicy,
+        send_prepared_json_request_with_retry, send_prepared_stream_request,
+        should_retry_upstream_status, PreparedProviderRequest, UpstreamRetryPolicy,
     };
     use crate::modules::providers::protocols::bridge::{
         build_canonical_chat_request_from_local_messages,
         build_canonical_chat_request_from_local_messages_with_reasoning,
         build_chat_request_data_from_canonical_request,
     };
+    use crate::modules::providers::protocols::RuntimeHook;
+    use crate::modules::providers::streaming::ProviderStreamEvent;
     use crate::modules::providers::types::{ProviderInstance, ProviderModel, ProviderPreset};
-    use axum::{extract::State as AxumState, http::StatusCode, routing::post, Json, Router};
+    use axum::{
+        body::Body, extract::State as AxumState, http::StatusCode, routing::post, Json, Router,
+    };
     use mcp_core::types::{LocalChatInputMessage, LocalChatToolCall};
     use serde_json::{json, Map, Value};
     use std::sync::{
@@ -2723,6 +2822,13 @@ mod tests {
         }
     }
 
+    fn stream_decoder_name(prepared: &PreparedProviderRequest) -> Option<&str> {
+        prepared
+            .stream_decoder
+            .as_ref()
+            .map(|decoder| decoder.name.as_str())
+    }
+
     #[derive(Clone)]
     struct RetryTestState {
         statuses: Vec<StatusCode>,
@@ -2764,6 +2870,27 @@ mod tests {
         });
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         (format!("http://{}", addr), attempts)
+    }
+
+    async fn start_stream_test_server() -> String {
+        async fn handler() -> Body {
+            Body::from(
+                "data: {\"choices\":[{\"delta\":{\"content\":\"he\"}}]}\n\n\
+                 data: {\"choices\":[{\"delta\":{\"content\":\"llo\"}}]}\n\n\
+                 data: [DONE]\n\n",
+            )
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind stream test listener");
+        let addr = listener.local_addr().expect("read stream test addr");
+        tokio::spawn(async move {
+            let app = Router::new().route("/chat", post(handler));
+            let _ = axum::serve(listener, app).await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        format!("http://{}", addr)
     }
 
     #[test]
@@ -2874,6 +3001,7 @@ mod tests {
             body: json!({ "hello": "world" }),
             template_engine: "simple_replace".to_string(),
             response_decoder: "openai_chat".to_string(),
+            stream_decoder: None,
             response_transform: json!({}),
             async_config: json!({}),
         };
@@ -2906,6 +3034,7 @@ mod tests {
             body: json!({ "hello": "world" }),
             template_engine: "simple_replace".to_string(),
             response_decoder: "openai_chat".to_string(),
+            stream_decoder: None,
             response_transform: json!({}),
             async_config: json!({}),
         };
@@ -2925,6 +3054,45 @@ mod tests {
         assert_eq!(response.status, StatusCode::BAD_REQUEST);
         assert_eq!(retry_count, 0);
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn send_prepared_stream_request_emits_provider_events() {
+        let base_url = start_stream_test_server().await;
+        let prepared = PreparedProviderRequest {
+            method: "POST".to_string(),
+            url: format!("{}/chat", base_url),
+            query_params: Default::default(),
+            headers: Default::default(),
+            body: json!({ "hello": "world", "stream": true }),
+            template_engine: "simple_replace".to_string(),
+            response_decoder: "openai_chat".to_string(),
+            stream_decoder: Some(RuntimeHook {
+                name: "openai_chat_events".to_string(),
+                config: json!({}),
+            }),
+            response_transform: json!({}),
+            async_config: json!({}),
+        };
+        let mut events = Vec::new();
+
+        let response = send_prepared_stream_request(&reqwest::Client::new(), &prepared, |event| {
+            events.push(event);
+            Ok(())
+        })
+        .await
+        .expect("stream request succeeds");
+
+        assert_eq!(
+            events,
+            vec![
+                ProviderStreamEvent::TextDelta("he".to_string()),
+                ProviderStreamEvent::TextDelta("llo".to_string())
+            ]
+        );
+        assert_eq!(response.decoder_name, "openai_chat_events");
+        assert_eq!(response.text, "hello");
+        assert_eq!(response.raw_events.len(), 2);
     }
 
     #[test]
@@ -2962,6 +3130,7 @@ mod tests {
         .expect("prepare request");
 
         assert_eq!(prepared.url, "https://api.openai.com/v1/chat/completions");
+        assert_eq!(stream_decoder_name(&prepared), Some("openai_chat_events"));
         assert_eq!(
             prepared.headers.get("X-Source"),
             Some(&"desktop".to_string())
@@ -3462,6 +3631,10 @@ mod tests {
         .expect("prepare responses request");
 
         assert_eq!(prepared.url, "https://api.openai.com/v1/responses");
+        assert_eq!(
+            stream_decoder_name(&prepared),
+            Some("openai_responses_events")
+        );
         assert_eq!(prepared.body["model"], json!("gpt-5.3-codex"));
         assert_eq!(prepared.body["input"], json!("hello responses"));
         assert!(prepared.body.get("messages").is_none());
@@ -4245,6 +4418,10 @@ mod tests {
         )
         .expect("prepare anthropic request with structured tool replay");
 
+        assert_eq!(
+            stream_decoder_name(&prepared),
+            Some("anthropic_messages_events")
+        );
         assert_eq!(
             prepared.body["messages"],
             json!([

@@ -331,7 +331,7 @@ export const useChatStore = create<ChatStore>()(
         reasoningEffort: 'medium',
       },
       streamEnabled: false,
-      thoughtBlockDefaultOpen: true,
+      thoughtBlockDefaultOpen: false,
       models: [],
 
       // === 状态信息初始值 ===
@@ -885,11 +885,11 @@ export const useChatStore = create<ChatStore>()(
     }),
     {
       name: "deeting-chat-store",
-      version: 1,
+      version: 2,
       storage: createJSONStorage(resolveChatPersistStorage),
       migrate: (persistedState) => ({
         ...((persistedState as Partial<ChatStore> | undefined) ?? {}),
-        thoughtBlockDefaultOpen: true,
+        thoughtBlockDefaultOpen: false,
       }),
       partialize: (state) => ({
         // 只持久化配置，不持久化会话数据

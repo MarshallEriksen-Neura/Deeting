@@ -10,6 +10,7 @@ pub mod provider_market_file;
 pub mod request_runtime;
 pub mod response_transformer;
 pub mod store;
+pub mod streaming;
 pub mod types;
 
 use crate::modules::mcp::store::McpStore;

@@ -4,7 +4,9 @@ pub mod image;
 pub mod types;
 
 pub(crate) use chat::{
-    request_provider_chat_completion, request_provider_chat_completion_with_pool_failover,
-    resolve_local_model_connection, ReasoningRequestConfig,
+    request_provider_chat_completion,
+    request_provider_chat_completion_streaming_with_pool_failover,
+    request_provider_chat_completion_with_pool_failover, resolve_local_model_connection,
+    ReasoningRequestConfig,
 };
 pub(crate) use types::LocalModelConnection;

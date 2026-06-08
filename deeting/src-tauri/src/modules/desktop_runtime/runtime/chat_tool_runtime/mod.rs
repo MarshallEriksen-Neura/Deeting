@@ -2,7 +2,7 @@ use super::{
     build_local_runtime_tools_with_allowlist, extract_chat_tool_calls, LocalExecutionPolicy,
 };
 use crate::modules::ai_upstream::{
-    request_provider_chat_completion_with_pool_failover, ReasoningRequestConfig,
+    request_provider_chat_completion_streaming_with_pool_failover, ReasoningRequestConfig,
 };
 use crate::modules::desktop_config::{parse_max_agentic_rounds, MAX_AGENTIC_ROUNDS_CONFIG_KEY};
 use crate::modules::desktop_runtime::runtime::prompt_definitions::{
@@ -617,7 +617,8 @@ async fn continue_local_chat_complete_with_tools(
         let effective_tool_call_meta = build_state_effective_tool_call_meta(&state);
         let provider_messages =
             messages_for_provider_round(&state.orchestrated_messages, state.round);
-        let response = request_provider_chat_completion_with_pool_failover(
+        let stream_model_id = model_id.clone();
+        let response = request_provider_chat_completion_streaming_with_pool_failover(
             app_state,
             &provider_model_id,
             &model_id,
@@ -636,6 +637,12 @@ async fn continue_local_chat_complete_with_tools(
             state.model_connection.failover_pool_key.as_deref(),
             Some(state.trace_id.as_str()),
             Some(session_id.as_str()),
+            |event| {
+                state
+                    .realtime_emitter
+                    .emit_provider_stream_event(event, &stream_model_id);
+                Ok(())
+            },
         )
         .await
         .map_err(to_string)?;
@@ -738,7 +745,15 @@ async fn continue_local_chat_complete_with_tools(
                 .map(str::trim)
                 .filter(|v| !v.is_empty())
             {
-                state.realtime_emitter.emit_text(content);
+                if response
+                    .get("provider_streamed")
+                    .and_then(|value| value.as_bool())
+                    .unwrap_or(false)
+                {
+                    state.realtime_emitter.capture_text(content);
+                } else {
+                    state.realtime_emitter.emit_text(content);
+                }
             }
         }
 

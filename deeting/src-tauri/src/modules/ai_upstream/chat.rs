@@ -1,10 +1,10 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::modules::ai_upstream::gateway_log_recorder::{
     build_gateway_log_meta, calculate_token_cost, extract_billing_amount_from_response,
     extract_cache_details_from_response, extract_error_code_from_response,
     extract_ttft_ms_from_response, extract_usage_details_from_response, record_gateway_log,
-    GatewayLogEntry,
+    GatewayLogEntry, GatewayUsageDetails,
 };
 use crate::modules::ai_upstream::types::LocalModelConnection;
 use crate::modules::providers::protocols::{
@@ -13,8 +13,9 @@ use crate::modules::providers::protocols::{
 };
 use crate::modules::providers::request_runtime::{
     prepare_provider_request_from_canonical_request, send_prepared_json_request_with_retry,
-    UpstreamRetryPolicy,
+    send_prepared_stream_request, UpstreamRetryPolicy,
 };
+use crate::modules::providers::streaming::ProviderStreamEvent;
 use crate::modules::providers::types::ProviderModel;
 use crate::state::AppState;
 use mcp_core::types::LocalChatInputMessage;
@@ -399,6 +400,78 @@ pub(crate) async fn request_provider_chat_completion_with_pool_failover(
         HashSet::new(),
     )
     .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn request_provider_chat_completion_streaming_with_pool_failover<F>(
+    app_state: &AppState,
+    provider_model_id: &str,
+    model_id: &str,
+    messages: Vec<LocalChatInputMessage>,
+    tools: Option<serde_json::Value>,
+    temperature: Option<f32>,
+    max_tokens: Option<u32>,
+    reasoning: ReasoningRequestConfig,
+    failover_pool_key: Option<&str>,
+    trace_id: Option<&str>,
+    _session_id: Option<&str>,
+    mut on_event: F,
+) -> Result<serde_json::Value, String>
+where
+    F: FnMut(ProviderStreamEvent) -> Result<(), String>,
+{
+    let mut emitted_provider_event = false;
+    let attempt = request_provider_chat_completion_streaming_attempt(
+        app_state,
+        provider_model_id,
+        model_id,
+        messages.clone(),
+        tools.clone(),
+        temperature,
+        max_tokens,
+        reasoning.clone(),
+        trace_id,
+        |event| {
+            emitted_provider_event = true;
+            on_event(event)
+        },
+    )
+    .await;
+
+    match attempt {
+        Ok(response) => Ok(response),
+        Err(err) if emitted_provider_event => Err(err),
+        Err(err) => {
+            log::warn!(
+                "provider stream failed before first event; falling back to terminal request provider_model_id={} err={}",
+                provider_model_id,
+                err
+            );
+            request_provider_chat_completion_inner(
+                app_state,
+                provider_model_id,
+                model_id,
+                messages,
+                tools,
+                temperature,
+                max_tokens,
+                reasoning,
+                failover_pool_key,
+                trace_id,
+                HashSet::new(),
+            )
+            .await
+            .map(|mut response| {
+                if let Some(object) = response.as_object_mut() {
+                    object.insert(
+                        "provider_stream_fallback".to_string(),
+                        serde_json::json!(true),
+                    );
+                }
+                response
+            })
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -861,6 +934,304 @@ async fn request_provider_chat_completion_attempt(
     let mut normalized = normalize_chat_completion_response(transformed);
     inject_runtime_metrics(&mut normalized, latency_ms as i64, ttft_ms, retry_count + 1);
     Ok(normalized)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn request_provider_chat_completion_streaming_attempt<F>(
+    app_state: &AppState,
+    provider_model_id: &str,
+    model_id: &str,
+    messages: Vec<LocalChatInputMessage>,
+    tools: Option<serde_json::Value>,
+    temperature: Option<f32>,
+    max_tokens: Option<u32>,
+    reasoning: ReasoningRequestConfig,
+    trace_id: Option<&str>,
+    mut on_event: F,
+) -> Result<serde_json::Value, String>
+where
+    F: FnMut(ProviderStreamEvent) -> Result<(), String>,
+{
+    let provider_model_uuid = Uuid::parse_str(provider_model_id).map_err(to_string)?;
+    let model = app_state
+        .providers
+        .store
+        .get_model(&provider_model_uuid)
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| "provider model not found".to_string())?;
+    if !model.is_active {
+        return Err("provider model is inactive".to_string());
+    }
+    let instance = app_state
+        .providers
+        .store
+        .get_instance(&model.instance_id.to_string())
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| "provider instance not found".to_string())?;
+    if !instance.is_enabled {
+        return Err(format!("provider instance is disabled: {}", instance.name));
+    }
+    let connection = app_state
+        .providers
+        .store
+        .get_instance_connection(&model.instance_id.to_string())
+        .await
+        .map_err(to_string)?
+        .ok_or_else(|| "provider instance connection not found".to_string())?;
+    if connection
+        .credential_source
+        .as_deref()
+        .map(|source| source.eq_ignore_ascii_case("platform"))
+        .unwrap_or(false)
+    {
+        return Err(
+            "platform credits runtime has been disabled; switch this model instance to local credentials".to_string(),
+        );
+    }
+    let effective_model = if model_id.trim().is_empty() {
+        model.model_id.clone()
+    } else {
+        model_id.to_string()
+    };
+    let preset = app_state
+        .providers
+        .store
+        .get_preset(&instance.preset_slug)
+        .await
+        .map_err(to_string)?;
+    let canonical_request = build_canonical_chat_request_from_local_messages_with_reasoning(
+        effective_model.as_str(),
+        &messages,
+        true,
+        temperature.map(|value| value as f64),
+        max_tokens.map(|value| value as i64),
+        reasoning.enabled,
+        reasoning.effort,
+    );
+    let body = build_chat_request_data_from_canonical_request(&canonical_request);
+    let prepared = prepare_provider_request_from_canonical_request(
+        preset.as_ref(),
+        &instance,
+        &model,
+        connection.secret_key.as_deref(),
+        "chat",
+        body,
+        canonical_request,
+        tools.as_ref(),
+        trace_id,
+    )?;
+    if prepared.stream_decoder.is_none() {
+        return Err("provider protocol profile has no stream decoder".to_string());
+    }
+    let upstream_request_meta = serde_json::json!({
+        "method": prepared.method,
+        "url": prepared.display_url(),
+        "stream": true,
+    });
+    let client = crate::modules::desktop_config::network::build_proxy_aware_reqwest_client(
+        app_state.mcp.store.as_ref(),
+    )
+    .await?;
+    let call_start = std::time::Instant::now();
+    let mut first_event_ttft_ms = None;
+    let response_state = match send_prepared_stream_request(&client, &prepared, |event| {
+        if first_event_ttft_ms.is_none() && stream_event_counts_for_ttft(&event) {
+            first_event_ttft_ms = Some(call_start.elapsed().as_millis() as i64);
+        }
+        on_event(event)
+    })
+    .await
+    {
+        Ok(response_state) => response_state,
+        Err(err) => {
+            let latency_ms = call_start.elapsed().as_millis() as f64;
+            let feedback = crate::modules::providers::types::BanditFeedbackRequest {
+                scene: None,
+                arm_id: provider_model_id.to_string(),
+                success: false,
+                latency_ms: Some(latency_ms),
+                cost: None,
+                reward: Some(0.0),
+                routing_config: None,
+                reward_metric_type: None,
+            };
+            if let Err(feedback_err) = app_state
+                .providers
+                .store
+                .record_bandit_feedback(feedback)
+                .await
+            {
+                log::warn!("failed to record bandit feedback: {}", feedback_err);
+            }
+            let empty_headers = BTreeMap::new();
+            let raw_usage = GatewayUsageDetails::default();
+            let cache_details =
+                extract_cache_details_from_response(&empty_headers, None, Some(&raw_usage));
+            let mut meta = build_gateway_log_meta(
+                &raw_usage,
+                None,
+                &cache_details,
+                Some(&prepared.body),
+                Some(&upstream_request_meta),
+            )
+            .unwrap_or_else(|| serde_json::json!({}));
+            if let Some(object) = meta.as_object_mut() {
+                object.insert("stream_error".to_string(), serde_json::json!(err.clone()));
+            }
+            record_gateway_log(
+                app_state.mcp.store.clone(),
+                GatewayLogEntry {
+                    trace_id: trace_id.map(str::to_string),
+                    api_key_id: Some(instance.credentials_ref.clone())
+                        .filter(|value| !value.trim().is_empty()),
+                    preset_id: Some(instance.preset_slug.clone())
+                        .filter(|value| !value.trim().is_empty()),
+                    model: effective_model.clone(),
+                    status_code: 599,
+                    duration_ms: latency_ms as i64,
+                    ttft_ms: first_event_ttft_ms,
+                    upstream_url: Some(prepared.display_url()),
+                    retry_count: 0,
+                    is_cached: cache_details.is_cached,
+                    error_code: Some("provider_stream_error".to_string()),
+                    meta: Some(meta),
+                    ..Default::default()
+                },
+            );
+            return Err(err);
+        }
+    };
+    let latency_ms = call_start.elapsed().as_millis() as f64;
+    let status_code = response_state.status_code;
+    let success = (200..400).contains(&status_code);
+    let feedback = crate::modules::providers::types::BanditFeedbackRequest {
+        scene: None,
+        arm_id: provider_model_id.to_string(),
+        success,
+        latency_ms: Some(latency_ms),
+        cost: None,
+        reward: Some(if success { 1.0 } else { 0.0 }),
+        routing_config: None,
+        reward_metric_type: None,
+    };
+    if let Err(err) = app_state
+        .providers
+        .store
+        .record_bandit_feedback(feedback)
+        .await
+    {
+        log::warn!("failed to record bandit feedback: {}", err);
+    }
+    if !success {
+        return Err(format!("provider stream request failed: {}", status_code));
+    }
+
+    let raw = response_state.raw_terminal_response;
+    let raw_usage = extract_usage_details_from_response(&raw);
+    let raw_cache_details =
+        extract_cache_details_from_response(&response_state.headers, Some(&raw), Some(&raw_usage));
+    let raw_billing_amount = extract_billing_amount_from_response(&raw);
+    let raw_ttft_ms = extract_ttft_ms_from_response(&raw);
+    let transformed = app_state.providers.transformer.transform(
+        prepared.template_engine.as_str(),
+        Some(prepared.response_decoder.as_str()),
+        &prepared.response_transform,
+        raw,
+        status_code,
+    );
+    let transformed_usage = extract_usage_details_from_response(&transformed);
+    let usage_details = transformed_usage.merged_with_fallback(&raw_usage);
+    let usage_source = if transformed_usage.has_token_counts() {
+        Some("transformed")
+    } else if raw_usage.has_usage_details() {
+        Some("provider_reported")
+    } else {
+        None
+    };
+    let cache_details = if raw_cache_details.cache_source.as_deref() == Some("unknown") {
+        extract_cache_details_from_response(
+            &response_state.headers,
+            Some(&transformed),
+            Some(&usage_details),
+        )
+    } else {
+        raw_cache_details
+    };
+    let computed_cost = calculate_token_cost(
+        &model.pricing_config,
+        usage_details.input_tokens,
+        usage_details.output_tokens,
+    )
+    .unwrap_or(0.0);
+    let reported_cost = extract_billing_amount_from_response(&transformed)
+        .or(raw_billing_amount)
+        .unwrap_or(computed_cost);
+    let ttft_ms = extract_ttft_ms_from_response(&transformed)
+        .or(raw_ttft_ms)
+        .or(first_event_ttft_ms);
+    record_gateway_log(
+        app_state.mcp.store.clone(),
+        GatewayLogEntry {
+            trace_id: trace_id.map(str::to_string),
+            api_key_id: Some(instance.credentials_ref.clone())
+                .filter(|value| !value.trim().is_empty()),
+            preset_id: Some(instance.preset_slug.clone()).filter(|value| !value.trim().is_empty()),
+            model: effective_model.clone(),
+            status_code: status_code as i64,
+            duration_ms: latency_ms as i64,
+            ttft_ms,
+            upstream_url: Some(prepared.display_url()),
+            input_tokens: usage_details.input_tokens,
+            output_tokens: usage_details.output_tokens,
+            total_tokens: usage_details.total_tokens,
+            cost_upstream: computed_cost,
+            cost_user: reported_cost,
+            retry_count: response_state.retry_count,
+            is_cached: cache_details.is_cached,
+            meta: build_gateway_log_meta(
+                &usage_details,
+                usage_source,
+                &cache_details,
+                Some(&prepared.body),
+                Some(&upstream_request_meta),
+            ),
+            ..Default::default()
+        },
+    );
+    let mut normalized = normalize_chat_completion_response(transformed);
+    if let Some(object) = normalized.as_object_mut() {
+        object.insert("provider_streamed".to_string(), serde_json::json!(true));
+        object.insert(
+            "provider_stream_decoder".to_string(),
+            serde_json::json!(response_state.decoder_name),
+        );
+    }
+    inject_runtime_metrics(
+        &mut normalized,
+        latency_ms as i64,
+        ttft_ms,
+        response_state.retry_count + 1,
+    );
+    Ok(normalized)
+}
+
+fn stream_event_counts_for_ttft(event: &ProviderStreamEvent) -> bool {
+    match event {
+        ProviderStreamEvent::TextDelta(delta) | ProviderStreamEvent::ReasoningDelta(delta) => {
+            !delta.is_empty()
+        }
+        ProviderStreamEvent::ToolCallDelta {
+            name,
+            arguments_delta,
+            ..
+        } => name.as_deref().is_some_and(|value| !value.is_empty()) || !arguments_delta.is_empty(),
+        ProviderStreamEvent::ToolCallDone { .. }
+        | ProviderStreamEvent::Usage(_)
+        | ProviderStreamEvent::Done { .. }
+        | ProviderStreamEvent::Error { .. } => false,
+    }
 }
 
 pub(crate) fn normalize_chat_completion_response(raw: serde_json::Value) -> serde_json::Value {

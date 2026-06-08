@@ -1379,6 +1379,7 @@ mod tests {
             body: json!({}),
             template_engine: "openai_compat".to_string(),
             response_decoder: "openai_responses".to_string(),
+            stream_decoder: None,
             response_transform: json!({}),
             async_config: json!({}),
         };
