@@ -94,7 +94,7 @@ use tool_meta::{
     build_state_effective_tool_call_meta, canonicalize_tool_call_meta_via_graph,
     derive_pending_call_id_from_tool_call_meta, enrich_response_with_tool_trace,
     last_response_content_or_empty, record_query_affinity_from_tool_meta,
-    tool_call_meta_with_resolved_ids,
+    remove_terminal_text_from_trace_blocks, tool_call_meta_with_resolved_ids,
 };
 
 fn append_world_observations_from_tool_meta(
@@ -704,13 +704,13 @@ async fn continue_local_chat_complete_with_tools(
                         response_has_verification_evidence: !effective_tool_call_meta.is_empty(),
                     },
                 ));
-            let response = enrich_response_with_tool_trace(
+            let response = remove_terminal_text_from_trace_blocks(enrich_response_with_tool_trace(
                 response,
                 &effective_tool_call_meta,
                 state.realtime_emitter.emitted_any,
                 &state.runtime_metrics,
                 Some(state.realtime_emitter.captured_render_blocks()),
-            );
+            ));
             // Inject world model snapshot into the final response
             let response = if let Some(frame) = state.world_model_frame.as_ref() {
                 let snapshot = build_world_model_snapshot_extract(frame);

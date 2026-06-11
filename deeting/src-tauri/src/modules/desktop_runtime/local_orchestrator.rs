@@ -752,7 +752,6 @@ pub async fn execute_local_orchestrated_chat(
             "content": response_text,
         });
         ctx.emit_blocks(vec![text_block.clone()]);
-        assistant_blocks.push(text_block);
     }
     if !render_resolution.blocks.is_empty() {
         ctx.emit_blocks(render_resolution.blocks.clone());

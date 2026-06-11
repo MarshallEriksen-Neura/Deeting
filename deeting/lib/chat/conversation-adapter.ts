@@ -370,6 +370,16 @@ const resolveAssistantBlocks = (
     if (isThoughtOnlyBlockList(blocks) || !hasRenderableNonThoughtBlocks(blocks)) {
       return finalAnswer ? [buildAssistantFinalTextBlock(messageId, finalAnswer)] : []
     }
+    if (finalAnswer) {
+      const existingText = blocks
+        .filter((block) => block.type === "text")
+        .map((block) => block.content)
+        .join("")
+        .trim()
+      if (existingText !== finalAnswer.trim()) {
+        return [...blocks, buildAssistantFinalTextBlock(messageId, finalAnswer)]
+      }
+    }
     return blocks
   }
 

@@ -970,6 +970,56 @@ fn enrich_response_with_tool_trace_includes_error_result_blocks() {
 }
 
 #[test]
+fn remove_terminal_text_from_trace_blocks_keeps_final_answer_single_owned() {
+    let response = serde_json::json!({
+        "content": "final answer",
+        "tool_trace_blocks": [
+            { "type": "thought", "content": "checking" },
+            { "type": "tool_call", "callId": "call_fetch", "toolName": "fetch", "status": "success" },
+            { "type": "text", "content": "final answer" }
+        ]
+    });
+
+    let sanitized = remove_terminal_text_from_trace_blocks(response);
+
+    assert_eq!(
+        sanitized.get("content"),
+        Some(&serde_json::json!("final answer"))
+    );
+    let blocks = sanitized
+        .get("tool_trace_blocks")
+        .and_then(serde_json::Value::as_array)
+        .expect("trace blocks remain");
+    assert_eq!(blocks.len(), 2);
+    assert!(blocks
+        .iter()
+        .all(|block| { block.get("type").and_then(|value| value.as_str()) != Some("text") }));
+}
+
+#[test]
+fn remove_terminal_text_from_trace_blocks_preserves_intermediate_text() {
+    let response = serde_json::json!({
+        "content": "final answer",
+        "tool_trace_blocks": [
+            { "type": "text", "content": "I will fetch the page first." },
+            { "type": "tool_call", "callId": "call_fetch", "toolName": "fetch", "status": "success" }
+        ]
+    });
+
+    let sanitized = remove_terminal_text_from_trace_blocks(response);
+    let blocks = sanitized
+        .get("tool_trace_blocks")
+        .and_then(serde_json::Value::as_array)
+        .expect("trace blocks remain");
+
+    assert!(blocks.iter().any(|block| {
+        block.get("type").and_then(|value| value.as_str()) == Some("text")
+            && block.get("content").and_then(|value| value.as_str())
+                == Some("I will fetch the page first.")
+    }));
+}
+
+#[test]
 fn attach_runtime_transition_events_appends_graph_projectable_trace_blocks() {
     let response = serde_json::json!({
         "content": "done",

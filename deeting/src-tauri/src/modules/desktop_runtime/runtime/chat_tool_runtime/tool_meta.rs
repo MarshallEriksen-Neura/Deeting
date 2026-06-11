@@ -74,6 +74,55 @@ pub(super) fn enrich_response_with_tool_trace(
     response
 }
 
+pub(super) fn remove_terminal_text_from_trace_blocks(
+    mut response: serde_json::Value,
+) -> serde_json::Value {
+    let terminal_text = response
+        .get("content")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let Some(terminal_text) = terminal_text else {
+        return response;
+    };
+
+    let Some(blocks) = response
+        .get("tool_trace_blocks")
+        .and_then(|value| value.as_array())
+        .cloned()
+    else {
+        return response;
+    };
+
+    let filtered = blocks
+        .into_iter()
+        .filter(|block| {
+            let is_matching_text = block.get("type").and_then(|value| value.as_str())
+                == Some("text")
+                && block
+                    .get("content")
+                    .and_then(|value| value.as_str())
+                    .map(str::trim)
+                    == Some(terminal_text.as_str());
+            !is_matching_text
+        })
+        .collect::<Vec<_>>();
+
+    if let Some(object) = response.as_object_mut() {
+        if filtered.is_empty() {
+            object.remove("tool_trace_blocks");
+        } else {
+            object.insert(
+                "tool_trace_blocks".to_string(),
+                serde_json::Value::Array(filtered),
+            );
+        }
+    }
+
+    response
+}
+
 pub(super) fn strip_stale_resume_response_metadata(
     mut response: serde_json::Value,
 ) -> serde_json::Value {

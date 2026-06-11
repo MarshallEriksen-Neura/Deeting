@@ -101,6 +101,55 @@ describe("normalizeConversationMessages", () => {
     expect(message?.blocks?.some((block) => block.type === "thought")).toBe(false)
   })
 
+  it("appends final answer after structured trace blocks when backend omits duplicate text block", () => {
+    const messages = [
+      {
+        role: "assistant",
+        content: null,
+        turn_index: 22,
+        meta_info: {
+          blocks: [
+            { type: "thought", content: "checking" },
+            {
+              type: "tool_call",
+              callId: "call_fetch",
+              toolName: "fetch",
+              status: "success",
+            },
+            {
+              type: "tool_result",
+              callId: "call_fetch",
+              toolName: "fetch",
+              status: "success",
+              result: { ok: true },
+            },
+          ],
+          execution_graph: {
+            summary: {
+              final_answer: "最终回答",
+            },
+          },
+        },
+      },
+    ]
+
+    const [message] = normalizeConversationMessages(
+      messages as unknown as Parameters<typeof normalizeConversationMessages>[0],
+      {
+        includeRoles: ["assistant"],
+      }
+    )
+
+    expect(message?.content).toBe("")
+    expect(message?.blocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "tool_call", callId: "call_fetch" }),
+        expect.objectContaining({ type: "tool_result", callId: "call_fetch" }),
+        expect.objectContaining({ type: "text", content: "最终回答" }),
+      ])
+    )
+  })
+
   it("drops thought-only history blocks when no final assistant answer exists", () => {
     const messages = [
       {
