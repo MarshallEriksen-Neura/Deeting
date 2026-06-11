@@ -199,6 +199,46 @@ fn strip_world_model_update_tool_calls_preserves_external_calls() {
 }
 
 #[test]
+fn world_model_update_error_meta_keeps_internal_tool_call_for_replay() {
+    let response = serde_json::json!({
+        "content": "",
+        "tool_calls": [{
+            "id": "wm-bad-1",
+            "name": "world_model_update",
+            "arguments": {"proposed_next_phase": "bad-shape"}
+        }]
+    });
+    let meta = vec![serde_json::json!({
+        "id": "wm-bad-1",
+        "name": "world_model_update",
+        "status": "error",
+        "error_code": "WORLD_MODEL_UPDATE_INVALID_ARGUMENTS",
+        "error": "invalid arguments"
+    })];
+
+    assert!(tool_call_meta_contains_world_model_update_error(&meta));
+    let response_for_replay = if tool_call_meta_contains_world_model_update_error(&meta) {
+        response.clone()
+    } else {
+        strip_world_model_update_tool_calls(response.clone())
+    };
+
+    assert_eq!(
+        response_for_replay["tool_calls"][0]["name"],
+        "world_model_update"
+    );
+    let replay = build_structured_tool_replay_messages("openai_chat", &response_for_replay, &meta)
+        .expect("structured replay messages");
+
+    assert_eq!(replay.len(), 2);
+    assert_eq!(replay[0].role, "assistant");
+    assert_eq!(replay[0].tool_calls[0].name, "world_model_update");
+    assert_eq!(replay[1].role, "tool");
+    assert_eq!(replay[1].tool_call_id.as_deref(), Some("wm-bad-1"));
+    assert_eq!(replay[1].name.as_deref(), Some("world_model_update"));
+}
+
+#[test]
 fn world_model_snapshot_renders_four_sections_and_new_directive() {
     let mut frame = desktop_runtime_core::WorldModelFrame::new(
         "frame-1",

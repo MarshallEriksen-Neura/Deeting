@@ -2,8 +2,12 @@ use super::super::super::user_input::latest_contiguous_user_messages;
 use super::super::super::LocalExecutionRequest;
 use super::super::phase_step::{phase_step_for_strategy, phase_step_type_name};
 use super::frame_bootstrap;
+use crate::modules::ai_upstream::chat::parse_structured_tool_arguments;
 use crate::modules::ai_upstream::ReasoningRequestConfig;
-use crate::modules::desktop_runtime::runtime::chat_completion::request_provider_structured_tool_arguments_with_failover;
+use crate::modules::desktop_runtime::runtime::chat_completion::{
+    request_provider_chat_completion_with_pool_failover,
+    request_provider_structured_tool_arguments_with_failover,
+};
 use crate::modules::desktop_runtime::runtime::chat_tool_runtime::{
     apply_world_model_update_to_frame, ProposedPhase, WorldModelUpdate,
 };
@@ -22,7 +26,7 @@ use desktop_runtime_core::{
 };
 #[cfg(test)]
 use desktop_runtime_core::{Unknown, VerificationTarget};
-use mcp_core::types::LocalChatInputMessage;
+use mcp_core::types::{LocalChatInputMessage, LocalChatToolCall};
 use serde_json::json;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -33,6 +37,7 @@ const TIER2_VALIDATION_CACHE_MAX_ENTRIES: usize = 256;
 const TIER2_VALIDATION_AUXILIARY_TEMPERATURE: f32 = 0.1;
 const TIER2_VALIDATION_MAX_TOKENS: u32 = 512;
 const WORLD_MODEL_REFRESH_TEMPERATURE: f32 = 0.1;
+const WORLD_MODEL_REFRESH_MAX_ATTEMPTS: usize = 2;
 const TIER2_VALIDATION_TOOL_NAME: &str = "submit_frame_validation";
 const WORLD_MODEL_REFRESH_TOOL_NAME: &str = "submit_world_model_update";
 const TIER2_VALIDATION_PROMPT_TEMPLATE_ZH: &str = r#"
@@ -840,148 +845,312 @@ async fn request_world_model_update(
             "model_id": model_connection.model_id.as_str(),
         }),
     );
-    let response = match request_provider_structured_tool_arguments_with_failover(
-        &runtime_request.app_state,
-        &model_connection.provider_model_id,
-        &model_connection.model_id,
-        vec![LocalChatInputMessage {
-            role: "user".to_string(),
-            content: prompt,
-            reasoning_content: None,
-            tool_calls: vec![],
-            tool_call_id: None,
-            name: None,
-        }],
-        WORLD_MODEL_REFRESH_TOOL_NAME,
-        "Submit a world-model frame update for the runtime refresh.",
-        world_model_update_tool_schema(),
-        Some(WORLD_MODEL_REFRESH_TEMPERATURE),
-        None,
-        ReasoningRequestConfig {
-            enabled: runtime_request.reasoning_enabled,
-            effort: runtime_request.reasoning_effort.clone(),
-        },
-        runtime_request.trace_id.as_deref(),
-        Some(&runtime_request.session_id),
-        Some(json!({
-            "type": "function",
-            "function": { "name": WORLD_MODEL_REFRESH_TOOL_NAME }
-        })),
-        model_connection.failover_pool_key.as_deref(),
-    )
-    .await
-    {
-        Ok(response) => response,
-        Err(err) => {
-            emit_world_model_frame_status(
-                runtime_request,
-                "failed",
-                "world_model.frame_refresh.failed",
-                json!({
-                    "artifact": frame_refresh_artifact_name(refresh_request.artifact),
-                    "frame_id": current_frame.frame_version_id.as_str(),
-                    "parent_frame_id": current_frame.parent_frame_id.as_deref(),
-                    "model_role": "secretary",
-                    "provider_model_id": model_connection.provider_model_id.as_str(),
-                    "model_id": model_connection.model_id.as_str(),
-                    "error_kind": "upstream_request_failed",
-                    "error": err.to_string(),
-                }),
-            );
-            return Err(err.to_string());
-        }
+    let mut messages = vec![LocalChatInputMessage {
+        role: "user".to_string(),
+        content: prompt,
+        reasoning_content: None,
+        tool_calls: vec![],
+        tool_call_id: None,
+        name: None,
+    }];
+    let reasoning = ReasoningRequestConfig {
+        enabled: runtime_request.reasoning_enabled,
+        effort: runtime_request.reasoning_effort.clone(),
     };
+    let tool_schema = world_model_update_tool_schema();
+    let tool_choice = json!({
+        "type": "function",
+        "function": { "name": WORLD_MODEL_REFRESH_TOOL_NAME }
+    });
+    let tools_payload = json!({
+        "tools": [{
+            "name": WORLD_MODEL_REFRESH_TOOL_NAME,
+            "description": "Submit a world-model frame update for the runtime refresh.",
+            "input_schema": tool_schema,
+        }],
+        "tool_choice": tool_choice,
+    });
+    let mut last_error = None;
 
-    match parse_secretary_world_model_update_response(&response) {
-        Ok(update) => {
-            let goal = current_frame.goal.clone();
-            fn truncate_ellipsis(s: &str, max_chars: usize) -> String {
-                if s.chars().count() <= max_chars {
-                    return s.to_string();
-                }
-                let truncated: String = s.chars().take(max_chars).collect();
-                format!("{truncated}…")
-            }
-            let update_facts: Vec<String> = update
-                .facts
-                .iter()
-                .take(3)
-                .map(|s| truncate_ellipsis(s, 80))
-                .collect();
-            let update_assumptions: Vec<String> = update
-                .assumptions
-                .iter()
-                .take(3)
-                .map(|s| truncate_ellipsis(s, 80))
-                .collect();
-            let update_unknowns: Vec<String> = update
-                .new_unknowns
-                .iter()
-                .take(3)
-                .map(|s| truncate_ellipsis(s, 80))
-                .collect();
-            let update_vts: Vec<String> = update
-                .verification_targets
-                .iter()
-                .take(3)
-                .map(|s| truncate_ellipsis(s, 80))
-                .collect();
-            emit_world_model_frame_status(
-                runtime_request,
-                "success",
-                "world_model.frame_refresh.updated",
-                json!({
-                    "artifact": frame_refresh_artifact_name(refresh_request.artifact),
-                    "frame_id": current_frame.frame_version_id.as_str(),
-                    "parent_frame_id": current_frame.parent_frame_id.as_deref(),
-                    "model_role": "secretary",
-                    "provider_model_id": model_connection.provider_model_id.as_str(),
-                    "model_id": model_connection.model_id.as_str(),
-                    "facts": update.facts.len(),
-                    "assumptions": update.assumptions.len(),
-                    "verification_targets": update.verification_targets.len(),
-                    "rules": update.rules.len(),
-                    "goal": goal,
-                    "update_facts": update_facts,
-                    "update_assumptions": update_assumptions,
-                    "update_unknowns": update_unknowns,
-                    "update_verification_targets": update_vts,
-                    "resolved_unknowns": update.resolved_unknowns.len(),
-                    "execution_strategy": update.execution_strategy,
-                    "proposed_next_phase": update.proposed_next_phase.as_ref().map(|phase| {
-                        json!({
-                            "step_type": phase.step_type.as_str(),
-                            "rationale": phase.rationale.as_str(),
-                            "verification_target_refs": phase.verification_target_refs.clone(),
-                        })
+    for attempt in 1..=WORLD_MODEL_REFRESH_MAX_ATTEMPTS {
+        let response = match request_provider_chat_completion_with_pool_failover(
+            &runtime_request.app_state,
+            &model_connection.provider_model_id,
+            &model_connection.model_id,
+            messages.clone(),
+            Some(tools_payload.clone()),
+            Some(WORLD_MODEL_REFRESH_TEMPERATURE),
+            None,
+            reasoning.clone(),
+            model_connection.failover_pool_key.as_deref(),
+            runtime_request.trace_id.as_deref(),
+            Some(&runtime_request.session_id),
+        )
+        .await
+        {
+            Ok(response) => response,
+            Err(err) => {
+                let err = err.to_string();
+                emit_world_model_frame_status(
+                    runtime_request,
+                    "failed",
+                    "world_model.frame_refresh.failed",
+                    json!({
+                        "artifact": frame_refresh_artifact_name(refresh_request.artifact),
+                        "frame_id": current_frame.frame_version_id.as_str(),
+                        "parent_frame_id": current_frame.parent_frame_id.as_deref(),
+                        "model_role": "secretary",
+                        "provider_model_id": model_connection.provider_model_id.as_str(),
+                        "model_id": model_connection.model_id.as_str(),
+                        "attempt": attempt,
+                        "error_kind": "upstream_request_failed",
+                        "error": err.as_str(),
                     }),
-                    "proposed_next_phase_step_type": update
-                        .proposed_next_phase
-                        .as_ref()
-                        .map(|phase| phase.step_type.as_str()),
-                }),
-            );
-            Ok(Some(update))
-        }
-        Err(err) => {
-            emit_world_model_frame_status(
-                runtime_request,
-                "failed",
-                "world_model.frame_refresh.failed",
-                json!({
-                    "artifact": frame_refresh_artifact_name(refresh_request.artifact),
-                    "frame_id": current_frame.frame_version_id.as_str(),
-                    "parent_frame_id": current_frame.parent_frame_id.as_deref(),
-                    "model_role": "secretary",
-                    "provider_model_id": model_connection.provider_model_id.as_str(),
-                    "model_id": model_connection.model_id.as_str(),
-                    "error_kind": "structured_response_parse_failed",
-                    "error": err.as_str(),
-                }),
-            );
-            Err(format!("secretary_world_model_update_parse_failed: {err}"))
+                );
+                return Err(err);
+            }
+        };
+        let response =
+            match parse_structured_tool_arguments(&response, WORLD_MODEL_REFRESH_TOOL_NAME) {
+                Ok(arguments) => arguments,
+                Err(err) => {
+                    emit_world_model_frame_status(
+                        runtime_request,
+                        "failed",
+                        "world_model.frame_refresh.failed",
+                        json!({
+                            "artifact": frame_refresh_artifact_name(refresh_request.artifact),
+                            "frame_id": current_frame.frame_version_id.as_str(),
+                            "parent_frame_id": current_frame.parent_frame_id.as_deref(),
+                            "model_role": "secretary",
+                            "provider_model_id": model_connection.provider_model_id.as_str(),
+                            "model_id": model_connection.model_id.as_str(),
+                            "attempt": attempt,
+                            "error_kind": "structured_tool_call_missing_or_invalid",
+                            "error": err.as_str(),
+                            "feedback": if attempt < WORLD_MODEL_REFRESH_MAX_ATTEMPTS {
+                                "returned_to_model"
+                            } else {
+                                "exhausted"
+                            },
+                        }),
+                    );
+                    let error = format!("secretary_world_model_update_tool_call_failed: {err}");
+                    if attempt >= WORLD_MODEL_REFRESH_MAX_ATTEMPTS {
+                        return Err(error);
+                    }
+                    messages =
+                        world_model_update_retry_messages(&messages, &response, err.as_str());
+                    last_error = Some(error);
+                    continue;
+                }
+            };
+
+        match parse_secretary_world_model_update_response(&response) {
+            Ok(update) => {
+                let goal = current_frame.goal.clone();
+                fn truncate_ellipsis(s: &str, max_chars: usize) -> String {
+                    if s.chars().count() <= max_chars {
+                        return s.to_string();
+                    }
+                    let truncated: String = s.chars().take(max_chars).collect();
+                    format!("{truncated}…")
+                }
+                let update_facts: Vec<String> = update
+                    .facts
+                    .iter()
+                    .take(3)
+                    .map(|s| truncate_ellipsis(s, 80))
+                    .collect();
+                let update_assumptions: Vec<String> = update
+                    .assumptions
+                    .iter()
+                    .take(3)
+                    .map(|s| truncate_ellipsis(s, 80))
+                    .collect();
+                let update_unknowns: Vec<String> = update
+                    .new_unknowns
+                    .iter()
+                    .take(3)
+                    .map(|s| truncate_ellipsis(s, 80))
+                    .collect();
+                let update_vts: Vec<String> = update
+                    .verification_targets
+                    .iter()
+                    .take(3)
+                    .map(|s| truncate_ellipsis(s, 80))
+                    .collect();
+                emit_world_model_frame_status(
+                    runtime_request,
+                    "success",
+                    "world_model.frame_refresh.updated",
+                    json!({
+                        "artifact": frame_refresh_artifact_name(refresh_request.artifact),
+                        "frame_id": current_frame.frame_version_id.as_str(),
+                        "parent_frame_id": current_frame.parent_frame_id.as_deref(),
+                        "model_role": "secretary",
+                        "provider_model_id": model_connection.provider_model_id.as_str(),
+                        "model_id": model_connection.model_id.as_str(),
+                        "attempt": attempt,
+                        "facts": update.facts.len(),
+                        "assumptions": update.assumptions.len(),
+                        "verification_targets": update.verification_targets.len(),
+                        "rules": update.rules.len(),
+                        "goal": goal,
+                        "update_facts": update_facts,
+                        "update_assumptions": update_assumptions,
+                        "update_unknowns": update_unknowns,
+                        "update_verification_targets": update_vts,
+                        "resolved_unknowns": update.resolved_unknowns.len(),
+                        "execution_strategy": update.execution_strategy,
+                        "proposed_next_phase": update.proposed_next_phase.as_ref().map(|phase| {
+                            json!({
+                                "step_type": phase.step_type.as_str(),
+                                "rationale": phase.rationale.as_str(),
+                                "verification_target_refs": phase.verification_target_refs.clone(),
+                            })
+                        }),
+                        "proposed_next_phase_step_type": update
+                            .proposed_next_phase
+                            .as_ref()
+                            .map(|phase| phase.step_type.as_str()),
+                    }),
+                );
+                return Ok(Some(update));
+            }
+            Err(err) => {
+                let error = format!("secretary_world_model_update_parse_failed: {err}");
+                emit_world_model_frame_status(
+                    runtime_request,
+                    "failed",
+                    "world_model.frame_refresh.failed",
+                    json!({
+                        "artifact": frame_refresh_artifact_name(refresh_request.artifact),
+                        "frame_id": current_frame.frame_version_id.as_str(),
+                        "parent_frame_id": current_frame.parent_frame_id.as_deref(),
+                        "model_role": "secretary",
+                        "provider_model_id": model_connection.provider_model_id.as_str(),
+                        "model_id": model_connection.model_id.as_str(),
+                        "attempt": attempt,
+                        "error_kind": "structured_response_parse_failed",
+                        "error": err.as_str(),
+                        "feedback": if attempt < WORLD_MODEL_REFRESH_MAX_ATTEMPTS {
+                            "returned_to_model"
+                        } else {
+                            "exhausted"
+                        },
+                    }),
+                );
+                if attempt >= WORLD_MODEL_REFRESH_MAX_ATTEMPTS {
+                    return Err(error);
+                }
+                messages = world_model_update_retry_messages(&messages, &response, err.as_str());
+                last_error = Some(error);
+            }
         }
     }
+
+    Err(last_error.unwrap_or_else(|| "secretary_world_model_update_failed".to_string()))
+}
+
+fn world_model_update_retry_messages(
+    prior_messages: &[LocalChatInputMessage],
+    failed_response: &serde_json::Value,
+    error: &str,
+) -> Vec<LocalChatInputMessage> {
+    let call_id = failed_response
+        .get("tool_calls")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|calls| calls.first())
+        .and_then(|call| call.get("id"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("submit_world_model_update_retry");
+    let tool_calls = failed_response
+        .get("tool_calls")
+        .and_then(serde_json::Value::as_array)
+        .map(|calls| {
+            calls
+                .iter()
+                .filter_map(|call| {
+                    let name = call
+                        .get("name")
+                        .and_then(serde_json::Value::as_str)
+                        .or_else(|| {
+                            call.get("function")
+                                .and_then(|function| function.get("name"))
+                                .and_then(serde_json::Value::as_str)
+                        })?;
+                    let arguments = call
+                        .get("arguments")
+                        .cloned()
+                        .or_else(|| {
+                            call.get("function")
+                                .and_then(|function| function.get("arguments"))
+                                .map(|value| {
+                                    value
+                                        .as_str()
+                                        .and_then(|raw| serde_json::from_str(raw).ok())
+                                        .unwrap_or_else(|| value.clone())
+                                })
+                        })
+                        .unwrap_or_else(|| json!({}));
+                    Some(LocalChatToolCall {
+                        id: call
+                            .get("id")
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::to_string),
+                        name: name.to_string(),
+                        arguments,
+                        extra_content: Some(call.clone()),
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .filter(|calls| !calls.is_empty())
+        .unwrap_or_else(|| {
+            vec![LocalChatToolCall {
+                id: Some(call_id.to_string()),
+                name: WORLD_MODEL_REFRESH_TOOL_NAME.to_string(),
+                arguments: json!({}),
+                extra_content: None,
+            }]
+        });
+    let assistant_content = failed_response
+        .get("content")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let assistant_reasoning_content = failed_response
+        .get("reasoning_content")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+
+    let mut messages = prior_messages.to_vec();
+    messages.push(LocalChatInputMessage {
+        role: "assistant".to_string(),
+        content: assistant_content,
+        reasoning_content: assistant_reasoning_content,
+        tool_calls,
+        tool_call_id: None,
+        name: None,
+    });
+    messages.push(LocalChatInputMessage {
+        role: "tool".to_string(),
+        content: format!(
+            "Tool call '{}' failed [WORLD_MODEL_UPDATE_INVALID_ARGUMENTS]: {}. Call '{}' again with a valid `world_model_update` object matching the required schema.",
+            WORLD_MODEL_REFRESH_TOOL_NAME, error, WORLD_MODEL_REFRESH_TOOL_NAME
+        ),
+        reasoning_content: None,
+        tool_calls: vec![],
+        tool_call_id: Some(call_id.to_string()),
+        name: Some(WORLD_MODEL_REFRESH_TOOL_NAME.to_string()),
+    });
+    messages
 }
 
 fn parse_secretary_world_model_update_response(
@@ -2038,6 +2207,49 @@ mod tests {
         }));
 
         assert!(text_wrapped.is_err());
+    }
+
+    #[test]
+    fn world_model_update_retry_messages_return_parse_error_to_model() {
+        let prior = vec![LocalChatInputMessage {
+            role: "user".to_string(),
+            content: "refresh frame".to_string(),
+            reasoning_content: None,
+            tool_calls: vec![],
+            tool_call_id: None,
+            name: None,
+        }];
+        let response = json!({
+            "content": "",
+            "tool_calls": [{
+                "id": "call_wm_1",
+                "name": "submit_world_model_update",
+                "arguments": {"content": "not the structured field"}
+            }]
+        });
+
+        let messages = world_model_update_retry_messages(
+            &prior,
+            &response,
+            "missing world_model_update field",
+        );
+
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[1].role, "assistant");
+        assert_eq!(messages[1].tool_calls.len(), 1);
+        assert_eq!(messages[1].tool_calls[0].name, "submit_world_model_update");
+        assert_eq!(messages[2].role, "tool");
+        assert_eq!(messages[2].tool_call_id.as_deref(), Some("call_wm_1"));
+        assert_eq!(
+            messages[2].name.as_deref(),
+            Some("submit_world_model_update")
+        );
+        assert!(messages[2]
+            .content
+            .contains("WORLD_MODEL_UPDATE_INVALID_ARGUMENTS"));
+        assert!(messages[2]
+            .content
+            .contains("missing world_model_update field"));
     }
 
     #[test]

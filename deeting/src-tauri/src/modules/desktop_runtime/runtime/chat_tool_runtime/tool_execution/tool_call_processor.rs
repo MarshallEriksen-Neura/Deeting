@@ -106,11 +106,29 @@ pub(crate) async fn process_chat_tool_calls(
 
         // Meta-protocol tool: world_model_update
         if tool_name == "world_model_update" {
-            // Apply world model update directly to state without returning a tool result
-            if let Ok(update) = serde_json::from_value::<WorldModelUpdate>(call.arguments.clone()) {
-                state.captured_world_model_update = Some(update);
+            match serde_json::from_value::<WorldModelUpdate>(call.arguments.clone()) {
+                Ok(update) => {
+                    state.captured_world_model_update = Some(update);
+                }
+                Err(err) => {
+                    synthesized = true;
+                    state
+                        .realtime_emitter
+                        .emit_tool_call_running(call_id.as_str(), tool_name.as_str());
+                    push_local_tool_call_error_meta(
+                        &mut tool_call_meta,
+                        &mut results,
+                        &mut state.realtime_emitter,
+                        Some(call_id.as_str()),
+                        &tool_name,
+                        "WORLD_MODEL_UPDATE_INVALID_ARGUMENTS",
+                        format!(
+                            "world_model_update arguments could not be parsed; call the world_model_update tool again with valid arguments: {err}"
+                        ),
+                    );
+                }
             }
-            // Meta-protocol tools do not emit tool results or enter the tool execution loop
+            // Successful meta-protocol updates do not emit tool results or enter the tool execution loop.
             continue;
         }
 

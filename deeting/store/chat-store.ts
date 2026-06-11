@@ -944,24 +944,3 @@ export const useChatStatus = () =>
       statusMeta: state.statusMeta,
     }))
   )
-
-/** 获取输入相关状态 */
-export const useChatInput = () =>
-  useChatStore(
-    useShallow((state) => ({
-      input: state.input,
-      attachments: state.attachments,
-      selectedKnowledgeFileIds: state.selectedKnowledgeFileIds,
-      pageContext: state.pageContext,
-      setInput: state.setInput,
-      setAttachments: state.setAttachments,
-      addAttachments: state.addAttachments,
-      removeAttachment: state.removeAttachment,
-      clearAttachments: state.clearAttachments,
-      setSelectedKnowledgeFileIds: state.setSelectedKnowledgeFileIds,
-      toggleSelectedKnowledgeFileId: state.toggleSelectedKnowledgeFileId,
-      clearSelectedKnowledgeFileIds: state.clearSelectedKnowledgeFileIds,
-      setPageContext: state.setPageContext,
-      clearPageContext: state.clearPageContext,
-    }))
-  )

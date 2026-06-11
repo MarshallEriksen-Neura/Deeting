@@ -24,8 +24,7 @@ import { ChatConfigProvider } from "./chat-config-context"
  *   return (
  *     <ChatProvider>
  *       <ChatLayout>
- *         <MessageList />
- *         <ChatInput />
+ *         <ChatContent />
  *       </ChatLayout>
  *     </ChatProvider>
  *   )

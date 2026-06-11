@@ -1,6 +1,6 @@
 "use client"
 
-import { memo, useCallback, useMemo, useReducer } from "react"
+import { memo, useCallback, useMemo, useState } from "react"
 import { ChevronDown } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
@@ -9,32 +9,60 @@ import { useChatRuntimeStore } from "@/store/chat-runtime-store"
 import { useShallow } from "zustand/react/shallow"
 import { AssistantActivityTimeline } from "@/components/chat/messages/ai-response-bubble/assistant-activity-timeline"
 import type { ActivityTimelineBlock } from "@/lib/chat/message-protocol"
+import {
+  activityEventFromStatus,
+  createActivityTimelineBlock,
+  mergeActivityTimelineBlock,
+} from "@/lib/chat/runtime-activity"
 import { cn } from "@/lib/utils"
 
 function useActiveTimeline(): { block: ActivityTimelineBlock | null; isActive: boolean } {
   const { messages } = useChatStore(useShallow((s) => ({ messages: s.messages })))
-  const activeMessageId = useChatRuntimeStore((s) => s.activeMessageId)
+  const { activeMessageId, statusStage, statusCode, statusMeta } = useChatRuntimeStore(
+    useShallow((s) => ({
+      activeMessageId: s.activeMessageId,
+      statusStage: s.statusStage,
+      statusCode: s.statusCode,
+      statusMeta: s.statusMeta,
+    }))
+  )
 
   return useMemo(() => {
-    // Only show when there is an active (streaming) message
     if (!activeMessageId) return { block: null, isActive: false }
     const msg = messages.find((m) => m.id === activeMessageId)
-    if (!msg?.blocks) return { block: null, isActive: false }
-    const block = msg.blocks.find((b) => b.type === "activity_timeline") as
+    const persistedBlock = msg?.blocks?.find((b) => b.type === "activity_timeline") as
       | ActivityTimelineBlock
       | undefined
-    return { block: block ?? null, isActive: true }
-  }, [messages, activeMessageId])
+
+    const statusEvent = activityEventFromStatus({
+      messageId: activeMessageId,
+      stage: statusStage,
+      code: statusCode,
+      meta: statusMeta,
+    })
+    const liveBlock = statusEvent
+      ? createActivityTimelineBlock(activeMessageId, [statusEvent])
+      : null
+
+    const block = persistedBlock && liveBlock
+      ? mergeActivityTimelineBlock(persistedBlock, liveBlock)
+      : liveBlock ?? persistedBlock ?? null
+
+    return { block, isActive: true }
+  }, [messages, activeMessageId, statusStage, statusCode, statusMeta])
 }
 
 export const HudActivityBar = memo(function HudActivityBar() {
   const { block, isActive } = useActiveTimeline()
-  const [collapsed, toggleCollapsed] = useReducer((s: boolean) => !s, false)
+  const [collapsedBlockId, setCollapsedBlockId] = useState<string | null>(null)
+  const collapsed = Boolean(block?.id && collapsedBlockId === block.id)
 
   const handleToggle = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
-    toggleCollapsed()
-  }, [])
+    const blockId = block?.id ?? null
+    if (!blockId) return
+    setCollapsedBlockId((current) => current === blockId ? null : blockId)
+  }, [block?.id])
 
   const visible = Boolean(block)
 

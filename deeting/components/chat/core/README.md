@@ -239,8 +239,7 @@ function ChatPage() {
   return (
     <ChatProvider>
       <ChatLayout>
-        <MessageList />
-        <ChatInput />
+        <ChatContent />
       </ChatLayout>
     </ChatProvider>
   )
@@ -271,7 +270,7 @@ function MessageList() {
 ```tsx
 import { useChatUIState } from "@/components/chat/core"
 
-function ChatInput() {
+function ComposerStatePreview() {
   const { 
     input, 
     setInput, 

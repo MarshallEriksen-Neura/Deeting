@@ -11,10 +11,7 @@ import type {
   ToolResultBlock as MessageToolResultBlock,
 } from "@/lib/chat/message-protocol";
 import { cn } from "@/lib/utils";
-import {
-  AIResponseStatusRail,
-  AIResponseStreamingTail,
-} from "@/components/chat/messages/ai-response-bubble/status-rail";
+import { AIResponseStreamingTail } from "@/components/chat/messages/ai-response-bubble/status-rail";
 import { ExecutionConsole } from "@/components/chat/messages/ai-response-bubble/execution-console";
 import {
   ErrorMessageBlock,
@@ -198,11 +195,6 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       return { resultMap: map, pairedResultIndices: paired };
     }, [parts]);
 
-    const hasActivityTimelineBlock = useMemo(
-      () => parts.some((part) => part.type === "activity_timeline"),
-      [parts],
-    );
-
     const dittingFrameBlock = useMemo(() => {
       for (const part of parts) {
         if (part.type === "diting_think_frame") {
@@ -311,13 +303,6 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       };
     }, [parts, isActive]);
 
-    const shouldRevealCallChain = useMemo(() => {
-      if (hasContent) return true;
-      if (toolCallEntries.length > 0) return true;
-      if (statusStage && statusStage !== "listen") return true;
-      return false;
-    }, [hasContent, statusStage, toolCallEntries.length]);
-
     const hasToolActivity = useMemo(
       () =>
         toolCallEntries.length > 0 ||
@@ -346,17 +331,6 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
         data-slot="glass-card"
       >
         <div className="pl-4 pr-1 py-2 min-w-0 overflow-hidden">
-          <AIResponseStatusRail
-            isActive={isActive && !hasActivityTimelineBlock}
-            hasContent={hasAnswerContent}
-            hasToolActivity={hasToolActivity}
-            statusStage={statusStage}
-            statusCode={statusCode}
-            statusMeta={statusMeta}
-            streamEnabled={streamEnabled}
-            shouldRevealCallChain={shouldRevealCallChain}
-          />
-
           {dittingFrameBlock ? (
             <DitingThinkPanel
               block={dittingFrameBlock}

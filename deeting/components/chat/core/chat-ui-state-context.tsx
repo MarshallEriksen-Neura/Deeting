@@ -20,7 +20,7 @@ import type { ChatImageAttachment } from "@/lib/chat/message-content"
  * 
  * @example
  * ```tsx
- * function ChatInput() {
+ * function ComposerStatePreview() {
  *   const { input, setInput, attachments, addAttachments } = useChatUIState()
  *   
  *   return (

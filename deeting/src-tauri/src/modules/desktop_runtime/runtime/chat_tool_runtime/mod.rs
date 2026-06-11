@@ -226,6 +226,18 @@ fn strip_world_model_update_tool_calls(mut response: Value) -> Value {
     response
 }
 
+fn tool_call_meta_contains_world_model_update_error(tool_call_meta: &[serde_json::Value]) -> bool {
+    tool_call_meta.iter().any(|item| {
+        item.get("name")
+            .and_then(Value::as_str)
+            .is_some_and(is_world_model_update_tool_name)
+            && item
+                .get("status")
+                .and_then(Value::as_str)
+                .is_some_and(|status| status.eq_ignore_ascii_case("error"))
+    })
+}
+
 fn append_committed_actions_from_tool_meta(
     frame: Option<&mut desktop_runtime_core::WorldModelFrame>,
     tool_call_meta: &[serde_json::Value],
@@ -842,7 +854,11 @@ async fn continue_local_chat_complete_with_tools(
                 )
                 .await;
                 let response_without_internal_tool_calls =
-                    strip_world_model_update_tool_calls(response.clone());
+                    if tool_call_meta_contains_world_model_update_error(&canonical_tool_call_meta) {
+                        response.clone()
+                    } else {
+                        strip_world_model_update_tool_calls(response.clone())
+                    };
                 if !synthesized {
                     let mut current_tool_call_meta = build_state_effective_tool_call_meta(&state);
                     current_tool_call_meta.extend(canonical_tool_call_meta.clone());
