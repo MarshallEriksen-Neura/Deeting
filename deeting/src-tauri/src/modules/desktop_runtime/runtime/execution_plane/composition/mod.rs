@@ -18,7 +18,7 @@ use super::{LocalExecutionOutcome, LocalExecutionRequest};
 use crate::modules::desktop_runtime::runtime::chat_tool_runtime::apply_world_model_update_to_frame;
 use desktop_runtime_core::{
     HookDecision, HookEvent, PhaseStepType, RuntimeComponents, RuntimeComposition, RuntimeEvent,
-    RuntimeTickResult, TaskInputSource, WorldModelFrame,
+    RuntimeStopReason, RuntimeTickResult, TaskInputSource, WorldModelFrame,
 };
 use serde_json::{json, Value};
 
@@ -149,6 +149,7 @@ fn frame_resolved_status_payload(
         "execution_phase": {
             "first_committed_phase_step_type": committed_step_name,
         },
+        "stop_reason": result.stop_reason.map(RuntimeStopReason::as_str),
         "phase_policy_alignment": alignment_payload,
         "e3_readiness": {
             "metric": e3_readiness::FRAME_PHASE_ALIGNMENT_METRIC,
@@ -228,6 +229,7 @@ fn attach_runtime_result_to_outcome(
         "validation": result.validation.clone(),
         "decision": result.decision.clone(),
         "final_answer": result.final_answer.clone(),
+        "stop_reason": result.stop_reason.map(RuntimeStopReason::as_str),
     });
     let artifact = json!({
         "summary": summary,
@@ -268,6 +270,14 @@ fn attach_runtime_result_to_outcome(
             metadata_object.insert(
                 "runtime_phase_resolution".to_string(),
                 frame_resolved_payload.clone(),
+            );
+            metadata_object.insert(
+                "runtime_stop_reason".to_string(),
+                result
+                    .stop_reason
+                    .map(RuntimeStopReason::as_str)
+                    .map(|reason| Value::String(reason.to_string()))
+                    .unwrap_or(Value::Null),
             );
         }
         append_runtime_core_events(object, runtime_events);
@@ -398,6 +408,9 @@ fn runtime_core_event_payload(event: &RuntimeEvent, event_type: &str) -> Value {
         RuntimeEvent::FinalAnswerReady { reason } => {
             payload_object.insert("reason".to_string(), Value::String(reason.clone()));
         }
+        RuntimeEvent::RuntimeStopped { reason } => {
+            payload_object.insert("reason".to_string(), Value::String(reason.clone()));
+        }
     }
 
     payload
@@ -514,6 +527,7 @@ fn runtime_event_type(event: &RuntimeEvent) -> &'static str {
         RuntimeEvent::FrameRefreshed { .. } => "runtime_core.frame_refreshed",
         RuntimeEvent::InterruptionQueued { .. } => "runtime_core.interruption_queued",
         RuntimeEvent::FinalAnswerReady { .. } => "runtime_core.final_answer_ready",
+        RuntimeEvent::RuntimeStopped { .. } => "runtime_core.runtime_stopped",
     }
 }
 
@@ -639,6 +653,7 @@ mod tests {
                 reason: "allowed".to_string(),
             },
             final_answer: Some("done".to_string()),
+            stop_reason: None,
         }
     }
 
@@ -821,6 +836,31 @@ mod tests {
     }
 
     #[test]
+    fn frame_resolved_status_payload_projects_runtime_stop_reason() {
+        let frame = test_frame(
+            "verify the answer",
+            ExecutionStrategy::DirectIteration,
+            "phase:verify_final",
+        );
+        let plan = PlanArtifact::new("plan-1", frame.frame_version_id.clone());
+        let mut result = test_tick_result(frame, plan);
+        result.final_answer = None;
+        result.stop_reason = Some(RuntimeStopReason::VerificationTargetUnsatisfied);
+        let execution_policy = test_execution_policy(PhaseStepType::DirectChat, false);
+
+        let payload = frame_resolved_status_payload(&execution_policy, &result);
+
+        assert_eq!(
+            payload.pointer("/stop_reason"),
+            Some(&json!("verification_target_unsatisfied"))
+        );
+        assert_eq!(
+            payload.pointer("/final_answer_present"),
+            Some(&json!(false))
+        );
+    }
+
+    #[test]
     fn frame_resolved_status_payload_excludes_hybrid_from_overlap_samples() {
         let frame = test_frame(
             "mix direct and workflow handling",
@@ -900,6 +940,9 @@ mod tests {
             },
             RuntimeEvent::PhaseCommitted {
                 phase_id: "phase-1".to_string(),
+            },
+            RuntimeEvent::RuntimeStopped {
+                reason: "verification_target_unsatisfied".to_string(),
             },
         ];
         let execution_policy = test_execution_policy(PhaseStepType::DirectChat, false);
@@ -1036,5 +1079,19 @@ mod tests {
         assert!(hook_decision_event
             .pointer("/payload/runtime_event")
             .is_none());
+
+        let runtime_stopped_event = graph
+            .get("events")
+            .and_then(Value::as_array)
+            .and_then(|events| {
+                events.iter().find(|event| {
+                    event.get("event_type") == Some(&json!("runtime_core.runtime_stopped"))
+                })
+            })
+            .expect("runtime stopped event");
+        assert_eq!(
+            runtime_stopped_event.pointer("/payload/reason"),
+            Some(&json!("verification_target_unsatisfied"))
+        );
     }
 }

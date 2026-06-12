@@ -132,10 +132,9 @@ export default function HUD() {
              </span>
           </div>
 
-      </motion.div>
+          <HudActivityBar />
 
-      {/* 2. Activity Bar (Call Chain) */}
-      <HudActivityBar />
+      </motion.div>
 
       {/* 3. Control Center (Model Config) */}
       <AnimatePresence>

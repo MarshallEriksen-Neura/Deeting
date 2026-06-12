@@ -16,11 +16,9 @@ pub(super) fn enrich_response_with_tool_trace(
     captured_blocks: Option<&[serde_json::Value]>,
 ) -> serde_json::Value {
     let mut trace_blocks = if let Some(blocks) = captured_blocks.filter(|b| !b.is_empty()) {
-        // Use the chronological stream of blocks emitted during the agentic loop
-        // (thought -> text -> tool_call -> tool_result, per round). This preserves
-        // intermediate narrative (thought/text from middle rounds) that would
-        // otherwise be lost on reload, since tool_call_meta only covers tool calls.
-        blocks.to_vec()
+        // Live reasoning can arrive as token deltas. Persist a replay-stable
+        // snapshot so history does not reopen as many separate thought chips.
+        compact_captured_trace_blocks(blocks)
     } else if !tool_call_meta.is_empty() {
         build_local_tool_trace_blocks(tool_call_meta)
     } else {
@@ -43,10 +41,17 @@ pub(super) fn enrich_response_with_tool_trace(
         .map(str::trim)
         .filter(|v| !v.is_empty())
     {
-        let has_thought_block = trace_blocks
+        if let Some(index) = trace_blocks
             .iter()
-            .any(|block| block.get("type").and_then(|v| v.as_str()) == Some("thought"));
-        if !has_thought_block {
+            .rposition(|block| block.get("type").and_then(|v| v.as_str()) == Some("thought"))
+        {
+            if let Some(object) = trace_blocks[index].as_object_mut() {
+                object.insert(
+                    "content".to_string(),
+                    serde_json::Value::String(reasoning.to_string()),
+                );
+            }
+        } else {
             // Append the final round's reasoning AFTER the accumulated tool chain
             // rather than hoisting it to the front. This `reasoning_content` is the
             // final round's thinking, which chronologically happens *after* every
@@ -72,6 +77,63 @@ pub(super) fn enrich_response_with_tool_trace(
     }
     runtime_metrics.inject_into_response(&mut response);
     response
+}
+
+fn compact_captured_trace_blocks(blocks: &[serde_json::Value]) -> Vec<serde_json::Value> {
+    let mut compacted = Vec::with_capacity(blocks.len());
+    let mut pending_thought: Option<serde_json::Map<String, serde_json::Value>> = None;
+
+    for block in blocks {
+        let is_thought = block.get("type").and_then(|v| v.as_str()) == Some("thought");
+        if !is_thought {
+            flush_pending_thought(&mut compacted, &mut pending_thought);
+            compacted.push(block.clone());
+            continue;
+        }
+
+        let Some(content) = block
+            .get("content")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+
+        let thought = pending_thought.get_or_insert_with(|| {
+            let mut object = block.as_object().cloned().unwrap_or_default();
+            object.insert(
+                "type".to_string(),
+                serde_json::Value::String("thought".to_string()),
+            );
+            object.insert(
+                "content".to_string(),
+                serde_json::Value::String(String::new()),
+            );
+            object
+        });
+        let existing = thought
+            .get("content")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        thought.insert(
+            "content".to_string(),
+            serde_json::Value::String(format!("{}{}", existing, content)),
+        );
+    }
+
+    flush_pending_thought(&mut compacted, &mut pending_thought);
+    compacted
+}
+
+fn flush_pending_thought(
+    compacted: &mut Vec<serde_json::Value>,
+    pending_thought: &mut Option<serde_json::Map<String, serde_json::Value>>,
+) {
+    let Some(thought) = pending_thought.take() else {
+        return;
+    };
+    compacted.push(serde_json::Value::Object(thought));
 }
 
 pub(super) fn remove_terminal_text_from_trace_blocks(

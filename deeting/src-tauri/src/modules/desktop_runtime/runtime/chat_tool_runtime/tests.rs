@@ -970,6 +970,40 @@ fn enrich_response_with_tool_trace_includes_error_result_blocks() {
 }
 
 #[test]
+fn enrich_response_with_tool_trace_compacts_streamed_thought_deltas_for_history() {
+    let response = serde_json::json!({
+        "content": "final answer",
+        "reasoning_content": "final reasoning",
+    });
+    let captured_blocks = vec![
+        serde_json::json!({ "type": "thought", "content": "用" }),
+        serde_json::json!({ "type": "thought", "content": "户" }),
+        serde_json::json!({ "type": "text", "content": "intermediate" }),
+        serde_json::json!({ "type": "thought", "content": "临" }),
+        serde_json::json!({ "type": "thought", "content": "时" }),
+    ];
+    let metrics = RuntimeMetricsAccumulator::default();
+
+    let enriched =
+        enrich_response_with_tool_trace(response, &[], true, &metrics, Some(&captured_blocks));
+    let blocks = enriched
+        .get("tool_trace_blocks")
+        .and_then(serde_json::Value::as_array)
+        .expect("tool trace blocks should be present");
+
+    let thought_blocks = blocks
+        .iter()
+        .filter(|block| block.get("type").and_then(|v| v.as_str()) == Some("thought"))
+        .collect::<Vec<_>>();
+    assert_eq!(thought_blocks.len(), 2);
+    assert_eq!(thought_blocks[0]["content"], serde_json::json!("用户"));
+    assert_eq!(
+        thought_blocks[1]["content"],
+        serde_json::json!("final reasoning")
+    );
+}
+
+#[test]
 fn remove_terminal_text_from_trace_blocks_keeps_final_answer_single_owned() {
     let response = serde_json::json!({
         "content": "final answer",

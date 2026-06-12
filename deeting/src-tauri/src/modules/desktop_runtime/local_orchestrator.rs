@@ -48,9 +48,10 @@ mod retrieval;
 mod workflow;
 
 use message_utils::{
-    build_assistant_meta, build_compare_only_messages, convert_history_message_to_chat_input,
-    derive_local_finish_reason, extract_content_text, extract_response_runtime_metrics,
-    extract_summary_text, fallback_prefers_chinese, latest_tool_error_summary, AssistantMetaMode,
+    build_assistant_meta, build_compare_only_messages, build_wire_assistant_meta,
+    convert_history_message_to_chat_input, derive_local_finish_reason, extract_content_text,
+    extract_response_runtime_metrics, extract_summary_text, fallback_prefers_chinese,
+    latest_tool_error_summary, AssistantMetaMode,
 };
 #[cfg(test)]
 use model_selection::LocalConversationModelBinding;
@@ -930,7 +931,7 @@ pub async fn execute_local_orchestrated_chat(
         "role": "assistant",
         "content": response_text,
     });
-    if let Some(meta_info) = assistant_meta {
+    if let Some(meta_info) = build_wire_assistant_meta(assistant_meta.as_ref()) {
         if let Some(object) = message.as_object_mut() {
             object.insert("meta_info".to_string(), meta_info);
         }

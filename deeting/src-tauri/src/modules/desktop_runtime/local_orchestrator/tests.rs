@@ -1352,6 +1352,47 @@ fn build_assistant_meta_persists_execution_tree_summary() {
 }
 
 #[test]
+fn build_wire_assistant_meta_strips_replay_heavy_fields() {
+    let meta = build_assistant_meta(
+        vec![json!({ "type": "text", "content": "done" })],
+        "model-a",
+        "provider-model-a",
+        Some(json!({ "latency_ms": 10 })),
+        Some(json!({
+            "summary": { "final_answer": "done" },
+            "nodes": [{ "node_type": "finalize", "output_payload": "done" }],
+        })),
+        Some(json!({
+            "execution_id": "exec-1",
+        })),
+        AssistantMetaMode::Canonical,
+    )
+    .expect("assistant meta");
+
+    let wire = build_wire_assistant_meta(Some(&meta)).expect("wire meta");
+    let object = wire.as_object().expect("wire meta object");
+
+    assert_eq!(
+        object.get("model_id").and_then(Value::as_str),
+        Some("model-a")
+    );
+    assert_eq!(
+        object.get("provider_model_id").and_then(Value::as_str),
+        Some("provider-model-a")
+    );
+    assert_eq!(
+        object
+            .get("runtime_metrics")
+            .and_then(|value| value.get("latency_ms"))
+            .and_then(Value::as_i64),
+        Some(10)
+    );
+    assert!(object.get("blocks").is_none());
+    assert!(object.get("execution_graph").is_none());
+    assert!(object.get("execution_tree").is_none());
+}
+
+#[test]
 fn select_custom_task_agent_candidate_prefers_image_agent_for_image_query() {
     let profiles = vec![
         CustomTaskAgentProfile {

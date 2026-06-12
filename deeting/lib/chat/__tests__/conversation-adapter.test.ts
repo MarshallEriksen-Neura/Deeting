@@ -150,6 +150,42 @@ describe("normalizeConversationMessages", () => {
     )
   })
 
+  it("compacts persisted streamed thought chunks when replaying history", () => {
+    const messages = [
+      {
+        role: "assistant",
+        content: null,
+        turn_index: 23,
+        meta_info: {
+          blocks: [
+            { type: "thought", content: "用" },
+            { type: "thought", content: "户" },
+            { type: "thought", content: "需要确认" },
+            { type: "text", content: "对" },
+          ],
+        },
+      },
+    ]
+
+    const [message] = normalizeConversationMessages(
+      messages as unknown as Parameters<typeof normalizeConversationMessages>[0],
+      {
+        includeRoles: ["assistant"],
+      }
+    )
+
+    expect(message?.blocks).toEqual([
+      expect.objectContaining({
+        type: "thought",
+        content: "用户需要确认",
+      }),
+      expect.objectContaining({
+        type: "text",
+        content: "对",
+      }),
+    ])
+  })
+
   it("drops thought-only history blocks when no final assistant answer exists", () => {
     const messages = [
       {

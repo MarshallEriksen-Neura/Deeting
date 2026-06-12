@@ -15,6 +15,20 @@ use serde_json::json;
 
 const MAX_PHASE_ITERATIONS: usize = 8;
 
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeStopReason {
+    VerificationTargetUnsatisfied,
+}
+
+impl RuntimeStopReason {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::VerificationTargetUnsatisfied => "verification_target_unsatisfied",
+        }
+    }
+}
+
 pub struct RuntimeComponents<B, V, G, P, E, I, S> {
     pub bootstrap: B,
     pub validator: V,
@@ -333,10 +347,16 @@ where
             )?;
         }
 
+        let mut stop_reason = None;
         if final_answer.is_none() && plan.plan_status != crate::plan::PlanStatus::Completed {
-            return Err(RuntimeCoreError::InvalidState(
-                "runtime loop ended before verification target was satisfied".to_string(),
-            ));
+            let reason = RuntimeStopReason::VerificationTargetUnsatisfied;
+            plan.terminate();
+            stop_reason = Some(reason);
+            self.components
+                .event_store
+                .append_event(RuntimeEvent::RuntimeStopped {
+                    reason: reason.as_str().to_string(),
+                })?;
         }
 
         if let Some(answer) = &final_answer {
@@ -354,6 +374,7 @@ where
             validation,
             decision,
             final_answer,
+            stop_reason,
         })
     }
 
@@ -477,6 +498,7 @@ pub struct RuntimeTickResult {
     pub validation: FrameValidation,
     pub decision: HookDecision,
     pub final_answer: Option<String>,
+    pub stop_reason: Option<RuntimeStopReason>,
 }
 
 pub fn build_default_hook_registry() -> HookRegistry {
@@ -613,6 +635,25 @@ mod tests {
     }
 
     #[derive(Default)]
+    struct UnsatisfiedPhaseExecutor;
+    impl PhaseExecutor for UnsatisfiedPhaseExecutor {
+        fn execute_phase(
+            &mut self,
+            _frame: &WorldModelFrame,
+            _phase: &Phase,
+        ) -> RuntimeCoreResult<PhaseObservation> {
+            Ok(PhaseObservation {
+                observation_ref: "observation-unsatisfied".to_string(),
+                summary: "phase did not satisfy the verification target".to_string(),
+                goal_satisfied: false,
+                frame_still_valid: true,
+                hook_events: Vec::new(),
+                updated_frame: None,
+            })
+        }
+    }
+
+    #[derive(Default)]
     struct DemoInterruptionChannel;
     impl InterruptionChannel for DemoInterruptionChannel {
         fn next_interruption(&mut self) -> RuntimeCoreResult<Option<UserInterruption>> {
@@ -707,6 +748,37 @@ mod tests {
         assert_eq!(facts[0]["kind"], json!("phase_observation_summary"));
         assert_eq!(facts[0]["phase_id"], json!("phase-1"));
         assert_eq!(facts[0]["summary"], json!("phase finished"));
+    }
+
+    #[test]
+    fn runtime_terminates_when_phase_loop_ends_before_verification_is_satisfied() {
+        let components = RuntimeComponents {
+            bootstrap: DemoBootstrap::default(),
+            validator: DemoValidator::default(),
+            frame_generator: DemoFrameGenerator::default(),
+            phase_proposal_generator: DemoPhaseProposalGenerator::default(),
+            phase_executor: UnsatisfiedPhaseExecutor::default(),
+            interruptions: DemoInterruptionChannel::default(),
+            event_store: DemoEventStore::default(),
+            hook_registry: build_default_hook_registry(),
+        };
+        let mut runtime = RuntimeComposition::new(components);
+        let result = runtime
+            .tick(UserInput {
+                session_id: "session-1".to_string(),
+                task_id: "task-1".to_string(),
+                content: "build phase A".to_string(),
+                source: TaskInputSource::UserChat,
+            })
+            .expect("runtime tick should preserve terminated state");
+
+        assert_eq!(result.plan.plan_status, PlanStatus::Terminated);
+        assert_eq!(
+            result.stop_reason,
+            Some(RuntimeStopReason::VerificationTargetUnsatisfied)
+        );
+        assert!(result.final_answer.is_none());
+        assert_eq!(result.plan.committed_phases.len(), MAX_PHASE_ITERATIONS);
     }
 
     #[test]

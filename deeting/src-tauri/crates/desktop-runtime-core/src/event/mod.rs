@@ -39,4 +39,7 @@ pub enum RuntimeEvent {
     FinalAnswerReady {
         reason: String,
     },
+    RuntimeStopped {
+        reason: String,
+    },
 }

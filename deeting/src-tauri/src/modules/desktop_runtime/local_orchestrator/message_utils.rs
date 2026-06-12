@@ -72,6 +72,29 @@ pub(super) fn build_assistant_meta(
     Some(Value::Object(meta))
 }
 
+pub(super) fn build_wire_assistant_meta(assistant_meta: Option<&Value>) -> Option<Value> {
+    let object = assistant_meta.and_then(Value::as_object)?;
+    let mut meta = serde_json::Map::new();
+
+    for key in [
+        "model_id",
+        "provider_model_id",
+        "runtime_metrics",
+        "compare_candidate",
+        "persistence",
+    ] {
+        if let Some(value) = object.get(key) {
+            meta.insert(key.to_string(), value.clone());
+        }
+    }
+
+    if meta.is_empty() {
+        None
+    } else {
+        Some(Value::Object(meta))
+    }
+}
+
 pub(super) fn build_compare_only_messages(
     messages: Vec<LocalConversationHistoryMessage>,
 ) -> Result<Vec<LocalChatInputMessage>, String> {

@@ -299,6 +299,29 @@ const normalizeBlocks = (blocks: MessageBlock[], messageId: string): MessageBloc
   })
 }
 
+const compactAdjacentThoughtBlocks = (blocks: MessageBlock[]): MessageBlock[] => {
+  const compacted: MessageBlock[] = []
+
+  for (const block of blocks) {
+    const previous = compacted[compacted.length - 1]
+    if (
+      block.type === "thought" &&
+      previous?.type === "thought" &&
+      typeof previous.content === "string" &&
+      typeof block.content === "string"
+    ) {
+      compacted[compacted.length - 1] = {
+        ...previous,
+        content: `${previous.content}${block.content}`,
+      }
+      continue
+    }
+    compacted.push(block)
+  }
+
+  return compacted
+}
+
 const readFinalAnswerFromExecutionGraph = (value: unknown): string | null => {
   if (!isRecord(value)) return null
 
@@ -363,7 +386,9 @@ const resolveAssistantBlocks = (
   const finalAnswer = readAssistantFinalAnswer(metaInfo)
 
   if (isBlockArray(metaInfo?.blocks)) {
-    const blocks = canonicalizeMessageBlockOrder(normalizeBlocks(metaInfo.blocks, messageId))
+    const blocks = compactAdjacentThoughtBlocks(
+      canonicalizeMessageBlockOrder(normalizeBlocks(metaInfo.blocks, messageId))
+    )
     if (!hasRenderableBlocks(blocks)) {
       return finalAnswer ? [buildAssistantFinalTextBlock(messageId, finalAnswer)] : []
     }
