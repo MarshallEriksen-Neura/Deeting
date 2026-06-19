@@ -7,7 +7,6 @@ use crate::modules::ai_upstream::gateway_log_recorder::{
     GatewayLogEntry, GatewayUsageDetails,
 };
 use crate::modules::ai_upstream::types::LocalModelConnection;
-use crate::modules::providers::connection_cache::{CachedModelConnection, ConnectionCache};
 use crate::modules::providers::protocols::{
     build_canonical_chat_request_from_local_messages_with_reasoning,
     build_chat_request_data_from_canonical_request, infer_protocol_family,
@@ -16,7 +15,6 @@ use crate::modules::providers::request_runtime::{
     prepare_provider_request_from_canonical_request, send_prepared_json_request_with_retry,
     send_prepared_stream_request, UpstreamRetryPolicy,
 };
-use crate::modules::providers::response_processor::ResponseProcessor;
 use crate::modules::providers::streaming::ProviderStreamEvent;
 use crate::modules::providers::types::ProviderModel;
 use crate::state::AppState;
@@ -747,55 +745,19 @@ async fn request_provider_chat_completion_attempt(
     reasoning: ReasoningRequestConfig,
     trace_id: Option<&str>,
 ) -> Result<serde_json::Value, String> {
-    let provider_model_uuid = Uuid::parse_str(provider_model_id).map_err(to_string)?;
-    let model = app_state
-        .providers
-        .store
-        .get_model(&provider_model_uuid)
-        .await
-        .map_err(to_string)?
-        .ok_or_else(|| "provider model not found".to_string())?;
-    if !model.is_active {
-        return Err("provider model is inactive".to_string());
-    }
-    let instance = app_state
-        .providers
-        .store
-        .get_instance(&model.instance_id.to_string())
-        .await
-        .map_err(to_string)?
-        .ok_or_else(|| "provider instance not found".to_string())?;
-    if !instance.is_enabled {
-        return Err(format!("provider instance is disabled: {}", instance.name));
-    }
-    let connection = app_state
-        .providers
-        .store
-        .get_instance_connection(&model.instance_id.to_string())
-        .await
-        .map_err(to_string)?
-        .ok_or_else(|| "provider instance connection not found".to_string())?;
-    if connection
-        .credential_source
-        .as_deref()
-        .map(|source| source.eq_ignore_ascii_case("platform"))
-        .unwrap_or(false)
-    {
-        return Err(
-            "platform credits runtime has been disabled; switch this model instance to local credentials".to_string(),
-        );
-    }
+    use crate::modules::ai_upstream::connection_resolver::resolve_cached_model_connection;
+    use crate::modules::providers::response_processor::ResponseProcessor;
+
+    // 1. 使用连接缓存（优化：减少 DB 查询）
+    let cached = resolve_cached_model_connection(app_state, provider_model_id).await?;
+
     let effective_model = if model_id.trim().is_empty() {
-        model.model_id.clone()
+        cached.model.model_id.clone()
     } else {
         model_id.to_string()
     };
-    let preset = app_state
-        .providers
-        .store
-        .get_preset(&instance.preset_slug)
-        .await
-        .map_err(to_string)?;
+
+    // 2. 构建请求
     let canonical_request = build_canonical_chat_request_from_local_messages_with_reasoning(
         effective_model.as_str(),
         &messages,
@@ -807,36 +769,53 @@ async fn request_provider_chat_completion_attempt(
     );
     let body = build_chat_request_data_from_canonical_request(&canonical_request);
     let prepared = prepare_provider_request_from_canonical_request(
-        preset.as_ref(),
-        &instance,
-        &model,
-        connection.secret_key.as_deref(),
+        cached.preset.as_ref(),
+        &cached.instance,
+        &cached.model,
+        cached.secret_key.as_deref(),
         "chat",
         body,
         canonical_request,
         tools.as_ref(),
         trace_id,
     )?;
+
     let upstream_request_meta = serde_json::json!({
         "method": prepared.method,
         "url": prepared.display_url(),
     });
+
+    // 3. 发送请求
     let client = crate::modules::desktop_config::network::build_proxy_aware_reqwest_client(
         app_state.mcp.store.as_ref(),
     )
     .await?;
+
     let call_start = std::time::Instant::now();
     let (response, retry_count) =
         send_prepared_json_request_with_retry(&client, &prepared, UpstreamRetryPolicy::default())
             .await?;
+
     let status = response.status;
     let response_headers = response.headers.clone();
-    let latency_ms = call_start.elapsed().as_millis() as f64;
+    let latency_ms = call_start.elapsed().as_millis() as i64;
     let raw_text = response.text;
-    let raw_json = response.json;
+    let raw_json = response.json.clone();
+
+    // 4. 使用统一响应处理器（优化：减少重复代码）
+    let _processed = ResponseProcessor::process(
+        status,
+        response_headers.clone(),
+        raw_json.clone().unwrap_or_default(),
+        Some(latency_ms),
+        retry_count + 1,
+    );
+
     let success = status.is_success();
-    record_provider_model_bandit_feedback(app_state, provider_model_id, success, Some(latency_ms))
+    record_provider_model_bandit_feedback(app_state, provider_model_id, success, Some(latency_ms as f64))
         .await;
+
+    // 5. 处理错误响应
     if !success {
         let raw_usage = raw_json
             .as_ref()
@@ -847,17 +826,18 @@ async fn request_provider_chat_completion_attempt(
             raw_json.as_ref(),
             Some(&raw_usage),
         );
+
         record_gateway_log(
             app_state.mcp.store.clone(),
             GatewayLogEntry {
                 trace_id: trace_id.map(str::to_string),
-                api_key_id: Some(instance.credentials_ref.clone())
+                api_key_id: Some(cached.instance.credentials_ref.clone())
                     .filter(|value| !value.trim().is_empty()),
-                preset_id: Some(instance.preset_slug.clone())
+                preset_id: Some(cached.instance.preset_slug.clone())
                     .filter(|value| !value.trim().is_empty()),
                 model: effective_model.clone(),
                 status_code: status.as_u16() as i64,
-                duration_ms: latency_ms as i64,
+                duration_ms: latency_ms,
                 retry_count,
                 upstream_url: Some(prepared.display_url()),
                 input_tokens: raw_usage.input_tokens,
@@ -875,16 +855,20 @@ async fn request_provider_chat_completion_attempt(
                 ..Default::default()
             },
         );
+
         return Err(extract_upstream_error_message(
             status,
             raw_json.as_ref(),
             raw_text.as_str(),
         ));
     }
+
+    // 6. 处理成功响应
     let raw_ttft_ms = raw_json.as_ref().and_then(extract_ttft_ms_from_response);
     let raw_billing_amount = raw_json
         .as_ref()
         .and_then(extract_billing_amount_from_response);
+
     let raw = raw_json.ok_or_else(|| {
         format!(
             "failed to parse upstream json response (status={}): {}",
@@ -892,9 +876,11 @@ async fn request_provider_chat_completion_attempt(
             truncate_upstream_body(raw_text.as_str(), 300)
         )
     })?;
+
     let raw_usage = extract_usage_details_from_response(&raw);
     let raw_cache_details =
         extract_cache_details_from_response(&response_headers, Some(&raw), Some(&raw_usage));
+
     let transformed = app_state.providers.transformer.transform(
         prepared.template_engine.as_str(),
         Some(prepared.response_decoder.as_str()),
@@ -902,6 +888,7 @@ async fn request_provider_chat_completion_attempt(
         raw,
         status.as_u16(),
     );
+
     let transformed_usage = extract_usage_details_from_response(&transformed);
     let usage_details = transformed_usage.merged_with_fallback(&raw_usage);
     let usage_source = if transformed_usage.has_token_counts() {
@@ -911,6 +898,7 @@ async fn request_provider_chat_completion_attempt(
     } else {
         None
     };
+
     let cache_details = if raw_cache_details.cache_source.as_deref() == Some("unknown") {
         extract_cache_details_from_response(
             &response_headers,
@@ -920,26 +908,30 @@ async fn request_provider_chat_completion_attempt(
     } else {
         raw_cache_details
     };
+
     let computed_cost = calculate_token_cost(
-        &model.pricing_config,
+        &cached.model.pricing_config,
         usage_details.input_tokens,
         usage_details.output_tokens,
     )
     .unwrap_or(0.0);
+
     let reported_cost = extract_billing_amount_from_response(&transformed)
         .or(raw_billing_amount)
         .unwrap_or(computed_cost);
+
     let ttft_ms = extract_ttft_ms_from_response(&transformed).or(raw_ttft_ms);
+
     record_gateway_log(
         app_state.mcp.store.clone(),
         GatewayLogEntry {
             trace_id: trace_id.map(str::to_string),
-            api_key_id: Some(instance.credentials_ref.clone())
+            api_key_id: Some(cached.instance.credentials_ref.clone())
                 .filter(|value| !value.trim().is_empty()),
-            preset_id: Some(instance.preset_slug.clone()).filter(|value| !value.trim().is_empty()),
+            preset_id: Some(cached.instance.preset_slug.clone()).filter(|value| !value.trim().is_empty()),
             model: effective_model.clone(),
             status_code: status.as_u16() as i64,
-            duration_ms: latency_ms as i64,
+            duration_ms: latency_ms,
             ttft_ms,
             upstream_url: Some(prepared.display_url()),
             input_tokens: usage_details.input_tokens,
@@ -959,8 +951,10 @@ async fn request_provider_chat_completion_attempt(
             ..Default::default()
         },
     );
+
     let mut normalized = normalize_chat_completion_response(transformed);
-    inject_runtime_metrics(&mut normalized, latency_ms as i64, ttft_ms, retry_count + 1);
+    inject_runtime_metrics(&mut normalized, latency_ms, ttft_ms, retry_count + 1);
+
     Ok(normalized)
 }
 
