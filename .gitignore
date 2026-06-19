@@ -7,7 +7,6 @@
 security/
 __pycache__/
 .claude/
-.codex/
 .codex-*/
 .workflow/
 .specify/
@@ -30,6 +29,8 @@ target-codex-warnings/
 .understand-anything/
 datalog/
 target-codex-shell/
+.ragcode/
+.codex/
 
 backend/__pycache__
 backend/*.py[oc]
@@ -203,3 +204,11 @@ installer/node_modules
 
 installer/out
 .analysis/
+.codex/*
+!.codex/agents/
+!.codex/agents/**
+!.codex/skills/
+!.codex/skills/**
+.codex/skills/.system/**
+!.codex/prompts/
+!.codex/prompts/**

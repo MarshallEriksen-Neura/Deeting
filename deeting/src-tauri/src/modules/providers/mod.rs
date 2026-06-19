@@ -2,18 +2,21 @@ pub mod bandit_selector;
 #[cfg(test)]
 mod bandit_selector_tests;
 pub mod commands;
+pub mod connection_cache;
 pub mod embedding;
 pub mod error;
 pub mod model_guard;
 pub mod protocols;
 pub mod provider_market_file;
 pub mod request_runtime;
+pub mod response_processor;
 pub mod response_transformer;
 pub mod store;
 pub mod streaming;
 pub mod types;
 
 use crate::modules::mcp::store::McpStore;
+use crate::modules::providers::connection_cache::ConnectionCache;
 use crate::modules::providers::embedding::EmbeddingService;
 use crate::modules::providers::response_transformer::ResponseTransformer;
 use crate::modules::providers::store::ProviderStore;
@@ -24,6 +27,7 @@ pub struct ProviderState {
     pub store: Arc<ProviderStore>,
     pub embedding: EmbeddingService,
     pub transformer: ResponseTransformer,
+    pub connection_cache: ConnectionCache,
 }
 
 impl ProviderState {
@@ -48,10 +52,12 @@ impl ProviderState {
             _ => EmbeddingService::new(store.clone(), None),
         };
         let transformer = ResponseTransformer::new();
+        let connection_cache = ConnectionCache::new();
         Ok(Self {
             store,
             embedding,
             transformer,
+            connection_cache,
         })
     }
 
@@ -86,10 +92,12 @@ impl ProviderState {
             _ => EmbeddingService::new(store.clone(), None),
         };
         let transformer = ResponseTransformer::new();
+        let connection_cache = ConnectionCache::new();
         Ok(Self {
             store,
             embedding,
             transformer,
+            connection_cache,
         })
     }
 }

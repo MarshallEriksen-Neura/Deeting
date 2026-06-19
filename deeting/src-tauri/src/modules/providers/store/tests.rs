@@ -917,6 +917,96 @@ async fn list_active_models_excludes_disabled_instances() {
 }
 
 #[tokio::test]
+async fn delete_instance_removes_models_bandit_arms_and_model_bindings() {
+    let store = init_store().await;
+    let instance_id = insert_instance(&store).await;
+
+    store
+        .quick_add_models(&instance_id, vec!["mimo-v2.5-pro".to_string()], None)
+        .await
+        .expect("quick add model");
+    let models = store
+        .list_models(Some(instance_id.clone()), None)
+        .await
+        .expect("list models");
+    let provider_model_id = models[0].id.to_string();
+    let now = now_rfc3339().expect("time");
+
+    store
+        .record_bandit_feedback(crate::modules::providers::types::BanditFeedbackRequest {
+            scene: None,
+            arm_id: provider_model_id.clone(),
+            success: false,
+            latency_ms: Some(100.0),
+            cost: None,
+            reward: Some(0.0),
+            routing_config: None,
+            reward_metric_type: None,
+        })
+        .await
+        .expect("record bandit feedback");
+    sqlx::query(
+        "INSERT INTO user_secretary (id, user_id, name, model_name, provider_model_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind("test-user")
+    .bind("secretary")
+    .bind("mimo-v2.5-pro")
+    .bind(&provider_model_id)
+    .bind(&now)
+    .bind(&now)
+    .execute(&store.pool)
+    .await
+    .expect("insert secretary binding");
+    sqlx::query(
+        "INSERT INTO user_embedding_config (id, user_id, provider_model_id, multimodal_provider_model_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind("test-user")
+    .bind(&provider_model_id)
+    .bind(&provider_model_id)
+    .bind(&now)
+    .bind(&now)
+    .execute(&store.pool)
+    .await
+    .expect("insert embedding binding");
+
+    store
+        .delete_instance(&instance_id)
+        .await
+        .expect("delete instance");
+
+    let remaining_models = store
+        .list_models(Some(instance_id), None)
+        .await
+        .expect("list remaining models");
+    let remaining_arm = store
+        .get_bandit_arm_state(BANDIT_DEFAULT_SCENE, &provider_model_id)
+        .await
+        .expect("get bandit arm");
+    let secretary_binding: Option<String> =
+        sqlx::query_scalar("SELECT provider_model_id FROM user_secretary WHERE user_id = ?")
+            .bind("test-user")
+            .fetch_one(&store.pool)
+            .await
+            .expect("load secretary binding");
+    let embedding_binding: (Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT provider_model_id, multimodal_provider_model_id FROM user_embedding_config WHERE user_id = ?",
+    )
+    .bind("test-user")
+    .fetch_one(&store.pool)
+    .await
+    .expect("load embedding binding");
+
+    assert!(remaining_models.is_empty());
+    assert!(remaining_arm.is_none());
+    assert!(secretary_binding.is_none());
+    assert!(embedding_binding.0.is_none());
+    assert!(embedding_binding.1.is_none());
+}
+#[tokio::test]
 async fn quick_add_models_respects_forced_capability_alias() {
     let store = init_store().await;
     let instance_id = insert_instance(&store).await;

@@ -866,13 +866,13 @@ async fn continue_local_chat_complete_with_tools(
                         captured_world_model_update: state.captured_world_model_update.clone(),
                         world_model_frame: state.world_model_frame.clone(),
                         response: attach_runtime_transition_events(
-                            enrich_response_with_tool_trace(
+                            remove_terminal_text_from_trace_blocks(enrich_response_with_tool_trace(
                                 response_without_internal_tool_calls,
                                 &current_tool_call_meta,
                                 state.realtime_emitter.emitted_any,
                                 &state.runtime_metrics,
                                 Some(state.realtime_emitter.captured_render_blocks()),
-                            ),
+                            )),
                             &state.runtime_transition_blocks,
                         ),
                     });
@@ -886,13 +886,13 @@ async fn continue_local_chat_complete_with_tools(
                     &results,
                 );
                 state.last_response = Some(attach_runtime_transition_events(
-                    enrich_response_with_tool_trace(
+                    remove_terminal_text_from_trace_blocks(enrich_response_with_tool_trace(
                         response_without_internal_tool_calls,
                         &canonical_tool_call_meta,
                         state.realtime_emitter.emitted_any,
                         &state.runtime_metrics,
                         None,
-                    ),
+                    )),
                     &state.runtime_transition_blocks,
                 ));
             }
@@ -978,13 +978,13 @@ async fn continue_local_chat_complete_with_tools(
                     captured_world_model_update: state.captured_world_model_update.clone(),
                     world_model_frame: state.world_model_frame.clone(),
                     response: attach_runtime_transition_events(
-                        enrich_response_with_tool_trace(
+                        remove_terminal_text_from_trace_blocks(enrich_response_with_tool_trace(
                             interrupted,
                             &current_tool_call_meta,
                             state.realtime_emitter.emitted_any,
                             &state.runtime_metrics,
                             Some(state.realtime_emitter.captured_render_blocks()),
-                        ),
+                        )),
                         &state.runtime_transition_blocks,
                     ),
                 });

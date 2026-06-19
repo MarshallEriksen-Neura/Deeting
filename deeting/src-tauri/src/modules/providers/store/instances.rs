@@ -231,16 +231,55 @@ impl ProviderStore {
             .bind(instance_id)
             .fetch_all(&self.pool)
             .await?;
+        let models = sqlx::query("SELECT id FROM provider_models WHERE instance_id = ?")
+            .bind(instance_id)
+            .fetch_all(&self.pool)
+            .await?;
+        let model_ids: Vec<String> = models
+            .into_iter()
+            .filter_map(|row| row.try_get::<String, _>("id").ok())
+            .collect();
 
         for row in creds {
             let cred_id: String = row.try_get("id")?;
             let _ = self.delete_secret_in_keychain(&cred_id);
         }
 
+        let mut tx = self.begin_write().await?;
+        for model_id in &model_ids {
+            sqlx::query("DELETE FROM bandit_arm_state WHERE arm_id = ? OR provider_model_id = ?")
+                .bind(model_id)
+                .bind(model_id)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query(
+                "UPDATE user_secretary SET provider_model_id = NULL WHERE provider_model_id = ?",
+            )
+            .bind(model_id)
+            .execute(&mut *tx)
+            .await?;
+            sqlx::query(
+                "UPDATE user_embedding_config
+                 SET provider_model_id = CASE WHEN provider_model_id = ? THEN NULL ELSE provider_model_id END,
+                     multimodal_provider_model_id = CASE WHEN multimodal_provider_model_id = ? THEN NULL ELSE multimodal_provider_model_id END
+                 WHERE provider_model_id = ? OR multimodal_provider_model_id = ?",
+            )
+            .bind(model_id)
+            .bind(model_id)
+            .bind(model_id)
+            .bind(model_id)
+            .execute(&mut *tx)
+            .await?;
+        }
+        sqlx::query("DELETE FROM provider_models WHERE instance_id = ?")
+            .bind(instance_id)
+            .execute(&mut *tx)
+            .await?;
         sqlx::query("DELETE FROM provider_instances WHERE id = ?")
             .bind(instance_id)
-            .execute(&self.write_pool)
+            .execute(&mut *tx)
             .await?;
+        tx.commit().await?;
         Ok(())
     }
 

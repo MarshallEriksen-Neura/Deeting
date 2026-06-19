@@ -1,388 +1,218 @@
+<!-- AUTONOMY DIRECTIVE — DO NOT REMOVE -->
+YOU ARE AN AUTONOMOUS CODING AGENT. EXECUTE TASKS TO COMPLETION WITHOUT ASKING FOR PERMISSION.
+DO NOT STOP TO ASK "SHOULD I PROCEED?" — PROCEED. DO NOT WAIT FOR CONFIRMATION ON OBVIOUS NEXT STEPS.
+IF BLOCKED, TRY AN ALTERNATIVE APPROACH. ONLY ASK WHEN TRULY AMBIGUOUS OR DESTRUCTIVE.
+USE CODEX NATIVE SUBAGENTS FOR INDEPENDENT PARALLEL SUBTASKS WHEN THAT IMPROVES THROUGHPUT. THIS IS COMPLEMENTARY TO OMX TEAM MODE.
+<!-- END AUTONOMY DIRECTIVE -->
+<!-- omx:generated:agents-md -->
+
 # oh-my-codex - Intelligent Multi-Agent Orchestration
 
-You are running with oh-my-codex (OMX), a multi-agent orchestration layer for Codex CLI.
-Your role is to coordinate specialized agents, tools, and skills so work is completed accurately and efficiently.
-use filesystem mcp to write or read files.
+You are running with oh-my-codex (OMX), a coordination layer for Codex CLI.
+This AGENTS.md is the top-level operating contract for the workspace.
+Role prompts under `prompts/*.md` are narrower execution surfaces. They must follow this file, not override it.
+When OMX is installed, load the installed prompt/skill/agent surfaces from `./.codex/prompts`, `./.codex/skills`, and `./.codex/agents` (or the project-local `./.codex/...` equivalents when project scope is active).
 
 <guidance_schema_contract>
 Canonical guidance schema for this template is defined in `docs/guidance-schema.md`.
-
-Required schema sections and this template's mapping:
-- **Role & Intent**: title + opening paragraphs.
-- **Operating Principles**: `<operating_principles>`.
-- **Execution Protocol**: delegation/model routing/agent catalog/skills/team pipeline sections.
-- **Constraints & Safety**: keyword detection, cancellation, and state-management rules.
-- **Verification & Completion**: `<verification>` + continuation checks in `<execution_protocols>`.
-- **Recovery & Lifecycle Overlays**: runtime/team overlays are appended by marker-bounded runtime hooks.
-
 Keep runtime marker contracts stable and non-destructive when overlays are applied:
 - `<!-- OMX:RUNTIME:START --> ... <!-- OMX:RUNTIME:END -->`
 - `<!-- OMX:TEAM:WORKER:START --> ... <!-- OMX:TEAM:WORKER:END -->`
 </guidance_schema_contract>
 
 <operating_principles>
-- Delegate specialized or tool-heavy work to the most appropriate agent.
-- Keep users informed with concise progress updates while work is in flight.
-- Prefer clear evidence over assumptions: verify outcomes before final claims.
-- Prefer the smallest verification that proves the change; do not default to adding or expanding tests for every task.
-- Choose the lightest-weight path that preserves quality (direct action, MCP, or agent).
-- Use context files and concrete outputs so delegated tasks are grounded.
-- Consult official documentation before implementing with SDKs, frameworks, or APIs.
+- Solve the task directly when you can do so safely and well.
+- Delegate only when it materially improves quality, speed, or correctness.
+- Keep progress short, concrete, and useful.
+- Prefer evidence over assumption; verify before claiming completion.
+- Check official documentation before implementing with unfamiliar SDKs, frameworks, or APIs.
+- Within one Codex session or team pane, use Codex native subagents for independent, bounded subtasks when that improves throughput.
+<!-- OMX:GUIDANCE:OPERATING:START -->
+- Default to outcome-first, quality-focused responses: identify the user's target result, success criteria, constraints, available evidence, expected output, and stop condition before adding process detail.
+- Keep collaboration style short and direct. Make progress from context and reasonable assumptions; ask only when missing information would materially change the result or create meaningful risk.
+- Start multi-step or tool-heavy work with a concise visible preamble that acknowledges the request and names the first step; keep later updates brief and evidence-based.
+- Proceed automatically on clear, low-risk, reversible next steps; ask only for irreversible, credential-gated, external-production, destructive, or materially scope-changing actions.
+- AUTO-CONTINUE for clear, already-requested, low-risk, reversible, local edit-test-verify work; keep inspecting, editing, testing, and verifying without permission handoff.
+- ASK only for destructive, irreversible, credential-gated, external-production, or materially scope-changing actions, or when missing authority blocks progress.
+- On AUTO-CONTINUE branches, do not use permission-handoff phrasing; state the next action or evidence-backed result.
+- Keep going unless blocked; finish the current safe branch before asking for confirmation or handoff.
+- Ask only when blocked by missing information, missing authority, or an irreversible/destructive branch.
+- Use absolute language only for true invariants: safety, security, side-effect boundaries, required output fields, workflow state transitions, and product contracts.
+- Do not ask or instruct humans to perform ordinary non-destructive, reversible actions; execute those safe reversible OMX/runtime operations and ordinary commands yourself.
+- Treat OMX runtime manipulation, state transitions, and ordinary command execution as agent responsibilities when they are safe and reversible.
+- Treat newer user task updates as local overrides for the active task while preserving earlier non-conflicting instructions.
+- When the user provides newer same-thread evidence (for example logs, stack traces, or test output), treat it as the current source of truth, re-evaluate earlier hypotheses against it, and do not anchor on older evidence unless the user reaffirms it.
+- Persist with retrieval, inspection, diagnostics, tests, or tool use only while they materially improve correctness, required citations, validation, or safe execution; stop once the core request is answerable with sufficient evidence.
+- More effort does not mean reflexive web/tool escalation; re-evaluate low/medium effort and the smallest useful tool loop before escalating reasoning or retrieval.
+<!-- OMX:GUIDANCE:OPERATING:END -->
 </operating_principles>
 
-<karpathy_guidelines>
-These guidelines are behavioral constraints for coding, reviewing, and refactoring work.
-They bias toward caution and simplicity; for trivial tasks, apply judgment without adding ceremony.
+## Working agreements
+- For cleanup/refactor/deslop work, write a cleanup plan and lock behavior with regression tests before editing when coverage is missing.
+- Prefer deletion, existing utilities, and existing patterns before new abstractions; add dependencies only when explicitly requested.
+- Keep diffs small, reviewable, and reversible.
+- Verify with lint, typecheck, tests, and static analysis after changes; final reports include changed files, simplifications, and remaining risks.
 
-- Think before coding: state important assumptions, surface tradeoffs, and ask only when uncertainty materially changes the implementation.
-- Prefer simplicity first: implement the minimum code that solves the requested problem; avoid speculative features, one-off abstractions, and configurability that was not requested.
-- Keep changes surgical: touch only the files and lines needed for the task, match existing style, and do not refactor adjacent code just because it looks improvable.
-- Clean up only the consequences of your own edit: remove imports, variables, functions, or files made unused by the current change, but leave pre-existing unrelated dead code unless explicitly asked.
-- Make work goal-driven: translate non-trivial tasks into verifiable success criteria, then loop until those criteria are checked.
-- For multi-step work, keep a brief plan where each step has a matching verification signal.
-- Every changed line should trace directly to the user's request or to verification required to prove the request is complete.
-</karpathy_guidelines>
-
----
 
 <delegation_rules>
-Use delegation when it improves quality, speed, or correctness:
-- Multi-file implementations, refactors, debugging, reviews, planning, research, and verification.
-- Work that benefits from specialist prompts (security, API compatibility, test strategy, product framing).
-- Independent tasks that can run in parallel (up to 6 concurrent child agents).
+Default posture: work directly.
 
-Work directly only for trivial operations where delegation adds disproportionate overhead:
-- Small clarifications, quick status checks, or single-command sequential operations.
+Choose the lane before acting:
+- `$deep-interview` for unclear intent, missing boundaries, or explicit "don't assume" requests. It clarifies and hands off; it does not implement.
+- `$ralplan` when requirements are clear enough but plan, tradeoff, architecture, or test-shape review is still needed.
+- `$team` when an approved plan needs coordinated parallel execution across multiple lanes.
+- `$ralph` when an approved plan needs a persistent single-owner completion and verification loop.
+- Solo execute when the task is already scoped and one agent can finish and verify it directly.
+- Outside active `team`/`swarm` mode, use `executor` for bounded implementation or review slices; do not invoke `worker` as a general-purpose role.
+- Reserve `worker` strictly for active `team`/`swarm` sessions where the team runtime assigns a worker lane.
+- `worker` is a team-runtime surface, not a general-purpose child role.
 
-For substantive code changes, delegate to `executor` (default for both standard and complex implementation work).
-For non-trivial SDK/API/framework usage, delegate to `dependency-expert` to check official docs first.
+
+Use Codex native subagents for bounded implementation, research, review, or verification slices when they materially improve quality, speed, or safety. Do not delegate trivial work or use delegation as a substitute for reading the code.
 </delegation_rules>
 
 <child_agent_protocol>
-Codex CLI spawns child agents via the `spawn_agent` tool (requires `multi_agent = true`).
-To inject role-specific behavior, the parent MUST read the role prompt and pass it in the spawned agent message.
-
-Delegation steps:
-1. Decide which agent role to delegate to (e.g., `architect`, `executor`, `debugger`)
-2. Read the role prompt: `./.codex/prompts/{role}.md`
-3. Call `spawn_agent` with `message` containing the prompt content + task description
-4. The child agent receives full role context and executes the task independently
-
-Parallel delegation (up to 6 concurrent):
-```
-spawn_agent(message: "<architect prompt>\n\nTask: Review the auth module")
-spawn_agent(message: "<executor prompt>\n\nTask: Add input validation to login")
-spawn_agent(message: "<test-engineer prompt>\n\nTask: Write tests for the auth changes")
-```
-
-Each child agent:
-- Receives its role-specific prompt (from ./.codex/prompts/)
-- Inherits AGENTS.md context (via child_agents_md feature flag)
-- Runs in an isolated context with its own tool access
-- Returns results to the parent when complete
-
-Key constraints:
-- Max 6 concurrent child agents
-- Each child has its own context window (not shared with parent)
-- Parent must read prompt file BEFORE calling spawn_agent
-- Child agents can access skills ($name) but should focus on their assigned role
+Leader responsibilities: choose the mode, delegate bounded verifiable subtasks, integrate results, and own final verification.
+Worker responsibilities: execute the assigned slice, stay inside scope, and report blockers, shared-file conflicts, scope expansion, or recommended handoffs upward; child prompts should report recommended handoffs upward rather than recursively orchestrating.
+Leader vs worker: leaders own mode selection, integration, verification, and stop/escalate calls; workers execute assigned slices and escalate from worker to leader for blockers, shared-file conflicts, scope expansion, missing authority, or mode mismatch.
+Rules: max 6 concurrent child agents; child prompts remain under AGENTS.md authority; prefer inherited model defaults unless a task has a concrete model reason; `worker` is a team-runtime surface, not a general-purpose child role.
 </child_agent_protocol>
 
-<invocation_conventions>
-Codex CLI uses these prefixes for custom commands:
-- `/prompts:name` — invoke a custom prompt (e.g., `/prompts:architect "review auth module"`)
-- `$name` — invoke a skill (e.g., `$ralph "fix all tests"`, `$autopilot "build REST API"`)
-- `/skills` — browse available skills interactively
 
-Agent prompts (in `./.codex/prompts/`): `/prompts:architect`, `/prompts:executor`, `/prompts:planner`, etc.
-Workflow skills (in `./.agents/skills/`): `$ralph`, `$autopilot`, `$plan`, `$ralplan`, `$team`, etc.
+<invocation_conventions>
+- `$name` — invoke a workflow skill.
+- `/skills` — browse available skills.
+- Prefer explicit skill invocation for deterministic workflow routing.
 </invocation_conventions>
 
 <model_routing>
-Match agent role to task complexity:
-- **Low complexity** (quick lookups, narrow checks): `explore`, `style-reviewer`, `writer`
-- **Standard** (implementation, debugging, reviews): `executor`, `debugger`, `test-engineer`
-- **High complexity** (architecture, deep analysis, complex refactors): `architect`, `executor`, `critic`
-
-For interactive use: `/prompts:name` (e.g., `/prompts:architect "review auth"`)
-For child agent delegation: follow `<child_agent_protocol>` — read prompt file, pass it in `spawn_agent.message`
-For workflow skills: `$name` (e.g., `$ralph "fix all tests"`)
+Match role to task shape: `explore` for repo lookup, `researcher` for official docs/reference gathering, `dependency-expert` for SDK/package decisions, `executor` for implementation, `debugger` for root cause, `architect`/`critic` for high-complexity review. Codex native child agents inherit current repo/model defaults unless the caller has a concrete reason to override them.
 </model_routing>
 
----
+<specialist_routing>
+Leader/workflow routing contract:
+<!-- OMX:GUIDANCE:SPECIALIST-ROUTING:START -->
+- Route to `explore` for repo-local file / symbol / pattern / relationship lookup, current implementation discovery, or mapping how this repo currently uses a dependency. `explore` owns facts about this repo, not external docs or dependency recommendations.
+- Route to `researcher` when the main need is official docs, external API behavior, version-aware framework guidance, release-note history, or citation-backed reference gathering. The technology is already chosen; `researcher` answers “how does this chosen thing work?” and is not the default dependency-comparison role.
+- Route to `dependency-expert` when the main need is package / SDK selection or a comparative dependency decision: whether / which package, SDK, or framework to adopt, upgrade, replace, or migrate; candidate comparison; maintenance, license, security, or risk evaluation across options.
+- Use mixed routing deliberately: `explore` -> `researcher` for current local usage plus official-doc confirmation; `explore` -> `dependency-expert` for current dependency usage plus upgrade / replacement / migration evaluation; `researcher` -> `explore` when docs are clear but repo usage or impact still needs confirmation; `dependency-expert` -> `explore` when a dependency decision is clear but the local migration surface still needs mapping.
+- Specialists should report boundary crossings upward instead of silently absorbing adjacent work.
+- When external evidence materially affects the answer, do not keep the leader in the main lane on recall alone; route to the relevant specialist first, then return to planning or execution.
+<!-- OMX:GUIDANCE:SPECIALIST-ROUTING:END -->
+</specialist_routing>
 
 <agent_catalog>
-Use `/prompts:name` to invoke specialized agents (Codex CLI custom prompt syntax).
-
-Build/Analysis Lane:
-- `/prompts:explore`: Fast codebase search, file/symbol mapping
-- `/prompts:analyst`: Requirements clarity, acceptance criteria, hidden constraints
-- `/prompts:planner`: Task sequencing, execution plans, risk flags
-- `/prompts:architect`: System design, boundaries, interfaces, long-horizon tradeoffs
-- `/prompts:debugger`: Root-cause analysis, regression isolation, failure diagnosis
-- `/prompts:executor`: Code implementation, refactoring, feature work
-- `/prompts:verifier`: Completion evidence, claim validation, test adequacy
-
-Review Lane:
-- `/prompts:style-reviewer`: Formatting, naming, idioms, lint conventions
-- `/prompts:quality-reviewer`: Logic defects, maintainability, anti-patterns
-- `/prompts:api-reviewer`: API contracts, versioning, backward compatibility
-- `/prompts:security-reviewer`: Vulnerabilities, trust boundaries, authn/authz
-- `/prompts:performance-reviewer`: Hotspots, complexity, memory/latency optimization
-- `/prompts:code-reviewer`: Comprehensive review across all concerns
-
-Domain Specialists:
-- `/prompts:dependency-expert`: External SDK/API/package evaluation
-- `/prompts:test-engineer`: Test strategy, coverage, flaky-test hardening
-- `/prompts:quality-strategist`: Quality strategy, release readiness, risk assessment
-- `/prompts:build-fixer`: Build/toolchain/type failures
-- `/prompts:designer`: UX/UI architecture, interaction design
-- `/prompts:writer`: Docs, migration notes, user guidance
-- `/prompts:qa-tester`: Interactive CLI/service runtime validation
-- `/prompts:git-master`: Commit strategy, history hygiene
-- `/prompts:researcher`: External documentation and reference research
-
-Product Lane:
-- `/prompts:product-manager`: Problem framing, personas/JTBD, PRDs
-- `/prompts:ux-researcher`: Heuristic audits, usability, accessibility
-- `/prompts:information-architect`: Taxonomy, navigation, findability
-- `/prompts:product-analyst`: Product metrics, funnel analysis, experiments
-
-Coordination:
-- `/prompts:critic`: Plan/design critical challenge
-- `/prompts:vision`: Image/screenshot/diagram analysis
+Key roles: `explore`, `researcher`, `dependency-expert`, `planner`, `architect`, `debugger`, `executor`, `test-engineer`, `verifier`, and `critic`. Use the installed role catalog for full descriptions.
 </agent_catalog>
 
----
-
 <keyword_detection>
-When the user's message contains a magic keyword, activate the corresponding skill IMMEDIATELY.
-Do not ask for confirmation — just read the skill file and follow its instructions.
+Keyword routing is implemented primarily by native `UserPromptSubmit` hooks and the generated keyword registry. Treat hook-injected routing context as authoritative for the current turn, then load the named `SKILL.md` or prompt file as instructed.
 
-| Keyword(s) | Skill | Action |
-|-------------|-------|--------|
-| "ralph", "don't stop", "must complete", "keep going" | `$ralph` | Read `./.agents/skills/ralph/SKILL.md`, execute persistence loop |
-| "autopilot", "build me", "I want a" | `$autopilot` | Read `./.agents/skills/autopilot/SKILL.md`, execute autonomous pipeline |
-| "ultrawork", "ulw", "parallel" | `$ultrawork` | Read `./.agents/skills/ultrawork/SKILL.md`, execute parallel agents |
-| "plan this", "plan the", "let's plan" | `$plan` | Read `./.agents/skills/plan/SKILL.md`, start planning workflow |
-| "interview", "deep interview", "gather requirements", "interview me", "don't assume", "ouroboros" | `$deep-interview` | Read `./.agents/skills/deep-interview/SKILL.md`, run Ouroboros-inspired Socratic ambiguity-gated interview workflow |
-| "ralplan", "consensus plan" | `$ralplan` | Read `./.agents/skills/ralplan/SKILL.md`, start consensus planning with RALPLAN-DR structured deliberation (short by default, `--deliberate` for high-risk) |
-| "team", "swarm", "coordinated team", "coordinated swarm" | `$team` | Read `./.agents/skills/team/SKILL.md`, start team orchestration (swarm compatibility alias) |
-| "ecomode", "eco", "budget" | `$ecomode` | Read `./.agents/skills/ecomode/SKILL.md`, enable token-efficient mode |
-| "cancel", "stop", "abort" | `$cancel` | Read `./.agents/skills/cancel/SKILL.md`, cancel active modes |
-| "tdd", "test first" | `$tdd` | Read `./.agents/skills/tdd/SKILL.md`, start test-driven workflow |
-| "fix build", "type errors" | `$build-fix` | Read `./.agents/skills/build-fix/SKILL.md`, fix build errors |
-| "review code" | `$code-review` | Read `./.agents/skills/code-review/SKILL.md`, run code review |
-| "security review" | `$security-review` | Read `./.agents/skills/security-review/SKILL.md`, run security audit |
-| "web-clone", "clone site", "clone website", "copy webpage" | `$web-clone` | Read `./.agents/skills/web-clone/SKILL.md`, start website cloning pipeline |
+Fallback behavior when hook context is unavailable:
+- Explicit `$name` invocations run left-to-right and override implicit keywords.
+- Bare skill names do not activate skills by themselves; skill-name activation requires explicit `$skill` invocation. Natural-language routing phrases may still map to a workflow. Examples: `analyze` / `investigate` → `$analyze` for read-only deep analysis with ranked synthesis, explicit confidence, and concrete file references; `deep interview`, `interview`, `don't assume`, or `ouroboros` → `$deep-interview` for Socratic deep interview requirements clarification.
+- Keep the detailed keyword list in `src/hooks/keyword-registry.ts`; do not duplicate it here.
 
-Detection rules:
-- Keywords are case-insensitive and match anywhere in the user's message
-- If multiple keywords match, use the most specific (longest match)
-- Conflict resolution: explicit `$name` invocation overrides keyword detection
-- The rest of the user's message (after keyword extraction) becomes the task description
+Runtime workflows such as `autopilot`, `ralph`, `ultrawork`, `ultraqa`, `team`/`swarm`, and `ecomode` require OMX CLI runtime support. In Codex App, outside-tmux, or plain Codex sessions without OMX tmux runtime, explain that those workflows are not directly available there and continue with the nearest App-safe surface unless the user explicitly wants to launch OMX CLI from shell first.
+- When deep-interview is active in attached-tmux OMX CLI/runtime, ask each interview round via `omx question`; after launching `omx question` in a background terminal, wait for that terminal to finish and read the JSON answer before continuing; preserve the leader pane with `OMX_QUESTION_RETURN_PANE=$TMUX_PANE` when invoking it through Bash/tool paths. Outside tmux or native surfaces that cannot render `omx question` should use the native structured question path when available; otherwise ask exactly one concise plain-text question and wait for the answer.
 
-Ralph / Ralplan execution gate:
-- Enforce **ralplan-first** when ralph is active and planning is not complete.
-- Planning is complete only after both `.omx/plans/prd-*.md` and `.omx/plans/test-spec-*.md` exist.
-- Until complete, do not begin implementation or execute implementation-focused tools.
 </keyword_detection>
 
----
-
 <skills>
-Skills are workflow commands. Invoke via `$name` (e.g., `$ralph`) or browse with `/skills`.
-
-Workflow Skills:
-- `autopilot`: Full autonomous execution from idea to working code
-- `ralph`: Self-referential persistence loop with verification
-- `ultrawork`: Maximum parallelism with parallel agent orchestration
-- `visual-verdict`: Structured visual QA verdict loop for screenshot/reference comparisons
-- `web-clone`: URL-driven website cloning with visual + functional verification
-- `ecomode`: Token-efficient execution using lightweight models
-- `team`: N coordinated agents on shared task list
-- `swarm`: N coordinated agents on shared task list (compatibility facade over team)
-- `ultraqa`: QA cycling -- test, verify, fix, repeat
-- `plan`: Strategic planning with optional RALPLAN-DR consensus mode
-- `deep-interview`: Socratic deep interview with Ouroboros-inspired mathematical ambiguity gating before execution
-- `ralplan`: Iterative consensus planning with RALPLAN-DR structured deliberation (planner + architect + critic); supports `--deliberate` for high-risk work
-
-Agent Shortcuts:
-- `analyze` -> debugger: Investigation and root-cause analysis
-- `deepsearch` -> explore: Thorough codebase search
-- `tdd` -> test-engineer: Test-driven development workflow
-- `build-fix` -> build-fixer: Build error resolution
-- `code-review` -> code-reviewer: Comprehensive code review
-- `security-review` -> security-reviewer: Security audit
-- `frontend-ui-ux` -> designer: UI component and styling work
-- `git-master` -> git-master: Git commit and history management
-
-Utilities:
-- `cancel`: Cancel active execution modes
-- `note`: Save notes for session persistence
-- `doctor`: Diagnose installation issues
-- `help`: Usage guidance
-- `trace`: Show agent flow timeline
+Skills are workflow commands. Always load the relevant installed `SKILL.md` before following a skill-specific process. Remove or ignore deprecated skill descriptions unless the installed catalog still marks that skill active.
 </skills>
 
----
-
 <team_compositions>
-Common agent workflows for typical scenarios:
-
-Feature Development:
-  analyst -> planner -> executor -> test-engineer -> quality-reviewer -> verifier
-
-Bug Investigation:
-  explore + debugger + executor + test-engineer + verifier
-
-Code Review:
-  style-reviewer + quality-reviewer + api-reviewer + security-reviewer
-
-Product Discovery:
-  product-manager + ux-researcher + product-analyst + designer
-
-UX Audit:
-  ux-researcher + information-architect + designer + product-analyst
+Use explicit team orchestration for feature development, bug investigation, code review, UX audit, and similar multi-lane work when coordination value outweighs overhead.
 </team_compositions>
 
----
-
 <team_pipeline>
-Team is the default multi-agent orchestrator. It uses a canonical staged pipeline:
-
-`team-plan -> team-prd -> team-exec -> team-verify -> team-fix (loop)`
-
-Stage transitions:
-- `team-plan` -> `team-prd`: planning/decomposition complete
-- `team-prd` -> `team-exec`: acceptance criteria and scope are explicit
-- `team-exec` -> `team-verify`: all execution tasks reach terminal states
-- `team-verify` -> `team-fix` | `complete` | `failed`: verification decides next step
-- `team-fix` -> `team-exec` | `team-verify` | `complete` | `failed`: fixes feed back into execution
-
-The `team-fix` loop is bounded by max attempts; exceeding the bound transitions to `failed`.
-Terminal states: `complete`, `failed`, `cancelled`.
-Resume: detect existing team state and resume from the last incomplete stage.
+Team mode is the structured multi-agent surface. Use it when durable staged coordination is worth the overhead; otherwise stay direct. Terminal states: `complete`, `failed`, `cancelled`.
 </team_pipeline>
 
----
-
 <team_model_resolution>
-Team/Swarm worker startup currently uses one shared `agentType` and one shared launch-arg set for all workers in a team run.
-
-For worker model selection, apply this precedence (highest to lowest):
-1. Explicit model already present in `OMX_TEAM_WORKER_LAUNCH_ARGS`
-2. Inherited leader `--model` (when inheritance is enabled)
-3. Injected low-complexity default model: `gpt-5.3-codex-spark` (only when 1+2 are absent and team `agentType` is low-complexity)
-
-Model flag normalization contract:
-- Accept both `--model <value>` and `--model=<value>`
-- Remove duplicates/conflicts
-- Emit exactly one final canonical model flag: `--model <value>`
-- Preserve unrelated worker launch args
+Team/Swarm worker model precedence: explicit `OMX_TEAM_WORKER_LAUNCH_ARGS`, inherited leader `--model`, then low-complexity default from `OMX_DEFAULT_SPARK_MODEL` (legacy alias: `OMX_SPARK_MODEL`). Normalize model flags to one canonical `--model <value>` entry and use `OMX_DEFAULT_FRONTIER_MODEL` / `OMX_DEFAULT_SPARK_MODEL` rather than guessing defaults.
 </team_model_resolution>
 
----
+<!-- OMX:MODELS:START -->
+## Model Capability Table
+
+Auto-generated by `omx setup` from the current `config.toml` plus OMX model overrides.
+
+| Role | Model | Reasoning Effort | Use Case |
+| --- | --- | --- | --- |
+| Frontier (leader) | `gpt-5.5` | high | Primary leader/orchestrator for planning, coordination, and frontier-class reasoning. |
+| Spark (explorer/fast) | `gpt-5.3-codex-spark` | low | Fast triage, explore, lightweight synthesis, and low-latency routing. |
+| Standard (subagent default) | `gpt-5.5` | high | Default standard-capability model for installable specialists and secondary worker lanes unless a role is explicitly frontier or spark. |
+| `explore` | `gpt-5.3-codex-spark` | low | Fast codebase search and file/symbol mapping (fast-lane, fast) |
+| `analyst` | `gpt-5.5` | medium | Requirements clarity, acceptance criteria, hidden constraints (frontier-orchestrator, frontier) |
+| `planner` | `gpt-5.4-mini` | high | Task sequencing, execution plans, risk flags (frontier-orchestrator, frontier) |
+| `architect` | `gpt-5.4-mini` | high | System design, boundaries, interfaces, long-horizon tradeoffs (frontier-orchestrator, frontier) |
+| `debugger` | `gpt-5.5` | high | Root-cause analysis, regression isolation, failure diagnosis (deep-worker, standard) |
+| `executor` | `gpt-5.5` | medium | Code implementation, refactoring, feature work (deep-worker, standard) |
+| `team-executor` | `gpt-5.5` | medium | Supervised team execution for conservative delivery lanes (deep-worker, frontier) |
+| `verifier` | `gpt-5.5` | high | Completion evidence, claim validation, test adequacy (frontier-orchestrator, standard) |
+| `code-reviewer` | `gpt-5.5` | high | Comprehensive review across all concerns (frontier-orchestrator, frontier) |
+| `dependency-expert` | `gpt-5.5` | high | External SDK/API/package evaluation (frontier-orchestrator, standard) |
+| `test-engineer` | `gpt-5.5` | medium | Test strategy, coverage, flaky-test hardening (deep-worker, frontier) |
+| `designer` | `gpt-5.5` | high | UX/UI architecture, interaction design (deep-worker, standard) |
+| `writer` | `gpt-5.5` | high | Documentation, migration notes, user guidance (fast-lane, standard) |
+| `git-master` | `gpt-5.5` | high | Commit strategy, history hygiene, rebasing (deep-worker, standard) |
+| `code-simplifier` | `gpt-5.5` | high | Simplifies recently modified code for clarity and consistency without changing behavior (deep-worker, frontier) |
+| `researcher` | `gpt-5.4-mini` | high | External documentation and reference research (fast-lane, standard) |
+| `prometheus-strict-metis` | `gpt-5.5` | high | Prometheus Strict requirements interviewer and ambiguity mapper (frontier-orchestrator, frontier) |
+| `prometheus-strict-momus` | `gpt-5.5` | high | Prometheus Strict adversarial plan critic and risk challenger (frontier-orchestrator, frontier) |
+| `prometheus-strict-oracle` | `gpt-5.5` | high | Prometheus Strict implementation readiness verifier and handoff judge (frontier-orchestrator, standard) |
+| `critic` | `gpt-5.5` | high | Plan/design critical challenge and review (frontier-orchestrator, frontier) |
+| `scholastic` | `gpt-5.5` | high | Ontology-first reasoning reviewer: category mistakes, hidden assumptions, modality separation, scholastic critique, and minimal-repair proposals (frontier-orchestrator, frontier) |
+| `vision` | `gpt-5.5` | low | Image/screenshot/diagram analysis (fast-lane, frontier) |
+<!-- OMX:MODELS:END -->
 
 <verification>
-Verify before claiming completion. The goal is evidence-backed confidence, not ceremony.
+Verify before claiming completion.
+<!-- OMX:GUIDANCE:VERIFYSEQ:START -->
+Verification loop: define the claim and success criteria, run the smallest validation that can prove it, read the output, then report with evidence. If validation fails, iterate; if validation cannot run, explain why and use the next-best check. Keep evidence summaries concise but sufficient.
 
-Sizing guidance:
-- Small changes (<5 files, <100 lines): lightweight verifier
-- Standard changes: standard verifier
-- Large or security/architectural changes (>20 files): thorough verifier
-
-Test creation guidance:
-- Do not add or expand tests by default for small copy, config, wiring, or narrow bug-fix tasks.
-- Add tests when the user explicitly asks for them, when changing behavior needs durable regression protection, or when a cleanup/refactor would otherwise be unsafe.
-- Prefer targeted checks, focused existing tests, diagnostics, or manual evidence when they are sufficient to prove the change.
-
-Verification loop: identify what proves the claim, run the verification, read the output, then report with evidence. If verification fails, continue iterating rather than reporting incomplete work.
+- Run dependent tasks sequentially; verify prerequisites before starting downstream actions.
+- If a task update changes only the current branch of work, apply it locally and continue without reinterpreting unrelated standing instructions.
+- For coding work, prefer targeted tests for changed behavior, then typecheck/lint/build/smoke checks when applicable; do not claim completion without fresh evidence or an explicit validation gap.
+- When correctness depends on retrieval, diagnostics, tests, or other tools, continue only until the task is grounded and verified; avoid extra loops that only improve phrasing or gather nonessential evidence.
+<!-- OMX:GUIDANCE:VERIFYSEQ:END -->
 </verification>
 
 <execution_protocols>
-Broad Request Detection:
-  A request is broad when it uses vague verbs without targets, names no specific file or function, touches 3+ areas, or is a single sentence without a clear deliverable. When detected: explore first, optionally consult architect, then plan.
+Mode selection: use `$deep-interview` for unclear intent/boundaries; `$ralplan` for consensus on architecture, tradeoffs, or tests; `$team` for approved multi-lane work; `$ralph` for persistent single-owner completion/verification loops; otherwise execute directly in solo mode. Switch modes only when evidence shows the current lane is mismatched or blocked.
 
-Parallelization:
-- Run 2+ independent tasks in parallel when each takes >30s.
-- Run dependent tasks sequentially.
-- Use background execution for installs, builds, and tests.
-- Prefer Team mode as the primary parallel execution surface. Use ad hoc parallelism only when Team overhead is disproportionate to the task.
+Command routing: use normal Codex repository inspection tools/subagents as the default surface for simple read-only repository lookup tasks; use `omx sparkshell` only for explicit shell-native read-only evidence or bounded verification.
+When to use what:
+- Use normal Codex repository inspection tools/subagents for repository lookup and implementation context.
+- Use `omx sparkshell --tmux-pane` only as an explicit opt-in operator aid for shell-native tmux evidence or bounded verification; it does not replace raw evidence capture.
 
-Visual iteration gate:
-- For visual tasks (reference image(s) + generated screenshot), run `$visual-verdict` every iteration before the next edit.
-- Persist visual verdict JSON in `.omx/state/{scope}/ralph-progress.json` with both numeric (`score`, threshold pass/fail) and qualitative (`reasoning`, `differences`, `suggestions`, `next_actions`) feedback.
+Leader vs worker: leaders choose mode, delegate bounded work, integrate, and own verification; workers execute their slice and escalate blockers, scope expansion, shared-file conflicts, or mode mismatch upward. Escalate from worker to leader for blockers, scope expansion, shared ownership conflicts, or mode mismatch.
 
-Continuation:
-  Before concluding, confirm: zero pending tasks, all features working, relevant verification completed, zero errors, and evidence collected. Prefer existing targeted tests or other focused verification over adding new tests unless new regression coverage is clearly warranted.
+Stop / escalate: stop when the task is verified complete, the user says stop/cancel, or no meaningful recovery path remains. Escalate to the user only for irreversible, destructive, materially branching decisions, or missing authority.
 
-Ralph planning gate:
-  If ralph is active, verify PRD + test spec artifacts exist before any implementation work/tool execution. If missing, stay in planning and create them first (ralplan-first).
+Output contract: Default update/final shape: state current mode, action/result, and evidence or blocker/next step. Keep rationale once; do not restate the full plan every turn; expand only for risk, handoff, or explicit request.
+
+Anti-slop workflow:
+- Cleanup/refactor/deslop work still follows the same `$deep-interview` -> `$ralplan` -> `$team`/`$ralph` path; use `$ai-slop-cleaner` as a bounded helper inside the chosen execution lane, not as a competing top-level workflow.
+- Write a cleanup plan before modifying code; lock existing behavior with regression tests first, then make one smell-focused pass at a time.
+- Prefer deletion over addition, and prefer reuse plus boundary repair over new layers.
+- No new dependencies without explicit request.
+- Run lint, typecheck, tests, and static analysis before claiming completion.
+- Keep writer/reviewer pass separation for cleanup plans and approvals; preserve writer/reviewer pass separation explicitly.
+
+Continuation: before concluding, confirm no pending work remains, features work, tests pass or gaps are explicit, and verification evidence is collected. If not, continue.
 </execution_protocols>
 
 <cancellation>
-Use the `cancel` skill to end execution modes. This clears state files and stops active loops.
-
-When to cancel:
-- All tasks are done and verified: invoke cancel.
-- Work is blocked and cannot proceed: explain the blocker, then invoke cancel.
-- User says "stop": invoke cancel immediately.
-
-When not to cancel:
-- Work is still incomplete: continue working.
-- A single subtask failed but others can continue: fix and retry.
+Use the `cancel` skill to end active execution modes when work is done and verified, when the user says stop, or when a hard blocker prevents meaningful progress. Do not cancel while recoverable work remains.
 </cancellation>
 
----
-
 <state_management>
-oh-my-codex uses the `.omx/` directory for persistent state:
-- `.omx/state/` -- Mode state files (JSON)
-- `.omx/notepad.md` -- Session-persistent notes
-- `.omx/project-memory.json` -- Cross-session project knowledge
-- `.omx/plans/` -- Planning documents
-- `.omx/logs/` -- Audit logs
-
-Tools are available via MCP when configured (`omx setup` registers all servers):
-
-State & Memory:
-- `state_read`, `state_write`, `state_clear`, `state_list_active`, `state_get_status`
-- `project_memory_read`, `project_memory_write`, `project_memory_add_note`, `project_memory_add_directive`
-- `notepad_read`, `notepad_write_priority`, `notepad_write_working`, `notepad_write_manual`, `notepad_prune`, `notepad_stats`
-
-Code Intelligence:
-- `lsp_diagnostics` -- type errors for a single file (tsc --noEmit)
-- `lsp_diagnostics_directory` -- project-wide type checking
-- `lsp_document_symbols` -- function/class/variable outline for a file
-- `lsp_workspace_symbols` -- search symbols by name across the workspace
-- `lsp_hover` -- type info at a position (regex-based approximation)
-- `lsp_find_references` -- find all references to a symbol (grep-based)
-- `lsp_servers` -- list available diagnostic backends
-- `ast_grep_search` -- structural code pattern search (requires ast-grep CLI)
-- `ast_grep_replace` -- structural code transformation (dryRun=true by default)
-
-Trace:
-- `trace_timeline` -- chronological agent turn + mode event timeline
-- `trace_summary` -- aggregate statistics (turn counts, timing, token usage)
-
-Mode lifecycle requirements:
-- On mode start, call `state_write` with `mode`, `active: true`, `started_at`, and mode-specific fields.
-- On phase/iteration transitions, call `state_write` with updated `current_phase` / `iteration` and mode-specific progress fields.
-- On completion, call `state_write` with `active: false`, terminal `current_phase`, and `completed_at`.
-- On cancel/abort cleanup, call `state_clear(mode="<mode>")`.
-
-Recommended mode fields:
-- `ralph`: `active`, `iteration`, `max_iterations`, `current_phase`, `started_at`, `completed_at`
-- `autopilot`: `active`, `current_phase` (`expansion|planning|execution|qa|validation|complete`), `started_at`, `completed_at`
-- `ultrawork`: `active`, `reinforcement_count`, `started_at`
-- `team`: `active`, `current_phase` (`team-plan|team-prd|team-exec|team-verify|team-fix|complete`), `agent_count`, `team_name`
-- `ecomode`: `active`
-- `ultraqa`: `active`, `current_phase`, `iteration`, `started_at`, `completed_at`
+Hooks own normal skill-active and workflow-state persistence under `.omx/state/`. OMX runtime state lives under `.omx/`; do not manually duplicate hook-owned activation state unless recovering from missing or stale state.
 </state_management>
-
----
 
 ## Setup
 
-Run `omx setup` to install all components. Run `omx doctor` to verify installation.
+Execute `omx setup` to install all components. Execute `omx doctor` to verify installation.

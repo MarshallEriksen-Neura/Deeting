@@ -7,6 +7,7 @@ use crate::modules::ai_upstream::gateway_log_recorder::{
     GatewayLogEntry, GatewayUsageDetails,
 };
 use crate::modules::ai_upstream::types::LocalModelConnection;
+use crate::modules::providers::connection_cache::{CachedModelConnection, ConnectionCache};
 use crate::modules::providers::protocols::{
     build_canonical_chat_request_from_local_messages_with_reasoning,
     build_chat_request_data_from_canonical_request, infer_protocol_family,
@@ -15,6 +16,7 @@ use crate::modules::providers::request_runtime::{
     prepare_provider_request_from_canonical_request, send_prepared_json_request_with_retry,
     send_prepared_stream_request, UpstreamRetryPolicy,
 };
+use crate::modules::providers::response_processor::ResponseProcessor;
 use crate::modules::providers::streaming::ProviderStreamEvent;
 use crate::modules::providers::types::ProviderModel;
 use crate::state::AppState;
@@ -75,6 +77,32 @@ fn inject_runtime_metrics(
     }
 }
 
+pub(crate) async fn record_provider_model_bandit_feedback(
+    app_state: &AppState,
+    provider_model_id: &str,
+    success: bool,
+    latency_ms: Option<f64>,
+) {
+    let feedback = crate::modules::providers::types::BanditFeedbackRequest {
+        scene: None,
+        arm_id: provider_model_id.to_string(),
+        success,
+        latency_ms,
+        cost: None,
+        reward: Some(if success { 1.0 } else { 0.0 }),
+        routing_config: None,
+        reward_metric_type: None,
+    };
+    if let Err(err) = app_state
+        .providers
+        .store
+        .record_bandit_feedback(feedback)
+        .await
+    {
+        log::warn!("failed to record bandit feedback: {}", err);
+    }
+}
+
 fn normalize_model_pool_key(model: &ProviderModel) -> Option<String> {
     model
         .unified_model_id
@@ -103,6 +131,26 @@ fn model_matches_requested(model: &ProviderModel, requested: &str) -> bool {
 
 fn selected_model_failover_pool_key(model: &ProviderModel) -> Option<String> {
     normalize_model_pool_key(model)
+}
+
+fn select_requested_model_candidates(
+    models: &[ProviderModel],
+    requested_model: &str,
+) -> Result<Option<Vec<ProviderModel>>, String> {
+    let requested = requested_model.trim().to_lowercase();
+    if requested.is_empty() {
+        return Ok(None);
+    }
+
+    let candidate_models: Vec<_> = models
+        .iter()
+        .filter(|model| model_matches_requested(model, &requested))
+        .cloned()
+        .collect();
+    if candidate_models.is_empty() {
+        return Err(format!("requested model not found: {requested_model}"));
+    }
+    Ok(Some(candidate_models))
 }
 
 pub(crate) async fn resolve_provider_model_connection(
@@ -234,13 +282,7 @@ pub(crate) async fn resolve_local_model_connection(
     if models.is_empty() {
         return Err("no active provider model configured".to_string());
     }
-    let requested = requested_model.trim().to_lowercase();
-    let candidate_models: Vec<_> = models
-        .iter()
-        .filter(|model| model_matches_requested(model, &requested))
-        .cloned()
-        .collect();
-    if !candidate_models.is_empty() {
+    if let Some(candidate_models) = select_requested_model_candidates(&models, requested_model)? {
         let selected = if candidate_models.len() == 1 {
             candidate_models[0].clone()
         } else {
@@ -570,6 +612,8 @@ pub(crate) async fn request_provider_structured_tool_arguments_with_failover(
             Err(err) => err,
         };
 
+        record_provider_model_bandit_feedback(app_state, &current_provider_model_id, false, None)
+            .await;
         failed_provider_model_ids.insert(current_provider_model_id.clone());
         let Some(pool_key) = failover_pool_key
             .map(str::trim)
@@ -791,24 +835,8 @@ async fn request_provider_chat_completion_attempt(
     let raw_text = response.text;
     let raw_json = response.json;
     let success = status.is_success();
-    let feedback = crate::modules::providers::types::BanditFeedbackRequest {
-        scene: None,
-        arm_id: provider_model_id.to_string(),
-        success,
-        latency_ms: Some(latency_ms),
-        cost: None,
-        reward: Some(if success { 1.0 } else { 0.0 }),
-        routing_config: None,
-        reward_metric_type: None,
-    };
-    if let Err(err) = app_state
-        .providers
-        .store
-        .record_bandit_feedback(feedback)
-        .await
-    {
-        log::warn!("failed to record bandit feedback: {}", err);
-    }
+    record_provider_model_bandit_feedback(app_state, provider_model_id, success, Some(latency_ms))
+        .await;
     if !success {
         let raw_usage = raw_json
             .as_ref()
@@ -1047,24 +1075,13 @@ where
         Ok(response_state) => response_state,
         Err(err) => {
             let latency_ms = call_start.elapsed().as_millis() as f64;
-            let feedback = crate::modules::providers::types::BanditFeedbackRequest {
-                scene: None,
-                arm_id: provider_model_id.to_string(),
-                success: false,
-                latency_ms: Some(latency_ms),
-                cost: None,
-                reward: Some(0.0),
-                routing_config: None,
-                reward_metric_type: None,
-            };
-            if let Err(feedback_err) = app_state
-                .providers
-                .store
-                .record_bandit_feedback(feedback)
-                .await
-            {
-                log::warn!("failed to record bandit feedback: {}", feedback_err);
-            }
+            record_provider_model_bandit_feedback(
+                app_state,
+                provider_model_id,
+                false,
+                Some(latency_ms),
+            )
+            .await;
             let empty_headers = BTreeMap::new();
             let raw_usage = GatewayUsageDetails::default();
             let cache_details =
@@ -1106,24 +1123,8 @@ where
     let latency_ms = call_start.elapsed().as_millis() as f64;
     let status_code = response_state.status_code;
     let success = (200..400).contains(&status_code);
-    let feedback = crate::modules::providers::types::BanditFeedbackRequest {
-        scene: None,
-        arm_id: provider_model_id.to_string(),
-        success,
-        latency_ms: Some(latency_ms),
-        cost: None,
-        reward: Some(if success { 1.0 } else { 0.0 }),
-        routing_config: None,
-        reward_metric_type: None,
-    };
-    if let Err(err) = app_state
-        .providers
-        .store
-        .record_bandit_feedback(feedback)
-        .await
-    {
-        log::warn!("failed to record bandit feedback: {}", err);
-    }
+    record_provider_model_bandit_feedback(app_state, provider_model_id, success, Some(latency_ms))
+        .await;
     if !success {
         return Err(format!("provider stream request failed: {}", status_code));
     }
@@ -1509,7 +1510,43 @@ pub(crate) fn truncate_upstream_body(text: &str, max_len: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::modules::providers::types::ProviderModel;
     use serde_json::json;
+    use uuid::Uuid;
+
+    fn build_provider_model(model_id: &str) -> ProviderModel {
+        ProviderModel {
+            id: Uuid::new_v4(),
+            instance_id: Uuid::new_v4(),
+            model_id: model_id.to_string(),
+            unified_model_id: None,
+            display_name: None,
+            capabilities: vec!["chat".to_string()],
+            upstream_path: "/v1/chat/completions".to_string(),
+            pricing_config: json!({}),
+            limit_config: json!({}),
+            tokenizer_config: json!({}),
+            routing_config: json!({}),
+            config_override: json!({}),
+            source: "manual".to_string(),
+            extra_meta: json!({}),
+            weight: 100,
+            priority: 0,
+            is_active: true,
+            synced_at: None,
+            created_at: None,
+            updated_at: None,
+        }
+    }
+
+    #[test]
+    fn requested_model_miss_errors_instead_of_falling_back_to_global_pool() {
+        let models = vec![build_provider_model("openrouter/free")];
+        let err = super::select_requested_model_candidates(&models, "mimo-v2.5-pro")
+            .expect_err("requested model miss should not select unrelated active providers");
+
+        assert!(err.contains("requested model not found: mimo-v2.5-pro"));
+    }
 
     #[test]
     fn normalize_chat_completion_response_preserves_usage_when_flattening_choices() {

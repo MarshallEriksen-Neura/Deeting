@@ -1158,6 +1158,7 @@ export function useChatMessagingService() {
   }) => {
     statusRepeatRef.current = { key: "", repeatCount: 0 }
     let receivedStructuredBlocks = false
+    let wasCancelled = false
     const streamedText = await streamDesktopLocalChatCompletion(
       {
         ...payload,
@@ -1278,7 +1279,10 @@ export function useChatMessagingService() {
       trackActiveRequest
         ? {
             onCancel: (cancel) => {
-              cancelRef.current = cancel
+              cancelRef.current = () => {
+                wasCancelled = true
+                cancel()
+              }
             },
           }
         : undefined,
@@ -1287,6 +1291,7 @@ export function useChatMessagingService() {
 
     const latestBlocks = getCurrentBlocks()
     if (
+      !wasCancelled &&
       streamedText.trim().length > 0 &&
       !hasRenderableTextBlock(latestBlocks) &&
       !hasRenderableNonToolBlocks(latestBlocks)

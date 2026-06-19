@@ -5,7 +5,7 @@ use super::frame_bootstrap;
 use crate::modules::ai_upstream::chat::parse_structured_tool_arguments;
 use crate::modules::ai_upstream::ReasoningRequestConfig;
 use crate::modules::desktop_runtime::runtime::chat_completion::{
-    request_provider_chat_completion_with_pool_failover,
+    record_provider_model_bandit_feedback, request_provider_chat_completion_with_pool_failover,
     request_provider_structured_tool_arguments_with_failover,
 };
 use crate::modules::desktop_runtime::runtime::chat_tool_runtime::{
@@ -704,9 +704,27 @@ impl DeetingFrameArtifactGenerator {
             ))
         });
         match output {
-            Ok(update) => update,
+            Ok(update) => {
+                if update.is_some() {
+                    log::info!("world_model_update refresh succeeded");
+                }
+                update
+            }
             Err(err) => {
                 log::warn!("world_model_update refresh request failed: {err}");
+
+                // 确保前端收到失败通知
+                emit_world_model_frame_status(
+                    runtime_request,
+                    "failed",
+                    "world_model.frame_refresh.failed",
+                    json!({
+                        "artifact": frame_refresh_artifact_name(request.artifact),
+                        "frame_id": current_frame.frame_version_id.as_str(),
+                        "error_kind": "resolve_failed",
+                        "error": err,
+                    }),
+                );
                 None
             }
         }
@@ -912,8 +930,21 @@ async fn request_world_model_update(
         };
         let response =
             match parse_structured_tool_arguments(&response, WORLD_MODEL_REFRESH_TOOL_NAME) {
-                Ok(arguments) => arguments,
+                Ok(arguments) => {
+                    log::debug!(
+                        "Successfully parsed tool arguments for {}: {}",
+                        WORLD_MODEL_REFRESH_TOOL_NAME,
+                        serde_json::to_string_pretty(&arguments).unwrap_or_else(|_| "invalid json".to_string())
+                    );
+                    arguments
+                }
                 Err(err) => {
+                    log::warn!(
+                        "Failed to parse structured tool arguments for {}: {}. Response: {}",
+                        WORLD_MODEL_REFRESH_TOOL_NAME,
+                        err,
+                        serde_json::to_string_pretty(&response).unwrap_or_else(|_| "invalid json".to_string())
+                    );
                     emit_world_model_frame_status(
                         runtime_request,
                         "failed",
@@ -935,6 +966,13 @@ async fn request_world_model_update(
                             },
                         }),
                     );
+                    record_provider_model_bandit_feedback(
+                        &runtime_request.app_state,
+                        &model_connection.provider_model_id,
+                        false,
+                        None,
+                    )
+                    .await;
                     let error = format!("secretary_world_model_update_tool_call_failed: {err}");
                     if attempt >= WORLD_MODEL_REFRESH_MAX_ATTEMPTS {
                         return Err(error);
@@ -1041,11 +1079,19 @@ async fn request_world_model_update(
                         },
                     }),
                 );
+                record_provider_model_bandit_feedback(
+                    &runtime_request.app_state,
+                    &model_connection.provider_model_id,
+                    false,
+                    None,
+                )
+                .await;
                 if attempt >= WORLD_MODEL_REFRESH_MAX_ATTEMPTS {
                     return Err(error);
                 }
                 messages = world_model_update_retry_messages(&messages, &response, err.as_str());
                 last_error = Some(error);
+                continue;
             }
         }
     }
@@ -1156,29 +1202,58 @@ fn world_model_update_retry_messages(
 fn parse_secretary_world_model_update_response(
     response: &serde_json::Value,
 ) -> Result<WorldModelUpdate, String> {
+    log::debug!(
+        "Parsing secretary world_model_update response: {}",
+        serde_json::to_string_pretty(response).unwrap_or_else(|_| "invalid json".to_string())
+    );
+
     let update = response
         .get("world_model_update")
-        .ok_or_else(|| "missing world_model_update field".to_string())?;
+        .ok_or_else(|| {
+            let err = format!(
+                "missing world_model_update field in response. Available keys: {:?}",
+                response.as_object().map(|o| o.keys().collect::<Vec<_>>())
+            );
+            log::warn!("{}", err);
+            err
+        })?;
+
     parse_secretary_world_model_update_value(update)
 }
 
 fn parse_secretary_world_model_update_value(
     update: &serde_json::Value,
 ) -> Result<WorldModelUpdate, String> {
+    log::debug!(
+        "Parsing world_model_update value: {}",
+        serde_json::to_string_pretty(update).unwrap_or_else(|_| "invalid json".to_string())
+    );
+
     let update = match update {
         // Some provider adapters preserve the forced tool call but stringify a nested
         // object argument. This is still structured tool-argument normalization, not
         // freeform content scraping.
         serde_json::Value::String(raw) => {
+            log::debug!("world_model_update is a string, attempting to parse: {}", raw);
             let parsed = serde_json::from_str::<serde_json::Value>(raw.trim()).map_err(|err| {
-                format!("world_model_update field string is not valid JSON: {err}")
+                let err_msg = format!("world_model_update field string is not valid JSON: {err}");
+                log::warn!("{}", err_msg);
+                err_msg
             })?;
             parsed.get("world_model_update").cloned().unwrap_or(parsed)
         }
         _ => update.clone(),
     };
 
-    serde_json::from_value::<WorldModelUpdate>(update).map_err(|err| err.to_string())
+    serde_json::from_value::<WorldModelUpdate>(update.clone()).map_err(|err| {
+        let err_msg = format!(
+            "Failed to deserialize WorldModelUpdate: {}. Update structure: {}",
+            err,
+            serde_json::to_string_pretty(&update).unwrap_or_else(|_| "invalid json".to_string())
+        );
+        log::warn!("{}", err_msg);
+        err_msg
+    })
 }
 
 fn world_model_update_tool_schema() -> serde_json::Value {

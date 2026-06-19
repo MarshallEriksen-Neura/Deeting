@@ -321,6 +321,9 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
       return nextPart.toolName === "execute_code_plan";
     };
 
+    // 是否显示主要loading状态（请求开始但还没有任何内容）
+    const isWaitingForResponse = isActive && !hasContent && !hasToolActivity;
+
     return (
       <div
         className={cn(
@@ -341,6 +344,24 @@ export const AIResponseBubble = memo<AIResponseBubbleProps>(
           {worldModelBlock ? (
             <WorldModelPanel block={worldModelBlock} />
           ) : null}
+
+          {/* 主要loading状态 - 在请求开始但还没有内容时显示 */}
+          {isWaitingForResponse && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, ease: "easeOut" }}
+              className="mb-3"
+            >
+              <AIResponseStreamingTail
+                isActive={isActive}
+                hasContent={false}
+                statusStage={statusStage}
+                statusCode={statusCode}
+                statusMeta={statusMeta}
+              />
+            </motion.div>
+          )}
 
           {(hasContent || hasToolActivity) && (
             <motion.div
