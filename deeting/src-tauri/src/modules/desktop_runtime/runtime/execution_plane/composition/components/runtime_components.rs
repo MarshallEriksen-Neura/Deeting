@@ -257,6 +257,21 @@ impl DeetingTier2Validator {
         plan: Option<&PlanArtifact>,
         reason_prefix: Option<&str>,
     ) -> FrameValidation {
+        // Check if this is a tool failure (parse/call failed)
+        // In this case, we should REJECT the frame to stop the refresh loop
+        if let Some(prefix) = reason_prefix {
+            if prefix.contains("secretary_parse_failed") || prefix.contains("secretary_call_failed") {
+                log::warn!(
+                    "local_prior_validation rejecting frame due to secretary tool failure: {}",
+                    prefix
+                );
+                return FrameValidation {
+                    is_valid: false,
+                    reason: format!("{prefix}; validation aborted due to tool failure"),
+                };
+            }
+        }
+
         let has_stronger_checks_prior = frame.memory_priors.iter().any(|prior| {
             prior.id == ACTION_VERIFICATION_STRONGER_CHECKS
                 && matches!(prior.confidence, ConfidenceLevel::High)
@@ -394,7 +409,18 @@ impl DeetingTier2Validator {
     fn parse_secretary_validation_response(
         response: &serde_json::Value,
     ) -> Option<SecretaryValidationDecision> {
-        serde_json::from_value::<SecretaryValidationDecision>(response.clone()).ok()
+        match serde_json::from_value::<SecretaryValidationDecision>(response.clone()) {
+            Ok(decision) => Some(decision),
+            Err(err) => {
+                log::warn!(
+                    "Failed to parse SecretaryValidationDecision: {}\nResponse structure: {}",
+                    err,
+                    serde_json::to_string_pretty(response)
+                        .unwrap_or_else(|_| format!("{:?}", response))
+                );
+                None
+            }
+        }
     }
 
     fn emit_validation_status(&self, state: &str, code: &str, meta: serde_json::Value) {
@@ -526,37 +552,54 @@ impl DeetingTier2Validator {
         .await;
 
         let validation = match response {
-            Ok(response) => match Self::parse_secretary_validation_response(&response) {
-                Some(decision) => {
-                    let validation = Self::validation_from_secretary_decision(decision);
-                    self.emit_validation_status(
-                        "success",
-                        "world_model.frame_validation.validated",
-                        json!({
-                            "frame_id": frame.frame_version_id.as_str(),
-                            "model_role": "secretary",
-                            "provider_model_id": model_connection.provider_model_id.as_str(),
-                            "model_id": model_connection.model_id.as_str(),
-                            "is_valid": validation.is_valid,
-                        }),
-                    );
-                    validation
-                }
-                None => {
-                    self.emit_validation_status(
-                        "failed",
-                        "world_model.frame_validation.failed",
-                        json!({
-                            "frame_id": frame.frame_version_id.as_str(),
-                            "model_role": "secretary",
-                            "provider_model_id": model_connection.provider_model_id.as_str(),
-                            "model_id": model_connection.model_id.as_str(),
-                            "error_code": "SECRETARY_PARSE_FAILED",
-                            "error_kind": "structured_response_parse_failed",
-                            "fallback": "local_prior_validation",
-                        }),
-                    );
-                    Self::local_prior_validation(frame, plan, Some("secretary_parse_failed"))
+            Ok(response) => {
+                log::debug!(
+                    "Secretary validation raw response: {}",
+                    serde_json::to_string_pretty(&response)
+                        .unwrap_or_else(|_| format!("{:?}", response))
+                );
+
+                match Self::parse_secretary_validation_response(&response) {
+                    Some(decision) => {
+                        let validation = Self::validation_from_secretary_decision(decision);
+                        self.emit_validation_status(
+                            "success",
+                            "world_model.frame_validation.validated",
+                            json!({
+                                "frame_id": frame.frame_version_id.as_str(),
+                                "model_role": "secretary",
+                                "provider_model_id": model_connection.provider_model_id.as_str(),
+                                "model_id": model_connection.model_id.as_str(),
+                                "is_valid": validation.is_valid,
+                            }),
+                        );
+                        validation
+                    }
+                    None => {
+                        let response_preview = serde_json::to_string(&response)
+                            .unwrap_or_else(|_| "invalid_json".to_string());
+                        log::error!(
+                            "Secretary validation parse failed. Response keys: {:?}, tool_calls: {:?}",
+                            response.as_object().map(|o| o.keys().collect::<Vec<_>>()),
+                            response.get("tool_calls")
+                        );
+
+                        self.emit_validation_status(
+                            "failed",
+                            "world_model.frame_validation.failed",
+                            json!({
+                                "frame_id": frame.frame_version_id.as_str(),
+                                "model_role": "secretary",
+                                "provider_model_id": model_connection.provider_model_id.as_str(),
+                                "model_id": model_connection.model_id.as_str(),
+                                "error_code": "SECRETARY_PARSE_FAILED",
+                                "error_kind": "structured_response_parse_failed",
+                                "fallback": "local_prior_validation",
+                                "response_preview": response_preview.chars().take(500).collect::<String>(),
+                            }),
+                        );
+                        Self::local_prior_validation(frame, plan, Some("secretary_parse_failed"))
+                    }
                 }
             },
             Err(err) => {
