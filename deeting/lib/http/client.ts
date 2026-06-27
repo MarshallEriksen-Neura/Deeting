@@ -108,22 +108,8 @@ export function getAuthToken() {
   return authToken
 }
 
-/**
- * 基于环境的 baseURL 选择：
- * - 优先使用 NEXT_PUBLIC_API_BASE_URL（可指向网关域名）
- * - 开发环境且前端跑在 3000 端口时，自动指向本机 8000 端口后端
- * - 其他场景回落到相对路径 /api（使用 Next 反向代理）
- */
-// In Tauri dev, we point to localhost:8000 (Python).
-// In Tauri prod, this should point to your real production API.
-// For now, we assume localhost:8000 for desktop dev.
-const envApiUrl = process.env.NEXT_PUBLIC_API_BASE_URL
-
-const desktopBaseURL = envApiUrl || "http://localhost:8000"
-// If env var is set, use it. Otherwise use empty string to allow relative paths like /api/v1/...
-// which will work with Next.js rewrites if configured, or just hit the current domain.
-// Previous value "/api" caused double prefix (/api/api/v1/...) because our API definitions include /api.
-const webBaseURL = envApiUrl || ""
+const desktopBaseURL = ""
+const webBaseURL = ""
 const fallbackAdapter = axios.getAdapter(axios.defaults.adapter)
 let tauriAdapterPromise: Promise<AxiosAdapter | null> | null = null
 
@@ -142,7 +128,12 @@ export function buildApiWsUrl(
   path: string,
   params?: Record<string, string>
 ) {
-  const baseUrl = resolveApiBaseUrl() || "http://localhost:8000"
+  const baseUrl = resolveApiBaseUrl()
+  if (!baseUrl) {
+    throw new ApiError("Cloud API base URL is unavailable in local-only desktop mode", {
+      code: "LOCAL_ONLY_NO_CLOUD_API",
+    })
+  }
   const url = new URL(baseUrl)
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
   url.pathname = path
@@ -381,12 +372,24 @@ function persistAccessToken(token: string) {
 export async function request<T = unknown>(
   config: RequestConfig
 ): Promise<T> {
+  if (shouldUseDesktopTransport() && isRelativeCloudApiRequest(config)) {
+    throw new ApiError("Cloud API request is unavailable in local-only desktop mode", {
+      code: "LOCAL_ONLY_NO_CLOUD_API",
+    })
+  }
+
   const response = await apiClient.request<T>({
     method: "GET",
     ...config,
   })
 
   return response.data
+}
+
+function isRelativeCloudApiRequest(config: RequestConfig) {
+  if (config.baseURL) return false
+  const url = config.url?.trim()
+  return Boolean(url && (/^\/api\//.test(url) || /^api\//.test(url)))
 }
 
 export { apiClient }

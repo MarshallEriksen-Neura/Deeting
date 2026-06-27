@@ -3,8 +3,6 @@ import { NextIntlClientProvider } from "next-intl";
 import { setRequestLocale } from "next-intl/server";
 import DynamicBackground from '@/components/chat/visuals/dynamic-background';
 import { IslandShell } from '@/components/island/island-shell';
-import { ChatAuthGuard } from '@/components/chat/routing/chat-auth-guard';
-import { ChatRouteFallback } from '@/components/chat/routing/chat-route-fallback';
 import { ChatModelConfigGuard } from '@/components/chat/routing/chat-model-config-guard';
 import { ChatTerminalSplitView } from '@/components/chat/core/chat-terminal-split-view';
 import { WorkspaceShell } from '@/components/common/workspace';
@@ -47,7 +45,7 @@ export default async function ChatLayout({
     : null
 
   const content = (
-    <ChatAuthGuard>
+    <>
       <ChatModelConfigGuard />
       <WorkspaceShell workspace={workspace}>
         <div className="relative h-full w-full overflow-hidden bg-background text-foreground selection:bg-primary/30">
@@ -77,7 +75,7 @@ export default async function ChatLayout({
           {/* <GlobalAudioPlayer /> */}
         </div>
       </WorkspaceShell>
-    </ChatAuthGuard>
+    </>
   )
 
   if (!messages) {

@@ -1,19 +1,20 @@
 /** @jest-environment node */
+/* eslint-disable @typescript-eslint/no-require-imports */
 
 const fs = require("node:fs")
 const os = require("node:os")
 const path = require("node:path")
 
-const originalApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL
+const originalLocalFlag = process.env.DEETING_DESKTOP_LOCAL_ONLY
 const originalTauriFlag = process.env.NEXT_PUBLIC_IS_TAURI
 const originalProtoc = process.env.PROTOC
 
 describe("tauri env helpers", () => {
   afterEach(() => {
-    if (originalApiBaseUrl === undefined) {
-      delete process.env.NEXT_PUBLIC_API_BASE_URL
+    if (originalLocalFlag === undefined) {
+      delete process.env.DEETING_DESKTOP_LOCAL_ONLY
     } else {
-      process.env.NEXT_PUBLIC_API_BASE_URL = originalApiBaseUrl
+      process.env.DEETING_DESKTOP_LOCAL_ONLY = originalLocalFlag
     }
 
     if (originalTauriFlag === undefined) {
@@ -29,13 +30,13 @@ describe("tauri env helpers", () => {
     }
   })
 
-  it("loads NEXT_PUBLIC_API_BASE_URL from the desktop .env file", async () => {
-    delete process.env.NEXT_PUBLIC_API_BASE_URL
+  it("loads local desktop flags from the desktop .env file", async () => {
+    delete process.env.DEETING_DESKTOP_LOCAL_ONLY
 
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tauri-env-"))
     fs.writeFileSync(
       path.join(tempRoot, ".env"),
-      "NEXT_PUBLIC_API_BASE_URL=http://192.168.199.128:8000\n",
+      "DEETING_DESKTOP_LOCAL_ONLY=true\n",
       "utf8"
     )
 
@@ -43,7 +44,7 @@ describe("tauri env helpers", () => {
 
     loadDesktopEnv(tempRoot, { dev: true, forceReload: true })
 
-    expect(process.env.NEXT_PUBLIC_API_BASE_URL).toBe("http://192.168.199.128:8000")
+    expect(process.env.DEETING_DESKTOP_LOCAL_ONLY).toBe("true")
   })
 
   it("builds the tauri child env while preserving loaded values", () => {
@@ -51,14 +52,12 @@ describe("tauri env helpers", () => {
 
     const tauriEnv = buildTauriEnv(
       {
-        NEXT_PUBLIC_API_BASE_URL: "https://api.example.com",
         CUSTOM_FLAG: "enabled",
       },
       "/tmp/protoc"
     )
 
     expect(tauriEnv).toMatchObject({
-      NEXT_PUBLIC_API_BASE_URL: "https://api.example.com",
       NEXT_PUBLIC_IS_TAURI: "true",
       PROTOC: "/tmp/protoc",
       CUSTOM_FLAG: "enabled",

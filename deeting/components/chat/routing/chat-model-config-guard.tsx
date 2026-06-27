@@ -6,22 +6,16 @@ import { fetchUserSecretary } from "@/lib/api/secretary"
 import { fetchUserEmbeddingConfig } from "@/lib/api/user-embedding-config"
 import { hasSecretaryModelSelection } from "@/lib/model-selection"
 import { emitModelConfigRequired, type MissingDesktopModelConfig } from "@/lib/model-config-required"
-import { useAuthStore } from "@/store/auth-store"
 
 function isDesktopRuntime() {
   return process.env.NEXT_PUBLIC_IS_TAURI === "true"
 }
 
 export function ChatModelConfigGuard() {
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   const checkedRef = React.useRef(false)
 
   React.useEffect(() => {
     if (!isDesktopRuntime()) return
-    if (!isAuthenticated) {
-      checkedRef.current = false
-      return
-    }
     if (checkedRef.current) return
     checkedRef.current = true
 
@@ -52,7 +46,7 @@ export function ChatModelConfigGuard() {
     return () => {
       cancelled = true
     }
-  }, [isAuthenticated])
+  }, [])
 
   return null
 }

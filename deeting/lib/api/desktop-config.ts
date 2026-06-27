@@ -212,8 +212,5 @@ export function clearAuthTokenForDesktop(): void {
 
 /** Compatibility no-op for the removed cloud platform-model sync path. */
 export function syncPlatformModelsForDesktop(): void {
-  if (!isTauriRuntime()) return;
-  import("@tauri-apps/api/core")
-    .then(({ invoke }) => invoke("sync_platform_models"))
-    .catch(() => {});
+  return;
 }

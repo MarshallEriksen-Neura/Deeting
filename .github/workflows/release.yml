@@ -37,8 +37,6 @@ jobs:
     runs-on: ${{ matrix.platform }}
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
-      NEXT_PUBLIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL || secrets.NEXT_PUBLIC_API_BASE_URL }}
-      NEXT_PUBLIC_DESKTOP_EXTERNAL_LOGIN_URL: ${{ vars.NEXT_PUBLIC_DESKTOP_EXTERNAL_LOGIN_URL || secrets.NEXT_PUBLIC_DESKTOP_EXTERNAL_LOGIN_URL }}
       NEXT_PUBLIC_IS_TAURI: ${{ vars.NEXT_PUBLIC_IS_TAURI || secrets.NEXT_PUBLIC_IS_TAURI }}
       NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY || secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
 
@@ -102,7 +100,7 @@ jobs:
         shell: bash
         run: |
           missing=()
-          for key in NEXT_PUBLIC_API_BASE_URL NEXT_PUBLIC_DESKTOP_EXTERNAL_LOGIN_URL NEXT_PUBLIC_IS_TAURI; do
+          for key in NEXT_PUBLIC_IS_TAURI; do
             if [ -z "${!key}" ]; then
               missing+=("$key")
             fi

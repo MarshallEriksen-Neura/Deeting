@@ -1,11 +1,6 @@
 [submodule "deeting-relay"]
 	path = deeting-relay
 	url = https://github.com/MarshallEriksen-Neura/deeting_relay.git
-[submodule "deeting_core"]
-	path = deeting_core
-	url = https://github.com/MarshallEriksen-Neura/deeting_core.git
-	branch = main
-
 [submodule "packages/official-skills/weather-plugin"]
 	path = packages/official-skills/weather-plugin
 	url = https://github.com/MarshallEriksen-Neura/weather_plugin.git

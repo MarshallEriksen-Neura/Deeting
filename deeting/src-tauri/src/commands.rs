@@ -164,7 +164,6 @@ pub fn generate_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool {
         crate::modules::browser_agent::commands::dispatch_local_browser_agent_action,
         crate::modules::browser_agent::commands::click_local_browser_agent_element,
         crate::modules::browser_agent::commands::type_local_browser_agent_element,
-        crate::utils::diagnose_auth_desktop_browser_start_request,
         crate::modules::admin::commands::run_local_maintenance_action,
         crate::modules::admin::commands::list_local_maintenance_logs,
         crate::modules::admin::commands::get_local_capability_registry_diagnostics,

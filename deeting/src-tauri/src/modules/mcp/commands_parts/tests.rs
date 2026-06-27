@@ -4266,7 +4266,7 @@ for raw_line in sys.stdin:
         let runtime = crate::modules::mcp::McpRuntimeState::new(
             store.clone(),
             process_manager,
-            "http://127.0.0.1:8000".to_string(),
+            "http://127.0.0.1:18080".to_string(),
         );
 
         store
@@ -4310,7 +4310,7 @@ for raw_line in sys.stdin:
         let runtime = crate::modules::mcp::McpRuntimeState::new(
             store.clone(),
             process_manager,
-            "http://127.0.0.1:8000".to_string(),
+            "http://127.0.0.1:18080".to_string(),
         );
 
         store
@@ -4362,7 +4362,7 @@ for raw_line in sys.stdin:
         let runtime = crate::modules::mcp::McpRuntimeState::new(
             store.clone(),
             process_manager,
-            "http://127.0.0.1:8000".to_string(),
+            "http://127.0.0.1:18080".to_string(),
         );
 
         store

@@ -2,7 +2,7 @@
 
 import { Loader2, LogIn } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
 import { useAuthWorldModel } from "@/hooks/use-auth-world-model";
@@ -10,15 +10,27 @@ import { useAuthStore } from "@/store/auth-store";
 import { UserMenu } from "./user-menu";
 
 export function HeaderAuthControl() {
+  if (isDesktopRuntime()) {
+    return <div aria-hidden className="h-8 w-8 shrink-0" />;
+  }
+
+  return <WebHeaderAuthControl />;
+}
+
+function isDesktopRuntime() {
+  return process.env.NEXT_PUBLIC_IS_TAURI === "true";
+}
+
+function WebHeaderAuthControl() {
   const tHeader = useTranslations("common.header");
   const tAuth = useTranslations("auth.login.form");
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const { canRenderLoggedOutAction, isLaunchingLogin, launchLogin } = useAuthWorldModel();
-  const [isMounted, setIsMounted] = useState(false);
-
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
+  const isMounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
 
   if (!isMounted || !canRenderLoggedOutAction) {
     return <div aria-hidden className="h-8 w-24 shrink-0" />;

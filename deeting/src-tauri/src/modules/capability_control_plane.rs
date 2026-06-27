@@ -199,8 +199,7 @@ pub(crate) async fn dispatch_internal_skill_host_tool(
 }
 
 pub(crate) async fn current_desktop_user_info_optional() -> Option<DesktopCurrentUserInfo> {
-    crate::modules::desktop_runtime::desktop_capabilities::desktop_current_user_info_optional()
-        .await
+    crate::modules::desktop_runtime::desktop_capabilities::desktop_local_user_info_optional().await
 }
 
 pub(crate) fn current_user_can_access_restricted_asset(

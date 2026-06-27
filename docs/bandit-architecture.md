@@ -324,17 +324,17 @@ record_bandit_feedback(scene, arm_id, success=false, …)
 //! Multi-armed bandit selection algorithms for the provider routing layer.
 //!
 //! Mirrors the reference implementation in
-//! `deeting_core/app/services/decision/decision_service.py` so the desktop
+//! the desktop provider routing layer so local runtime decisions remain
 //! runtime and the core service converge on identical mathematical behaviour.
 ```
 
-桌面 Rust 实现**严格镜像** `deeting_core` 的 Python 实现。这意味着：
+桌面 Rust 实现是 provider bandit 选择的**唯一规范实现**。这意味着：
 
 - 数学公式、超参默认值、随机种子行为必须**位级对齐**
 - 一个测试样本在 Python 跑出来的结果，Rust 必须能复现
 - 修改任一边都需要同步更新另一边
 
-为什么这样？因为 bandit 状态在 `deeting_core` 也会用到（云端编排路径），两边对同一个 `BanditArmState` 行做决策——如果数学不一致，同一个 arm 在两端会被推荐成不同结果，用户体验崩。
+为什么这样？因为桌面端现在完全本地化，同一个 `BanditArmState` 行只应由本地运行时解释；如果未来出现第二套实现，必须先证明它与 Rust 行为一致。
 
 ## 8. 完整反馈回路
 
@@ -414,7 +414,7 @@ record_bandit_feedback(scene, arm_id, success=false, …)
 2. 加 `parse` 解析支持。
 3. 实现 `score_softmax(state, cfg, rng)`。
 4. 在 `score_arm` match 加分支。
-5. 同步更新 Python 实现（`deeting_core/app/services/decision/decision_service.py`）。
+5. 同步更新本文件中的数学说明与 Rust 测试。
 6. 加确定性测试：固定 RNG seed，断言相同输入 → 相同输出。
 
 ### 11.3 给 bandit 加上下文（contextual bandit）
@@ -450,7 +450,7 @@ record_bandit_feedback(scene, arm_id, success=false, …)
 - [ ] `cargo test --lib worker_dispatch --no-fail-fast`
 - [ ] 关键不变式测试仍然绿：
   - `apply_route_prior_bandit_scores_surface_on_application`（bandit 不能独自翻盘）
-- [ ] 修改算法实现时同步 Python 端：`deeting_core/app/services/decision/decision_service.py`
+- [ ] 修改算法实现时同步本文件中的数学说明与 Rust 测试
 - [ ] 加 scene 时：验证旧 scene 的 arm 不被污染
 - [ ] 改默认超参时：跑一遍历史回放，看 reward 累积曲线是否符合预期
 - [ ] 桌面端手测：
@@ -493,7 +493,7 @@ A：(1) **可解释**：每个 arm 的 alpha/beta 都能在 PR 里看；(2) **�
 - 路由场景：[`task_learning/policy.rs::compute_route_bandit_scores`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/policy.rs)
 - Worker 场景：[`worker_dispatch.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/worker_dispatch.rs)
 - 记忆召回：[`memory/service.rs`](../deeting/src-tauri/src/modules/memory/service.rs)
-- Python 参考实现：`deeting_core/app/services/decision/decision_service.py`
+- 规范实现：`deeting/src-tauri/src/modules/providers/bandit_selector.rs`
 - 测试：[`bandit_selector_tests.rs`](../deeting/src-tauri/src/modules/providers/bandit_selector_tests.rs)
 - 兄弟文档：[`rag-architecture.md`](./rag-architecture.md)、[`self-evolution-architecture.md`](./self-evolution-architecture.md)、[`agent-dag-architecture.md`](./agent-dag-architecture.md)、[`memory-architecture.md`](./memory-architecture.md)、[`security-architecture.md`](./security-architecture.md)
 

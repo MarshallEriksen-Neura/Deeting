@@ -938,7 +938,7 @@ mod tests {
     fn assess_skill_binding_risk_escalates_localhost_to_hard_boundary() {
         let risk = assess_skill_binding_risk(
             &sample_binding(),
-            &json!({"url": "http://127.0.0.1:8000/admin"}),
+            &json!({"url": "http://127.0.0.1:18080/admin"}),
         );
 
         assert!(risk.requires_approval);
@@ -1019,7 +1019,7 @@ mod tests {
     fn localhost_requests_do_not_produce_session_grants() {
         let risk = assess_skill_binding_risk(
             &sample_binding(),
-            &json!({"url": "http://127.0.0.1:8000/admin"}),
+            &json!({"url": "http://127.0.0.1:18080/admin"}),
         );
 
         assert!(!risk.grant_eligible());

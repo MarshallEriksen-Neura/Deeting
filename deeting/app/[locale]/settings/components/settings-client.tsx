@@ -25,7 +25,10 @@ export function SettingsClient({
 
   return (
     <div className="relative flex flex-col gap-6">
-      <SettingsAlerts isAuthenticated={isAuthenticated} />
+      <SettingsAlerts
+        isAuthenticated={isAuthenticated}
+        isTauriRuntime={isTauri}
+      />
 
       <SettingsForm
         isAuthenticated={isAuthenticated}

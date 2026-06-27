@@ -156,34 +156,11 @@ fn parse_provider_preset(arguments: &Value) -> Result<ProviderPreset, String> {
     serde_json::from_value(payload).map_err(|err| err.to_string())
 }
 
-async fn desktop_cloud_base_url(app_state: &crate::state::AppState) -> Result<String, String> {
-    let base_url = app_state.mcp.transport.cloud_base_url.read().await.clone();
-    let normalized = base_url.trim().trim_end_matches('/').to_string();
-    if normalized.is_empty() {
-        Err("cloud API base URL not configured".to_string())
-    } else {
-        Ok(normalized)
-    }
-}
-
-async fn desktop_auth_token(app_state: &crate::state::AppState) -> Result<String, String> {
-    let token = app_state
-        .mcp
-        .store
-        .get_desktop_config("auth.token")
-        .await
-        .map_err(|err| err.to_string())?
-        .unwrap_or_default();
-    let normalized = token.trim().to_string();
-    if normalized.is_empty() {
-        Err("desktop auth token is missing".to_string())
-    } else {
-        Ok(normalized)
-    }
-}
-
-pub(crate) async fn desktop_current_user_info_optional() -> Option<DesktopCurrentUserInfo> {
-    desktop_current_user_info().await.ok()
+pub(crate) async fn desktop_local_user_info_optional() -> Option<DesktopCurrentUserInfo> {
+    Some(DesktopCurrentUserInfo {
+        is_superuser: true,
+        permission_flags: HashMap::new(),
+    })
 }
 
 pub(crate) fn desktop_user_can_access_restricted_asset(
@@ -218,36 +195,9 @@ pub(crate) fn desktop_user_can_access_restricted_asset(
     false
 }
 
-async fn desktop_current_user_info() -> Result<DesktopCurrentUserInfo, String> {
-    let app_state = global_app_state_required()?;
-    let base_url = desktop_cloud_base_url(&app_state).await?;
-    let token = desktop_auth_token(&app_state).await?;
-    let response = reqwest::Client::new()
-        .get(format!("{}/api/v1/users/me", base_url))
-        .header("Authorization", format!("Bearer {}", token))
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        return Err(format!("users/me returned {}", response.status().as_u16()));
-    }
-    response
-        .json::<DesktopCurrentUserInfo>()
-        .await
-        .map_err(|err| err.to_string())
-}
-
 async fn ensure_desktop_admin_role(capability_id: &str) -> Result<(), String> {
-    let current_user = desktop_current_user_info().await?;
-    let allowed = current_user.is_superuser;
-    if allowed {
-        Ok(())
-    } else {
-        Err(format!(
-            "desktop capability '{}' requires an administrator account",
-            capability_id
-        ))
-    }
+    let _ = capability_id;
+    Ok(())
 }
 
 async fn dispatch_skill_registry_refresh(arguments: &Value) -> Result<Value, String> {

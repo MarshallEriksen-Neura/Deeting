@@ -310,7 +310,6 @@ bun run desktop:build
 ```text
 .
 ├─ deeting/           # 主桌面应用（Next.js + Tauri + Rust）
-├─ deeting_core/      # 核心后端/任务与测试资产
 ├─ deeting-relay/     # IM relay 服务，作为公网 ingress 边界
 ├─ installer/         # Windows 图形化安装器
 ├─ packages/          # 扩展相关模板、SDK 与兼容资产

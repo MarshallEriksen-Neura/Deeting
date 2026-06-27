@@ -1,8 +1,7 @@
 //! Multi-armed bandit selection algorithms for the provider routing layer.
 //!
-//! Mirrors the reference implementation in
-//! `deeting_core/app/services/decision/decision_service.py` so the desktop
-//! runtime and the core service converge on identical mathematical behaviour.
+//! The desktop runtime owns this local implementation so provider selection
+//! remains deterministic without a cloud service dependency.
 use log::warn;
 use rand::Rng;
 use rand_distr::{Beta, Distribution};

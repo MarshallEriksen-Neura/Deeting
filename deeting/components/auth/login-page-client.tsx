@@ -11,22 +11,20 @@ export function LoginPageClient() {
   const t = useTranslations("auth.login.page");
   const searchParams = useSearchParams();
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const desktopLoginSessionId = searchParams.get("desktop_login_session")?.trim() ?? "";
-  const hasDesktopBrowserSession = desktopLoginSessionId.length > 0;
   const callbackUrl = useMemo(
     () => normalizeAuthCallbackUrl(searchParams.get("callbackUrl"), "/"),
     [searchParams]
   );
 
   useEffect(() => {
-    if (!isAuthenticated || hasDesktopBrowserSession) {
+    if (!isAuthenticated) {
       return;
     }
 
     window.location.replace(callbackUrl);
-  }, [callbackUrl, hasDesktopBrowserSession, isAuthenticated]);
+  }, [callbackUrl, isAuthenticated]);
 
-  if (isAuthenticated && !hasDesktopBrowserSession) {
+  if (isAuthenticated) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.72),transparent_30%),var(--window-bg)] px-4">
         <div className="w-full max-w-sm rounded-[28px] border border-[var(--hairline)] bg-[color:var(--panel-bg)] px-6 py-8 text-center shadow-[0_28px_80px_-36px_rgba(15,23,42,0.35)]">
@@ -49,9 +47,7 @@ export function LoginPageClient() {
 
         <LoginForm
           onSuccess={async () => {
-            if (!hasDesktopBrowserSession) {
-              window.location.replace(callbackUrl);
-            }
+            window.location.replace(callbackUrl);
           }}
         />
       </div>

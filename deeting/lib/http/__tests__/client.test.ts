@@ -192,7 +192,6 @@ describe("http client tauri adapter wiring", () => {
     __TAURI_INTERNALS__?: unknown
   }
   const originalTauriFlag = process.env.NEXT_PUBLIC_IS_TAURI
-  const originalApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL
 
   beforeEach(() => {
     jest.unmock("axios")
@@ -208,17 +207,10 @@ describe("http client tauri adapter wiring", () => {
     } else {
       process.env.NEXT_PUBLIC_IS_TAURI = originalTauriFlag
     }
-
-    if (originalApiBaseUrl === undefined) {
-      delete process.env.NEXT_PUBLIC_API_BASE_URL
-    } else {
-      process.env.NEXT_PUBLIC_API_BASE_URL = originalApiBaseUrl
-    }
   })
 
-  test("桌面端首个请求应直接走 tauri adapter", async () => {
+  test("桌面端通用 cloud api 请求应被 local-only 边界拒绝", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "false"
-    delete process.env.NEXT_PUBLIC_API_BASE_URL
     windowWithTauri.__TAURI__ = {}
 
     const mockFetch = jest.fn().mockResolvedValue({
@@ -242,19 +234,13 @@ describe("http client tauri adapter wiring", () => {
         url: "/api/v1/users/me",
         method: "GET",
       })
-    ).resolves.toEqual({ ok: true })
+    ).rejects.toMatchObject({ code: "LOCAL_ONLY_NO_CLOUD_API" })
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      "http://localhost:8000/api/v1/users/me",
-      expect.objectContaining({
-        method: "GET",
-      })
-    )
+    expect(mockFetch).not.toHaveBeenCalled()
   })
 
-  test("构建期 tauri 标记为 true 时也应等待 tauri adapter 再发请求", async () => {
+  test("构建期 tauri 标记为 true 时也不允许恢复 cloud api transport", async () => {
     process.env.NEXT_PUBLIC_IS_TAURI = "true"
-    process.env.NEXT_PUBLIC_API_BASE_URL = "https://api.ethereals.space"
 
     const mockFetch = jest.fn().mockResolvedValue({
       status: 200,
@@ -277,13 +263,8 @@ describe("http client tauri adapter wiring", () => {
         url: "/api/v1/users/me",
         method: "GET",
       })
-    ).resolves.toEqual({ ok: true })
+    ).rejects.toMatchObject({ code: "LOCAL_ONLY_NO_CLOUD_API" })
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      "https://api.ethereals.space/api/v1/users/me",
-      expect.objectContaining({
-        method: "GET",
-      })
-    )
+    expect(mockFetch).not.toHaveBeenCalled()
   })
 })

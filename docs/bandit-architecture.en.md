@@ -324,17 +324,17 @@ Top-of-file comment in [`bandit_selector.rs`](../deeting/src-tauri/src/modules/p
 //! Multi-armed bandit selection algorithms for the provider routing layer.
 //!
 //! Mirrors the reference implementation in
-//! `deeting_core/app/services/decision/decision_service.py` so the desktop
+//! the desktop provider routing layer so local runtime decisions remain
 //! runtime and the core service converge on identical mathematical behaviour.
 ```
 
-The desktop Rust implementation **strictly mirrors** the Python implementation in `deeting_core`. That means:
+The desktop Rust implementation is the **canonical implementation** for provider bandit selection. That means:
 
 - Math, hyperparameter defaults, and RNG-seed behavior must be **bit-aligned**.
 - A sample run on Python must be reproducible on Rust.
 - Changing one side requires synchronously updating the other.
 
-Why? Because the bandit state is also consumed by `deeting_core` (the cloud orchestration path) — both sides act on the same `BanditArmState` row. If the math diverges, the same arm produces different recommendations on the two sides and the user experience breaks down.
+Why? Because the desktop app is now local-only; a `BanditArmState` row should be interpreted by the local runtime. If a second implementation appears later, it must first prove parity with the Rust behavior.
 
 ## 8. The full feedback loop
 
@@ -414,7 +414,7 @@ The whole loop is **completely transparent from the user's point of view** — t
 2. Add `parse` support.
 3. Implement `score_softmax(state, cfg, rng)`.
 4. Add a branch in `score_arm` match.
-5. Sync the Python implementation (`deeting_core/app/services/decision/decision_service.py`).
+5. Sync the math notes in this document and the Rust tests.
 6. Add a deterministic test: fix the RNG seed, assert same input → same output.
 
 ### 11.3 Adding context to the bandit (contextual bandit)
@@ -450,7 +450,7 @@ PRs touching the bandit module must self-check:
 - [ ] `cargo test --lib worker_dispatch --no-fail-fast`
 - [ ] Key invariant tests still green:
   - `apply_route_prior_bandit_scores_surface_on_application` (the bandit cannot override on its own)
-- [ ] When modifying the algorithm: sync the Python side (`deeting_core/app/services/decision/decision_service.py`)
+- [ ] When modifying the algorithm: sync the math notes in this document and the Rust tests
 - [ ] When adding a scene: verify arms of old scenes are not polluted
 - [ ] When changing default hyperparameters: replay history once and check whether the cumulative-reward curve matches expectations
 - [ ] Manual desktop tests:
@@ -493,7 +493,7 @@ A: (1) **Explainable**: every arm's alpha/beta is visible in a PR; (2) **No hall
 - Routing scene: [`task_learning/policy.rs::compute_route_bandit_scores`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/task_learning/policy.rs)
 - Worker scene: [`worker_dispatch.rs`](../deeting/src-tauri/src/modules/desktop_runtime/runtime/worker_dispatch.rs)
 - Memory recall: [`memory/service.rs`](../deeting/src-tauri/src/modules/memory/service.rs)
-- Python reference implementation: `deeting_core/app/services/decision/decision_service.py`
+- Canonical implementation: `deeting/src-tauri/src/modules/providers/bandit_selector.rs`
 - Tests: [`bandit_selector_tests.rs`](../deeting/src-tauri/src/modules/providers/bandit_selector_tests.rs)
 - Sibling docs: [`rag-architecture.en.md`](./rag-architecture.en.md), [`self-evolution-architecture.en.md`](./self-evolution-architecture.en.md), [`agent-dag-architecture.en.md`](./agent-dag-architecture.en.md), [`memory-architecture.en.md`](./memory-architecture.en.md), [`security-architecture.en.md`](./security-architecture.en.md)
 

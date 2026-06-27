@@ -304,7 +304,6 @@ bun run desktop:build
 ```text
 .
 ├─ deeting/           # Main desktop app (Next.js + Tauri + Rust)
-├─ deeting_core/      # Core backend / task and test assets
 ├─ deeting-relay/     # IM relay service as public ingress boundary
 ├─ installer/         # Windows graphical installer
 ├─ packages/          # Extension-related templates, SDK, and compatibility assets

@@ -1,21 +1,16 @@
 "use client";
 
 import * as React from "react";
-import { useSearchParams } from "next/navigation";
 import { Link } from "@/i18n/routing";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowRight,
-  Chrome,
-  ExternalLink,
-  Github,
   Info,
   Loader2,
   Mail,
   Ticket,
 } from "lucide-react";
 import { Turnstile } from "@marsidev/react-turnstile";
-import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 import { useAuthService } from "@/hooks/use-auth";
 import { useLoginForm } from "@/hooks/use-login-form";
@@ -35,68 +30,11 @@ import { Input } from "@/ui/shadcn/input";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/ui/shadcn/input-otp";
 
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
-const DESKTOP_EXTERNAL_LOGIN_URL = process.env.NEXT_PUBLIC_DESKTOP_EXTERNAL_LOGIN_URL ?? "";
 
 export interface LoginFormProps {
   onSuccess?: () => void | Promise<void>;
   onError?: (error: Error) => void;
   className?: string;
-}
-
-function getErrorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message;
-  }
-
-  if (typeof error === "string" && error.trim()) {
-    return error;
-  }
-
-  return fallback;
-}
-
-interface DesktopBrowserStartDiagnostic {
-  ok: boolean;
-  url: string;
-  status?: number | null;
-  message: string;
-  errorCode?: string | null;
-  sourceChain?: string[];
-  isTimeout?: boolean;
-  isConnect?: boolean;
-  isRequest?: boolean;
-}
-
-async function enrichDesktopBrowserLoginErrorMessage(error: Error): Promise<string> {
-  const rawMessage = error.message?.trim();
-  if (!rawMessage) {
-    return "Request failed, please try again";
-  }
-
-  if (!/error sending request for url/i.test(rawMessage)) {
-    return rawMessage;
-  }
-
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const diagnostic = await invoke<DesktopBrowserStartDiagnostic>(
-      "diagnose_auth_desktop_browser_start_request"
-    );
-    console.error("[desktop-browser-login] rust diagnostic", diagnostic);
-
-    if (!diagnostic || diagnostic.ok) {
-      return rawMessage;
-    }
-
-    const details = [diagnostic.errorCode, diagnostic.message]
-      .filter((item): item is string => Boolean(item && item.trim()))
-      .join(": ");
-
-    return details || rawMessage;
-  } catch (diagnosticError) {
-    console.error("[desktop-browser-login] failed to collect rust diagnostic", diagnosticError);
-    return rawMessage;
-  }
 }
 
 const slideVariants = {
@@ -129,57 +67,15 @@ const slideVariants = {
 export function LoginForm({ onSuccess, onError, className }: LoginFormProps) {
   const t = useTranslations("auth.login.form");
   const inviteCodeRef = React.useRef<HTMLInputElement>(null);
-  const searchParams = useSearchParams();
   const [desktopSupport, setDesktopSupport] = React.useState<boolean | null>(null);
   const tauriRuntime = desktopSupport === true;
-  const desktopExternalLoginUrl = DESKTOP_EXTERNAL_LOGIN_URL.trim();
-  const desktopLoginSessionId =
-    desktopSupport === false ? searchParams.get("desktop_login_session")?.trim() ?? "" : "";
-  const hasDesktopBrowserSession = desktopLoginSessionId.length > 0;
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const {
-    startDesktopBrowserLogin,
-    startDesktopOAuthLogin,
-    refreshMutation,
-    completeDesktopBrowserLogin,
-  } = useAuthService();
-  const [browserLoginLoading, setBrowserLoginLoading] = React.useState(false);
-  const [browserReturnLoading, setBrowserReturnLoading] = React.useState(false);
+  const { refreshMutation } = useAuthService();
   const attemptedBrowserRefreshRef = React.useRef(false);
-  const completingBrowserLoginRef = React.useRef(false);
-
-  const completeBrowserLoginAndReturn = React.useCallback(async () => {
-    if (!hasDesktopBrowserSession) {
-      return false;
-    }
-
-    completingBrowserLoginRef.current = true;
-    setBrowserReturnLoading(true);
-    const result = await completeDesktopBrowserLogin({
-      session_id: desktopLoginSessionId,
-    });
-    toast.success(t("toast.desktopBrowserRedirecting"));
-    window.location.assign(result.deep_link_url);
-    return true;
-  }, [completeDesktopBrowserLogin, desktopLoginSessionId, hasDesktopBrowserSession, t]);
 
   const handleLoginSuccess = React.useCallback(async () => {
-    if (hasDesktopBrowserSession) {
-      try {
-        await completeBrowserLoginAndReturn();
-        return;
-      } catch (error) {
-        completingBrowserLoginRef.current = false;
-        setBrowserReturnLoading(false);
-        const message = getErrorMessage(error, t("toast.desktopBrowserCompleteFailed"));
-        toast.error(message);
-        onError?.(error as Error);
-        throw error;
-      }
-    }
-
     await onSuccess?.();
-  }, [completeBrowserLoginAndReturn, hasDesktopBrowserSession, onError, onSuccess, t]);
+  }, [onSuccess]);
 
   const {
     step,
@@ -197,7 +93,7 @@ export function LoginForm({ onSuccess, onError, className }: LoginFormProps) {
     setCaptchaToken,
   } = useLoginForm({ onSuccess: handleLoginSuccess, onError });
 
-  const isBusy = isLoading || browserLoginLoading || browserReturnLoading;
+  const isBusy = isLoading;
 
   React.useEffect(() => {
     setDesktopSupport(isTauriRuntime());
@@ -213,75 +109,13 @@ export function LoginForm({ onSuccess, onError, className }: LoginFormProps) {
   }, [showInviteCode]);
 
   React.useEffect(() => {
-    if (!hasDesktopBrowserSession || tauriRuntime || isAuthenticated || attemptedBrowserRefreshRef.current) {
+    if (tauriRuntime || isAuthenticated || attemptedBrowserRefreshRef.current) {
       return;
     }
 
     attemptedBrowserRefreshRef.current = true;
     refreshMutation.trigger().catch(() => {});
-  }, [hasDesktopBrowserSession, isAuthenticated, refreshMutation, tauriRuntime]);
-
-  React.useEffect(() => {
-    if (
-      !hasDesktopBrowserSession ||
-      tauriRuntime ||
-      !isAuthenticated ||
-      completingBrowserLoginRef.current
-    ) {
-      return;
-    }
-
-    void completeBrowserLoginAndReturn().catch((error) => {
-      completingBrowserLoginRef.current = false;
-      setBrowserReturnLoading(false);
-      const message = getErrorMessage(error, t("toast.desktopBrowserCompleteFailed"));
-      toast.error(message);
-      onError?.(error as Error);
-    });
-  }, [
-    completeBrowserLoginAndReturn,
-    hasDesktopBrowserSession,
-    isAuthenticated,
-    onError,
-    t,
-    tauriRuntime,
-  ]);
-
-  async function handleDesktopBrowserLogin() {
-    if (!desktopExternalLoginUrl) {
-      toast.error(t("toast.desktopBrowserUrlMissing"));
-      return;
-    }
-
-    try {
-      setBrowserLoginLoading(true);
-      await startDesktopBrowserLogin(desktopExternalLoginUrl);
-      toast.success(t("toast.desktopBrowserOpened"));
-    } catch (error) {
-      const err = error as Error;
-      const message = tauriRuntime
-        ? await enrichDesktopBrowserLoginErrorMessage(err)
-        : err.message || t("toast.error");
-      toast.error(message || t("toast.error"));
-      onError?.(err);
-    } finally {
-      setBrowserLoginLoading(false);
-    }
-  }
-
-  async function handleDesktopOAuthLogin(provider: "google" | "github" | "linuxdo") {
-    try {
-      setBrowserLoginLoading(true);
-      const session = await startDesktopOAuthLogin(provider);
-      window.location.assign(session.authorize_url);
-    } catch (error) {
-      const err = error as Error;
-      toast.error(err.message || t("toast.error"));
-      onError?.(err);
-    } finally {
-      setBrowserLoginLoading(false);
-    }
-  }
+  }, [isAuthenticated, refreshMutation, tauriRuntime]);
 
   return (
     <div className={cn("grid gap-6", className)}>
@@ -297,93 +131,17 @@ export function LoginForm({ onSuccess, onError, className }: LoginFormProps) {
         </div>
       ) : (
         <>
-          {hasDesktopBrowserSession && (
-            <div className="rounded-2xl border border-blue-100 bg-blue-50/80 p-4 text-left">
-              <p className="text-sm font-semibold text-slate-800">{t("desktopBrowserReturnTitle")}</p>
-              <p className="mt-1 text-sm leading-6 text-slate-600">
-                {browserReturnLoading
-                  ? t("desktopBrowserReturning")
-                  : t("desktopBrowserReturnDescription")}
-              </p>
-            </div>
-          )}
-
           {tauriRuntime ? (
             <div className="space-y-4">
               <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 text-left">
-                <p className="text-sm font-semibold text-slate-800">{t("desktopBrowserTitle")}</p>
+                <p className="text-sm font-semibold text-slate-800">{t("localOnlyTitle")}</p>
                 <p className="mt-1 text-sm leading-6 text-slate-600">
-                  {t("desktopBrowserDescription")}
+                  {t("localOnlyDescription")}
                 </p>
               </div>
-
-              <GlassButton
-                type="button"
-                className={cn(
-                  "h-12 w-full rounded-xl font-medium",
-                  "bg-gradient-to-b from-blue-500 to-blue-600",
-                  "shadow-[0_4px_12px_-2px_rgba(37,99,235,0.35)]",
-                  "transition-all duration-200 ease-out",
-                  "hover:-translate-y-0.5 hover:shadow-[0_8px_20px_-4px_rgba(37,99,235,0.4)]",
-                  "active:translate-y-0 active:scale-[0.98]",
-                  "disabled:translate-y-0 disabled:opacity-70"
-                )}
-                disabled={isBusy}
-                onClick={handleDesktopBrowserLogin}
-              >
-                {browserLoginLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                )}
-                {t("desktopBrowserAction")}
-              </GlassButton>
             </div>
           ) : (
             <>
-              {hasDesktopBrowserSession && (
-                <div className="space-y-3">
-                  <GlassButton
-                    type="button"
-                    variant="outline"
-                    className="h-12 w-full rounded-xl border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                    disabled={isBusy}
-                    onClick={() => void handleDesktopOAuthLogin("google")}
-                  >
-                    <Chrome className="mr-2 h-4 w-4" />
-                    {t("oauthGoogle")}
-                  </GlassButton>
-
-                  <GlassButton
-                    type="button"
-                    variant="outline"
-                    className="h-12 w-full rounded-xl border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                    disabled={isBusy}
-                    onClick={() => void handleDesktopOAuthLogin("github")}
-                  >
-                    <Github className="mr-2 h-4 w-4" />
-                    {t("oauthGithub")}
-                  </GlassButton>
-
-                  <GlassButton
-                    type="button"
-                    variant="outline"
-                    className="h-12 w-full rounded-xl border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                    disabled={isBusy}
-                    onClick={() => void handleDesktopOAuthLogin("linuxdo")}
-                  >
-                    <ExternalLink className="mr-2 h-4 w-4" />
-                    {t("oauthLinuxdo")}
-                  </GlassButton>
-
-                  <div className="flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-slate-400">
-                    <div className="h-px flex-1 bg-slate-200" />
-                    <span>{t("or")}</span>
-                    <div className="h-px flex-1 bg-slate-200" />
-                  </div>
-                </div>
-              )}
-
               {step === "email" ? (
                 <Form {...emailForm}>
                   <form onSubmit={emailForm.handleSubmit(handleSendCode)} className="space-y-4">

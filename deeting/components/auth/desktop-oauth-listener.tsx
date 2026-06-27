@@ -83,7 +83,7 @@ function isTerminalReplayError(message: string) {
 }
 
 export function DesktopOAuthListener() {
-  const { exchangeDesktopBrowserLoginGrant, exchangeDesktopOAuthLoginGrant } = useAuthService();
+  const { exchangeDesktopOAuthLoginGrant } = useAuthService();
   const handledRef = useRef(new Set<string>());
   const processedRef = useRef<Set<string>>(loadProcessedDeepLinkKeys());
 
@@ -117,13 +117,6 @@ export function DesktopOAuthListener() {
             await mutate(ACCOUNT_BINDINGS_KEY);
             persistProcessedDeepLinkKey(processedRef.current, key);
             toast.success(`${result.provider} binding completed`);
-          } else if (payload.provider === "browser") {
-            await exchangeDesktopBrowserLoginGrant({
-              session_id: payload.session_id,
-              grant: payload.grant,
-            });
-            persistProcessedDeepLinkKey(processedRef.current, key);
-            toast.success("Signed in successfully");
           } else {
             if (!payload.state) {
               throw new Error("Desktop OAuth login callback is missing state");
@@ -176,7 +169,7 @@ export function DesktopOAuthListener() {
       disposed = true;
       cleanup?.();
     };
-  }, [exchangeDesktopBrowserLoginGrant, exchangeDesktopOAuthLoginGrant]);
+  }, [exchangeDesktopOAuthLoginGrant]);
 
   return null;
 }

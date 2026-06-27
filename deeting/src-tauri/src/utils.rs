@@ -1,10 +1,7 @@
 use crate::modules::mcp::error::McpError;
 use mcp_storage::helpers::expand_path;
-use serde::Serialize;
-use std::error::Error as StdError;
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
-use std::time::Duration;
 use tauri::Manager;
 use tokio::process::Command as TokioCommand;
 
@@ -144,193 +141,13 @@ pub fn path_to_sqlite_url(path: &Path) -> String {
 }
 
 pub fn resolve_cloud_base_url() -> String {
-    std::env::var("NEXT_PUBLIC_API_BASE_URL")
-        .unwrap_or_else(|_| "https://api.ethereals.space".to_string())
+    String::new()
 }
 
 pub fn now_rfc3339() -> String {
     time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_else(|_| "".to_string())
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HttpTransportDiagnostic {
-    pub ok: bool,
-    pub url: String,
-    pub status: Option<u16>,
-    pub message: String,
-    pub error_code: Option<String>,
-    pub source_chain: Vec<String>,
-    pub is_timeout: bool,
-    pub is_connect: bool,
-    pub is_request: bool,
-}
-
-#[tauri::command]
-pub async fn diagnose_auth_desktop_browser_start_request() -> Result<HttpTransportDiagnostic, String>
-{
-    let base_url = resolve_cloud_base_url();
-    let url = format!(
-        "{}/api/v1/auth/desktop/browser/start",
-        base_url.trim().trim_end_matches('/')
-    );
-
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(20))
-        .build()
-        .map_err(|err| err.to_string())?;
-
-    let payload = serde_json::json!({
-        "return_scheme": "deeting",
-        "platform": "desktop",
-    });
-
-    match client.post(&url).json(&payload).send().await {
-        Ok(response) => {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            let message = if status.is_success() {
-                format!("HTTP {}", status.as_u16())
-            } else {
-                extract_response_message(&body)
-                    .unwrap_or_else(|| format!("HTTP {} {}", status.as_u16(), body.trim()))
-            };
-
-            Ok(HttpTransportDiagnostic {
-                ok: status.is_success(),
-                url,
-                status: Some(status.as_u16()),
-                message,
-                error_code: if status.is_success() {
-                    None
-                } else {
-                    Some(format!("HTTP_{}", status.as_u16()))
-                },
-                source_chain: Vec::new(),
-                is_timeout: false,
-                is_connect: false,
-                is_request: false,
-            })
-        }
-        Err(err) => {
-            let source_chain = collect_error_sources(&err);
-            let primary_source = source_chain
-                .first()
-                .cloned()
-                .unwrap_or_else(|| err.to_string());
-
-            Ok(HttpTransportDiagnostic {
-                ok: false,
-                url,
-                status: err.status().map(|status| status.as_u16()),
-                message: primary_source,
-                error_code: Some(classify_reqwest_error(&err).to_string()),
-                source_chain,
-                is_timeout: err.is_timeout(),
-                is_connect: err.is_connect(),
-                is_request: err.is_request(),
-            })
-        }
-    }
-}
-
-fn collect_error_sources(err: &reqwest::Error) -> Vec<String> {
-    let mut sources = Vec::new();
-    let mut current = err.source();
-    while let Some(source) = current {
-        let text = source.to_string();
-        if !text.trim().is_empty() {
-            sources.push(text);
-        }
-        current = source.source();
-    }
-    sources
-}
-
-fn classify_reqwest_error(err: &reqwest::Error) -> &'static str {
-    let text = err.to_string().to_ascii_lowercase();
-    if err.is_timeout() || text.contains("timed out") || text.contains("timeout") {
-        "REQWEST_TIMEOUT"
-    } else if text.contains("proxy") || text.contains("tunnel") || text.contains("407") {
-        "REQWEST_PROXY"
-    } else if text.contains("certificate")
-        || text.contains("tls")
-        || text.contains("ssl")
-        || text.contains("handshake")
-        || text.contains("unknown issuer")
-        || text.contains("invalid peer certificate")
-    {
-        "REQWEST_TLS"
-    } else if text.contains("dns")
-        || text.contains("lookup")
-        || text.contains("no such host")
-        || text.contains("getaddrinfo")
-        || text.contains("failed to lookup address information")
-    {
-        "REQWEST_DNS"
-    } else if err.is_connect()
-        || text.contains("connection refused")
-        || text.contains("actively refused")
-    {
-        "REQWEST_CONNECT"
-    } else if text.contains("connection reset")
-        || text.contains("unexpected eof")
-        || text.contains("broken pipe")
-        || text.contains("connection closed")
-    {
-        "REQWEST_CONNECTION_RESET"
-    } else {
-        "REQWEST_TRANSPORT"
-    }
-}
-
-fn extract_response_message(body: &str) -> Option<String> {
-    let parsed = serde_json::from_str::<serde_json::Value>(body).ok()?;
-
-    if let Some(message) = parsed.get("message").and_then(serde_json::Value::as_str) {
-        let message = message.trim();
-        if !message.is_empty() {
-            return Some(message.to_string());
-        }
-    }
-
-    if let Some(error) = parsed.get("error").and_then(serde_json::Value::as_str) {
-        let error = error.trim();
-        if !error.is_empty() {
-            return Some(error.to_string());
-        }
-    }
-
-    if let Some(detail) = parsed.get("detail") {
-        if let Some(detail_text) = detail.as_str() {
-            let detail_text = detail_text.trim();
-            if !detail_text.is_empty() {
-                return Some(detail_text.to_string());
-            }
-        }
-
-        if let Some(items) = detail.as_array() {
-            let messages = items
-                .iter()
-                .filter_map(|item| {
-                    item.get("msg")
-                        .and_then(serde_json::Value::as_str)
-                        .or_else(|| item.get("message").and_then(serde_json::Value::as_str))
-                        .map(str::trim)
-                        .filter(|text| !text.is_empty())
-                        .map(ToOwned::to_owned)
-                })
-                .collect::<Vec<_>>();
-
-            if !messages.is_empty() {
-                return Some(messages.join("; "));
-            }
-        }
-    }
-
-    None
 }
 
 #[cfg(test)]

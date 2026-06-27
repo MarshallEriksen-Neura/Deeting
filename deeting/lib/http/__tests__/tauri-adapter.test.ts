@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 async function loadAdapterModule() {
   jest.resetModules();
   const mockFetch = jest.fn();
@@ -31,8 +33,8 @@ describe("tauri adapter", () => {
 
     await expect(
       adapter({
-        url: "/api/v1/auth/login/code",
-        baseURL: "http://127.0.0.1:8000",
+        url: "/api/v1/ping",
+        baseURL: "https://example.invalid",
         method: "post",
         headers: {},
         data: { email: "admin@example.com" },
@@ -59,13 +61,13 @@ describe("tauri adapter", () => {
 
     const response = await adapter({
       url: "/api/v1/ping",
-      baseURL: "http://127.0.0.1:8000",
+      baseURL: "https://example.invalid",
       method: "get",
       headers: {},
     } as any);
 
     expect(mockFetch).toHaveBeenCalledWith(
-      "http://127.0.0.1:8000/api/v1/ping",
+      "https://example.invalid/api/v1/ping",
       expect.objectContaining({
         method: "GET",
       })
@@ -77,17 +79,16 @@ describe("tauri adapter", () => {
 
   test("原生 transport 发送失败时应附带可能原因", async () => {
     const { createTauriAdapter, mockFetch } = await loadAdapterModule();
-    mockFetch.mockRejectedValue(new Error("error sending request for url (https://api.ethereals.space/api/v1/auth/desktop/browser/start)"));
+    mockFetch.mockRejectedValue(new Error("error sending request for url (https://example.invalid/api/v1/ping)"));
 
     const adapter = await createTauriAdapter();
 
     await expect(
       adapter({
-        url: "/api/v1/auth/desktop/browser/start",
-        baseURL: "https://api.ethereals.space",
-        method: "post",
+        url: "/api/v1/ping",
+        baseURL: "https://example.invalid",
+        method: "get",
         headers: {},
-        data: { return_scheme: "deeting", platform: "desktop" },
       } as any)
     ).rejects.toMatchObject({
       isAxiosError: true,

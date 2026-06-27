@@ -110,31 +110,31 @@ export function SettingsForm({
     data: secretarySetting,
     isLoading: isLoadingSecretary,
     mutate: mutateSecretary,
-  } = useUserSecretary({ enabled: isAuthenticated });
+  } = useUserSecretary({ enabled: isAuthenticated || isTauriRuntime });
   const {
     data: userEmbeddingConfig,
     isLoading: isLoadingUserEmbeddingConfig,
     mutate: mutateUserEmbeddingConfig,
-  } = useUserEmbeddingConfig({ enabled: isAuthenticated && isTauriRuntime });
+  } = useUserEmbeddingConfig({ enabled: isTauriRuntime });
 
   // Fetch chat models for personal settings
   const { modelGroups: chatModelGroups, isLoadingModels: isLoadingChatModels } =
     useChatModels({
-      enabled: isAuthenticated,
+      enabled: isAuthenticated || isTauriRuntime,
       modelCapability: "chat",
     });
   const {
     modelGroups: embeddingModelGroups,
     isLoadingModels: isLoadingEmbeddingModels,
   } = useChatModels({
-    enabled: isAuthenticated,
+    enabled: isAuthenticated || isTauriRuntime,
     modelCapability: "embedding",
   });
   const {
     modelGroups: multimodalCandidateModelGroups,
     isLoadingModels: isLoadingMultimodalModels,
   } = useChatModels({
-    enabled: isAuthenticated,
+    enabled: isAuthenticated || isTauriRuntime,
     modelCapability: "chat",
   });
 
@@ -177,9 +177,9 @@ export function SettingsForm({
     },
   });
 
-  const canEditPersonal = isAuthenticated;
-  const canEditDesktop = isAuthenticated && isTauriRuntime;
-  const canSave = isAuthenticated;
+  const canEditPersonal = isAuthenticated || isTauriRuntime;
+  const canEditDesktop = isTauriRuntime;
+  const canSave = isAuthenticated || isTauriRuntime;
   const hasAvailableChatModels = chatModelGroups.length > 0;
   const hasAvailableEmbeddingModels = embeddingModelGroups.length > 0;
   const multimodalModelGroups = React.useMemo<ModelGroup[]>(() => {
@@ -200,7 +200,7 @@ export function SettingsForm({
   const hasAvailableMultimodalModels = multimodalModelGroups.length > 0;
 
   React.useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!canSave) return;
     if (isLoadingSecretary) return;
     if (isTauriRuntime && isLoadingUserEmbeddingConfig) return;
     applyFormValues(form, {
@@ -216,7 +216,7 @@ export function SettingsForm({
       });
   }, [
     form,
-    isAuthenticated,
+    canSave,
     isLoadingSecretary,
     isLoadingUserEmbeddingConfig,
     isTauriRuntime,
@@ -227,7 +227,7 @@ export function SettingsForm({
   ]);
 
   React.useEffect(() => {
-    if (!isAuthenticated || !isTauriRuntime) return;
+    if (!isTauriRuntime) return;
     if (activeSection !== "relay" || hasLoadedDesktopRelaySettings) return;
 
     let cancelled = false;
@@ -254,12 +254,11 @@ export function SettingsForm({
     activeSection,
     form,
     hasLoadedDesktopRelaySettings,
-    isAuthenticated,
     isTauriRuntime,
   ]);
 
   React.useEffect(() => {
-    if (!isAuthenticated || !isTauriRuntime) return;
+    if (!isTauriRuntime) return;
     if (activeSection !== "storage" || hasLoadedDesktopStorageSettings) return;
 
     let cancelled = false;
@@ -295,7 +294,6 @@ export function SettingsForm({
     activeSection,
     form,
     hasLoadedDesktopStorageSettings,
-    isAuthenticated,
     isTauriRuntime,
   ]);
 
@@ -373,12 +371,8 @@ export function SettingsForm({
   }, [isRepairingIndexes, isTauriRuntime, t]);
 
   async function onSubmit(values: SettingsFormValues) {
-    if (!isAuthenticated) {
-      toast.error(t("toast.unauthenticated"));
-      return;
-    }
     if (!canSave) {
-      toast.error(t("toast.noPermission"));
+      toast.error(t("toast.unauthenticated"));
       return;
     }
     if (canEditDesktop && isTauriRuntime) {
